@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Sayframe</title>
+  <link rel="stylesheet" href="css/panel.css">
+</head>
+<body>
+  <div class="glow"></div>
+
+  <main id="app">
+    <header class="top">
+      <div class="brand">
+        <span class="spark" aria-hidden="true"></span>
+        <h1>Sayframe</h1>
+      </div>
+      <button id="settingsBtn" class="icon-btn" aria-label="Настройки" title="Настройки">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.2"/>
+          <path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l1.8-1.4-1.9-3.3-2.1.8a7.6 7.6 0 0 0-2.6-1.5L14.2 3h-3.8l-.4 2.1a7.6 7.6 0 0 0-2.6 1.5l-2.1-.8-1.9 3.3 1.8 1.4a7.6 7.6 0 0 0 0 3l-1.8 1.4 1.9 3.3 2.1-.8a7.6 7.6 0 0 0 2.6 1.5l.4 2.1h3.8l.4-2.1a7.6 7.6 0 0 0 2.6-1.5l2.1.8 1.9-3.3z"/>
+        </svg>
+      </button>
+    </header>
+
+    <section id="updateBar" class="card update" hidden aria-live="polite">
+      <div class="update-head">
+        <b id="updateTitle"></b>
+        <button id="updateLater" class="icon-btn small" aria-label="Скрыть до следующего запуска" title="Позже">&times;</button>
+      </div>
+      <ul id="updateNotes"></ul>
+      <p id="updateStatus" hidden></p>
+      <div class="update-actions">
+        <button id="updateNow" class="primary">Обновить</button>
+        <button id="updateDownload" class="ghost" hidden>Скачать установщик</button>
+      </div>
+    </section>
+
+    <nav class="tabs" role="tablist" aria-label="Разделы панели">
+      <button id="tabClaude" class="tab" role="tab" aria-selected="true" aria-controls="viewClaude">Claude</button>
+      <button id="tabTools" class="tab" role="tab" aria-selected="false" aria-controls="viewTools">Инструменты</button>
+    </nav>
+
+    <!-- Раздел Claude: задача словами, референс, запуск и ответ -->
+    <div id="viewClaude" class="view" role="tabpanel" aria-labelledby="tabClaude">
+    <section class="card composer">
+      <textarea id="prompt" rows="4" placeholder="Опишите, что сделать в композиции" aria-label="Задача для Claude"></textarea>
+      <div class="attach-row">
+        <button id="refBtn" class="chip-btn" title="Прикрепить видео или картинку">+ Референс</button>
+        <span id="refChip" class="chip" hidden>
+          <span id="refText"></span>
+          <button id="refClear" aria-label="Убрать референс" title="Убрать референс">&times;</button>
+        </span>
+      </div>
+      <button id="runBtn" class="primary">Выполнить</button>
+    </section>
+
+    <!-- Строка состояния одна на обе вкладки: панель переносит её в открытую -->
+    <div id="statusSlotClaude" class="status-slot">
+      <section id="statusBox" class="status" aria-live="polite">
+        <span class="pulse" aria-hidden="true"></span>
+        <p id="status">Готов.</p>
+      </section>
+    </div>
+
+    <div class="row-actions">
+      <button id="fixBtn" class="ghost warn" disabled hidden>Исправить ошибку</button>
+      <button id="newBtn" class="ghost">Новый диалог</button>
+    </div>
+
+    <section id="replyCard" class="card reply" hidden>
+      <p id="replyText"></p>
+      <details id="codeBox">
+        <summary>Показать скрипт</summary>
+        <pre id="replyCode"></pre>
+      </details>
+    </section>
+
+    </div>
+
+    <!-- Раздел «Инструменты»: всё, что работает без Claude -->
+    <div id="viewTools" class="view" role="tabpanel" aria-labelledby="tabTools" hidden>
+    <section class="tools">
+      <button id="pasteBtn" class="tool">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="4" y="5" width="16" height="15" rx="3"/>
+          <path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/>
+          <path d="M7.5 16.5l3-3.2 2.4 2.2 2-1.9 1.6 2.9"/>
+          <circle cx="9.3" cy="10.3" r="1.1"/>
+        </svg>
+        <span>
+          <b>Вставить картинку из буфера</b>
+          <small>Или нажмите Cmd/Ctrl+V, когда курсор в этой панели</small>
+        </span>
+      </button>
+    </section>
+    <div id="statusSlotTools" class="status-slot"></div>
+    </div>
+  </main>
+
+  <!-- Настройки -->
+  <div id="settingsSheet" class="sheet" hidden>
+    <div class="glow"></div>
+    <div class="card sheet-card">
+      <div class="sheet-head">
+        <h2>Настройки</h2>
+        <button id="settingsClose" class="icon-btn" aria-label="Закрыть настройки" title="Закрыть">&times;</button>
+      </div>
+
+      <div class="group">
+        <label for="apiKey">Ключ Anthropic API</label>
+        <div class="key-row">
+          <input id="apiKey" class="field" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+          <button id="testKey" class="ghost">Проверить</button>
+        </div>
+        <p id="keyHint" class="hint">Создаётся на platform.claude.com, в разделе Settings → API keys. Хранится только на этом компьютере.</p>
+      </div>
+
+      <div class="group">
+        <span class="label">Модель</span>
+        <div id="models" class="models"></div>
+      </div>
+
+      <div class="group">
+        <span class="label">Акцентный цвет</span>
+        <div class="swatches" id="accentSwatches">
+          <input id="accentHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Акцентный цвет, hex">
+        </div>
+      </div>
+
+      <div class="group">
+        <span class="label">Цвет фона</span>
+        <div class="swatches" id="bgSwatches">
+          <input id="bgHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Цвет фона, hex">
+        </div>
+      </div>
+
+      <div class="group">
+        <label class="switch">
+          <input id="selfCheck" type="checkbox">
+          <span class="track"></span>
+          <span class="text">Claude проверяет результат по кадрам
+            <small>После запуска видит композицию и сам вносит правки. Дольше и дороже.</small>
+          </span>
+        </label>
+        <label class="switch">
+          <input id="alwaysAsk" type="checkbox">
+          <span class="track"></span>
+          <span class="text">Спрашивать перед каждым запуском
+            <small>Показывает скрипт и ждёт подтверждения.</small>
+          </span>
+        </label>
+      </div>
+
+      <div class="group">
+        <span class="label">Кадров из видео-референса</span>
+        <div id="frames" class="frames"></div>
+      </div>
+
+      <button id="saveSettings" class="primary">Сохранить</button>
+
+      <div class="group about">
+        <div class="about-row">
+          <span id="versionText" class="label"></span>
+          <button id="checkUpdate" class="ghost">Проверить обновления</button>
+        </div>
+        <p id="updateHint" class="hint" hidden></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Диалог: подтверждение запуска и выбор способа вставки -->
+  <div id="modal" class="modal" hidden>
+    <div class="card modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h2 id="modalTitle"></h2>
+      <p id="modalText"></p>
+      <pre id="modalCode" hidden></pre>
+      <div id="modalButtons" class="modal-buttons"></div>
+    </div>
+  </div>
+
+  <script src="js/panel.js"></script>
+</body>
+</html>
