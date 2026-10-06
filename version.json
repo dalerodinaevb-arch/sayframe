@@ -1,0 +1,39 @@
+{
+  "version": "1.2.0",
+  "date": "2026-10-06",
+  "notes": [
+    "Панель разделена на две вкладки: Claude и Инструменты",
+    "Задача, референс, запуск и ответ теперь на вкладке Claude",
+    "Вставка картинки из буфера переехала на вкладку Инструменты"
+  ],
+  "download": "https://github.com/dalerodinaevb-arch/sayframe#readme",
+  "moved": "",
+  "base": "Sayframe/",
+  "files": [
+    {
+      "path": "CSXS/manifest.xml",
+      "sha256": "ba09fbf7d20928acaeef645c2608c612faba450f6b5600ebb573015b7f7c368b",
+      "size": 1642
+    },
+    {
+      "path": "css/panel.css",
+      "sha256": "dcb6048279aa1b945bb1ce254bae30bd76fd0514edb454dafeb451aa35548e35",
+      "size": 14223
+    },
+    {
+      "path": "index.html",
+      "sha256": "ba237bb835e3940485e8afef1d64b99f289e8bd081961d45355215bb34940059",
+      "size": 8070
+    },
+    {
+      "path": "js/panel.js",
+      "sha256": "aae925eced51707f7ce86cc3b1b5b0178099f9dbd0c813b331864f21f2739782",
+      "size": 80956
+    },
+    {
+      "path": "jsx/host.jsx",
+      "sha256": "381e690a9d21b90b73679bc120608b09acb647a590dd4d56f0471ed616271cb4",
+      "size": 16488
+    }
+  ]
+}
