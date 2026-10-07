@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.5.0";
+    var VERSION = "1.5.1";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -619,42 +619,48 @@
     }
 
     function enableTabReordering() {
-        var drag = null;        // { btn, id, startX, moved }
+        // Перетаскивание сделано на обычных событиях мыши (mousedown, mousemove, mouseup).
+        // На событиях указателя (pointer events) оно проходило тесты в браузере, но в самом After Effects
+        // не срабатывало. Нажатие гасится (preventDefault), чтобы браузер не начал своё перетаскивание.
+        var drag = null;        // { btn, startX, moved }
         var dragEndedAt = 0;
 
-        function finish(e) {
-            if (!drag || (e && e.pointerId !== drag.id)) { return; }
+        function finish() {
+            if (!drag) { return; }
             if (drag.moved) {
                 drag.btn.className = drag.btn.className.replace(/\s*dragging/g, "");
                 ui.tabs.className = ui.tabs.className.replace(/\s*reordering/g, "");
-                try { drag.btn.releasePointerCapture(drag.id); } catch (err) {}
                 storeTabOrder();
                 dragEndedAt = Date.now();
             }
             drag = null;
         }
 
-        ui.tabs.addEventListener("pointerdown", function (e) {
+        ui.tabs.addEventListener("mousedown", function (e) {
             var btn = tabOf(e.target);
-            if (!arranging || !btn || (e.pointerType === "mouse" && e.button !== 0)) { return; }
-            drag = { btn: btn, id: e.pointerId, startX: e.clientX, moved: false };
+            if (!arranging || !btn || e.button !== 0) { return; }
+            finish();
+            drag = { btn: btn, startX: e.clientX, moved: false };
+            // Иначе браузер может начать собственное перетаскивание или выделение, и движения мыши пропадут.
+            e.preventDefault();
         });
+        ui.tabs.addEventListener("dragstart", function (e) { e.preventDefault(); });
 
         ui.tabs.addEventListener("dblclick", function (e) {
             if (!tabOf(e.target) || Date.now() - dragEndedAt < 300) { return; }
             setArranging(!arranging);
         });
 
-        window.addEventListener("pointermove", function (e) {
+        document.addEventListener("mousemove", function (e) {
             var buttons, i, other, r, mid, mine;
-            if (!drag || e.pointerId !== drag.id) { return; }
+            if (!drag) { return; }
             if (!drag.moved) {
                 if (Math.abs(e.clientX - drag.startX) < TAB_DRAG_START_PX) { return; }
                 drag.moved = true;
                 drag.btn.className += " dragging";
                 ui.tabs.className += " reordering";
-                try { drag.btn.setPointerCapture(drag.id); } catch (err) {}
             }
+            e.preventDefault();
             // Указатель прошёл середину соседней вкладки — перетаскиваемая встаёт за неё.
             // Сравнение с серединой, а не с краем, чтобы вкладки разной ширины не прыгали туда-сюда.
             buttons = tabButtons();
@@ -674,8 +680,8 @@
             }
         });
 
-        window.addEventListener("pointerup", finish);
-        window.addEventListener("pointercancel", finish);
+        document.addEventListener("mouseup", function () { finish(); }, true);
+        window.addEventListener("blur", function () { finish(); });
 
         ui.tabs.addEventListener("click", function (e) {
             var btn = tabOf(e.target);
@@ -1718,26 +1724,29 @@
     }
 
     function enableToolReordering() {
-        var drag = null;        // { card, id, x, y, moved }
+        // Как и у вкладок — на обычных событиях мыши.
+        var drag = null;        // { card, x, y, moved }
         var dragEndedAt = 0;
 
-        function finish(e) {
-            if (!drag || (e && e.pointerId !== drag.id)) { return; }
+        function finish() {
+            if (!drag) { return; }
             if (drag.moved) {
                 drag.card.className = drag.card.className.replace(/\s*dragging/g, "");
                 ui.motionTools.className = ui.motionTools.className.replace(/\s*reordering/g, "");
-                try { drag.card.releasePointerCapture(drag.id); } catch (err) {}
                 storeToolOrder();
                 dragEndedAt = Date.now();
             }
             drag = null;
         }
 
-        ui.motionTools.addEventListener("pointerdown", function (e) {
+        ui.motionTools.addEventListener("mousedown", function (e) {
             var card = toolOf(e.target);
-            if (!arranging || !card || (e.pointerType === "mouse" && e.button !== 0)) { return; }
-            drag = { card: card, id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
+            if (!arranging || !card || e.button !== 0) { return; }
+            finish();
+            drag = { card: card, x: e.clientX, y: e.clientY, moved: false };
+            e.preventDefault();
         });
+        ui.motionTools.addEventListener("dragstart", function (e) { e.preventDefault(); });
 
         // Двойной щелчок по свободному месту блока включает перестановку; по ползунку, числу или кнопке — нет.
         ui.motionTools.addEventListener("dblclick", function (e) {
@@ -1747,16 +1756,16 @@
             setArranging(!arranging);
         });
 
-        window.addEventListener("pointermove", function (e) {
+        document.addEventListener("mousemove", function (e) {
             var cards, i, other, r, mine, me, sameRow, pos, mid;
-            if (!drag || e.pointerId !== drag.id) { return; }
+            if (!drag) { return; }
             if (!drag.moved) {
                 if (Math.abs(e.clientX - drag.x) < TOOL_DRAG_START_PX && Math.abs(e.clientY - drag.y) < TOOL_DRAG_START_PX) { return; }
                 drag.moved = true;
                 drag.card.className += " dragging";
                 ui.motionTools.className += " reordering";
-                try { drag.card.setPointerCapture(drag.id); } catch (err) {}
             }
+            e.preventDefault();
             // Указатель прошёл середину соседнего блока — перетаскиваемый встаёт на его место.
             // Блоки в одном ряду сравниваются по горизонтали, стоящие друг под другом — по вертикали.
             cards = toolCards();
@@ -1779,8 +1788,8 @@
             }
         });
 
-        window.addEventListener("pointerup", finish);
-        window.addEventListener("pointercancel", finish);
+        document.addEventListener("mouseup", function () { finish(); }, true);
+        window.addEventListener("blur", function () { finish(); });
 
         // С клавиатуры: фокус на полоске, стрелки двигают блок.
         ui.motionTools.addEventListener("keydown", function (e) {
