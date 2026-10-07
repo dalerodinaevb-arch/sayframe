@@ -43,7 +43,6 @@ button { cursor: pointer; }
 .glow {
   position: fixed;
   left: 50%;
-  left: min(50%, calc(var(--panel-w) / 2));
   top: -190px;
   width: 520px;
   height: 380px;
@@ -61,8 +60,15 @@ button { cursor: pointer; }
   flex-direction: column;
   gap: 12px;
 }
-/* Содержимое не тянется за панелью: держит свою ширину и остаётся слева. В узкой панели сжимается. */
+/* Поля и кнопки разделов Claude и «Инструменты» не тянутся за панелью: держат свою ширину
+   (настройка «Ширина панели») и остаются слева. В узкой панели сжимаются. */
 #app > * { flex: none; align-self: flex-start; width: 100%; max-width: calc(var(--panel-w) - 28px); }
+/* Шапка, вкладки и плашки растягиваются вместе с панелью After Effects. */
+#app > .top, #app > #tabs, #app > #updateBar, #app > #arrangeBar { max-width: none; }
+/* Раздел «Анимация» свободный: блоки занимают всю ширину панели. Сами блоки при этом
+   не растягиваются — в широкой панели их просто больше встаёт в ряд, в узкой они переносятся ниже. */
+#app > #viewMotion { max-width: none; }
+#viewMotion > .status-slot { max-width: calc(var(--panel-w) - 28px); }
 
 /* ------------------------------------------------------------ шапка */
 
@@ -281,10 +287,11 @@ textarea:focus, .field:focus {
 
 .tool-card { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 12px; }
 
-/* Блоки раздела стоят рядом, пока хватает ширины, иначе друг под другом. */
-.motion-tools { --tool-min: 152px; --tool-basis: 160px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; -webkit-user-select: none; user-select: none; }
+/* Блоки раздела стоят рядом, пока хватает ширины, иначе друг под другом. Размер блока от ширины панели
+   не зависит: его меняют только за правый край блока или настройкой «Крупные / Мелкие». */
+.motion-tools { --tool-min: 152px; --tool-basis: 170px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; -webkit-user-select: none; user-select: none; }
 .motion-tools input { -webkit-user-select: text; user-select: text; }
-.motion-tools > .tool-card { position: relative; flex: 1 1 var(--tool-basis); min-width: var(--tool-min); max-width: 100%; }
+.motion-tools > .tool-card { position: relative; flex: 0 0 var(--tool-basis); min-width: var(--tool-min); max-width: 100%; }
 
 /* Правый край блока: за него тянут, чтобы сделать блок шире или уже. Полоска видна под курсором. */
 .tool-resize {
@@ -482,6 +489,104 @@ textarea:focus, .field:focus {
 .anchor-cell:disabled { opacity: 0.45; cursor: default; }
 .anchor-side { flex: 1 1 150px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .anchor-side label { color: var(--muted); font: 600 12px/1.2 var(--round); }
+/* Выравнивание — как панель Align в After Effects: список «Выровнять по», ряд из шести значков,
+   черта, ряд «Распределить слои». Значки стоят тройками: в узком блоке тройки встают друг под другом. */
+.align-body { display: flex; flex-direction: column; gap: 10px; }
+.align-to { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.align-to label, .align-label { flex: none; color: var(--muted); font: 600 12px/1.2 var(--round); }
+.align-to .select { flex: 1 1 110px; min-width: 0; width: auto; }
+.align-row { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.align-trio { flex: 1 1 0; min-width: 66px; max-width: 132px; display: flex; }
+.align-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+}
+/* Приглушаем сам значок, а не цвет: иначе линия поверх плашки даёт светлое пятно. */
+.align-btn svg { width: 20px; height: 20px; opacity: 0.62; }
+.align-btn:hover:not(:disabled) svg { opacity: 1; }
+.align-btn:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.2); border-color: rgba(var(--accent-rgb), 0.7); }
+.align-btn:active:not(:disabled) { transform: scale(0.92); }
+.align-btn:disabled { opacity: 0.45; cursor: default; }
+.align-sep { height: 1px; background: var(--line); }
+
+/* Сдвиг во времени: три части через черту, в каждой — список «что» и строка с действием. */
+.shift-body { display: flex; flex-direction: column; gap: 10px; }
+.shift-part { display: flex; flex-direction: column; gap: 8px; }
+.shift-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.shift-cap { flex: none; display: flex; align-items: center; gap: 4px; }
+.shift-pick label { color: var(--muted); font: 600 12px/1.2 var(--round); }
+.shift-pick .select { flex: 1 1 96px; min-width: 0; width: auto; height: 30px; background-position: calc(100% - 16px) 12px, calc(100% - 11px) 12px; }
+.tool-info {
+  flex: none;
+  width: 18px; height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font: italic 700 13px/18px Georgia, "Times New Roman", serif;
+  cursor: help;
+}
+.tool-info:hover:not(:disabled) { color: var(--text); background: rgba(var(--accent-rgb), 0.25); }
+.tool-info:focus-visible { outline: 2px solid rgba(var(--accent-rgb), 0.9); }
+.shift-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
+.shift-row-step { flex-wrap: nowrap; }
+.shift-arrow {
+  flex: none;
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+}
+.shift-arrow svg { width: 18px; height: 18px; opacity: 0.7; }
+.shift-arrow:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.2); border-color: rgba(var(--accent-rgb), 0.7); }
+.shift-arrow:hover:not(:disabled) svg { opacity: 1; }
+.shift-arrow:active:not(:disabled) { transform: scale(0.92); }
+.shift-count { flex: none; display: flex; align-items: center; gap: 4px; }
+.shift-num {
+  width: 34px; height: 24px;
+  padding: 0 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent-hi);
+  font: 600 14px/1 var(--round);
+  text-align: right;
+  outline: none;
+}
+.shift-num:hover:not(:disabled) { border-color: var(--line); }
+.shift-num:focus { border-color: rgba(var(--accent-rgb), 0.75); background: rgba(0, 0, 0, 0.3); color: var(--text); }
+.shift-unit { color: var(--muted); font: 600 12px/1 var(--round); }
+.shift-row .select { flex: 1 1 96px; min-width: 0; width: auto; height: 30px; background-position: calc(100% - 16px) 12px, calc(100% - 11px) 12px; }
+.shift-do {
+  flex: 1 1 auto;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--glass);
+  color: var(--text);
+  font: 600 12px/1 var(--round);
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shift-do:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.2); border-color: rgba(var(--accent-rgb), 0.7); }
+.shift-do:active:not(:disabled) { transform: scale(0.97); }
+.shift-arrow:disabled, .shift-do:disabled, .shift-num:disabled, .tool-info:disabled { opacity: 0.45; cursor: default; }
+
 .select {
   -webkit-appearance: none;
   appearance: none;
@@ -511,6 +616,29 @@ textarea:focus, .field:focus {
 [data-tools="small"] .motion-tools .anchor-side { flex-basis: 110px; gap: 4px; }
 [data-tools="small"] .motion-tools .anchor-side label { font-size: 11px; }
 [data-tools="small"] .motion-tools .select { height: 28px; padding: 0 22px 0 8px; font-size: 11.5px; border-radius: 9px; background-position: calc(100% - 13px) 11px, calc(100% - 8px) 11px; }
+[data-tools="small"] .motion-tools .align-body { gap: 6px; }
+[data-tools="small"] .motion-tools .align-to { gap: 4px 6px; }
+[data-tools="small"] .motion-tools .align-to label, [data-tools="small"] .motion-tools .align-label { font-size: 11px; }
+[data-tools="small"] .motion-tools .align-to .select { flex-basis: 80px; }
+[data-tools="small"] .motion-tools .align-row { gap: 2px 4px; }
+[data-tools="small"] .motion-tools .align-trio { min-width: 46px; max-width: 96px; }
+[data-tools="small"] .motion-tools .align-btn { height: 24px; border-radius: 6px; }
+[data-tools="small"] .motion-tools .align-btn svg { width: 14px; height: 14px; }
+[data-tools="small"] .motion-tools .shift-body { gap: 6px; }
+[data-tools="small"] .motion-tools .shift-part { gap: 5px; }
+[data-tools="small"] .motion-tools .shift-pick { gap: 4px 5px; }
+[data-tools="small"] .motion-tools .shift-pick label, [data-tools="small"] .motion-tools .shift-unit { font-size: 11px; }
+[data-tools="small"] .motion-tools .shift-pick .select { flex-basis: 64px; height: 24px; background-position: calc(100% - 13px) 9px, calc(100% - 8px) 9px; }
+[data-tools="small"] .motion-tools .tool-info { width: 15px; height: 15px; font-size: 11px; line-height: 15px; }
+[data-tools="small"] .motion-tools .shift-row { gap: 4px; }
+[data-tools="small"] .motion-tools .shift-arrow { width: 24px; height: 24px; border-radius: 6px; }
+[data-tools="small"] .motion-tools .shift-arrow svg { width: 14px; height: 14px; }
+[data-tools="small"] .motion-tools .shift-num { width: 26px; height: 20px; font-size: 12px; }
+/* В мелком блоке между стрелками остаётся только число: слово «кадр.» туда не помещается. */
+[data-tools="small"] .motion-tools .shift-row-step .shift-unit { display: none; }
+[data-tools="small"] .motion-tools .shift-row-step .shift-num { text-align: center; }
+[data-tools="small"] .motion-tools .shift-row .select { flex-basis: 64px; height: 24px; background-position: calc(100% - 13px) 9px, calc(100% - 8px) 9px; }
+[data-tools="small"] .motion-tools .shift-do { height: 24px; padding: 0 6px; font-size: 11px; border-radius: 7px; }
 [data-tools="small"] .motion-tools .ease-card { gap: 4px; padding-bottom: 8px; }
 [data-tools="small"] .motion-tools .ease-card .tool-head { margin-bottom: 2px; }
 [data-tools="small"] .motion-tools .ease-curve { height: 56px; border-radius: 9px; margin-bottom: 4px; }
