@@ -446,6 +446,154 @@ var sayframeHost = (function () {
         return out;
     }
 
+    // ---- align
+
+    // A 2D layer's transform as a matrix [a, b, c, d, tx, ty]: x' = a*x + c*y + tx, y' = b*x + d*y + ty.
+    // It maps a point of the layer to the layer's parent (or to the composition when there is no parent).
+    function layerMatrix(layer) {
+        var tr = layer.property("ADBE Transform Group");
+        var anchor = tr.property("ADBE Anchor Point").value;
+        var pos = positionOf(tr, false).value;
+        var scale = tr.property("ADBE Scale").value;
+        var angle = tr.property("ADBE Rotate Z").value * Math.PI / 180;
+        var cos = Math.cos(angle), sin = Math.sin(angle);
+        var sx = scale[0] / 100, sy = scale[1] / 100;
+        var a = sx * cos, b = sx * sin, c = -sy * sin, d = sy * cos;
+        return [a, b, c, d, pos[0] - (a * anchor[0] + c * anchor[1]), pos[1] - (b * anchor[0] + d * anchor[1])];
+    }
+
+    // parent after child: the child's matrix is applied first.
+    function matrixMul(p, c) {
+        return [
+            p[0] * c[0] + p[2] * c[1], p[1] * c[0] + p[3] * c[1],
+            p[0] * c[2] + p[2] * c[3], p[1] * c[2] + p[3] * c[3],
+            p[0] * c[4] + p[2] * c[5] + p[4], p[1] * c[4] + p[3] * c[5] + p[5]
+        ];
+    }
+
+    function isFlatLayer(layer) {
+        return !(layer instanceof CameraLayer) && !(layer instanceof LightLayer) && layer.threeDLayer !== true;
+    }
+
+    // Matrix from the space the layer's position lives in (its parent) to the composition.
+    // Returns null when a parent is a 3D layer, a camera or a light: that needs a camera view, not this maths.
+    function parentMatrix(layer) {
+        var m = [1, 0, 0, 1, 0, 0];
+        var chain = [];
+        var par = layer.parent;
+        var i;
+        while (par && chain.length < 1000) {
+            if (!isFlatLayer(par)) { return null; }
+            chain.push(par);
+            par = par.parent;
+        }
+        for (i = chain.length - 1; i >= 0; i--) { m = matrixMul(m, layerMatrix(chain[i])); }
+        return m;
+    }
+
+    // The layer's bounds in the composition: the smallest upright box around its four corners.
+    function compBox(layer, toComp, time) {
+        var rect = layer.sourceRectAtTime(time, false);
+        var m = matrixMul(toComp, layerMatrix(layer));
+        var xs = [rect.left, rect.left + rect.width, rect.left, rect.left + rect.width];
+        var ys = [rect.top, rect.top, rect.top + rect.height, rect.top + rect.height];
+        var box = null;
+        var i, x, y;
+        for (i = 0; i < 4; i++) {
+            x = m[0] * xs[i] + m[2] * ys[i] + m[4];
+            y = m[1] * xs[i] + m[3] * ys[i] + m[5];
+            if (!box) {
+                box = { left: x, right: x, top: y, bottom: y };
+            } else {
+                if (x < box.left) { box.left = x; }
+                if (x > box.right) { box.right = x; }
+                if (y < box.top) { box.top = y; }
+                if (y > box.bottom) { box.bottom = y; }
+            }
+        }
+        return box;
+    }
+
+    // Aligns the selected layers. edge: left, hcenter, right, top, vcenter or bottom.
+    // target "comp" aligns to the composition frame, "selection" to the box around all selected layers.
+    // An animated position gets a keyframe at the current time, as After Effects' own Align does.
+    function alignLayers(comp, edge, target) {
+        var selected = comp.selectedLayers;
+        var time = comp.time;
+        var out = { moved: 0, unchanged: 0, skipped: 0, failed: 0, total: selected.length };
+        var items = [];
+        var goal = null;
+        var i, d, layer, toComp, box, it, dx, dy, det, px, py, pos, tr, v, delta;
+
+        for (i = 0; i < selected.length; i++) {
+            layer = selected[i];
+            try {
+                if (!isFlatLayer(layer)) { out.skipped++; continue; }
+                toComp = parentMatrix(layer);
+                if (!toComp) { out.skipped++; continue; }
+                items.push({ layer: layer, toComp: toComp, box: compBox(layer, toComp, time) });
+            } catch (e) {
+                out.failed++;
+            }
+        }
+
+        if (target === "selection") {
+            if (items.length < 2) { throw new Error("ALIGN_NEEDS_TWO"); }
+            for (i = 0; i < items.length; i++) {
+                box = items[i].box;
+                if (!goal) {
+                    goal = { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+                } else {
+                    if (box.left < goal.left) { goal.left = box.left; }
+                    if (box.right > goal.right) { goal.right = box.right; }
+                    if (box.top < goal.top) { goal.top = box.top; }
+                    if (box.bottom > goal.bottom) { goal.bottom = box.bottom; }
+                }
+            }
+        } else {
+            goal = { left: 0, top: 0, right: comp.width, bottom: comp.height };
+        }
+
+        for (i = 0; i < items.length; i++) {
+            it = items[i];
+            box = it.box;
+            dx = 0;
+            dy = 0;
+            if (edge === "left") { dx = goal.left - box.left; }
+            else if (edge === "right") { dx = goal.right - box.right; }
+            else if (edge === "hcenter") { dx = (goal.left + goal.right) / 2 - (box.left + box.right) / 2; }
+            else if (edge === "top") { dy = goal.top - box.top; }
+            else if (edge === "bottom") { dy = goal.bottom - box.bottom; }
+            else { dy = (goal.top + goal.bottom) / 2 - (box.top + box.bottom) / 2; }
+            if (Math.abs(dx) < 0.0005 && Math.abs(dy) < 0.0005) { out.unchanged++; continue; }
+            try {
+                // The move is known in composition pixels; the position lives in the parent's space.
+                toComp = it.toComp;
+                det = toComp[0] * toComp[3] - toComp[1] * toComp[2];
+                if (Math.abs(det) < 0.000000001) { out.failed++; continue; }
+                px = (toComp[3] * dx - toComp[2] * dy) / det;
+                py = (-toComp[1] * dx + toComp[0] * dy) / det;
+                delta = [px, py, 0];
+                tr = it.layer.property("ADBE Transform Group");
+                pos = positionOf(tr, false);
+                if (pos.separated) {
+                    for (d = 0; d < 2; d++) {
+                        if (Math.abs(delta[d]) >= 0.0000005) { writeValue(pos.props[d], pos.value[d] + delta[d], delta[d], time, "key"); }
+                    }
+                } else {
+                    v = copyValue(pos.props[0].value);
+                    v[0] = pos.value[0] + px;
+                    v[1] = pos.value[1] + py;
+                    writeValue(pos.props[0], v, delta, time, "key");
+                }
+                out.moved++;
+            } catch (e2) {
+                out.failed++;
+            }
+        }
+        return out;
+    }
+
     return {
 
         // Current project state for the next request.
@@ -616,6 +764,26 @@ var sayframeHost = (function () {
                 app.beginUndoGroup("Sayframe: move anchor point");
                 try {
                     res = moveAnchor(comp, fx, fy, keyMode);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Aligns the selected layers to the composition ("comp") or to each other ("selection").
+        align: function (edge, target) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (edge !== "left" && edge !== "hcenter" && edge !== "right" && edge !== "top" && edge !== "vcenter" && edge !== "bottom") {
+                    throw new Error("BAD_ALIGN_EDGE");
+                }
+                if (target !== "selection") { target = "comp"; }
+                if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                app.beginUndoGroup("Sayframe: align layers");
+                try {
+                    res = alignLayers(comp, edge, target);
                 } finally {
                     app.endUndoGroup();
                 }
