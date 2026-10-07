@@ -235,10 +235,10 @@ textarea:focus, .field:focus {
   background: var(--glass);
 }
 .tab {
-  flex: 1 1 0;
+  flex: 1 1 auto;   /* ширина по тексту: длинное название получает больше места */
   min-width: 0;
   height: 32px;
-  padding: 0 8px;
+  padding: 0 6px;
   border: 0;
   border-radius: 10px;
   background: transparent;
@@ -263,6 +263,89 @@ textarea:focus, .field:focus {
 }
 .view { display: flex; flex-direction: column; gap: 12px; }
 .status-slot:empty { display: none; }
+
+/* ----------------------------------------------------------- анимация */
+
+.tool-card { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 12px; }
+.tool-head b { display: block; font: 700 13.5px/1.25 var(--round); }
+.tool-head small { display: block; margin-top: 3px; color: var(--muted); font-size: 11.5px; }
+
+.ease-curve {
+  width: 100%;
+  height: 84px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line);
+}
+.ease-guide { stroke: rgba(255, 255, 255, 0.1); stroke-width: 1; stroke-dasharray: 3 4; fill: none; vector-effect: non-scaling-stroke; }
+.ease-handles { stroke: rgba(var(--accent-rgb), 0.55); stroke-width: 1; fill: none; vector-effect: non-scaling-stroke; }
+.ease-line { stroke: var(--accent-hi); stroke-width: 2.5; fill: none; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+
+.ease-row { display: flex; align-items: center; gap: 10px; }
+.ease-row label { flex: none; width: 78px; color: var(--muted); font: 600 12px/1 var(--round); }
+.ease-row output { flex: none; width: 40px; text-align: right; font: 12px/1 var(--mono); color: var(--text); }
+.ease-row input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.ease-row input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.16); }
+.ease-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent-hi);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.25);
+}
+.ease-row input[type="range"]:focus-visible { outline: 2px solid rgba(var(--accent-rgb), 0.9); outline-offset: 2px; border-radius: 6px; }
+.ease-row input[type="range"]:disabled { opacity: 0.45; cursor: default; }
+
+.ease-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ease-actions button { flex: 1 1 0; min-width: 0; height: 34px; padding: 0 6px; font-size: 12px; border-radius: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ease-actions .primary { flex: 1 1 100%; order: -1; height: 38px; font-size: 13.5px; }
+.ease-actions .ghost { flex: 1 1 auto; }
+.ease-actions .ghost { color: var(--text); }
+
+.anchor-wrap { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px; }
+.anchor-grid { flex: none; display: grid; grid-template-columns: repeat(3, 38px); grid-auto-rows: 38px; gap: 4px; }
+.anchor-cell {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--glass);
+  color: var(--text);
+}
+.anchor-cell svg { width: 18px; height: 18px; transform: rotate(var(--turn, 0deg)); }
+.anchor-cell.center { color: var(--accent-hi); }
+.anchor-cell:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.2); border-color: rgba(var(--accent-rgb), 0.7); }
+.anchor-cell:active:not(:disabled) { transform: scale(0.94); }
+.anchor-cell:disabled { opacity: 0.45; cursor: default; }
+.anchor-side { flex: 1 1 150px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.anchor-side label { color: var(--muted); font: 600 12px/1.2 var(--round); }
+.select {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 36px;
+  padding: 0 30px 0 10px;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  background-image: linear-gradient(45deg, transparent 50%, rgba(255, 255, 255, 0.6) 50%), linear-gradient(135deg, rgba(255, 255, 255, 0.6) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 15px, calc(100% - 11px) 15px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.select option { background: #1b1b22; color: #f3f2f8; }
+.select:disabled { opacity: 0.45; cursor: default; }
 
 /* --------------------------------------------------------- обновление */
 
