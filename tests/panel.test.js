@@ -891,7 +891,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("M1 no horizontal overflow at 380px", t <= 0, t);
   await p.page.screenshot({ path: path.join(SHOTS, "21-tab-motion.png") });
   check("M2 sliders start linked at 60", (await p.page.inputValue("#easeIn")) === "60" && (await p.page.inputValue("#easeOut")) === "60" && (await p.page.isChecked("#easeLink")) && (await p.page.inputValue("#easeInVal")) === "60" && (await p.page.inputValue("#easeOutVal")) === "60");
-  check("M2 nothing extra: apply button, curve toggle and the drag handle only, no labels", (await p.page.locator("#viewMotion .ease-card button").count()) === 3 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link), .ease-card .tool-head").count()) === 0 && (await p.page.locator("#showCurve").count()) === 0);
+  check("M2 the easing block: a title, the apply button, the curve toggle and the keyboard handle, no slider labels", (await p.page.locator("#viewMotion .ease-card button").count()) === 3 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link)").count()) === 0 && (await p.page.locator(".ease-card .tool-head b").innerText()) === "Плавность ключей" && (await p.page.locator("#showCurve").count()) === 0);
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); const a = r("easeIn"), b = r("easeBothBtn"), c = r("easeOut"), n1 = r("easeInVal"), l = document.querySelector(".ease-link").getBoundingClientRect(), n2 = r("easeOutVal"); return { row: a.right <= b.left && b.right <= c.left && Math.abs((a.top + a.bottom) - (c.top + c.bottom)) < 2, equal: Math.abs(a.width - c.width) < 2, nums: n1.right <= l.left && l.right <= n2.left && n1.top >= b.bottom - 1, centered: Math.abs((l.left + l.right) / 2 - (b.left + b.right) / 2) < 2, rtl: getComputedStyle(document.getElementById("easeIn")).direction }; });
   check("M2 layout: slider, button, slider in one row; numbers and link centred under the button", t.row && t.equal && t.nums && t.centered, JSON.stringify(t));
   check("M2 the left slider grows away from the button", t.rtl === "rtl" && (await fillOf(p, "easeIn")) === "0.6" && (await fillOf(p, "easeOut")) === "0.6", t.rtl);
@@ -1245,6 +1245,79 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
   // ------------------------------------------------------------------ updates
+  // ---------------------------------------------------------------- animation: block width
+  console.log("\n=== animation: block width ===");
+  const edge = (tool) => '#motionTools [data-tool="' + tool + '"] .tool-resize';
+  const savedSizes = (p) => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").sizes);
+  // Is the list beside the buttons (a wide, horizontal block) or under them (a narrow, vertical one)?
+  const shape = (p, tool) => p.page.evaluate((tool) => { const card = document.querySelector('#motionTools [data-tool="' + tool + '"]'); const g = card.querySelector(".anchor-grid").getBoundingClientRect(), s = card.querySelector(".anchor-side").getBoundingClientRect(); return s.left >= g.right ? "horizontal" : s.top >= g.bottom ? "vertical" : "overlap"; }, tool);
+  const dragEdge = async (p, tool, dx) => { const c = await center(p, edge(tool)); await dragFrom(p, c, { x: c.x + dx, y: c.y + 3 }); };
+
+  p = await open({ width: 700, settings: { panelWidth: 640 } });   // content column: 612px
+  await motionTab(p);
+  t = await toolRects(p);
+  check("S1 every block has an edge to pull, on its right side", (await p.page.locator("#motionTools .tool-resize").count()) === 3 && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const h = c.querySelector(".tool-resize").getBoundingClientRect(), r = c.getBoundingClientRect(); return h.width >= 8 && h.left < r.right && h.right > r.right && h.height > 30 && getComputedStyle(c.querySelector(".tool-resize")).cursor === "ew-resize"; }))));
+  check("S1 (scene) three blocks in one row, lists under the buttons", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await shape(p, "anchor")) === "vertical" && (await shape(p, "align")) === "vertical", JSON.stringify(t));
+  await dragEdge(p, "anchor", 150);
+  t = await toolRects(p);
+  check("S2 pulling the edge right makes the block wider by that much", Math.abs(t.anchor.w - (196 + 150)) <= 2 && (await savedSizes(p)) === "anchor=" + t.anchor.w, t.anchor.w + " " + await savedSizes(p));
+  check("S2 a wide block turns horizontal: the list stands beside the buttons", (await shape(p, "anchor")) === "horizontal", await shape(p, "anchor"));
+  check("S2 nothing is left marked and nothing overflows", (await p.page.locator(".resizing").count()) === 0 && (await overflow(p)) <= 0 && within(await spans(p), 14, 626), JSON.stringify(await spans(p)));
+  await p.page.screenshot({ path: path.join(SHOTS, "24-block-wide.png") });
+  await dragEdge(p, "anchor", -150);
+  check("S2 pulling it back makes it narrow and vertical again", (await shape(p, "anchor")) === "vertical" && Math.abs((await toolRects(p)).anchor.w - 196) <= 2);
+  await dragEdge(p, "anchor", -400);
+  t = await toolRects(p);
+  check("S3 a block cannot be squeezed below the width of its three buttons", t.anchor.w === 152 && (await savedSizes(p)) === "anchor=152" && (await p.page.evaluate(() => { const c = document.querySelector('[data-tool="anchor"]').getBoundingClientRect(), g = document.getElementById("anchorGrid").getBoundingClientRect(); return g.left >= c.left && g.right <= c.right; })), JSON.stringify(t.anchor));
+  await dragEdge(p, "ease", 600);
+  t = await toolRects(p);
+  check("S4 the easing block pulled to the edge takes the whole width", t.ease.l === 14 && t.ease.r === 626 && (await savedSizes(p)) === "ease=full;anchor=152", JSON.stringify(t.ease) + " " + await savedSizes(p));
+  t = await p.page.evaluate(() => [document.getElementById("easeIn").getBoundingClientRect().width, document.getElementById("easeOut").getBoundingClientRect().width, document.getElementById("easeCurve").getBoundingClientRect().width].map(Math.round));
+  check("S4 then its sliders and curve stretch with it", t[0] === t[1] && t[0] > 240 && t[2] > 560, t.join());
+  await p.page.screenshot({ path: path.join(SHOTS, "25-ease-full-width.png") });
+  await p.restart();
+  t = await toolRects(p);
+  check("S5 widths survive a restart", t.ease.r - t.ease.l === 612 && t.anchor.w === 152, JSON.stringify(t));
+  await p.page.setViewportSize({ width: 420, height: 760 });
+  t = await toolRects(p);
+  check("S5 in a narrower panel a full-width block follows the panel, a fixed one keeps its width", t.ease.l === 14 && t.ease.r === 406 && t.anchor.w === 152 && (await overflow(p)) <= 0, JSON.stringify(t));
+  await p.page.setViewportSize({ width: 700, height: 760 });
+  await p.page.dblclick(edge("ease"));
+  t = await toolRects(p);
+  check("S6 a double click on the edge returns the usual width and does not start rearranging", (await savedSizes(p)) === "anchor=152" && t.ease.w < 400 && !(await arrangingNow(p)), JSON.stringify(t.ease) + " " + await savedSizes(p));
+  await p.page.focus(edge("align")); await p.page.keyboard.press("ArrowRight");
+  c = (await toolRects(p)).align.w;
+  await p.page.keyboard.press("ArrowRight"); await p.page.keyboard.press("ArrowLeft"); await p.page.keyboard.press("ArrowRight");
+  check("S6 keyboard: arrows on the edge change the width in steps of 10", (await toolRects(p)).align.w === c + 10 && (await savedSizes(p)) === "anchor=152;align=" + (c + 10), (await toolRects(p)).align.w + " vs " + c);
+  await p.page.keyboard.press("End");
+  check("S6 End takes the whole width, Home returns the usual one", (await savedSizes(p)) === "anchor=152;align=full" && (await toolRects(p)).align.w === 612);
+  await p.page.keyboard.press("Home");
+  check("S6 Home", (await savedSizes(p)) === "anchor=152");
+  await arrange(p);
+  c = await toolOrder(p);
+  await dragEdge(p, "anchor", 200);
+  t = await toolRects(p);
+  check("S7 while rearranging, the edge still changes the width and does not move the block", t.anchor.w === 352 && (await toolOrder(p)) === c && (await arrangingNow(p)) && (await p.page.locator(".dragging, .reordering, .resizing").count()) === 0, JSON.stringify(t.anchor));
+  await p.page.waitForTimeout(350);
+  await p.page.keyboard.press("Escape");
+  await p.page.click('#anchorGrid button:nth-child(5)'); await p.idle();
+  check("S7 the tools keep working at any width", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && p.errors.length === 0, await p.status());
+  await p.close();
+  p = await open({ width: 700, settings: { panelWidth: 640 } });
+  await p.page.evaluate(() => { ["pointerdown", "pointermove", "pointerup", "pointercancel"].forEach((n) => window.addEventListener(n, (e) => e.stopImmediatePropagation(), true)); });
+  await motionTab(p);
+  await dragEdge(p, "align", 120);
+  check("S8 resizing works with pointer events swallowed, as inside After Effects", Math.abs((await toolRects(p)).align.w - (196 + 120)) <= 2 && (await shape(p, "align")) === "horizontal", JSON.stringify((await toolRects(p)).align));
+  await p.close();
+  for (const [bad, want] of [['"ease=9999;anchor=10;ghost=300;align=full"', "ease=9999;align=full"], ['"anchor=abc;ease"', ""], ["42", ""], ['"anchor=300.5;align=-200"', ""], ['"align=200;ease=200"', "ease=200;align=200"]]) {
+    p = await open({});
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", '{"sizes":' + v + "}"), bad); await p.restart(); await motionTab(p);
+    t = await toolRects(p);
+    await setSlider(p, "easeIn", 61);
+    check("S9 saved widths " + bad + " -> " + JSON.stringify(want), (await savedSizes(p)) === want && Object.keys(t).every((k) => t[k].r <= 366 && t[k].l >= 14) && (await overflow(p)) <= 0 && p.errors.length === 0, (await savedSizes(p)) + " " + JSON.stringify(t));
+    await p.close();
+  }
+
   // ---------------------------------------------------------------- dragging must not depend on pointer events
   // In After Effects 1.5.0 could not be rearranged although every test above passed: dragging relied on pointer
   // events. Here they are swallowed before the panel sees them, and a native drag is refused, as a stand-in.
