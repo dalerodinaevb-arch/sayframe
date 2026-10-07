@@ -253,6 +253,199 @@ var sayframeHost = (function () {
 
     // ---------------------------------------------------------- public API
 
+    // ----------------------------------------------------- animation tools
+
+    function activeComp() {
+        var item = app.project.activeItem;
+        if (!item || !(item instanceof CompItem)) { throw new Error("NO_ACTIVE_COMP"); }
+        return item;
+    }
+
+    function clampInfluence(v) {
+        v = Number(v);
+        if (isNaN(v)) { v = 33.33; }
+        if (v < 0.1) { v = 0.1; }
+        if (v > 100) { v = 100; }
+        return v;
+    }
+
+    // One KeyframeEase per dimension of the property; speed 0 gives a full stop at the key.
+    function easeList(count, influence) {
+        var list = [];
+        var i;
+        for (i = 0; i < count; i++) { list.push(new KeyframeEase(0, influence)); }
+        return list;
+    }
+
+    // Applies easing to the selected keyframes. mode: "both", "in" (arriving side only) or "out" (leaving side only).
+    function easeSelectedKeys(comp, inInfluence, outInfluence, mode) {
+        var props = comp.selectedProperties;
+        var out = { keys: 0, properties: 0, failed: 0 };
+        var i, k, p, sel, idx, curIn, curOut, n, inType, outType, touched;
+        for (i = 0; i < props.length; i++) {
+            p = props[i];
+            if (p.propertyType !== PropertyType.PROPERTY || !p.numKeys) { continue; }
+            sel = p.selectedKeys;
+            if (!sel || !sel.length) { continue; }
+            touched = false;
+            for (k = 0; k < sel.length; k++) {
+                idx = sel[k];
+                try {
+                    curIn = p.keyInTemporalEase(idx);
+                    curOut = p.keyOutTemporalEase(idx);
+                    n = curIn.length;
+                    // The side that is not being changed keeps its interpolation type (linear, hold, bezier).
+                    inType = (mode === "out") ? p.keyInInterpolationType(idx) : KeyframeInterpolationType.BEZIER;
+                    outType = (mode === "in") ? p.keyOutInterpolationType(idx) : KeyframeInterpolationType.BEZIER;
+                    p.setInterpolationTypeAtKey(idx, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+                    p.setTemporalEaseAtKey(idx,
+                        (mode === "out") ? curIn : easeList(n, inInfluence),
+                        (mode === "in") ? curOut : easeList(n, outInfluence));
+                    if (inType !== KeyframeInterpolationType.BEZIER || outType !== KeyframeInterpolationType.BEZIER) {
+                        p.setInterpolationTypeAtKey(idx, inType, outType);
+                    }
+                    out.keys++;
+                    touched = true;
+                } catch (e) {
+                    out.failed++;
+                }
+            }
+            if (touched) { out.properties++; }
+        }
+        return out;
+    }
+
+    function copyValue(v) {
+        var r = [];
+        var i;
+        for (i = 0; i < v.length; i++) { r.push(v[i]); }
+        return r;
+    }
+
+    // Writes a new value respecting keyframes. keyMode "shift" moves every keyframe by delta,
+    // anything else adds (or replaces) a keyframe at the current time. Works for arrays and plain numbers.
+    function writeValue(prop, value, delta, time, keyMode) {
+        var k, v, i;
+        if (!prop.numKeys) { prop.setValue(value); return; }
+        if (keyMode !== "shift") { prop.setValueAtTime(time, value); return; }
+        for (k = 1; k <= prop.numKeys; k++) {
+            v = prop.keyValue(k);
+            if (typeof v === "number") {
+                v = v + delta;
+            } else {
+                v = copyValue(v);
+                for (i = 0; i < v.length && i < delta.length; i++) { v[i] = v[i] + delta[i]; }
+            }
+            prop.setValueAtKey(k, v);
+        }
+    }
+
+    // Position of a layer as three numbers, whether or not its dimensions are separated.
+    function positionOf(tr, is3D) {
+        var pos = tr.property("ADBE Position");
+        var info = { separated: false, props: [pos], value: null, keyed: false };
+        var v, i;
+        if (pos.dimensionsSeparated) {
+            info.separated = true;
+            info.props = [tr.property("ADBE Position_0"), tr.property("ADBE Position_1")];
+            if (is3D) { info.props.push(tr.property("ADBE Position_2")); }
+            info.value = [info.props[0].value, info.props[1].value, is3D ? info.props[2].value : 0];
+        } else {
+            v = pos.value;
+            info.value = [v[0], v[1], v.length > 2 ? v[2] : 0];
+        }
+        for (i = 0; i < info.props.length; i++) { if (info.props[i].numKeys > 0) { info.keyed = true; } }
+        return info;
+    }
+
+    // How far (in the parent's space) the layer must move so that it stays in place
+    // when its anchor point moves by (dx, dy) in the layer's own space.
+    function positionShift2D(tr, dx, dy) {
+        var scale = tr.property("ADBE Scale").value;
+        var angle = tr.property("ADBE Rotate Z").value * Math.PI / 180;
+        var sx = dx * scale[0] / 100;
+        var sy = dy * scale[1] / 100;
+        return [sx * Math.cos(angle) - sy * Math.sin(angle), sx * Math.sin(angle) + sy * Math.cos(angle), 0];
+    }
+
+    // 3D layers: After Effects itself converts the point, through an expression on a temporary null.
+    function positionShift3D(comp, layer, point, current) {
+        var nul = comp.layers.addNull();
+        var src = nul.source;
+        var result;
+        try {
+            nul.threeDLayer = true;
+            nul.property("ADBE Transform Group").property("ADBE Position").expression =
+                "var L = thisComp.layer(" + layer.index + ");\n" +
+                "var p = L.toWorld([" + point[0] + "," + point[1] + "," + point[2] + "]);\n" +
+                "if (L.hasParent) { p = L.parent.fromWorld(p); }\n" +
+                "[p[0], p[1], p.length > 2 ? p[2] : 0];";
+            result = nul.property("ADBE Transform Group").property("ADBE Position").valueAtTime(comp.time, false);
+        } finally {
+            try { nul.remove(); } catch (e1) {}
+            try { if (src) { src.remove(); } } catch (e2) {}
+        }
+        return [result[0] - current[0], result[1] - current[1], result[2] - current[2]];
+    }
+
+    // Moves the anchor point of every selected layer to a point of its bounding box
+    // (fx, fy from 0 to 1) without moving the layer on screen.
+    function moveAnchor(comp, fx, fy, keyMode) {
+        var selected = comp.selectedLayers;
+        var layers = [];
+        var out = { moved: 0, skipped: 0, unchanged: 0, failed: 0, total: 0 };
+        var time = comp.time;
+        var i, d, layer, tr, anchor, a, rect, nx, ny, dx, dy, pos, shift, newAnchor, is3D;
+
+        for (i = 0; i < selected.length; i++) { layers.push(selected[i]); }
+        out.total = layers.length;
+        for (i = 0; i < layers.length; i++) {
+            layer = layers[i];
+            try {
+                if (layer instanceof CameraLayer || layer instanceof LightLayer) { out.skipped++; continue; }
+                is3D = layer.threeDLayer === true;
+                tr = layer.property("ADBE Transform Group");
+                anchor = tr.property("ADBE Anchor Point");
+                pos = positionOf(tr, is3D);
+                if (keyMode === "skip" && (anchor.numKeys > 0 || pos.keyed)) { out.skipped++; continue; }
+
+                rect = layer.sourceRectAtTime(time, false);
+                a = anchor.value;
+                nx = rect.left + rect.width * fx;
+                ny = rect.top + rect.height * fy;
+                dx = nx - a[0];
+                dy = ny - a[1];
+                if (Math.abs(dx) < 0.0005 && Math.abs(dy) < 0.0005) { out.unchanged++; continue; }
+
+                // Work out the compensation first: nothing is changed if this step fails.
+                shift = is3D ?
+                    positionShift3D(comp, layer, [nx, ny, a.length > 2 ? a[2] : 0], pos.value) :
+                    positionShift2D(tr, dx, dy);
+
+                newAnchor = copyValue(a);
+                newAnchor[0] = nx;
+                newAnchor[1] = ny;
+                writeValue(anchor, newAnchor, [dx, dy, 0], time, keyMode);
+
+                if (pos.separated) {
+                    for (d = 0; d < pos.props.length; d++) {
+                        writeValue(pos.props[d], pos.value[d] + shift[d], shift[d], time, keyMode);
+                    }
+                } else {
+                    a = copyValue(pos.props[0].value);
+                    for (d = 0; d < a.length && d < 3; d++) { a[d] = pos.value[d] + shift[d]; }
+                    writeValue(pos.props[0], a, shift, time, keyMode);
+                }
+                out.moved++;
+            } catch (e) {
+                out.failed++;
+            }
+        }
+        // The temporary null used for 3D layers changes the selection; put it back.
+        for (i = 0; i < layers.length; i++) { try { layers[i].selected = true; } catch (e3) {} }
+        return out;
+    }
+
     return {
 
         // Current project state for the next request.
@@ -389,6 +582,44 @@ var sayframeHost = (function () {
                     app.endUndoGroup();
                 }
                 return out;
+            });
+        },
+
+        // Eases the selected keyframes. Influences are percentages (0.1-100); mode is "both", "in" or "out".
+        ease: function (inInfluence, outInfluence, mode) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (mode !== "in" && mode !== "out") { mode = "both"; }
+                app.beginUndoGroup("Sayframe: ease keyframes");
+                try {
+                    res = easeSelectedKeys(comp, clampInfluence(inInfluence), clampInfluence(outInfluence), mode);
+                } finally {
+                    app.endUndoGroup();
+                }
+                if (!res.keys && !res.failed) { throw new Error("NO_KEYS_SELECTED"); }
+                return res;
+            });
+        },
+
+        // Moves the anchor point of the selected layers. fx, fy: 0, 0.5 or 1 across the layer's bounds.
+        // keyMode: "key" (add a keyframe when the property is animated), "shift" (move all keyframes) or "skip".
+        anchor: function (fx, fy, keyMode) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                fx = Math.max(0, Math.min(1, Number(fx)));
+                fy = Math.max(0, Math.min(1, Number(fy)));
+                if (isNaN(fx) || isNaN(fy)) { throw new Error("BAD_ANCHOR_TARGET"); }
+                if (keyMode !== "shift" && keyMode !== "skip") { keyMode = "key"; }
+                if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                app.beginUndoGroup("Sayframe: move anchor point");
+                try {
+                    res = moveAnchor(comp, fx, fy, keyMode);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
             });
         }
     };
