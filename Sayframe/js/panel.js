@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.7.0";
+    var VERSION = "1.8.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -441,6 +441,9 @@
         if (m === "NO_ACTIVE_COMP") { return "Откройте композицию: инструмент работает с открытой композицией."; }
         if (m === "NO_KEYS_SELECTED") { return "Выделите ключевые кадры на таймлайне и нажмите ещё раз."; }
         if (m === "NO_LAYERS_SELECTED") { return "Выделите слой в композиции и нажмите ещё раз."; }
+        if (m === "STAGGER_NEEDS_TWO") { return "Для лесенки выделите хотя бы два слоя."; }
+        if (m === "STAGGER_NO_KEYS") { return "Для лесенки нужно хотя бы два слоя с ключами в этой половине слоя. Чтобы сдвинуть слои целиком, выберите «Слои»."; }
+        if (m === "DISTRIBUTE_NEEDS_THREE") { return "Чтобы распределить слои, выделите три или больше: крайние останутся на месте, остальные встанут между ними через равные промежутки."; }
         if (m === "ALIGN_NEEDS_TWO") { return "Чтобы выровнять слои друг по другу, выделите хотя бы два. Один слой выравнивается по композиции."; }
         return m;
     }
@@ -509,7 +512,11 @@
         keyHint: el("keyHint"), models: el("models"), accentSwatches: el("accentSwatches"), accentHex: el("accentHex"),
         bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
         panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"),
-        anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"),
+        anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
+        shiftOptsToggle: el("shiftOptsToggle"), shiftPick: el("shiftPick"), timePick: el("timePick"), staggerPick: el("staggerPick"),
+        shiftWhat: el("shiftWhat"), shiftStep: el("shiftStep"), shiftBack: el("shiftBack"), shiftFwd: el("shiftFwd"),
+        timeAlign: el("timeAlign"), timeAlignBtn: el("timeAlignBtn"),
+        staggerWhat: el("staggerWhat"), staggerStep: el("staggerStep"), staggerOrder: el("staggerOrder"), staggerBtn: el("staggerBtn"),
         frames: el("frames"), saveSettings: el("saveSettings"),
         modal: el("modal"), modalTitle: el("modalTitle"), modalText: el("modalText"), modalCode: el("modalCode"),
         modalButtons: el("modalButtons"),
@@ -1549,7 +1556,12 @@
     // левый — входящая сторона ключа (in, как движение останавливается перед ключом),
     // правый — исходящая (out, как оно начинается после ключа). Длина ползунка — влияние в процентах.
 
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align", sizes: "", anchorOpts: true, alignOpts: true };
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift", sizes: "", anchorOpts: true, alignOpts: true,
+        shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true };
+    var SHIFT_TARGETS = ["in", "out", "layer"];
+    var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
+    var STAGGER_ORDERS = ["asc", "desc", "selection", "random"];
+    var MAX_STEP_FRAMES = 999;
     var TOOL_MIN_WIDTH = 152;    // уже блок не сжимается: в него перестают помещаться три кнопки в ряд
     var TOOL_MIN_WIDTH_SMALL = 112;  // то же для мелких блоков
 
@@ -1557,7 +1569,7 @@
         return document.documentElement.getAttribute("data-tools") === "small" ? TOOL_MIN_WIDTH_SMALL : TOOL_MIN_WIDTH;
     }
     var TOOL_FULL_SNAP_PX = 10;  // блок, дотянутый почти до края, занимает всю ширину
-    var TOOL_NAMES = ["ease", "anchor", "align"];
+    var TOOL_NAMES = ["ease", "anchor", "align", "shift"];
 
     // Ширина блоков, заданная пользователем: строка вида "ease=full;anchor=320".
     // Число — пиксели, full — вся ширина. Блока в строке нет — ширина обычная, по месту.
@@ -1614,9 +1626,22 @@
         m.easeOut = clampPercent(m.easeOut);
         if (m.anchorKeys !== "shift" && m.anchorKeys !== "skip") { m.anchorKeys = "key"; }
         if (m.alignTo !== "selection") { m.alignTo = "comp"; }
+        if (SHIFT_TARGETS.indexOf(m.shiftWhat) < 0) { m.shiftWhat = "in"; }
+        if (SHIFT_TARGETS.indexOf(m.staggerWhat) < 0) { m.staggerWhat = "layer"; }
+        if (TIME_POINTS.indexOf(m.timeAlign) < 0) { m.timeAlign = "inStart"; }
+        if (STAGGER_ORDERS.indexOf(m.staggerOrder) < 0) { m.staggerOrder = "asc"; }
+        m.shiftStep = clampStep(m.shiftStep);
+        m.staggerStep = clampStep(m.staggerStep);
         m.order = cleanToolOrder(m.order);
         m.sizes = sizesText(parseSizes(m.sizes));
         return m;
+    }
+
+    // Число кадров для сдвига и лесенки: целое от 1 до 999.
+    function clampStep(v) {
+        v = Math.round(Number(v));
+        if (isNaN(v) || v < 1) { return 1; }
+        return v > MAX_STEP_FRAMES ? MAX_STEP_FRAMES : v;
     }
 
     function clampPercent(v) {
@@ -1647,14 +1672,16 @@
         return [
             { key: "curve", button: ui.easeCurveToggle, part: ui.easeCurve, hide: "Скрыть кривую", show: "Показать кривую" },
             { key: "anchorOpts", button: ui.anchorOptsToggle, part: ui.anchorSide, hide: "Скрыть настройку", show: "Показать настройку", select: ui.anchorKeys },
-            { key: "alignOpts", button: ui.alignOptsToggle, part: ui.alignSide, hide: "Скрыть настройку", show: "Показать настройку", select: ui.alignTo }
+            { key: "alignOpts", button: ui.alignOptsToggle, part: ui.alignSide, more: [ui.distLabel], hide: "Скрыть подписи", show: "Показать подписи", select: ui.alignTo },
+            { key: "shiftOpts", button: ui.shiftOptsToggle, part: ui.shiftPick, more: [ui.timePick, ui.staggerPick, ui.staggerOrder], hide: "Скрыть списки", show: "Показать списки",
+                selects: [ui.shiftWhat, ui.timeAlign, ui.staggerWhat, ui.staggerOrder] }
         ];
     }
 
     // У SVG нет свойства hidden, поэтому меняем сам атрибут.
     function showFoldParts() {
         var parts = foldParts();
-        var i, f, open, label, opt;
+        var i, j, f, open, label, opt;
         for (i = 0; i < parts.length; i++) {
             f = parts[i];
             open = motion[f.key] !== false;
@@ -1663,7 +1690,17 @@
                 opt = f.select.options[f.select.selectedIndex];
                 if (opt) { label += " (сейчас: " + opt.text + ")"; }
             }
+            if (!open && f.selects) {
+                opt = [];
+                for (j = 0; j < f.selects.length; j++) {
+                    if (f.selects[j].selectedIndex >= 0) { opt.push(f.selects[j].options[f.selects[j].selectedIndex].text); }
+                }
+                label += " (сейчас: " + opt.join("; ") + ")";
+            }
             if (open) { f.part.removeAttribute("hidden"); } else { f.part.setAttribute("hidden", ""); }
+            for (j = 0; f.more && j < f.more.length; j++) {
+                if (open) { f.more[j].removeAttribute("hidden"); } else { f.more[j].setAttribute("hidden", ""); }
+            }
             f.button.setAttribute("aria-expanded", open ? "true" : "false");
             f.button.setAttribute("aria-label", label);
             f.button.title = label;
@@ -1698,10 +1735,72 @@
     }
 
     function setEase(which, v) {
+        var before = motion.easeIn + "/" + motion.easeOut;
         if (which === "in") { motion.easeIn = v; } else { motion.easeOut = v; }
         if (motion.link) { motion.easeIn = v; motion.easeOut = v; }
         drawEase();
         storeMotion();
+        if (motion.easeIn + "/" + motion.easeOut !== before) { liveEaseSoon(); }
+    }
+
+    // ---- плавность в реальном времени: пока двигают ползунок, выделенные ключи меняются сразу.
+    // After Effects не успевает за каждым пикселем, поэтому запросы идут по одному: пока один выполняется,
+    // новые значения копятся, и следующим уходит самое свежее. Ползунки на это время не блокируются.
+    var LIVE_EASE_EVERY_MS = 60;
+    var liveEase = { running: false, pending: false, timer: null, last: 0 };
+
+    function liveEaseMark() {
+        var card = ui.easeIn && ui.easeIn.closest ? ui.easeIn.closest(".tool-card") : null;
+        if (!card) { return; }
+        if (liveEase.running || liveEase.pending) { card.setAttribute("data-live", "on"); } else { card.removeAttribute("data-live"); }
+    }
+
+    function liveEaseSoon() {
+        liveEase.pending = true;
+        liveEaseMark();
+        pumpLiveEase();
+    }
+
+    function pumpLiveEase() {
+        var wait;
+        if (liveEase.running || !liveEase.pending) { return; }
+        wait = LIVE_EASE_EVERY_MS - (Date.now() - liveEase.last);
+        if (wait > 0) {
+            if (!liveEase.timer) { liveEase.timer = setTimeout(function () { liveEase.timer = null; pumpLiveEase(); }, wait); }
+            return;
+        }
+        liveEase.pending = false;
+        // Идёт другая работа (например, Claude выполняет задачу) — не вмешиваемся.
+        if (busy) { liveEaseMark(); return; }
+        liveEase.running = true;
+        liveEase.last = Date.now();
+        host("ease", [motion.easeIn, motion.easeOut, "both"]).then(function (res) {
+            if (!busy) { showEaseResult(res); }
+        }).catch(function (e) {
+            var m = e && e.message ? e.message : String(e);
+            if (busy) { return; }
+            if (m === "NO_KEYS_SELECTED") {
+                setStatus("Выделите ключевые кадры на таймлайне — плавность будет меняться сразу, пока вы двигаете ползунок.", "");
+            } else {
+                setStatus(humanError(e), m === "NO_ACTIVE_COMP" ? "" : "error");
+            }
+        }).then(function () {
+            liveEase.running = false;
+            liveEase.last = Date.now();
+            liveEaseMark();
+            pumpLiveEase();
+        });
+    }
+
+    function showEaseResult(res) {
+        var text;
+        if (!res.keys) {
+            setStatus("Не удалось изменить выделенные ключи: After Effects не дал задать для них плавность.", "error");
+            return;
+        }
+        text = "Плавность применена: " + plural(res.keys, "ключ", "ключа", "ключей") + ".";
+        if (res.failed) { text += " Не получилось для " + plural(res.failed, "ключа", "ключей", "ключей") + "."; }
+        setStatus(text + "\nОтменить: Cmd/Ctrl+Z.", "done");
     }
 
     function onEaseSlider(which) {
@@ -1716,10 +1815,12 @@
     }
 
     function onEaseLink() {
+        var before = motion.easeIn;
         motion.link = ui.easeLink.checked;
         if (motion.link) { motion.easeIn = motion.easeOut; }
         drawEase();
         storeMotion();
+        if (motion.easeIn !== before) { liveEaseSoon(); }
     }
 
     function setMotionDisabled(on) {
@@ -1736,12 +1837,16 @@
         cells = ui.alignGrid.querySelectorAll("button");
         ui.alignTo.disabled = on;
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
+        cells = ui.distGrid.querySelectorAll("button");
+        for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
+        cells = [ui.shiftWhat, ui.shiftStep, ui.shiftBack, ui.shiftFwd, ui.timeAlign, ui.timeAlignBtn, ui.staggerWhat, ui.staggerStep, ui.staggerOrder, ui.staggerBtn];
+        for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
     }
 
     // Замечания вроде «ничего не выделено» — подсказка, а не ошибка.
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "ALIGN_NEEDS_TWO";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -1749,18 +1854,14 @@
     // mode: "both"; хост умеет ещё "in" и "out" (только одна сторона ключа), кнопок для них в панели нет.
     function onEase(mode) {
         if (busy) { return; }
+        // Кнопка применяет те же значения, что и ожидающий «живой» запрос от ползунка: он больше не нужен.
+        liveEase.pending = false;
+        liveEaseMark();
         setBusy(true);
         setStatus("Применяю плавность…", "busy");
         host("ease", [motion.easeIn, motion.easeOut, mode]).then(function (res) {
-            var text;
             setBusy(false);
-            if (!res.keys) {
-                setStatus("Не удалось изменить выделенные ключи: After Effects не дал задать для них плавность.", "error");
-                return;
-            }
-            text = "Плавность применена: " + plural(res.keys, "ключ", "ключа", "ключей") + ".";
-            if (res.failed) { text += " Не получилось для " + plural(res.failed, "ключа", "ключей", "ключей") + "."; }
-            setStatus(text + "\nОтменить: Cmd/Ctrl+Z.", "done");
+            showEaseResult(res);
         }).catch(toolFailed);
     }
 
@@ -1794,6 +1895,122 @@
             if (!parts.length) { parts.push("Нечего выравнивать."); }
             setStatus(parts.join(" ") + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
         }).catch(toolFailed);
+    }
+
+    function onDistribute(edge) {
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Распределяю…", "busy");
+        host("distribute", [edge]).then(function (res) {
+            var parts = [];
+            setBusy(false);
+            if (res.moved) { parts.push("Распределено: " + plural(res.spread, "слой", "слоя", "слоёв") + "."); }
+            else if (!res.failed) { parts.push("Слои уже стоят через равные промежутки."); }
+            if (res.skipped) { parts.push("Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + " (3D-слой, камера или свет)."); }
+            if (res.failed) { parts.push("Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + " (слой заблокирован?)."); }
+            setStatus(parts.join(" ") + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
+        }).catch(toolFailed);
+    }
+
+    // ---- сдвиг во времени: появление, исчезновение или слой целиком
+
+    function drawShift() {
+        ui.shiftWhat.value = motion.shiftWhat;
+        ui.shiftStep.value = String(motion.shiftStep);
+        ui.timeAlign.value = motion.timeAlign;
+        ui.staggerWhat.value = motion.staggerWhat;
+        ui.staggerStep.value = String(motion.staggerStep);
+        ui.staggerOrder.value = motion.staggerOrder;
+    }
+
+    // Набранное число кадров; мусор возвращает прежнее значение.
+    function onStepNumber(input, key) {
+        var text = String(input.value).replace(/\s/g, "");
+        if (/^\d{1,3}$/.test(text) && Number(text) >= 1) { motion[key] = clampStep(text); storeMotion(); }
+        input.value = String(motion[key]);
+    }
+
+    // Общий отчёт: сколько слоёв сдвинуто, сколько пропущено и почему.
+    function showShiftResult(res, what, done) {
+        var parts = [];
+        if (res.moved) { parts.push(done); }
+        if (res.unchanged && !res.steps) { parts.push("Уже на месте: " + plural(res.unchanged, "слой", "слоя", "слоёв") + "."); }
+        if (res.skipped) { parts.push("Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + " (нет ключей " + (what === "out" ? "во второй" : "в первой") + " половине слоя)."); }
+        if (res.failed) { parts.push("Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + " (слой заблокирован?)."); }
+        if (res.keysFailed && !res.failed) { parts.push("Не удалось перенести: " + plural(res.keysFailed, "ключ", "ключа", "ключей") + "."); }
+        if (!parts.length) { parts.push("Нечего сдвигать."); }
+        setStatus(parts.join(" ") + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
+    }
+
+    function onShift(direction) {
+        var what = motion.shiftWhat;
+        var frames = motion.shiftStep;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Сдвигаю…", "busy");
+        host("shift", [what, direction * frames]).then(function (res) {
+            setBusy(false);
+            showShiftResult(res, what, "Сдвинуто на " + plural(frames, "кадр", "кадра", "кадров") + (direction > 0 ? " позже: " : " раньше: ") + plural(res.moved, "слой", "слоя", "слоёв") + ".");
+        }).catch(toolFailed);
+    }
+
+    function onTimeAlign() {
+        var point = motion.timeAlign;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Ставлю на указатель…", "busy");
+        host("alignTime", [point]).then(function (res) {
+            setBusy(false);
+            showShiftResult(res, point.indexOf("out") === 0 ? "out" : "in", "Поставлено на указатель времени: " + plural(res.moved, "слой", "слоя", "слоёв") + ".");
+        }).catch(toolFailed);
+    }
+
+    function onStagger() {
+        var what = motion.staggerWhat;
+        var frames = motion.staggerStep;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Делаю лесенку…", "busy");
+        host("stagger", [what, frames, motion.staggerOrder]).then(function (res) {
+            setBusy(false);
+            showShiftResult(res, what, "Лесенка: " + plural(res.steps, "слой", "слоя", "слоёв") + ", шаг " + plural(frames, "кадр", "кадра", "кадров") + ".");
+        }).catch(toolFailed);
+    }
+
+    function enableShiftTool() {
+        var infos = ui.motionTools.querySelectorAll(".tool-info");
+        var i;
+        function pick(select, key, allowed) {
+            select.addEventListener("change", function () {
+                motion[key] = allowed.indexOf(select.value) >= 0 ? select.value : MOTION_DEFAULTS[key];
+                storeMotion();
+                showFoldParts();
+            });
+        }
+        drawShift();
+        pick(ui.shiftWhat, "shiftWhat", SHIFT_TARGETS);
+        pick(ui.timeAlign, "timeAlign", TIME_POINTS);
+        pick(ui.staggerWhat, "staggerWhat", SHIFT_TARGETS);
+        pick(ui.staggerOrder, "staggerOrder", STAGGER_ORDERS);
+        ui.shiftStep.addEventListener("change", function () { onStepNumber(ui.shiftStep, "shiftStep"); });
+        ui.staggerStep.addEventListener("change", function () { onStepNumber(ui.staggerStep, "staggerStep"); });
+        [ui.shiftStep, ui.staggerStep].forEach(function (input) {
+            input.addEventListener("keydown", function (e) {
+                if (e.key === "Enter") { input.blur(); }
+                if (e.key === "Escape") { input.value = String(motion[input === ui.shiftStep ? "shiftStep" : "staggerStep"]); input.blur(); }
+            });
+            input.addEventListener("focus", function () { input.select(); });
+        });
+        ui.shiftBack.addEventListener("click", function () { onShift(-1); });
+        ui.shiftFwd.addEventListener("click", function () { onShift(1); });
+        ui.timeAlignBtn.addEventListener("click", onTimeAlign);
+        ui.staggerBtn.addEventListener("click", onStagger);
+        // «i» рядом со списком: объяснение появляется в строке состояния (и во всплывающей подсказке).
+        for (i = 0; i < infos.length; i++) {
+            infos[i].addEventListener("click", function () {
+                if (!busy) { setStatus(this.getAttribute("data-info"), ""); }
+            });
+        }
     }
 
     // ---- порядок блоков раздела: их можно менять местами, как вкладки
@@ -2041,6 +2258,7 @@
             storeMotion();
         });
         ui.alignTo.value = motion.alignTo;
+        enableShiftTool();
         showFoldParts();
         ui.alignTo.addEventListener("change", function () {
             motion.alignTo = ui.alignTo.value === "selection" ? "selection" : "comp";
@@ -2051,6 +2269,12 @@
             while (node && node !== ui.alignGrid && !(node.getAttribute && node.getAttribute("data-edge"))) { node = node.parentNode; }
             if (!node || node === ui.alignGrid || node.disabled) { return; }
             onAlign(node.getAttribute("data-edge"));
+        });
+        ui.distGrid.addEventListener("click", function (e) {
+            var node = e.target;
+            while (node && node !== ui.distGrid && !(node.getAttribute && node.getAttribute("data-dist"))) { node = node.parentNode; }
+            if (!node || node === ui.distGrid || node.disabled) { return; }
+            onDistribute(node.getAttribute("data-dist"));
         });
         ui.anchorGrid.addEventListener("click", function (e) {
             var node = e.target;
