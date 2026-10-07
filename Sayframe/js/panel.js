@@ -5,12 +5,13 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.3.1";
+    var VERSION = "1.4.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
     var TAB_KEY = "sayframe.tab.v1";
     var TAB_ORDER_KEY = "sayframe.tabOrder.v1";
+    var MOTION_KEY = "sayframe.motion.v1";   // положения ползунков и выбор в разделе «Анимация»
     var TAB_DRAG_START_PX = 6;   // сдвиг мыши, после которого нажатие на вкладку считается перетаскиванием
     var UPDATE_CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
     var UPDATE_MAX_FILES = 200;
@@ -411,6 +412,9 @@
         if (m === "NO_PICTURE_IN_FILE") { return "В этом файле нет изображения — нужен ролик или картинка."; }
         if (m === "NOT_AN_IMAGE") { return "Скопированный файл не является изображением."; }
         if (m === "TIMEOUT") { return "Claude не ответил вовремя. Попробуйте ещё раз."; }
+        if (m === "NO_ACTIVE_COMP") { return "Откройте композицию: инструмент работает с открытой композицией."; }
+        if (m === "NO_KEYS_SELECTED") { return "Выделите ключевые кадры на таймлайне и нажмите ещё раз."; }
+        if (m === "NO_LAYERS_SELECTED") { return "Выделите слой в композиции и нажмите ещё раз."; }
         return m;
     }
 
@@ -480,7 +484,12 @@
         updateDownload: el("updateDownload"),
         versionText: el("versionText"), checkUpdate: el("checkUpdate"), updateHint: el("updateHint"),
         tabs: el("tabs"), tabClaude: el("tabClaude"), tabTools: el("tabTools"), viewClaude: el("viewClaude"), viewTools: el("viewTools"),
-        statusSlotClaude: el("statusSlotClaude"), statusSlotTools: el("statusSlotTools")
+        statusSlotClaude: el("statusSlotClaude"), statusSlotTools: el("statusSlotTools"),
+        tabMotion: el("tabMotion"), viewMotion: el("viewMotion"), statusSlotMotion: el("statusSlotMotion"),
+        easeIn: el("easeIn"), easeOut: el("easeOut"), easeInVal: el("easeInVal"), easeOutVal: el("easeOutVal"),
+        easeLink: el("easeLink"), easeInBtn: el("easeInBtn"), easeBothBtn: el("easeBothBtn"), easeOutBtn: el("easeOutBtn"),
+        easeCurvePath: el("easeCurvePath"), easeHandles: el("easeHandles"),
+        anchorGrid: el("anchorGrid"), anchorKeys: el("anchorKeys")
     };
 
     var settings = loadSettings();
@@ -496,18 +505,29 @@
 
     // Вкладки: «Claude» (задача, референс, запуск, ответ) и «Инструменты» (всё, что работает без Claude).
     // Строка состояния общая и переезжает в открытую вкладку.
+    var TABS = {
+        claude: { tab: ui.tabClaude, view: ui.viewClaude, slot: ui.statusSlotClaude },
+        tools: { tab: ui.tabTools, view: ui.viewTools, slot: ui.statusSlotTools },
+        motion: { tab: ui.tabMotion, view: ui.viewMotion, slot: ui.statusSlotMotion }
+    };
+
     function showTab(name) {
-        var tools = name === "tools";
-        ui.viewClaude.hidden = tools;
-        ui.viewTools.hidden = !tools;
-        ui.tabClaude.setAttribute("aria-selected", tools ? "false" : "true");
-        ui.tabTools.setAttribute("aria-selected", tools ? "true" : "false");
-        (tools ? ui.statusSlotTools : ui.statusSlotClaude).appendChild(ui.statusBox);
-        try { window.localStorage.setItem(TAB_KEY, tools ? "tools" : "claude"); } catch (e) {}
+        var k;
+        if (!TABS.hasOwnProperty(name)) { name = "claude"; }
+        for (k in TABS) {
+            if (TABS.hasOwnProperty(k)) {
+                TABS[k].view.hidden = k !== name;
+                TABS[k].tab.setAttribute("aria-selected", k === name ? "true" : "false");
+            }
+        }
+        TABS[name].slot.appendChild(ui.statusBox);
+        try { window.localStorage.setItem(TAB_KEY, name); } catch (e) {}
     }
 
     function savedTab() {
-        try { return window.localStorage.getItem(TAB_KEY) === "tools" ? "tools" : "claude"; } catch (e) { return "claude"; }
+        var name;
+        try { name = window.localStorage.getItem(TAB_KEY); } catch (e) { name = null; }
+        return typeof name === "string" && TABS.hasOwnProperty(name) ? name : "claude";
     }
 
     // ---- порядок вкладок: его можно менять перетаскиванием или Alt + стрелка, он запоминается
@@ -588,7 +608,7 @@
         });
 
         window.addEventListener("pointermove", function (e) {
-            var buttons, i, other, r;
+            var buttons, i, other, r, mid, mine;
             if (!drag || e.pointerId !== drag.id) { return; }
             if (!drag.moved) {
                 if (Math.abs(e.clientX - drag.startX) < TAB_DRAG_START_PX) { return; }
@@ -597,18 +617,20 @@
                 ui.tabs.className += " reordering";
                 try { drag.btn.setPointerCapture(drag.id); } catch (err) {}
             }
-            // Указатель над другой вкладкой — перетаскиваемая занимает её место.
+            // Указатель прошёл середину соседней вкладки — перетаскиваемая встаёт за неё.
+            // Сравнение с серединой, а не с краем, чтобы вкладки разной ширины не прыгали туда-сюда.
             buttons = tabButtons();
+            mine = buttons.indexOf(drag.btn);
             for (i = 0; i < buttons.length; i++) {
                 other = buttons[i];
                 if (other === drag.btn) { continue; }
                 r = other.getBoundingClientRect();
-                if (e.clientX >= r.left && e.clientX <= r.right) {
-                    if (buttons.indexOf(drag.btn) < i) {
-                        ui.tabs.insertBefore(drag.btn, other.nextSibling);
-                    } else {
-                        ui.tabs.insertBefore(drag.btn, other);
-                    }
+                mid = r.left + r.width / 2;
+                if (mine < i && e.clientX >= mid) {
+                    ui.tabs.insertBefore(drag.btn, other.nextSibling);
+                    mine = i;
+                } else if (mine > i && e.clientX <= mid) {
+                    ui.tabs.insertBefore(drag.btn, other);
                     break;
                 }
             }
@@ -653,6 +675,7 @@
         ui.newBtn.disabled = on;
         ui.refBtn.disabled = on;
         ui.pasteBtn.disabled = on;
+        setMotionDisabled(on);
         ui.settingsBtn.disabled = on;
         ui.refClear.disabled = on;
         ui.fixBtn.disabled = on || lastError === null;
@@ -1398,6 +1421,155 @@
         });
     }
 
+    // ------------------------------------------------------------ анимация
+    // Плавность ключей: «разгон» — как движение начинается после ключа (в After Effects это исходящая
+    // сторона ключа, out), «торможение» — как оно останавливается перед ключом (входящая сторона, in).
+
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, anchorKeys: "key" };
+
+    function loadMotion() {
+        var m = {};
+        var saved, k;
+        for (k in MOTION_DEFAULTS) { if (MOTION_DEFAULTS.hasOwnProperty(k)) { m[k] = MOTION_DEFAULTS[k]; } }
+        try { saved = JSON.parse(window.localStorage.getItem(MOTION_KEY) || "{}"); } catch (e) { saved = null; }
+        if (saved && typeof saved === "object") {
+            for (k in MOTION_DEFAULTS) {
+                if (MOTION_DEFAULTS.hasOwnProperty(k) && typeof saved[k] === typeof MOTION_DEFAULTS[k]) { m[k] = saved[k]; }
+            }
+        }
+        m.easeIn = clampPercent(m.easeIn);
+        m.easeOut = clampPercent(m.easeOut);
+        if (m.anchorKeys !== "shift" && m.anchorKeys !== "skip") { m.anchorKeys = "key"; }
+        return m;
+    }
+
+    function clampPercent(v) {
+        v = Math.round(Number(v));
+        if (isNaN(v)) { return 60; }
+        return v < 0 ? 0 : v > 100 ? 100 : v;
+    }
+
+    var motion = loadMotion();
+
+    function storeMotion() {
+        try { window.localStorage.setItem(MOTION_KEY, JSON.stringify(motion)); } catch (e) {}
+    }
+
+    function plural(n, one, few, many) {
+        var a = Math.abs(n) % 100;
+        var b = a % 10;
+        if (a > 10 && a < 20) { return n + " " + many; }
+        if (b === 1) { return n + " " + one; }
+        if (b >= 2 && b <= 4) { return n + " " + few; }
+        return n + " " + many;
+    }
+
+    // Рисует график значения между двумя ключами: слева разгон, справа торможение.
+    function drawEase() {
+        var x0 = 12, y0 = 72, x1 = 188, y1 = 12, w = x1 - x0;
+        var c1 = x0 + w * motion.easeOut / 100;
+        var c2 = x1 - w * motion.easeIn / 100;
+        ui.easeOut.value = String(motion.easeOut);
+        ui.easeIn.value = String(motion.easeIn);
+        ui.easeOutVal.textContent = motion.easeOut + "%";
+        ui.easeInVal.textContent = motion.easeIn + "%";
+        ui.easeLink.checked = motion.link;
+        ui.easeCurvePath.setAttribute("d", "M" + x0 + " " + y0 + " C" + c1.toFixed(1) + " " + y0 + " " + c2.toFixed(1) + " " + y1 + " " + x1 + " " + y1);
+        ui.easeHandles.setAttribute("d", "M" + x0 + " " + y0 + "H" + c1.toFixed(1) + "M" + x1 + " " + y1 + "H" + c2.toFixed(1));
+    }
+
+    function onEaseSlider(which) {
+        var v = clampPercent(which === "in" ? ui.easeIn.value : ui.easeOut.value);
+        if (which === "in") { motion.easeIn = v; } else { motion.easeOut = v; }
+        if (motion.link) { motion.easeIn = v; motion.easeOut = v; }
+        drawEase();
+        storeMotion();
+    }
+
+    function onEaseLink() {
+        motion.link = ui.easeLink.checked;
+        if (motion.link) { motion.easeIn = motion.easeOut; }
+        drawEase();
+        storeMotion();
+    }
+
+    function setMotionDisabled(on) {
+        var cells = ui.anchorGrid.querySelectorAll("button");
+        var i;
+        ui.easeIn.disabled = on;
+        ui.easeOut.disabled = on;
+        ui.easeLink.disabled = on;
+        ui.easeInBtn.disabled = on;
+        ui.easeBothBtn.disabled = on;
+        ui.easeOutBtn.disabled = on;
+        ui.anchorKeys.disabled = on;
+        for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
+    }
+
+    // Замечания вроде «ничего не выделено» — подсказка, а не ошибка.
+    function toolFailed(e) {
+        var m = e && e.message ? e.message : String(e);
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED";
+        setBusy(false);
+        setStatus(humanError(e), hint ? "" : "error");
+    }
+
+    // mode: "both", "in" (только торможение) или "out" (только разгон).
+    function onEase(mode) {
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Применяю плавность…", "busy");
+        host("ease", [motion.easeIn, motion.easeOut, mode]).then(function (res) {
+            var text;
+            setBusy(false);
+            if (!res.keys) {
+                setStatus("Не удалось изменить выделенные ключи: After Effects не дал задать для них плавность.", "error");
+                return;
+            }
+            text = "Плавность применена: " + plural(res.keys, "ключ", "ключа", "ключей") + ".";
+            if (res.failed) { text += " Не получилось для " + plural(res.failed, "ключа", "ключей", "ключей") + "."; }
+            setStatus(text + "\nОтменить: Cmd/Ctrl+Z.", "done");
+        }).catch(toolFailed);
+    }
+
+    function onAnchor(fx, fy) {
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Переношу точку привязки…", "busy");
+        host("anchor", [fx, fy, motion.anchorKeys]).then(function (res) {
+            var parts = [];
+            setBusy(false);
+            if (res.moved) { parts.push("Точка привязки перенесена: " + plural(res.moved, "слой", "слоя", "слоёв") + "."); }
+            if (res.unchanged) { parts.push("Уже на месте: " + plural(res.unchanged, "слой", "слоя", "слоёв") + "."); }
+            if (res.skipped) { parts.push("Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + " (камера, свет или слой с ключами)."); }
+            if (res.failed) { parts.push("Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + " (слой заблокирован?)."); }
+            if (!parts.length) { parts.push("Нечего переносить."); }
+            setStatus(parts.join(" ") + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
+        }).catch(toolFailed);
+    }
+
+    function enableMotion() {
+        ui.anchorKeys.value = motion.anchorKeys;
+        drawEase();
+        ui.easeIn.addEventListener("input", function () { onEaseSlider("in"); });
+        ui.easeOut.addEventListener("input", function () { onEaseSlider("out"); });
+        ui.easeLink.addEventListener("change", onEaseLink);
+        ui.easeBothBtn.addEventListener("click", function () { onEase("both"); });
+        ui.easeInBtn.addEventListener("click", function () { onEase("in"); });
+        ui.easeOutBtn.addEventListener("click", function () { onEase("out"); });
+        ui.anchorKeys.addEventListener("change", function () {
+            var v = ui.anchorKeys.value;
+            motion.anchorKeys = v === "shift" || v === "skip" ? v : "key";
+            storeMotion();
+        });
+        ui.anchorGrid.addEventListener("click", function (e) {
+            var node = e.target;
+            while (node && node !== ui.anchorGrid && !(node.getAttribute && node.getAttribute("data-fx") !== null)) { node = node.parentNode; }
+            if (!node || node === ui.anchorGrid || node.disabled) { return; }
+            onAnchor(Number(node.getAttribute("data-fx")), Number(node.getAttribute("data-fy")));
+        });
+    }
+
     // -------------------------------------------------------------- update
     // Панель читает version.json по адресу UPDATE_URL. Если там версия новее, показывает плашку
     // и по кнопке скачивает файлы панели, сверяет контрольные суммы и заменяет ими свои.
@@ -1693,6 +1865,7 @@
     applyTabOrder();
     showTab(savedTab());
     enableTabReordering();
+    enableMotion();
 
     ui.runBtn.addEventListener("click", onRun);
     ui.fixBtn.addEventListener("click", onFix);
