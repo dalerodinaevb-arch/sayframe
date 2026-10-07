@@ -107,10 +107,14 @@
 
     <!-- Раздел «Анимация»: плавность ключей, точка привязки и выравнивание слоёв -->
     <div id="viewMotion" class="view" role="tabpanel" aria-labelledby="tabMotion" hidden>
-    <!-- Блоки стоят рядом, пока хватает ширины; в узкой панели — друг под другом. Двойной щелчок по блоку включает перестановку -->
+    <!-- Блоки стоят рядом, пока хватает ширины; в узкой панели — друг под другом. Двойной щелчок по блоку включает перестановку.
+         Ширину каждого блока меняют, потянув за его правый край: в широком блоке список встаёт рядом с кнопками, в узком — под ними. -->
     <div id="motionTools" class="motion-tools">
     <section class="card tool-card ease-card" data-tool="ease" aria-label="Плавность ключей" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Плавность ключей»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <div class="tool-head" title="Задаёт плавность выделенным ключевым кадрам">
+        <b>Плавность ключей</b>
+      </div>
       <button id="easeCurveToggle" class="ease-toggle" aria-expanded="true" aria-controls="easeCurve" aria-label="Скрыть кривую" title="Скрыть кривую">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="ease-toggle-plus" d="M6 2v8"/></svg>
       </button>
@@ -135,6 +139,7 @@
         </label>
         <input id="easeOutVal" class="ease-num" type="text" inputmode="numeric" maxlength="3" value="60" spellcheck="false" autocomplete="off" aria-label="Влияние на выходе из ключа, число от 0 до 100" title="Выход из ключа, от 0 до 100">
       </div>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Плавность ключей»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
 
     <section class="card tool-card anchor-card" data-tool="anchor" aria-label="Точка привязки" title="Двойной щелчок по свободному месту — поменять блоки местами">
@@ -163,6 +168,7 @@
           </select>
         </div>
       </div>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Точка привязки»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
 
     <section class="card tool-card align-card" data-tool="align" aria-label="Выравнивание" title="Двойной щелчок по свободному месту — поменять блоки местами">
@@ -187,6 +193,7 @@
           </select>
         </div>
       </div>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Выравнивание»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
     </div>
     <div id="statusSlotMotion" class="status-slot"></div>
