@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.4.0";
+    var VERSION = "1.5.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -42,8 +42,17 @@
         bg: BACKGROUNDS[0],
         selfCheck: true,
         alwaysAsk: false,
-        refFrames: 8
+        refFrames: 8,
+        panelWidth: 380     // ширина содержимого в пикселях; сама панель After Effects может быть шире
     };
+    var PANEL_WIDTH_MIN = 280;
+    var PANEL_WIDTH_MAX = 640;
+
+    function clampPanelWidth(v) {
+        v = Math.round(Number(v) / 10) * 10;
+        if (isNaN(v)) { return DEFAULTS.panelWidth; }
+        return v < PANEL_WIDTH_MIN ? PANEL_WIDTH_MIN : v > PANEL_WIDTH_MAX ? PANEL_WIDTH_MAX : v;
+    }
 
     var SYSTEM_PROMPT = [
         "You are an assistant built into a panel inside Adobe After Effects.",
@@ -415,6 +424,7 @@
         if (m === "NO_ACTIVE_COMP") { return "Откройте композицию: инструмент работает с открытой композицией."; }
         if (m === "NO_KEYS_SELECTED") { return "Выделите ключевые кадры на таймлайне и нажмите ещё раз."; }
         if (m === "NO_LAYERS_SELECTED") { return "Выделите слой в композиции и нажмите ещё раз."; }
+        if (m === "ALIGN_NEEDS_TWO") { return "Чтобы выровнять слои друг по другу, выделите хотя бы два. Один слой выравнивается по композиции."; }
         return m;
     }
 
@@ -431,6 +441,7 @@
                 if (DEFAULTS.hasOwnProperty(k) && saved.hasOwnProperty(k) && typeof saved[k] === typeof DEFAULTS[k]) { s[k] = saved[k]; }
             }
         } catch (e) {}
+        s.panelWidth = clampPanelWidth(s.panelWidth);
         return s;
     }
 
@@ -461,6 +472,7 @@
         root.setProperty("--accent-hi", toHex(a.r + (255 - a.r) * 0.42, a.g + (255 - a.g) * 0.42, a.b + (255 - a.b) * 0.42));
         root.setProperty("--on-accent", lum > 0.5 ? "#0b0c12" : "#ffffff");
         root.setProperty("--bg", bg.hex);
+        root.setProperty("--panel-w", clampPanelWidth(s.panelWidth) + "px");
     }
 
     // ------------------------------------------------------------------ ui
@@ -476,6 +488,7 @@
         sheet: el("settingsSheet"), settingsClose: el("settingsClose"), apiKey: el("apiKey"), testKey: el("testKey"),
         keyHint: el("keyHint"), models: el("models"), accentSwatches: el("accentSwatches"), accentHex: el("accentHex"),
         bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
+        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"),
         frames: el("frames"), saveSettings: el("saveSettings"),
         modal: el("modal"), modalTitle: el("modalTitle"), modalText: el("modalText"), modalCode: el("modalCode"),
         modalButtons: el("modalButtons"),
@@ -483,12 +496,13 @@
         updateStatus: el("updateStatus"), updateNow: el("updateNow"), updateLater: el("updateLater"),
         updateDownload: el("updateDownload"),
         versionText: el("versionText"), checkUpdate: el("checkUpdate"), updateHint: el("updateHint"),
+        arrangeBar: el("arrangeBar"), arrangeDone: el("arrangeDone"),
         tabs: el("tabs"), tabClaude: el("tabClaude"), tabTools: el("tabTools"), viewClaude: el("viewClaude"), viewTools: el("viewTools"),
         statusSlotClaude: el("statusSlotClaude"), statusSlotTools: el("statusSlotTools"),
         tabMotion: el("tabMotion"), viewMotion: el("viewMotion"), statusSlotMotion: el("statusSlotMotion"),
         easeIn: el("easeIn"), easeOut: el("easeOut"), easeInVal: el("easeInVal"), easeOutVal: el("easeOutVal"),
-        easeLink: el("easeLink"), easeInBtn: el("easeInBtn"), easeBothBtn: el("easeBothBtn"), easeOutBtn: el("easeOutBtn"),
-        easeCurvePath: el("easeCurvePath"), easeHandles: el("easeHandles"),
+        easeLink: el("easeLink"), easeBothBtn: el("easeBothBtn"),
+        motionTools: el("motionTools"), alignGrid: el("alignGrid"), alignTo: el("alignTo"), easeCurve: el("easeCurve"), easeCurveToggle: el("easeCurveToggle"), easeCurvePath: el("easeCurvePath"), easeHandles: el("easeHandles"),
         anchorGrid: el("anchorGrid"), anchorKeys: el("anchorKeys")
     };
 
@@ -585,6 +599,25 @@
         return true;
     }
 
+    // ---- перестановка: вкладки и блоки раздела «Анимация» двигаются только в этом режиме.
+    // Он включается двойным щелчком по вкладке или блоку, чтобы ничего не уезжало от случайного движения мыши.
+    var arranging = false;
+
+    function setArranging(on) {
+        on = !!on;
+        if (on === arranging) { return; }
+        arranging = on;
+        document.body.className = document.body.className.replace(/\s*arranging/g, "") + (on ? " arranging" : "");
+        ui.arrangeBar.hidden = !on;
+    }
+
+    function enableArranging() {
+        ui.arrangeDone.addEventListener("click", function () { setArranging(false); });
+        document.addEventListener("keydown", function (e) {
+            if (arranging && e.key === "Escape" && ui.sheet.hidden) { e.preventDefault(); setArranging(false); }
+        });
+    }
+
     function enableTabReordering() {
         var drag = null;        // { btn, id, startX, moved }
         var dragEndedAt = 0;
@@ -603,8 +636,13 @@
 
         ui.tabs.addEventListener("pointerdown", function (e) {
             var btn = tabOf(e.target);
-            if (!btn || (e.pointerType === "mouse" && e.button !== 0)) { return; }
+            if (!arranging || !btn || (e.pointerType === "mouse" && e.button !== 0)) { return; }
             drag = { btn: btn, id: e.pointerId, startX: e.clientX, moved: false };
+        });
+
+        ui.tabs.addEventListener("dblclick", function (e) {
+            if (!tabOf(e.target) || Date.now() - dragEndedAt < 300) { return; }
+            setArranging(!arranging);
         });
 
         window.addEventListener("pointermove", function (e) {
@@ -1355,6 +1393,14 @@
         swatches(ui.accentSwatches, ui.accentHex, ACCENTS, "accent");
         swatches(ui.bgSwatches, ui.bgHex, BACKGROUNDS, "bg");
 
+        // Ширина меняется сразу, пока тянут ползунок; без «Сохранить» вернётся прежняя.
+        ui.panelWidth.addEventListener("input", function () {
+            if (!draft) { return; }
+            draft.panelWidth = clampPanelWidth(ui.panelWidth.value);
+            ui.panelWidthVal.textContent = draft.panelWidth + " px";
+            applyTheme(draft);
+        });
+
         FRAME_CHOICES.forEach(function (n) {
             var b = document.createElement("button");
             b.textContent = String(n);
@@ -1374,6 +1420,8 @@
         ui.bgHex.value = draft.bg;
         ui.selfCheck.checked = draft.selfCheck;
         ui.alwaysAsk.checked = draft.alwaysAsk;
+        ui.panelWidth.value = String(draft.panelWidth);
+        ui.panelWidthVal.textContent = draft.panelWidth + " px";
         ui.keyHint.textContent = KEY_HINT;
         ui.keyHint.className = "hint";
         pressGroup(ui.models, draft.model);
@@ -1422,10 +1470,28 @@
     }
 
     // ------------------------------------------------------------ анимация
-    // Плавность ключей: «разгон» — как движение начинается после ключа (в After Effects это исходящая
-    // сторона ключа, out), «торможение» — как оно останавливается перед ключом (входящая сторона, in).
+    // Плавность ключей. Ползунки расходятся от кнопки, как ручки ключа в редакторе графиков:
+    // левый — входящая сторона ключа (in, как движение останавливается перед ключом),
+    // правый — исходящая (out, как оно начинается после ключа). Длина ползунка — влияние в процентах.
 
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, anchorKeys: "key" };
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align" };
+    var TOOL_NAMES = ["ease", "anchor", "align"];
+
+    // Порядок блоков строкой через запятую. Незнакомые и повторные имена выбрасываются,
+    // блоки, которых в сохранённом порядке нет (появились в новой версии), встают в конец.
+    function cleanToolOrder(text) {
+        var want = String(text).split(",");
+        var out = [];
+        var i;
+        for (i = 0; i < want.length; i++) {
+            if (TOOL_NAMES.indexOf(want[i]) >= 0 && out.indexOf(want[i]) < 0) { out.push(want[i]); }
+        }
+        for (i = 0; i < TOOL_NAMES.length; i++) {
+            if (out.indexOf(TOOL_NAMES[i]) < 0) { out.push(TOOL_NAMES[i]); }
+        }
+        return out.join(",");
+    }
+    var TOOL_DRAG_START_PX = 6;  // сдвиг мыши, после которого нажатие на блок считается перетаскиванием
 
     function loadMotion() {
         var m = {};
@@ -1440,6 +1506,8 @@
         m.easeIn = clampPercent(m.easeIn);
         m.easeOut = clampPercent(m.easeOut);
         if (m.anchorKeys !== "shift" && m.anchorKeys !== "skip") { m.anchorKeys = "key"; }
+        if (m.alignTo !== "selection") { m.alignTo = "comp"; }
+        m.order = cleanToolOrder(m.order);
         return m;
     }
 
@@ -1464,26 +1532,55 @@
         return n + " " + many;
     }
 
-    // Рисует график значения между двумя ключами: слева разгон, справа торможение.
+    // Минус в углу прячет кривую и становится плюсом; плюс возвращает её.
+    // У SVG нет свойства hidden, поэтому меняем сам атрибут.
+    function showEaseCurve() {
+        var label = motion.curve ? "Скрыть кривую" : "Показать кривую";
+        if (motion.curve) { ui.easeCurve.removeAttribute("hidden"); } else { ui.easeCurve.setAttribute("hidden", ""); }
+        ui.easeCurveToggle.setAttribute("aria-expanded", motion.curve ? "true" : "false");
+        ui.easeCurveToggle.setAttribute("aria-label", label);
+        ui.easeCurveToggle.title = label;
+    }
+
+    function onEaseCurveToggle() {
+        motion.curve = !motion.curve;
+        showEaseCurve();
+        storeMotion();
+    }
+
+    // Обновляет ползунки, числа и кривую. Кривая — значение между двумя выделенными ключами:
+    // слева уход от первого ключа (out), справа приход ко второму (in).
     function drawEase() {
         var x0 = 12, y0 = 72, x1 = 188, y1 = 12, w = x1 - x0;
         var c1 = x0 + w * motion.easeOut / 100;
         var c2 = x1 - w * motion.easeIn / 100;
         ui.easeOut.value = String(motion.easeOut);
         ui.easeIn.value = String(motion.easeIn);
-        ui.easeOutVal.textContent = motion.easeOut + "%";
-        ui.easeInVal.textContent = motion.easeIn + "%";
+        ui.easeOut.style.setProperty("--v", String(motion.easeOut / 100));
+        ui.easeIn.style.setProperty("--v", String(motion.easeIn / 100));
+        ui.easeOutVal.value = String(motion.easeOut);
+        ui.easeInVal.value = String(motion.easeIn);
         ui.easeLink.checked = motion.link;
         ui.easeCurvePath.setAttribute("d", "M" + x0 + " " + y0 + " C" + c1.toFixed(1) + " " + y0 + " " + c2.toFixed(1) + " " + y1 + " " + x1 + " " + y1);
         ui.easeHandles.setAttribute("d", "M" + x0 + " " + y0 + "H" + c1.toFixed(1) + "M" + x1 + " " + y1 + "H" + c2.toFixed(1));
     }
 
-    function onEaseSlider(which) {
-        var v = clampPercent(which === "in" ? ui.easeIn.value : ui.easeOut.value);
+    function setEase(which, v) {
         if (which === "in") { motion.easeIn = v; } else { motion.easeOut = v; }
         if (motion.link) { motion.easeIn = v; motion.easeOut = v; }
         drawEase();
         storeMotion();
+    }
+
+    function onEaseSlider(which) {
+        setEase(which, clampPercent(which === "in" ? ui.easeIn.value : ui.easeOut.value));
+    }
+
+    // Число рядом с ползунком можно набрать руками; мусор возвращает прежнее значение.
+    function onEaseNumber(which) {
+        var text = String(which === "in" ? ui.easeInVal.value : ui.easeOutVal.value).replace(/[\s%]/g, "");
+        if (!/^\d{1,3}$/.test(text)) { drawEase(); return; }
+        setEase(which, clampPercent(text));
     }
 
     function onEaseLink() {
@@ -1498,23 +1595,26 @@
         var i;
         ui.easeIn.disabled = on;
         ui.easeOut.disabled = on;
+        ui.easeInVal.disabled = on;
+        ui.easeOutVal.disabled = on;
         ui.easeLink.disabled = on;
-        ui.easeInBtn.disabled = on;
         ui.easeBothBtn.disabled = on;
-        ui.easeOutBtn.disabled = on;
         ui.anchorKeys.disabled = on;
+        for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
+        cells = ui.alignGrid.querySelectorAll("button");
+        ui.alignTo.disabled = on;
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
     }
 
     // Замечания вроде «ничего не выделено» — подсказка, а не ошибка.
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "ALIGN_NEEDS_TWO";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
 
-    // mode: "both", "in" (только торможение) или "out" (только разгон).
+    // mode: "both"; хост умеет ещё "in" и "out" (только одна сторона ключа), кнопок для них в панели нет.
     function onEase(mode) {
         if (busy) { return; }
         setBusy(true);
@@ -1548,19 +1648,188 @@
         }).catch(toolFailed);
     }
 
+    function onAlign(edge) {
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Выравниваю…", "busy");
+        host("align", [edge, motion.alignTo]).then(function (res) {
+            var parts = [];
+            setBusy(false);
+            if (res.moved) { parts.push("Выровнено: " + plural(res.moved, "слой", "слоя", "слоёв") + "."); }
+            if (res.unchanged) { parts.push("Уже на месте: " + plural(res.unchanged, "слой", "слоя", "слоёв") + "."); }
+            if (res.skipped) { parts.push("Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + " (3D-слой, камера или свет)."); }
+            if (res.failed) { parts.push("Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + " (слой заблокирован?)."); }
+            if (!parts.length) { parts.push("Нечего выравнивать."); }
+            setStatus(parts.join(" ") + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
+        }).catch(toolFailed);
+    }
+
+    // ---- порядок блоков раздела: их можно менять местами, как вкладки
+
+    function toolCards() {
+        return Array.prototype.slice.call(ui.motionTools.querySelectorAll(".tool-card"));
+    }
+
+    function toolOf(node) {
+        while (node && node !== ui.motionTools) {
+            if (node.getAttribute && node.getAttribute("data-tool")) { return node; }
+            node = node.parentNode;
+        }
+        return null;
+    }
+
+    // Ползунок, число, кнопка или список: двойной щелчок по ним — работа с ними, а не просьба о перестановке.
+    function isToolControl(node, card) {
+        while (node && node !== card) {
+            if (/^(INPUT|BUTTON|SELECT|TEXTAREA|LABEL|A|OPTION)$/.test(node.nodeName)) { return true; }
+            node = node.parentNode;
+        }
+        return false;
+    }
+
+    function applyToolOrder() {
+        var names = motion.order.split(",");
+        var cards = toolCards();
+        var i, j;
+        for (i = 0; i < names.length; i++) {
+            for (j = 0; j < cards.length; j++) {
+                if (cards[j].getAttribute("data-tool") === names[i]) { ui.motionTools.appendChild(cards[j]); }
+            }
+        }
+    }
+
+    function storeToolOrder() {
+        var names = [];
+        var cards = toolCards();
+        var i;
+        for (i = 0; i < cards.length; i++) { names.push(cards[i].getAttribute("data-tool")); }
+        motion.order = cleanToolOrder(names.join(","));
+        storeMotion();
+    }
+
+    // Сдвигает блок на одно место влево (-1) или вправо (+1). Возвращает true, если он сдвинулся.
+    function moveTool(card, dir) {
+        var cards = toolCards();
+        var to = cards.indexOf(card) + dir;
+        if (to < 0 || to >= cards.length) { return false; }
+        if (dir < 0) { ui.motionTools.insertBefore(card, cards[to]); } else { ui.motionTools.insertBefore(card, cards[to].nextSibling); }
+        storeToolOrder();
+        return true;
+    }
+
+    function enableToolReordering() {
+        var drag = null;        // { card, id, x, y, moved }
+        var dragEndedAt = 0;
+
+        function finish(e) {
+            if (!drag || (e && e.pointerId !== drag.id)) { return; }
+            if (drag.moved) {
+                drag.card.className = drag.card.className.replace(/\s*dragging/g, "");
+                ui.motionTools.className = ui.motionTools.className.replace(/\s*reordering/g, "");
+                try { drag.card.releasePointerCapture(drag.id); } catch (err) {}
+                storeToolOrder();
+                dragEndedAt = Date.now();
+            }
+            drag = null;
+        }
+
+        ui.motionTools.addEventListener("pointerdown", function (e) {
+            var card = toolOf(e.target);
+            if (!arranging || !card || (e.pointerType === "mouse" && e.button !== 0)) { return; }
+            drag = { card: card, id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
+        });
+
+        // Двойной щелчок по свободному месту блока включает перестановку; по ползунку, числу или кнопке — нет.
+        ui.motionTools.addEventListener("dblclick", function (e) {
+            var card = toolOf(e.target);
+            if (!card || Date.now() - dragEndedAt < 300) { return; }
+            if (!arranging && isToolControl(e.target, card)) { return; }
+            setArranging(!arranging);
+        });
+
+        window.addEventListener("pointermove", function (e) {
+            var cards, i, other, r, mine, me, sameRow, pos, mid;
+            if (!drag || e.pointerId !== drag.id) { return; }
+            if (!drag.moved) {
+                if (Math.abs(e.clientX - drag.x) < TOOL_DRAG_START_PX && Math.abs(e.clientY - drag.y) < TOOL_DRAG_START_PX) { return; }
+                drag.moved = true;
+                drag.card.className += " dragging";
+                ui.motionTools.className += " reordering";
+                try { drag.card.setPointerCapture(drag.id); } catch (err) {}
+            }
+            // Указатель прошёл середину соседнего блока — перетаскиваемый встаёт на его место.
+            // Блоки в одном ряду сравниваются по горизонтали, стоящие друг под другом — по вертикали.
+            cards = toolCards();
+            mine = cards.indexOf(drag.card);
+            me = drag.card.getBoundingClientRect();
+            for (i = 0; i < cards.length; i++) {
+                other = cards[i];
+                if (other === drag.card) { continue; }
+                r = other.getBoundingClientRect();
+                sameRow = r.top < me.bottom && r.bottom > me.top && (r.left >= me.right - 1 || r.right <= me.left + 1);
+                pos = sameRow ? e.clientX : e.clientY;
+                mid = sameRow ? r.left + r.width / 2 : r.top + r.height / 2;
+                if (mine < i && pos >= mid) {
+                    ui.motionTools.insertBefore(drag.card, other.nextSibling);
+                    break;
+                } else if (mine > i && pos <= mid) {
+                    ui.motionTools.insertBefore(drag.card, other);
+                    break;
+                }
+            }
+        });
+
+        window.addEventListener("pointerup", finish);
+        window.addEventListener("pointercancel", finish);
+
+        // С клавиатуры: фокус на полоске, стрелки двигают блок.
+        ui.motionTools.addEventListener("keydown", function (e) {
+            var grip = e.target;
+            var dir = e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : 0;
+            var card;
+            if (!dir || !grip.className || !/(^|\s)tool-grip(\s|$)/.test(String(grip.className)) || e.metaKey || e.ctrlKey || e.shiftKey) { return; }
+            card = toolOf(grip);
+            if (!card) { return; }
+            e.preventDefault();
+            if (moveTool(card, dir)) { grip.focus(); }
+        });
+    }
+
     function enableMotion() {
+        applyToolOrder();
+        enableToolReordering();
         ui.anchorKeys.value = motion.anchorKeys;
+        showEaseCurve();
         drawEase();
         ui.easeIn.addEventListener("input", function () { onEaseSlider("in"); });
         ui.easeOut.addEventListener("input", function () { onEaseSlider("out"); });
+        ui.easeInVal.addEventListener("change", function () { onEaseNumber("in"); });
+        ui.easeOutVal.addEventListener("change", function () { onEaseNumber("out"); });
+        [ui.easeInVal, ui.easeOutVal].forEach(function (box) {
+            box.addEventListener("focus", function () { box.select(); });
+            box.addEventListener("keydown", function (e) {
+                if (e.key === "Enter") { box.blur(); }
+                if (e.key === "Escape") { drawEase(); box.blur(); }
+            });
+        });
         ui.easeLink.addEventListener("change", onEaseLink);
+        ui.easeCurveToggle.addEventListener("click", onEaseCurveToggle);
         ui.easeBothBtn.addEventListener("click", function () { onEase("both"); });
-        ui.easeInBtn.addEventListener("click", function () { onEase("in"); });
-        ui.easeOutBtn.addEventListener("click", function () { onEase("out"); });
         ui.anchorKeys.addEventListener("change", function () {
             var v = ui.anchorKeys.value;
             motion.anchorKeys = v === "shift" || v === "skip" ? v : "key";
             storeMotion();
+        });
+        ui.alignTo.value = motion.alignTo;
+        ui.alignTo.addEventListener("change", function () {
+            motion.alignTo = ui.alignTo.value === "selection" ? "selection" : "comp";
+            storeMotion();
+        });
+        ui.alignGrid.addEventListener("click", function (e) {
+            var node = e.target;
+            while (node && node !== ui.alignGrid && !(node.getAttribute && node.getAttribute("data-edge"))) { node = node.parentNode; }
+            if (!node || node === ui.alignGrid || node.disabled) { return; }
+            onAlign(node.getAttribute("data-edge"));
         });
         ui.anchorGrid.addEventListener("click", function (e) {
             var node = e.target;
@@ -1864,6 +2133,7 @@
     showRef();
     applyTabOrder();
     showTab(savedTab());
+    enableArranging();
     enableTabReordering();
     enableMotion();
 
