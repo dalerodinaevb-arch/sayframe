@@ -304,6 +304,8 @@ var sayframeHost = (function () {
                     if (inType !== KeyframeInterpolationType.BEZIER || outType !== KeyframeInterpolationType.BEZIER) {
                         p.setInterpolationTypeAtKey(idx, inType, outType);
                     }
+                    // The panel calls this many times while a slider is dragged: the keys must stay selected.
+                    try { p.setSelectedAtKey(idx, true); } catch (e2) {}
                     out.keys++;
                     touched = true;
                 } catch (e) {
@@ -514,17 +516,12 @@ var sayframeHost = (function () {
         return box;
     }
 
-    // Aligns the selected layers. edge: left, hcenter, right, top, vcenter or bottom.
-    // target "comp" aligns to the composition frame, "selection" to the box around all selected layers.
-    // An animated position gets a keyframe at the current time, as After Effects' own Align does.
-    function alignLayers(comp, edge, target) {
+    // The selected layers this maths can move: 2D layers whose parents are 2D too. The rest is counted in out.
+    function flatSelection(comp, out) {
         var selected = comp.selectedLayers;
         var time = comp.time;
-        var out = { moved: 0, unchanged: 0, skipped: 0, failed: 0, total: selected.length };
         var items = [];
-        var goal = null;
-        var i, d, layer, toComp, box, it, dx, dy, det, px, py, pos, tr, v, delta;
-
+        var i, layer, toComp;
         for (i = 0; i < selected.length; i++) {
             layer = selected[i];
             try {
@@ -536,6 +533,62 @@ var sayframeHost = (function () {
                 out.failed++;
             }
         }
+        return items;
+    }
+
+    // Moves one layer by (dx, dy) composition pixels and counts the outcome in out.
+    // An animated position gets a keyframe at the current time, as After Effects' own Align does.
+    function nudgeLayer(it, dx, dy, time, out) {
+        var toComp, det, px, py, delta, tr, pos, v, d;
+        if (Math.abs(dx) < 0.0005 && Math.abs(dy) < 0.0005) { out.unchanged++; return; }
+        try {
+            // The move is known in composition pixels; the position lives in the parent's space.
+            toComp = it.toComp;
+            det = toComp[0] * toComp[3] - toComp[1] * toComp[2];
+            if (Math.abs(det) < 0.000000001) { out.failed++; return; }
+            px = (toComp[3] * dx - toComp[2] * dy) / det;
+            py = (-toComp[1] * dx + toComp[0] * dy) / det;
+            delta = [px, py, 0];
+            tr = it.layer.property("ADBE Transform Group");
+            pos = positionOf(tr, false);
+            if (pos.separated) {
+                for (d = 0; d < 2; d++) {
+                    if (Math.abs(delta[d]) >= 0.0000005) { writeValue(pos.props[d], pos.value[d] + delta[d], delta[d], time, "key"); }
+                }
+            } else {
+                v = copyValue(pos.props[0].value);
+                v[0] = pos.value[0] + px;
+                v[1] = pos.value[1] + py;
+                writeValue(pos.props[0], v, delta, time, "key");
+            }
+            out.moved++;
+        } catch (e2) {
+            out.failed++;
+        }
+    }
+
+    // Where a box sits for the given edge: left, hcenter, right, top, vcenter or bottom.
+    function edgeOf(box, edge) {
+        if (edge === "left") { return box.left; }
+        if (edge === "right") { return box.right; }
+        if (edge === "hcenter") { return (box.left + box.right) / 2; }
+        if (edge === "top") { return box.top; }
+        if (edge === "bottom") { return box.bottom; }
+        return (box.top + box.bottom) / 2;
+    }
+
+    function isHorizontalEdge(edge) {
+        return edge === "left" || edge === "hcenter" || edge === "right";
+    }
+
+    // Aligns the selected layers. edge: left, hcenter, right, top, vcenter or bottom.
+    // target "comp" aligns to the composition frame, "selection" to the box around all selected layers.
+    function alignLayers(comp, edge, target) {
+        var time = comp.time;
+        var out = { moved: 0, unchanged: 0, skipped: 0, failed: 0, total: comp.selectedLayers.length };
+        var items = flatSelection(comp, out);
+        var goal = null;
+        var i, box, d;
 
         if (target === "selection") {
             if (items.length < 2) { throw new Error("ALIGN_NEEDS_TWO"); }
@@ -555,42 +608,276 @@ var sayframeHost = (function () {
         }
 
         for (i = 0; i < items.length; i++) {
-            it = items[i];
-            box = it.box;
-            dx = 0;
-            dy = 0;
-            if (edge === "left") { dx = goal.left - box.left; }
-            else if (edge === "right") { dx = goal.right - box.right; }
-            else if (edge === "hcenter") { dx = (goal.left + goal.right) / 2 - (box.left + box.right) / 2; }
-            else if (edge === "top") { dy = goal.top - box.top; }
-            else if (edge === "bottom") { dy = goal.bottom - box.bottom; }
-            else { dy = (goal.top + goal.bottom) / 2 - (box.top + box.bottom) / 2; }
-            if (Math.abs(dx) < 0.0005 && Math.abs(dy) < 0.0005) { out.unchanged++; continue; }
+            d = edgeOf(goal, edge) - edgeOf(items[i].box, edge);
+            if (isHorizontalEdge(edge)) { nudgeLayer(items[i], d, 0, time, out); } else { nudgeLayer(items[i], 0, d, time, out); }
+        }
+        return out;
+    }
+
+    // Spreads the selected layers evenly, as After Effects' "Distribute Layers" does: the two outermost
+    // layers stay where they are, the ones between them get equal steps between the chosen edges
+    // (left, hcenter, right, top, vcenter or bottom). Needs at least three layers.
+    function distributeLayers(comp, edge) {
+        var time = comp.time;
+        var out = { moved: 0, unchanged: 0, skipped: 0, failed: 0, total: comp.selectedLayers.length };
+        var items = flatSelection(comp, out);
+        var i, first, last, d;
+
+        if (items.length < 3) { throw new Error("DISTRIBUTE_NEEDS_THREE"); }
+        for (i = 0; i < items.length; i++) { items[i].at = edgeOf(items[i].box, edge); items[i].order = i; }
+        // Equal positions keep the order the layers were selected in, so the result does not jump around.
+        items.sort(function (a, b) { return a.at !== b.at ? a.at - b.at : a.order - b.order; });
+        first = items[0].at;
+        last = items[items.length - 1].at;
+        out.spread = items.length;
+        for (i = 1; i < items.length - 1; i++) {
+            d = first + (last - first) * i / (items.length - 1) - items[i].at;
+            if (isHorizontalEdge(edge)) { nudgeLayer(items[i], d, 0, time, out); } else { nudgeLayer(items[i], 0, d, time, out); }
+        }
+        return out;
+    }
+
+    // ---- shifting in time: the "in" and "out" animation of a layer, or the whole layer
+    //
+    // A layer's "in" animation is every keyframe and layer marker in the first half of the layer
+    // (between its in point and its middle); the "out" animation is everything in the second half.
+    // Moving one of them moves those keyframes. The layer's own edge goes with them when the
+    // animation sits right at that edge, and is pushed out when the keyframes would leave the layer.
+
+    var EDGE_FRAMES = 1.5;   // a first/last keyframe this close to the layer's edge counts as "at the edge"
+
+    function layerSpan(layer) {
+        var a = layer.inPoint, b = layer.outPoint;
+        return a <= b ? { start: a, end: b } : { start: b, end: a };
+    }
+
+    // Calls fn for every property with keyframes inside the group (a layer is a group too).
+    function eachKeyedProperty(group, fn, depth) {
+        var n, i, p;
+        try { n = group.numProperties; } catch (e) { return; }
+        for (i = 1; i <= n; i++) {
             try {
-                // The move is known in composition pixels; the position lives in the parent's space.
-                toComp = it.toComp;
-                det = toComp[0] * toComp[3] - toComp[1] * toComp[2];
-                if (Math.abs(det) < 0.000000001) { out.failed++; continue; }
-                px = (toComp[3] * dx - toComp[2] * dy) / det;
-                py = (-toComp[1] * dx + toComp[0] * dy) / det;
-                delta = [px, py, 0];
-                tr = it.layer.property("ADBE Transform Group");
-                pos = positionOf(tr, false);
-                if (pos.separated) {
-                    for (d = 0; d < 2; d++) {
-                        if (Math.abs(delta[d]) >= 0.0000005) { writeValue(pos.props[d], pos.value[d] + delta[d], delta[d], time, "key"); }
-                    }
-                } else {
-                    v = copyValue(pos.props[0].value);
-                    v[0] = pos.value[0] + px;
-                    v[1] = pos.value[1] + py;
-                    writeValue(pos.props[0], v, delta, time, "key");
+                p = group.property(i);
+                if (!p) { continue; }
+                if (p.propertyType === PropertyType.PROPERTY) {
+                    if (p.numKeys > 0) { fn(p); }
+                } else if (depth < 40) {
+                    eachKeyedProperty(p, fn, depth + 1);
                 }
-                out.moved++;
-            } catch (e2) {
-                out.failed++;
+            } catch (e2) {}
+        }
+    }
+
+    // which: "in" or "out". Returns the keyframes of that half: { list: [{ prop, times }], count, first, last }.
+    function findTransition(layer, which) {
+        var span = layerSpan(layer);
+        var mid = (span.start + span.end) / 2;
+        var out = { list: [], count: 0, first: 0, last: 0, span: span };
+        eachKeyedProperty(layer, function (p) {
+            var times = [];
+            var k, t;
+            for (k = 1; k <= p.numKeys; k++) {
+                t = p.keyTime(k);
+                if ((which === "in") === (t < mid)) { times.push(t); }
+            }
+            if (!times.length) { return; }
+            if (!out.count || times[0] < out.first) { out.first = times[0]; }
+            if (!out.count || times[times.length - 1] > out.last) { out.last = times[times.length - 1]; }
+            out.count += times.length;
+            out.list.push({ prop: p, times: times });
+        }, 0);
+        return out;
+    }
+
+    function freshEases(list) {
+        var r = [];
+        var i;
+        for (i = 0; i < list.length; i++) { r.push(new KeyframeEase(list[i].speed, clampInfluence(list[i].influence))); }
+        return r;
+    }
+
+    // After Effects cannot move a keyframe: it is read, removed and created again at the new time,
+    // with its value, interpolation, easing, spatial tangents, selection and label.
+    function moveKey(prop, idx, newTime) {
+        var oldTime = prop.keyTime(idx);
+        var d = { value: prop.keyValue(idx) };
+        var n;
+        try { d.inEase = prop.keyInTemporalEase(idx); d.outEase = prop.keyOutTemporalEase(idx); } catch (e1) { d.inEase = null; }
+        try { d.inType = prop.keyInInterpolationType(idx); d.outType = prop.keyOutInterpolationType(idx); } catch (e2) { d.inType = null; }
+        try { d.tCont = prop.keyTemporalContinuous(idx); d.tAuto = prop.keyTemporalAutoBezier(idx); d.hasTemporal = true; } catch (e3) {}
+        try {
+            if (prop.isSpatial) {
+                d.inTan = prop.keyInSpatialTangent(idx);
+                d.outTan = prop.keyOutSpatialTangent(idx);
+                d.sCont = prop.keySpatialContinuous(idx);
+                d.sAuto = prop.keySpatialAutoBezier(idx);
+                d.roving = prop.keyRoving(idx);
+                d.hasSpatial = true;
+            }
+        } catch (e4) {}
+        try { d.selected = prop.keySelected(idx); } catch (e5) { d.selected = false; }
+        try { d.label = prop.keyLabel(idx); } catch (e6) { d.label = null; }
+
+        prop.removeKey(idx);
+        try {
+            prop.setValueAtTime(newTime, d.value);
+        } catch (e7) {
+            // Put it back where it was rather than lose it.
+            try { prop.setValueAtTime(oldTime, d.value); newTime = oldTime; } catch (e8) { throw e7; }
+        }
+        n = prop.nearestKeyIndex(newTime);
+        if (d.inEase) { try { prop.setTemporalEaseAtKey(n, freshEases(d.inEase), freshEases(d.outEase)); } catch (e9) {} }
+        if (d.inType) { try { prop.setInterpolationTypeAtKey(n, d.inType, d.outType); } catch (e10) {} }
+        if (d.hasSpatial) {
+            try {
+                prop.setSpatialTangentsAtKey(n, d.inTan, d.outTan);
+                prop.setSpatialContinuousAtKey(n, d.sCont);
+                prop.setSpatialAutoBezierAtKey(n, d.sAuto);
+            } catch (e11) {}
+        }
+        if (d.hasTemporal) {
+            try {
+                prop.setTemporalContinuousAtKey(n, d.tCont);
+                prop.setTemporalAutoBezierAtKey(n, d.tAuto);
+            } catch (e12) {}
+        }
+        if (d.roving) { try { prop.setRovingAtKey(n, true); } catch (e13) {} }
+        if (d.selected) { try { prop.setSelectedAtKey(n, true); } catch (e14) {} }
+        if (d.label) { try { prop.setLabelAtKey(n, d.label); } catch (e15) {} }
+        if (newTime === oldTime) { throw new Error("KEY_NOT_MOVED"); }
+    }
+
+    // Moves the listed keyframes of one property by dt seconds. The keys are found by their times,
+    // far side first, so that a key never has to jump over one that is still waiting to move.
+    function moveKeysOf(entry, dt, tolerance, out) {
+        var times = entry.times;
+        var i, t, idx;
+        for (i = 0; i < times.length; i++) {
+            t = dt > 0 ? times[times.length - 1 - i] : times[i];
+            try {
+                idx = entry.prop.nearestKeyIndex(t);
+                if (Math.abs(entry.prop.keyTime(idx) - t) > tolerance) { out.keysFailed++; continue; }
+                moveKey(entry.prop, idx, t + dt);
+                out.keys++;
+            } catch (e) {
+                out.keysFailed++;
             }
         }
+    }
+
+    // Changes one edge of the layer and leaves the other where it was.
+    function trimLayer(layer, start, end) {
+        try {
+            if (layer.stretch < 0) { return; }
+            if (end - start <= 0) { return; }
+            if (start !== layer.inPoint) { layer.inPoint = start; }
+            if (end !== layer.outPoint) { layer.outPoint = end; }
+        } catch (e) {}
+    }
+
+    // Returns "moved", "none" (no keyframes in that half), "same" (nothing to do) or "failed".
+    function shiftTransition(layer, which, dt, frame, out) {
+        var tr = findTransition(layer, which);
+        var before = out.keys;
+        var span = tr.span;
+        var atEdge, i;
+        if (!tr.count) { return "none"; }
+        if (Math.abs(dt) < frame / 1000) { return "same"; }
+        atEdge = which === "in" ? Math.abs(tr.first - span.start) <= frame * EDGE_FRAMES : Math.abs(tr.last - span.end) <= frame * EDGE_FRAMES;
+        for (i = 0; i < tr.list.length; i++) { moveKeysOf(tr.list[i], dt, frame / 4, out); }
+        if (out.keys === before) { return "failed"; }
+        if (which === "in") {
+            if (atEdge) { trimLayer(layer, span.start + dt, span.end); }
+            else if (tr.first + dt < span.start) { trimLayer(layer, tr.first + dt, span.end); }
+        } else {
+            if (atEdge) { trimLayer(layer, span.start, span.end + dt); }
+            else if (tr.last + dt > span.end) { trimLayer(layer, span.start, tr.last + dt + frame); }
+        }
+        return "moved";
+    }
+
+    function countShift(result, out) {
+        if (result === "moved") { out.moved++; }
+        else if (result === "none") { out.skipped++; }
+        else if (result === "same") { out.unchanged++; }
+        else { out.failed++; }
+    }
+
+    // Moves a whole layer (keyframes, markers, both edges) by dt seconds.
+    function shiftLayer(layer, dt, frame, out) {
+        if (Math.abs(dt) < frame / 1000) { out.unchanged++; return; }
+        try {
+            layer.startTime = layer.startTime + dt;
+            out.moved++;
+        } catch (e) {
+            out.failed++;
+        }
+    }
+
+    function shiftOne(layer, what, dt, frame, out) {
+        if (what === "layer") { shiftLayer(layer, dt, frame, out); } else { countShift(shiftTransition(layer, what, dt, frame, out), out); }
+    }
+
+    function newShiftCount(total) {
+        return { moved: 0, unchanged: 0, skipped: 0, failed: 0, keys: 0, keysFailed: 0, total: total };
+    }
+
+    // what: "in", "out" or "layer"; frames may be negative (earlier).
+    function shiftSelected(comp, what, frames) {
+        var layers = comp.selectedLayers;
+        var frame = comp.frameDuration;
+        var out = newShiftCount(layers.length);
+        var i;
+        for (i = 0; i < layers.length; i++) { shiftOne(layers[i], what, frames * frame, frame, out); }
+        return out;
+    }
+
+    // Brings the start or the end of the "in"/"out" animation of every selected layer to the current time.
+    // point: "inStart", "inEnd", "outStart" or "outEnd".
+    function alignToTime(comp, point) {
+        var layers = comp.selectedLayers;
+        var frame = comp.frameDuration;
+        var which = (point === "inStart" || point === "inEnd") ? "in" : "out";
+        var useFirst = point === "inStart" || point === "outStart";
+        var out = newShiftCount(layers.length);
+        var i, tr;
+        for (i = 0; i < layers.length; i++) {
+            tr = findTransition(layers[i], which);
+            if (!tr.count) { out.skipped++; continue; }
+            countShift(shiftTransition(layers[i], which, comp.time - (useFirst ? tr.first : tr.last), frame, out), out);
+        }
+        return out;
+    }
+
+    // Each next layer is moved `frames` frames further than the one before it.
+    // order: "asc" (from the top layer down), "desc" (from the bottom up), "selection" or "random".
+    function staggerSelected(comp, what, frames, order) {
+        var layers = comp.selectedLayers;
+        var frame = comp.frameDuration;
+        var out = newShiftCount(layers.length);
+        var list = [];
+        var i, j, tmp, step;
+        for (i = 0; i < layers.length; i++) {
+            // A layer with nothing to move does not take a step of the staircase.
+            if (what !== "layer" && !findTransition(layers[i], what).count) { out.skipped++; continue; }
+            list.push(layers[i]);
+        }
+        if (list.length < 2) { throw new Error(layers.length < 2 ? "STAGGER_NEEDS_TWO" : "STAGGER_NO_KEYS"); }
+        if (order === "asc" || order === "desc") {
+            list.sort(function (a, b) { return order === "asc" ? a.index - b.index : b.index - a.index; });
+        } else if (order === "random") {
+            for (i = list.length - 1; i > 0; i--) {
+                j = Math.floor(Math.random() * (i + 1));
+                tmp = list[i]; list[i] = list[j]; list[j] = tmp;
+            }
+        }
+        step = 0;
+        for (i = 0; i < list.length; i++) {
+            if (i === 0) { out.unchanged++; continue; }
+            step += frames * frame;
+            shiftOne(list[i], what, step, frame, out);
+        }
+        out.steps = list.length;
         return out;
     }
 
@@ -784,6 +1071,81 @@ var sayframeHost = (function () {
                 app.beginUndoGroup("Sayframe: align layers");
                 try {
                     res = alignLayers(comp, edge, target);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Moves the "in" or "out" animation of the selected layers, or the layers themselves, by a number of frames.
+        shift: function (what, frames) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                frames = Math.round(Number(frames));
+                if (what !== "in" && what !== "out" && what !== "layer") { throw new Error("BAD_SHIFT_TARGET"); }
+                if (isNaN(frames) || Math.abs(frames) > 100000) { throw new Error("BAD_SHIFT_FRAMES"); }
+                if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                app.beginUndoGroup("Sayframe: shift in time");
+                try {
+                    res = shiftSelected(comp, what, frames);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Brings the start or the end of the "in"/"out" animation of the selected layers to the current time.
+        alignTime: function (point) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (point !== "inStart" && point !== "inEnd" && point !== "outStart" && point !== "outEnd") { throw new Error("BAD_SHIFT_TARGET"); }
+                if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                app.beginUndoGroup("Sayframe: align to current time");
+                try {
+                    res = alignToTime(comp, point);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Staircase: every next layer (or its "in"/"out" animation) starts a few frames later.
+        stagger: function (what, frames, order) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                frames = Math.round(Number(frames));
+                if (what !== "in" && what !== "out" && what !== "layer") { throw new Error("BAD_SHIFT_TARGET"); }
+                if (order !== "asc" && order !== "desc" && order !== "selection" && order !== "random") { throw new Error("BAD_STAGGER_ORDER"); }
+                if (isNaN(frames) || frames === 0 || Math.abs(frames) > 100000) { throw new Error("BAD_SHIFT_FRAMES"); }
+                if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                app.beginUndoGroup("Sayframe: stagger");
+                try {
+                    res = staggerSelected(comp, what, frames, order);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Spreads the selected layers evenly between the two outermost ones.
+        distribute: function (edge) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (edge !== "left" && edge !== "hcenter" && edge !== "right" && edge !== "top" && edge !== "vcenter" && edge !== "bottom") {
+                    throw new Error("BAD_ALIGN_EDGE");
+                }
+                if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                app.beginUndoGroup("Sayframe: distribute layers");
+                try {
+                    res = distributeLayers(comp, edge);
                 } finally {
                     app.endUndoGroup();
                 }
