@@ -284,11 +284,33 @@ textarea:focus, .field:focus {
 /* Блоки раздела стоят рядом, пока хватает ширины, иначе друг под другом. */
 .motion-tools { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; -webkit-user-select: none; user-select: none; }
 .motion-tools input { -webkit-user-select: text; user-select: text; }
-.motion-tools > .tool-card { position: relative; flex: 1 1 160px; min-width: 0; }
+.motion-tools > .tool-card { position: relative; flex: 1 1 160px; min-width: 0; max-width: 100%; }
+
+/* Правый край блока: за него тянут, чтобы сделать блок шире или уже. Полоска видна под курсором. */
+.tool-resize {
+  position: absolute;
+  top: 14px; bottom: 14px; right: -7px;
+  width: 12px;
+  cursor: ew-resize;
+  outline: none;
+}
+.tool-resize::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 5px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.tool-resize:hover::after, .tool-resize:focus-visible::after, .tool-card.resizing > .tool-resize::after { background: rgba(var(--accent-rgb), 0.95); }
+.motion-tools.resizing { cursor: ew-resize; }
+.motion-tools.resizing > .tool-card > *:not(.tool-resize) { pointer-events: none; }
 /* В режиме перестановки блок берут за любое место: ползунки и кнопки внутри на это время не работают. */
 .arranging .motion-tools > .tool-card { border-style: dashed; border-color: rgba(var(--accent-rgb), 0.7); cursor: grab; }
 .arranging .motion-tools > .tool-card > * { pointer-events: none; opacity: 0.6; }
 .arranging .motion-tools > .tool-card > .tool-grip { opacity: 0; }
+.arranging .motion-tools > .tool-card > .tool-resize { pointer-events: auto; opacity: 1; }
 .motion-tools.reordering { cursor: grabbing; }
 .motion-tools > .tool-card.dragging {
   border-color: rgba(var(--accent-rgb), 0.95);
@@ -328,7 +350,7 @@ textarea:focus, .field:focus {
 /* Два ползунка расходятся от кнопки, как ручки ключа в редакторе графиков:
    светлая часть идёт от кнопки до бегунка, её длина и есть влияние. */
 .ease-card { gap: 6px; padding-bottom: 10px; }
-.motion-tools > .ease-card { padding-top: 22px; }
+.ease-card .tool-head { padding-right: 22px; margin-bottom: 4px; }
 
 /* Минус в углу прячет кривую и становится плюсом. */
 .ease-toggle {
