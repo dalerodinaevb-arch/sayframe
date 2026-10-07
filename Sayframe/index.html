@@ -177,30 +177,112 @@
 
     <section class="card tool-card align-card" data-tool="align" aria-label="Выравнивание" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Выравнивание»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
-      <button id="alignOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="alignSide" aria-label="Скрыть настройку" title="Скрыть настройку">
+      <button id="alignOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="alignSide distLabel" aria-label="Скрыть подписи" title="Скрыть подписи">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
       </button>
-      <div class="tool-head" title="Двигает выделенные слои к краю или к центру">
+      <div class="tool-head" title="Двигает выделенные слои к краю или к центру и расставляет их через равные промежутки">
         <b>Выравнивание</b>
       </div>
-      <div class="anchor-wrap">
-        <div id="alignGrid" class="anchor-grid" role="group" aria-label="Как выровнять выделенные слои">
-          <button class="anchor-cell" data-edge="left" aria-label="По левому краю" title="По левому краю"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 3v18"/><rect x="8" y="6" width="12" height="4" rx="1" stroke="none"/><rect x="8" y="14" width="7" height="4" rx="1" stroke="none"/></svg></button>
-          <button class="anchor-cell" data-edge="hcenter" aria-label="По центру по горизонтали" title="По центру по горизонтали"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v18"/><rect x="5" y="6" width="14" height="4" rx="1" stroke="none"/><rect x="8" y="14" width="8" height="4" rx="1" stroke="none"/></svg></button>
-          <button class="anchor-cell" data-edge="right" aria-label="По правому краю" title="По правому краю"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 3v18"/><rect x="4" y="6" width="12" height="4" rx="1" stroke="none"/><rect x="9" y="14" width="7" height="4" rx="1" stroke="none"/></svg></button>
-          <button class="anchor-cell" data-edge="top" aria-label="По верхнему краю" title="По верхнему краю"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 4h18"/><rect x="6" y="8" width="4" height="12" rx="1" stroke="none"/><rect x="14" y="8" width="4" height="7" rx="1" stroke="none"/></svg></button>
-          <button class="anchor-cell" data-edge="vcenter" aria-label="По центру по вертикали" title="По центру по вертикали"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12h18"/><rect x="6" y="5" width="4" height="14" rx="1" stroke="none"/><rect x="14" y="8" width="4" height="8" rx="1" stroke="none"/></svg></button>
-          <button class="anchor-cell" data-edge="bottom" aria-label="По нижнему краю" title="По нижнему краю"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 20h18"/><rect x="6" y="4" width="4" height="12" rx="1" stroke="none"/><rect x="14" y="9" width="4" height="7" rx="1" stroke="none"/></svg></button>
-        </div>
-        <div id="alignSide" class="anchor-side">
-          <label for="alignTo">Выровнять по</label>
+      <div class="align-body">
+        <div id="alignSide" class="align-to">
+          <label for="alignTo">Выровнять по:</label>
           <select id="alignTo" class="field select">
             <option value="comp">Композиции</option>
             <option value="selection">Выделенным слоям</option>
           </select>
         </div>
+        <div id="alignGrid" class="align-row" role="group" aria-label="Как выровнять выделенные слои">
+          <div class="align-trio">
+            <button class="align-btn" data-edge="left" aria-label="По левому краю" title="По левому краю"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 3v18"/><rect x="7" y="6" width="13" height="4.5" rx="1" stroke="none"/><rect x="7" y="13.5" width="8" height="4.5" rx="1" stroke="none"/></svg></button>
+            <button class="align-btn" data-edge="hcenter" aria-label="По центру по горизонтали" title="По центру по горизонтали"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M12 3v18"/><rect x="4.5" y="6" width="15" height="4.5" rx="1" stroke="none"/><rect x="7.5" y="13.5" width="9" height="4.5" rx="1" stroke="none"/></svg></button>
+            <button class="align-btn" data-edge="right" aria-label="По правому краю" title="По правому краю"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M20 3v18"/><rect x="4" y="6" width="13" height="4.5" rx="1" stroke="none"/><rect x="9" y="13.5" width="8" height="4.5" rx="1" stroke="none"/></svg></button>
+          </div>
+          <div class="align-trio">
+            <button class="align-btn" data-edge="top" aria-label="По верхнему краю" title="По верхнему краю"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 4h18"/><rect x="6" y="7" width="4.5" height="13" rx="1" stroke="none"/><rect x="13.5" y="7" width="4.5" height="8" rx="1" stroke="none"/></svg></button>
+            <button class="align-btn" data-edge="vcenter" aria-label="По центру по вертикали" title="По центру по вертикали"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 12h18"/><rect x="6" y="4.5" width="4.5" height="15" rx="1" stroke="none"/><rect x="13.5" y="7.5" width="4.5" height="9" rx="1" stroke="none"/></svg></button>
+            <button class="align-btn" data-edge="bottom" aria-label="По нижнему краю" title="По нижнему краю"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 20h18"/><rect x="6" y="4" width="4.5" height="13" rx="1" stroke="none"/><rect x="13.5" y="9" width="4.5" height="8" rx="1" stroke="none"/></svg></button>
+          </div>
+        </div>
+        <div class="align-sep" role="presentation"></div>
+        <div id="distLabel" class="align-label" title="Нужно три слоя или больше. Крайние слои остаются на месте, остальные встают между ними через равные промежутки">Распределить слои:</div>
+        <div id="distGrid" class="align-row" role="group" aria-label="Как распределить выделенные слои">
+          <div class="align-trio">
+            <button class="align-btn" data-dist="top" aria-label="Распределить по верхним краям" title="Распределить по верхним краям"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4h16M4 13h16"/><rect x="7" y="5.5" width="10" height="4" rx="1" stroke="none"/><rect x="8.5" y="14.5" width="7" height="5" rx="1" stroke="none"/></svg></button>
+            <button class="align-btn" data-dist="vcenter" aria-label="Распределить по центрам по вертикали" title="Распределить по центрам по вертикали"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 7.5h18M3 16.5h18"/><rect x="6" y="5" width="12" height="5" rx="1" stroke="none"/><rect x="8" y="14.5" width="8" height="4" rx="1" stroke="none"/></svg></button>
+            <button class="align-btn" data-dist="bottom" aria-label="Распределить по нижним краям" title="Распределить по нижним краям"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 11h16M4 20h16"/><rect x="8.5" y="5" width="7" height="4.5" rx="1" stroke="none"/><rect x="7" y="14.5" width="10" height="4" rx="1" stroke="none"/></svg></button>
+          </div>
+          <div class="align-trio">
+            <button class="align-btn" data-dist="left" aria-label="Распределить по левым краям" title="Распределить по левым краям"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4v16M13 4v16"/><rect x="5.5" y="7" width="4" height="10" rx="1" stroke="none"/><rect x="14.5" y="8.5" width="5" height="7" rx="1" stroke="none"/></svg></button>
+            <button class="align-btn" data-dist="hcenter" aria-label="Распределить по центрам по горизонтали" title="Распределить по центрам по горизонтали"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M7.5 3v18M16.5 3v18"/><rect x="5" y="6" width="5" height="12" rx="1" stroke="none"/><rect x="14.5" y="8" width="4" height="8" rx="1" stroke="none"/></svg></button>
+            <button class="align-btn" data-dist="right" aria-label="Распределить по правым краям" title="Распределить по правым краям"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M11 4v16M20 4v16"/><rect x="5" y="8.5" width="4.5" height="7" rx="1" stroke="none"/><rect x="14.5" y="7" width="4" height="10" rx="1" stroke="none"/></svg></button>
+          </div>
+        </div>
       </div>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Выравнивание»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
+    </section>
+
+    <section class="card tool-card shift-card" data-tool="shift" aria-label="Сдвиг во времени" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Сдвиг во времени»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="shiftOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="shiftPick timePick staggerPick" aria-label="Скрыть списки" title="Скрыть списки">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
+      </button>
+      <div class="tool-head" title="Двигает во времени появление и исчезновение выделенных слоёв или сами слои">
+        <b>Сдвиг во времени</b>
+      </div>
+      <div class="shift-body">
+        <div class="shift-part">
+          <div id="shiftPick" class="shift-pick">
+            <span class="shift-cap"><label for="shiftWhat">Сдвинуть:</label><button class="tool-info" type="button" data-info="Появление — все ключи и маркеры в первой половине слоя, исчезновение — во второй. Стрелки сдвигают их на указанное число кадров. Если анимация стоит у самого края слоя, край сдвигается вместе с ней. «Слой целиком» двигает слой со всем содержимым." aria-label="Как это работает" title="Появление — все ключи и маркеры в первой половине слоя, исчезновение — во второй. Стрелки сдвигают их на указанное число кадров. Если анимация стоит у самого края слоя, край сдвигается вместе с ней. «Слой целиком» двигает слой со всем содержимым.">i</button></span>
+            <select id="shiftWhat" class="field select">
+              <option value="in">Появление</option>
+              <option value="out">Исчезновение</option>
+              <option value="layer">Слой целиком</option>
+            </select>
+          </div>
+          <div class="shift-row shift-row-step">
+            <button id="shiftBack" class="shift-arrow" aria-label="Сдвинуть раньше" title="Сдвинуть раньше"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M11 6l-6 6 6 6"/></svg></button>
+            <span class="shift-count"><input id="shiftStep" class="shift-num" type="text" inputmode="numeric" maxlength="3" autocomplete="off" spellcheck="false" aria-label="На сколько кадров сдвигать" title="На сколько кадров сдвигать за одно нажатие"><span class="shift-unit">кадр.</span></span>
+            <button id="shiftFwd" class="shift-arrow" aria-label="Сдвинуть позже" title="Сдвинуть позже"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></button>
+          </div>
+        </div>
+        <div class="align-sep" role="presentation"></div>
+        <div class="shift-part">
+          <div id="timePick" class="shift-pick">
+            <span class="shift-cap"><label for="timeAlign">Подвести:</label><button class="tool-info" type="button" data-info="Ставит начало или конец появления (исчезновения) каждого выделенного слоя на указатель текущего времени." aria-label="Как это работает" title="Ставит начало или конец появления (исчезновения) каждого выделенного слоя на указатель текущего времени.">i</button></span>
+            <select id="timeAlign" class="field select">
+              <option value="inStart">Начало появления</option>
+              <option value="inEnd">Конец появления</option>
+              <option value="outStart">Начало исчезновения</option>
+              <option value="outEnd">Конец исчезновения</option>
+            </select>
+          </div>
+          <div class="shift-row">
+            <button id="timeAlignBtn" class="shift-do" title="Подвести к указателю текущего времени">К указателю</button>
+          </div>
+        </div>
+        <div class="align-sep" role="presentation"></div>
+        <div class="shift-part">
+          <div id="staggerPick" class="shift-pick">
+            <span class="shift-cap"><label for="staggerWhat">Расставить:</label><button class="tool-info" type="button" data-info="Лесенка: каждый следующий слой начинается на указанное число кадров позже предыдущего. «Слои» сдвигает слои целиком, «Появление» и «Исчезновение» — только их ключи. Повторное нажатие увеличивает ступеньки." aria-label="Как это работает" title="Лесенка: каждый следующий слой начинается на указанное число кадров позже предыдущего. «Слои» сдвигает слои целиком, «Появление» и «Исчезновение» — только их ключи. Повторное нажатие увеличивает ступеньки.">i</button></span>
+            <select id="staggerWhat" class="field select">
+              <option value="layer">Слои</option>
+              <option value="in">Появление</option>
+              <option value="out">Исчезновение</option>
+            </select>
+          </div>
+          <div class="shift-row">
+            <span class="shift-count"><input id="staggerStep" class="shift-num" type="text" inputmode="numeric" maxlength="3" autocomplete="off" spellcheck="false" aria-label="Шаг лесенки в кадрах" title="На сколько кадров каждый следующий слой позже предыдущего"><span class="shift-unit">кадр.</span></span>
+            <select id="staggerOrder" class="field select" aria-label="В каком порядке идут слои" title="В каком порядке идут слои">
+              <option value="asc">Сверху вниз</option>
+              <option value="desc">Снизу вверх</option>
+              <option value="selection">Как выделяли</option>
+              <option value="random">Случайно</option>
+            </select>
+            <button id="staggerBtn" class="shift-do" title="Каждый следующий слой — на столько кадров позже предыдущего">Лесенкой</button>
+          </div>
+        </div>
+      </div>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Сдвиг во времени»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
     </div>
     <div id="statusSlotMotion" class="status-slot"></div>
@@ -245,12 +327,12 @@
       </div>
 
       <div class="group">
-        <label for="panelWidth">Ширина панели</label>
+        <label for="panelWidth">Ширина полей и кнопок</label>
         <div class="width-row">
           <input id="panelWidth" class="range" type="range" min="280" max="640" step="10" value="380">
           <output id="panelWidthVal" for="panelWidth">380 px</output>
         </div>
-        <p class="hint">Кнопки и поля остаются такой ширины, даже если растянуть панель в After Effects.</p>
+        <p class="hint">Поля и кнопки в разделах Claude и «Инструменты» остаются такой ширины, даже если растянуть панель в After Effects. Вкладки и раздел «Анимация» занимают всю ширину панели.</p>
       </div>
 
       <div class="group">
