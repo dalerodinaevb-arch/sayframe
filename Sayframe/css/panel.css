@@ -249,6 +249,13 @@ textarea:focus, .field:focus {
   white-space: nowrap;
 }
 .tab:hover { color: var(--text); }
+.tabs { -webkit-user-select: none; user-select: none; }
+.tabs.reordering .tab { cursor: grabbing; }
+.tab.dragging {
+  color: var(--text);
+  background: rgba(var(--accent-rgb), 0.32);
+  box-shadow: 0 8px 20px -8px rgba(var(--accent-rgb), 0.9), inset 0 0 0 1px rgba(var(--accent-rgb), 0.95);
+}
 .tab[aria-selected="true"] {
   color: var(--text);
   background: rgba(var(--accent-rgb), 0.18);
