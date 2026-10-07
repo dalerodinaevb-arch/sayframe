@@ -5,11 +5,13 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.2.0";
+    var VERSION = "1.3.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
     var TAB_KEY = "sayframe.tab.v1";
+    var TAB_ORDER_KEY = "sayframe.tabOrder.v1";
+    var TAB_DRAG_START_PX = 6;   // сдвиг мыши, после которого нажатие на вкладку считается перетаскиванием
     var UPDATE_CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
     var UPDATE_MAX_FILES = 200;
 
@@ -477,7 +479,7 @@
         updateStatus: el("updateStatus"), updateNow: el("updateNow"), updateLater: el("updateLater"),
         updateDownload: el("updateDownload"),
         versionText: el("versionText"), checkUpdate: el("checkUpdate"), updateHint: el("updateHint"),
-        tabClaude: el("tabClaude"), tabTools: el("tabTools"), viewClaude: el("viewClaude"), viewTools: el("viewTools"),
+        tabs: el("tabs"), tabClaude: el("tabClaude"), tabTools: el("tabTools"), viewClaude: el("viewClaude"), viewTools: el("viewTools"),
         statusSlotClaude: el("statusSlotClaude"), statusSlotTools: el("statusSlotTools")
     };
 
@@ -506,6 +508,138 @@
 
     function savedTab() {
         try { return window.localStorage.getItem(TAB_KEY) === "tools" ? "tools" : "claude"; } catch (e) { return "claude"; }
+    }
+
+    // ---- порядок вкладок: его можно менять перетаскиванием или Alt + стрелка, он запоминается
+
+    function tabButtons() {
+        return Array.prototype.slice.call(ui.tabs.querySelectorAll(".tab"));
+    }
+
+    function tabOf(node) {
+        while (node && node !== ui.tabs) {
+            if (node.className && typeof node.className === "string" && /(^|\s)tab(\s|$)/.test(node.className)) { return node; }
+            node = node.parentNode;
+        }
+        return null;
+    }
+
+    function storeTabOrder() {
+        var names = [];
+        var buttons = tabButtons();
+        var i;
+        for (i = 0; i < buttons.length; i++) { names.push(buttons[i].getAttribute("data-tab")); }
+        try { window.localStorage.setItem(TAB_ORDER_KEY, JSON.stringify(names)); } catch (e) {}
+    }
+
+    // Расставляет вкладки в сохранённом порядке. Незнакомые имена пропускает,
+    // а вкладки, которых в сохранённом списке нет (появились в новой версии), ставит в конец.
+    function applyTabOrder() {
+        var buttons = tabButtons();
+        var byName = {};
+        var placed = {};
+        var saved, i, name;
+        try { saved = JSON.parse(window.localStorage.getItem(TAB_ORDER_KEY) || "null"); } catch (e) { saved = null; }
+        if (Object.prototype.toString.call(saved) !== "[object Array]") { return; }
+        for (i = 0; i < buttons.length; i++) { byName[buttons[i].getAttribute("data-tab")] = buttons[i]; }
+        for (i = 0; i < saved.length; i++) {
+            name = saved[i];
+            if (typeof name === "string" && byName.hasOwnProperty(name) && !placed[name]) {
+                placed[name] = true;
+                ui.tabs.appendChild(byName[name]);
+            }
+        }
+        for (i = 0; i < buttons.length; i++) {
+            if (!placed[buttons[i].getAttribute("data-tab")]) { ui.tabs.appendChild(buttons[i]); }
+        }
+    }
+
+    // Сдвигает вкладку на одно место влево (dir < 0) или вправо (dir > 0).
+    function moveTab(btn, dir) {
+        var buttons = tabButtons();
+        var i = buttons.indexOf(btn);
+        var j = i + (dir < 0 ? -1 : 1);
+        if (i < 0 || j < 0 || j >= buttons.length) { return false; }
+        if (dir < 0) { ui.tabs.insertBefore(btn, buttons[j]); } else { ui.tabs.insertBefore(buttons[j], btn); }
+        storeTabOrder();
+        return true;
+    }
+
+    function enableTabReordering() {
+        var drag = null;        // { btn, id, startX, moved }
+        var dragEndedAt = 0;
+
+        function finish(e) {
+            if (!drag || (e && e.pointerId !== drag.id)) { return; }
+            if (drag.moved) {
+                drag.btn.className = drag.btn.className.replace(/\s*dragging/g, "");
+                ui.tabs.className = ui.tabs.className.replace(/\s*reordering/g, "");
+                try { drag.btn.releasePointerCapture(drag.id); } catch (err) {}
+                storeTabOrder();
+                dragEndedAt = Date.now();
+            }
+            drag = null;
+        }
+
+        ui.tabs.addEventListener("pointerdown", function (e) {
+            var btn = tabOf(e.target);
+            if (!btn || (e.pointerType === "mouse" && e.button !== 0)) { return; }
+            drag = { btn: btn, id: e.pointerId, startX: e.clientX, moved: false };
+        });
+
+        window.addEventListener("pointermove", function (e) {
+            var buttons, i, other, r;
+            if (!drag || e.pointerId !== drag.id) { return; }
+            if (!drag.moved) {
+                if (Math.abs(e.clientX - drag.startX) < TAB_DRAG_START_PX) { return; }
+                drag.moved = true;
+                drag.btn.className += " dragging";
+                ui.tabs.className += " reordering";
+                try { drag.btn.setPointerCapture(drag.id); } catch (err) {}
+            }
+            // Указатель над другой вкладкой — перетаскиваемая занимает её место.
+            buttons = tabButtons();
+            for (i = 0; i < buttons.length; i++) {
+                other = buttons[i];
+                if (other === drag.btn) { continue; }
+                r = other.getBoundingClientRect();
+                if (e.clientX >= r.left && e.clientX <= r.right) {
+                    if (buttons.indexOf(drag.btn) < i) {
+                        ui.tabs.insertBefore(drag.btn, other.nextSibling);
+                    } else {
+                        ui.tabs.insertBefore(drag.btn, other);
+                    }
+                    break;
+                }
+            }
+        });
+
+        window.addEventListener("pointerup", finish);
+        window.addEventListener("pointercancel", finish);
+
+        ui.tabs.addEventListener("click", function (e) {
+            var btn = tabOf(e.target);
+            // Отпускание кнопки мыши после перетаскивания не должно переключать вкладку.
+            if (!btn || Date.now() - dragEndedAt < 300) { return; }
+            showTab(btn.getAttribute("data-tab"));
+        });
+
+        ui.tabs.addEventListener("keydown", function (e) {
+            var btn = tabOf(e.target);
+            var dir = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
+            var buttons, next;
+            if (!btn || !dir || e.metaKey || e.ctrlKey || e.shiftKey) { return; }
+            e.preventDefault();
+            if (e.altKey) {
+                // Alt + стрелка двигает саму вкладку.
+                if (moveTab(btn, dir)) { btn.focus(); }
+                return;
+            }
+            // Стрелка без Alt переводит фокус на соседнюю вкладку.
+            buttons = tabButtons();
+            next = buttons[buttons.indexOf(btn) + dir];
+            if (next) { next.focus(); }
+        });
     }
 
     function setStatus(text, kind) {
@@ -1556,10 +1690,9 @@
     applyTheme(settings);
     buildSettings();
     showRef();
+    applyTabOrder();
     showTab(savedTab());
-
-    ui.tabClaude.addEventListener("click", function () { showTab("claude"); });
-    ui.tabTools.addEventListener("click", function () { showTab("tools"); });
+    enableTabReordering();
 
     ui.runBtn.addEventListener("click", onRun);
     ui.fixBtn.addEventListener("click", onFix);
