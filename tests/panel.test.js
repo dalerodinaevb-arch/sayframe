@@ -246,6 +246,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           if (args[0] !== "osascript") return { code: 1, stdout: "", stderr: "unknown command" };
           const [, , js, png, res] = args[1];
           sys.jxa = fs.readFileSync(js, "utf8");
+          // opts.clipEmptyReads: the system says "nothing there" this many times before it hands the picture over.
+          if (sys.exec.filter((x) => x.file === "osascript").length <= (opts.clipEmptyReads || 0)) { fs.writeFileSync(res, "NOIMAGE"); return { code: 0, stdout: "NOIMAGE\n", stderr: "" }; }
           const clip = opts.clip || "none";
           if (clip === "png") { fs.writeFileSync(png, fakePng(0)); fs.writeFileSync(res, "OK"); return { code: 0, stdout: "OK\n", stderr: "" }; }
           if (clip === "error") return { code: 1, stdout: "", stderr: "execution error: Error: TypeError (-2700)" };
@@ -265,8 +267,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     });
 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false }, opts.settings || {});
-    await page.addInitScript(({ stored, tmpDir, home, hostPath, withSystemPath, updateUrl, updateState }) => {
+    await page.addInitScript(({ stored, tmpDir, home, hostPath, withSystemPath, updateUrl, updateState, updateEveryMs }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
+      window.__SAYFRAME_TEST_UPDATE_EVERY_MS__ = updateEveryMs || 0;
       window.__opened = [];
       // Seed saved state only when the page is first opened. Touching localStorage from this start-up
       // script on a reload makes Chromium occasionally hand the page an empty store (a test-browser quirk).
@@ -290,7 +293,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         openExternal: (u) => { window.__opened.push(u); return true; },
         reload: () => { window.__plat("reloaded", []).then(() => window.location.reload()); }
       };
-    }, { stored, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateState: opts.updateState || null });
+    }, { stored, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0 });
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
     // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
@@ -594,6 +597,47 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.evaluate(() => { const dt = new DataTransfer(); dt.setData("text/plain", "привет"); document.getElementById("prompt").dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })); });
   await p.page.waitForTimeout(200);
   check("P11 pasting text into the prompt is left alone", p.sys.exec.length === 0 && (await p.status()) === "Готов.");
+  await p.close();
+
+  // "I copied a picture and the first Cmd+V did nothing": the system may answer "nothing there" right after
+  // a copy and hand the picture over a moment later, and Cmd+V used to be dropped while the cursor sat in a field.
+  const reads = (p) => p.sys.exec.filter((x) => x.file === "osascript").length;
+  p = await open({ clip: "png", clipEmptyReads: 1, footage: IMG });
+  await p.paste(); await p.idle();
+  await p.page.waitForFunction(() => !document.getElementById("modal").hidden, null, { timeout: 15000 });
+  await p.modalClick("Оставить как есть");
+  check("P12 the picture arrives a moment after the copy: the first press still pastes it", /^Картинка вставлена слоем/.test(await p.status()) && reads(p) === 2 && p.ae.log.layerAdds.length === 1, (await p.status()) + " reads=" + reads(p));
+  await p.close();
+  p = await open({ clip: "png", clipEmptyReads: 2, footage: IMG });
+  await p.paste(); await p.idle();
+  await p.page.waitForFunction(() => !document.getElementById("modal").hidden, null, { timeout: 15000 });
+  await p.modalClick("Отмена");
+  check("P12 even when it takes two more looks", reads(p) === 3 && (await p.status()) === "Вставка отменена." && p.tempLeft().length === 0, (await p.status()) + " reads=" + reads(p));
+  await p.close();
+  p = await open({ clip: "none", footage: IMG });
+  t = Date.now();
+  await p.paste(); await p.idle();
+  check("P12 a clipboard that really has no picture is reported after three looks, within two seconds", /^В буфере обмена нет картинки/.test(await p.status()) && reads(p) === 3 && Date.now() - t < 2500 && p.tempLeft().length === 0 && !(await p.page.locator("#pasteBtn").isDisabled()), reads(p) + " " + (Date.now() - t));
+  check("P12 the macOS helper also asks the system for any picture it can read, and stays plain ASCII", /initWithPasteboard/.test(p.sys.jxa) && /^[\x09\x0a\x20-\x7e]*$/.test(p.sys.jxa) && (() => { try { new Function(p.sys.jxa); return true; } catch (e) { return false; } })());
+  await p.close();
+  p = await open({ clip: "png", footage: IMG });
+  await p.page.focus("#prompt");
+  await p.page.evaluate(() => { const dt = new DataTransfer(); document.getElementById("prompt").dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })); });
+  await p.page.waitForFunction(() => !document.getElementById("modal").hidden, null, { timeout: 15000 });
+  await p.modalClick("Оставить как есть");
+  check("P13 Cmd+V with the cursor in the prompt and no text in the clipboard pastes the picture", /^Картинка вставлена слоем/.test(await p.status()) && reads(p) === 1 && (await p.page.inputValue("#prompt")) === "", await p.status());
+  await p.close();
+  p = await open({ clip: "none", footage: IMG, imageSize: { width: 2, height: 2 } });
+  await p.page.evaluate((b64) => {
+    const bin = atob(b64); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const file = new File([bytes], "image.png", { type: "image/png" });
+    const ev = new Event("paste", { bubbles: true, cancelable: true });
+    ev.clipboardData = { items: [], files: [file], getData() { return ""; } };
+    document.getElementById("prompt").dispatchEvent(ev);
+  }, REAL_PNG.toString("base64"));
+  await p.page.waitForFunction(() => !document.getElementById("modal").hidden, null, { timeout: 15000 });
+  await p.modalClick("Оставить как есть");
+  check("P13 a picture listed only under the event's files is taken from there, even inside a field", /^Картинка вставлена слоем/.test(await p.status()) && reads(p) === 0 && p.errors.length === 0, await p.status());
   await p.close();
 
   console.log("\n=== settings ===");
@@ -937,7 +981,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  const toggle = async (p) => { const b = p.page.locator("#easeCurveToggle"); return [await b.getAttribute("aria-expanded"), await b.getAttribute("title"), (await p.page.locator("#easeCurveToggle .ease-toggle-plus").evaluate((el) => getComputedStyle(el).display)) !== "none" ? "+" : "-"].join("|"); };
+  const toggle = async (p) => { const b = p.page.locator("#easeCurveToggle"); return [await b.getAttribute("aria-expanded"), await b.getAttribute("title"), (await p.page.locator("#easeCurveToggle .tool-toggle-plus").evaluate((el) => getComputedStyle(el).display)) !== "none" ? "+" : "-"].join("|"); };
   t = await p.page.evaluate(() => { const r = (el) => el.getBoundingClientRect(); const card = r(document.querySelector(".ease-card")), b = r(document.getElementById("easeCurveToggle")), c = r(document.getElementById("easeCurve")), s = r(document.getElementById("easeBothBtn")); return { corner: b.top >= card.top && b.right <= card.right && card.right - b.right < 16 && b.top - card.top < 8, clear: b.bottom <= c.top + 1, above: c.height > 40 && c.bottom <= s.top }; });
   check("M8 the curve is shown at first, with a minus in the card's top right corner", (await vis(p, "#easeCurve")) && (await toggle(p)) === "true|Скрыть кривую|-" && t.corner && t.clear && t.above, JSON.stringify(t) + " " + await toggle(p));
   await setSlider(p, "easeIn", 30);
@@ -1315,6 +1359,144 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     t = await toolRects(p);
     await setSlider(p, "easeIn", 61);
     check("S9 saved widths " + bad + " -> " + JSON.stringify(want), (await savedSizes(p)) === want && Object.keys(t).every((k) => t[k].r <= 366 && t[k].l >= 14) && (await overflow(p)) <= 0 && p.errors.length === 0, (await savedSizes(p)) + " " + JSON.stringify(t));
+    await p.close();
+  }
+
+  // ---------------------------------------------------------------- animation: large or small blocks
+  console.log("\n=== animation: block size setting ===");
+  const toolsAttr = (p) => p.page.evaluate(() => document.documentElement.getAttribute("data-tools"));
+  const gridBox = (p, id) => p.page.evaluate((id) => { const g = document.getElementById(id).getBoundingClientRect(), c = document.querySelector("#" + id + " button").getBoundingClientRect(); return [Math.round(g.width), Math.round(g.height), Math.round(c.width), Math.round(c.height)].join(); }, id);
+  const pressedSize = (p) => p.page.locator('#toolSize button[aria-pressed="true"]').getAttribute("data-value");
+  const allInside = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button:not(.tool-grip), select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5); }); }));
+
+  p = await open({});
+  await motionTab(p);
+  check("Z1 blocks are large unless chosen otherwise", (await toolsAttr(p)) === "large" && (await gridBox(p, "anchorGrid")) === "122,122,38,38" && (await gridBox(p, "alignGrid")) === "122,80,38,38", await gridBox(p, "anchorGrid"));
+  await p.page.click("#settingsBtn");
+  check("Z1 settings offer two sizes, large is marked", (await p.page.locator("#toolSize button").count()) === 2 && (await pressedSize(p)) === "large" && (await p.page.locator("#toolSize button").allInnerTexts()).join() === "Крупные,Мелкие");
+  await p.page.click('#toolSize button[data-value="small"]');
+  check("Z2 choosing small shows at once", (await toolsAttr(p)) === "small" && (await pressedSize(p)) === "small");
+  await p.page.click("#settingsClose");
+  check("Z2 closing without saving returns large", (await toolsAttr(p)) === "large" && (await gridBox(p, "anchorGrid")) === "122,122,38,38");
+  await p.page.click("#settingsBtn"); await p.page.click('#toolSize button[data-value="small"]'); await p.page.click("#saveSettings");
+  check("Z3 saved: the buttons are small now", (await toolsAttr(p)) === "small" && (await gridBox(p, "anchorGrid")) === "82,82,26,26" && (await gridBox(p, "alignGrid")) === "82,54,26,26" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).toolSize)) === "small", await gridBox(p, "anchorGrid") + " " + await gridBox(p, "alignGrid"));
+  t = await toolRects(p);
+  check("Z3 at 380px all three small blocks stand in one row", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.ease.l === 14 && t.align.r === 366 && Math.abs(t.ease.w - t.anchor.w) <= 1, JSON.stringify(t));
+  check("Z3 nothing sticks out of a small block or the panel", (await allInside(p)) && (await overflow(p)) <= 0);
+  t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); return [r("easeIn").width, r("easeOut").width, r("easeBothBtn").width, r("anchorKeys").height, document.querySelector("#motionTools .ease-card").getBoundingClientRect().height].map(Math.round); });
+  check("Z3 the easing block shrinks too and keeps equal sliders", t[0] === t[1] && t[0] >= 20 && t[2] === 26 && t[3] === 28, t.join());
+  await p.page.screenshot({ path: path.join(SHOTS, "26-tools-small.png") });
+  await setSlider(p, "easeOut", 100);
+  check("Z3 slider fill follows the smaller thumb", (await fillOf(p, "easeOut")) === "1" && (await p.page.locator("#easeOut").evaluate((el) => getComputedStyle(el).getPropertyValue("--thumb").trim())) === "12px");
+  await setSlider(p, "easeOut", 60);
+  await p.page.click("#easeBothBtn"); await p.idle();
+  c = await p.status();
+  await p.page.locator("#anchorGrid button").nth(4).click(); await p.idle();
+  t = await p.status();
+  await p.page.click('#alignGrid button[data-edge="left"]'); await p.idle();
+  check("Z4 every tool still works at the small size", c === "Выделите ключевые кадры на таймлайне и нажмите ещё раз." && t === "Выделите слой в композиции и нажмите ещё раз." && (await p.status()) === "Выделите слой в композиции и нажмите ещё раз.", c + " | " + t);
+  await dragEdge(p, "anchor", -300);
+  t = await toolRects(p);
+  check("Z5 a small block can be squeezed to 112px, not further", t.anchor.w === 112 && (await savedSizes(p)) === "anchor=112" && (await allInside(p)), JSON.stringify(t.anchor));
+  await p.restart();
+  check("Z5 the size and the widths survive a restart", (await toolsAttr(p)) === "small" && (await toolRects(p)).anchor.w === 112 && (await gridBox(p, "anchorGrid")) === "82,82,26,26");
+  await p.page.click("#settingsBtn");
+  check("Z5 settings show the saved size", (await pressedSize(p)) === "small");
+  await p.page.click('#toolSize button[data-value="large"]'); await p.page.click("#saveSettings");
+  t = await toolRects(p);
+  check("Z6 back to large: big buttons again, and a block saved narrower widens to fit them", (await toolsAttr(p)) === "large" && (await gridBox(p, "anchorGrid")) === "122,122,38,38" && t.anchor.w === 152 && (await allInside(p)) && (await overflow(p)) <= 0, JSON.stringify(t.anchor));
+  check("Z6 no page errors", p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+  p = await open({ width: 280, settings: { toolSize: "small", panelWidth: 280 } });
+  await motionTab(p);
+  t = await toolRects(p);
+  check("Z7 in the narrowest panel two small blocks share a row", t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && t.align.t >= t.ease.b && (await allInside(p)) && (await overflow(p)) <= 0, JSON.stringify(t));
+  await arrange(p);
+  t = await toolRects(p);
+  await dragFrom(p, middle(t.align), { x: middle(t.ease).x - 10, y: middle(t.ease).y - 5 });
+  check("Z7 small blocks can still be rearranged", (await toolOrder(p)) === "align,ease,anchor", await toolOrder(p));
+  await p.close();
+  for (const bad of ["tiny", 5, null, "SMALL"]) {
+    p = await open({ settings: { toolSize: bad } });
+    check("Z8 a broken saved size (" + JSON.stringify(bad) + ") means large", (await toolsAttr(p)) === "large" && p.errors.length === 0, await toolsAttr(p));
+    await p.close();
+  }
+
+  // ---------------------------------------------------------------- animation: folding the option lists, hiding titles
+  console.log("\n=== animation: fold options, hide titles ===");
+  const fold = async (p, id) => { const b = p.page.locator("#" + id); return [await b.getAttribute("aria-expanded"), await b.getAttribute("title"), (await p.page.locator("#" + id + " .tool-toggle-plus").evaluate((el) => getComputedStyle(el).display)) !== "none" ? "+" : "-"].join("|"); };
+  const cardH = (p, tool) => p.page.evaluate((tool) => Math.round(document.querySelector('#motionTools [data-tool="' + tool + '"]').getBoundingClientRect().height), tool);
+  const savedMotion = (p, k) => p.page.evaluate((k) => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}")[k], k);
+  const titlesAttr = (p) => p.page.evaluate(() => document.documentElement.getAttribute("data-titles"));
+  // Does the corner button overlap anything else in its block?
+  const togglesClear = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-toggle"), (b) => { const r = b.querySelector("svg").getBoundingClientRect(); return Array.prototype.every.call(b.parentNode.querySelectorAll(".tool-head b, .anchor-grid button, .ease-bar > *, .ease-curve, select, .anchor-side label"), (el) => { const q = el.getBoundingClientRect(); if (q.width === 0) return true; const tw = el.nodeName === "B" ? (() => { const g = document.createRange(); g.selectNodeContents(el); return g.getBoundingClientRect(); })() : q; return tw.right <= r.left || tw.left >= r.right || tw.bottom <= r.top || tw.top >= r.bottom; }); }));
+
+  p = await open({});
+  await motionTab(p);
+  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-toggle").count()) === 3 && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть настройку|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
+  check("F1 the corner buttons do not cover titles or controls", await togglesClear(p));
+  c = await cardH(p, "anchor");
+  await p.page.click("#anchorOptsToggle");
+  check("F2 minus on the anchor block hides its list and turns into a plus; the block shrinks", !(await vis(p, "#anchorSide")) && !(await vis(p, "#anchorKeys")) && (await fold(p, "anchorOptsToggle")) === "false|Показать настройку (сейчас: Добавить ключ)|+" && (await cardH(p, "anchor")) < c - 40 && (await savedMotion(p, "anchorOpts")) === false && (await vis(p, "#anchorGrid")), (await fold(p, "anchorOptsToggle")) + " " + (await cardH(p, "anchor")) + "/" + c);
+  check("F2 the other blocks are left alone", (await vis(p, "#alignSide")) && (await vis(p, "#easeCurve")));
+  c = await cardH(p, "align");
+  await p.page.selectOption("#alignTo", "selection");
+  await p.page.click("#alignOptsToggle");
+  check("F2 same for the align block; the plus says what is chosen", !(await vis(p, "#alignSide")) && (await fold(p, "alignOptsToggle")) === "false|Показать настройку (сейчас: Выделенным слоям)|+" && (await cardH(p, "align")) <= c && (await savedMotion(p, "alignOpts")) === false, await fold(p, "alignOptsToggle"));
+  await p.page.screenshot({ path: path.join(SHOTS, "27-tools-folded.png") });
+  await p.restart();
+  check("F3 folded lists stay folded after a restart", !(await vis(p, "#anchorSide")) && !(await vis(p, "#alignSide")) && (await vis(p, "#easeCurve")) && (await fold(p, "alignOptsToggle")) === "false|Показать настройку (сейчас: Выделенным слоям)|+");
+  await p.page.focus("#anchorOptsToggle"); await p.page.keyboard.press("Enter");
+  check("F3 plus brings the list back (keyboard too)", (await vis(p, "#anchorKeys")) && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await savedMotion(p, "anchorOpts")) === true);
+  await p.close();
+  // a hidden list keeps working: the choice made before folding is the one used
+  clock = { time: 0 };
+  L = mkLayer(clock, { name: "a", rect: { left: 0, top: 0, width: 100, height: 100 }, position: [200, 100, 0] });
+  L2 = mkLayer(clock, { name: "b", rect: { left: 0, top: 0, width: 300, height: 50 }, position: [500, 400, 0] });
+  p = await open({ selectedLayers: [L, L2] });
+  await motionTab(p); await p.page.selectOption("#alignTo", "selection"); await p.page.click("#alignOptsToggle");
+  await p.page.click('#alignGrid button[data-edge="left"]'); await p.idle();
+  check("F4 with the list hidden, align still uses the chosen target (selection)", sameVec(P(L).value, [200, 100, 0]) && sameVec(P(L2).value, [200, 400, 0]), P(L2).value.join());
+  await p.page.selectOption("#anchorKeys", "skip"); await p.page.click("#anchorOptsToggle");
+  A(L).addKey(0, [0, 0, 0]);
+  await p.page.locator("#anchorGrid button").nth(4).click(); await p.idle();
+  check("F4 and the anchor tool still uses its hidden choice (skip keyed layers)", /Пропущено: 1 слой/.test(await p.status()) && sameVec(A(L).keys[0].value, [0, 0, 0]), await p.status());
+  check("F4 no page errors", p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  p = await open({});
+  await motionTab(p);
+  check("F5 titles are shown unless switched off", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность ключей,Точка привязки,Выравнивание");
+  c = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
+  await p.page.click("#settingsBtn");
+  check("F5 settings have the switch, on", await p.page.isChecked("#toolTitles"));
+  await p.page.locator("#toolTitles").evaluate((el) => el.click());
+  check("F5 switching it off shows at once", (await titlesAttr(p)) === "off");
+  await p.page.click("#settingsClose");
+  check("F5 closing without saving brings the titles back", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").first().isVisible()));
+  await p.page.click("#settingsBtn"); await p.page.locator("#toolTitles").evaluate((el) => el.click()); await p.page.click("#saveSettings");
+  t = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
+  check("F6 saved: no titles, the blocks get lower", (await titlesAttr(p)) === "off" && (await p.page.locator("#motionTools .tool-head").evaluateAll((l) => l.every((h) => h.getBoundingClientRect().height === 0))) && t.every((h, i) => h < c[i]) && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).toolTitles)) === false, t.join() + " vs " + c.join());
+  check("F6 without titles the corner buttons still cover nothing", (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0);
+  await p.page.screenshot({ path: path.join(SHOTS, "28-tools-no-titles.png") });
+  await p.page.click("#anchorOptsToggle"); await p.page.click("#alignOptsToggle"); await p.page.click("#easeCurveToggle");
+  check("F6 everything folded, no titles: just the buttons, and the tools work", (await togglesClear(p)) && (await allInside(p)) && (await cardH(p, "anchor")) < 170);
+  await p.page.click("#easeBothBtn"); await p.idle();
+  check("F6 easing still runs", (await p.status()) === "Выделите ключевые кадры на таймлайне и нажмите ещё раз.");
+  await p.page.click("#settingsBtn"); await p.page.click('#toolSize button[data-value="small"]'); await p.page.click("#saveSettings");
+  t = await toolRects(p);
+  check("F7 small, no titles, folded: three blocks in a row, nothing overlaps", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0 && (await cardH(p, "anchor")) < 125, JSON.stringify(t) + " h=" + await cardH(p, "anchor"));
+  await p.page.screenshot({ path: path.join(SHOTS, "29-tools-small-bare.png") });
+  await p.page.click("#anchorOptsToggle"); await p.page.click("#alignOptsToggle"); await p.page.click("#easeCurveToggle");
+  await p.page.click("#settingsBtn"); await p.page.locator("#toolTitles").evaluate((el) => el.click()); await p.page.click("#saveSettings");
+  check("F7 small with titles and everything open: titles do not run under the corner buttons", (await titlesAttr(p)) === "on" && (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0);
+  await p.page.screenshot({ path: path.join(SHOTS, "26-tools-small.png") });
+  await p.restart();
+  check("F7 the titles choice survives a restart", (await titlesAttr(p)) === "on" && (await toolsAttr(p)) === "small" && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+  for (const bad of ["no", 0, null]) {
+    p = await open({ settings: { toolTitles: bad } });
+    check("F8 a broken saved titles value (" + JSON.stringify(bad) + ") means titles are shown", (await titlesAttr(p)) === "on" && p.errors.length === 0);
     await p.close();
   }
 
@@ -1699,6 +1881,43 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("U17 banner fits a 300px panel", t <= 0, t);
   await p.page.screenshot({ path: path.join(SHOTS, "14-update-narrow.png") });
   await p.close();
+  // "The update popup doesn't appear after pushing the update": an open panel must find a new release by itself.
+  const fresh = { [U]: { version: CUR, files: [] } };
+  p = await open({ updateUrl: U, updateEveryMs: 700, remote: fresh });
+  await settle(p);
+  check("U19 (scene) up to date, no banner", !(await barVisible(p)) && p.net.gets.length >= 1);
+  c = p.net.gets.length;
+  fresh[U] = { version: "9.9.9", notes: ["свежий выпуск"], files: [] };
+  await p.page.waitForSelector("#updateBar:not([hidden])", { timeout: 6000 }).catch(() => {});
+  check("U19 a release published while the panel is open shows up by itself, without a restart", (await barVisible(p)) && (await p.page.locator("#updateTitle").innerText()) === "Доступна версия 9.9.9" && (await p.page.locator("#updateNotes li").innerText()) === "свежий выпуск" && p.net.gets.length > c);
+  await p.page.evaluate(() => { const s = document.getElementById("updateStatus"); s.textContent = "сообщение"; s.hidden = false; });
+  await p.page.waitForTimeout(1800);
+  check("U19 later background checks leave a banner that is already shown alone", (await p.page.locator("#updateStatus").innerText()) === "сообщение" && (await barVisible(p)));
+  await p.page.click("#updateLater");
+  await p.page.waitForTimeout(1800);
+  check("U20 a closed banner stays closed for the same version", !(await barVisible(p)));
+  fresh[U] = { version: "9.9.10", notes: ["ещё новее"], files: [] };
+  await p.page.waitForSelector("#updateBar:not([hidden])", { timeout: 6000 }).catch(() => {});
+  check("U20 but a newer release is announced again", (await barVisible(p)) && (await p.page.locator("#updateTitle").innerText()) === "Доступна версия 9.9.10");
+  check("U20 no page errors", p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+  const quiet = { [U]: { version: CUR, files: [] } };
+  p = await open({ updateUrl: U, updateEveryMs: 3600000, remote: quiet });
+  await settle(p);
+  c = p.net.gets.length;
+  quiet[U] = { version: "9.9.9", files: [] };
+  await p.page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await p.page.waitForTimeout(600);
+  check("U21 coming back to the panel right after a check does not ask the server again", p.net.gets.length === c && !(await barVisible(p)));
+  await p.page.evaluate(() => { const s = JSON.parse(localStorage.getItem("sayframe.update.v1")); s.lastCheck = Date.now() - 3 * 3600000; localStorage.setItem("sayframe.update.v1", JSON.stringify(s)); window.dispatchEvent(new Event("focus")); });
+  await p.page.waitForSelector("#updateBar:not([hidden])", { timeout: 6000 }).catch(() => {});
+  check("U21 coming back later does, and the banner appears", (await barVisible(p)) && p.net.gets.length === c + 1);
+  await p.close();
+  p = await open({ updateUrl: U, updateState: { base: U, lastCheck: Date.now() - 6 * 60000, latest: { info: { version: CUR }, url: U } }, remote: { [U]: { version: "9.9.9", files: [] } } });
+  await settle(p);
+  check("U22 a start six minutes after the last check asks the server (it used to wait six hours)", p.net.gets.length === 1 && (await barVisible(p)));
+  await p.close();
+
   // The real release tool: make the next release in a scratch copy of the project and let the panel install it.
   {
     const { spawnSync } = require("child_process");
