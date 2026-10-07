@@ -39,6 +39,7 @@
     <nav id="tabs" class="tabs" role="tablist" aria-label="Разделы панели">
       <button id="tabClaude" class="tab" role="tab" data-tab="claude" aria-selected="true" aria-controls="viewClaude" title="Перетащите, чтобы поменять вкладки местами">Claude</button>
       <button id="tabTools" class="tab" role="tab" data-tab="tools" aria-selected="false" aria-controls="viewTools" title="Перетащите, чтобы поменять вкладки местами">Инструменты</button>
+      <button id="tabMotion" class="tab" role="tab" data-tab="motion" aria-selected="false" aria-controls="viewMotion" title="Перетащите, чтобы поменять вкладки местами">Анимация</button>
     </nav>
 
     <!-- Раздел Claude: задача словами, референс, запуск и ответ -->
@@ -95,6 +96,70 @@
       </button>
     </section>
     <div id="statusSlotTools" class="status-slot"></div>
+    </div>
+
+    <!-- Раздел «Анимация»: плавность ключей и точка привязки -->
+    <div id="viewMotion" class="view" role="tabpanel" aria-labelledby="tabMotion" hidden>
+    <section class="card tool-card">
+      <div class="tool-head">
+        <b>Плавность ключей</b>
+        <small>Выделите ключевые кадры на таймлайне</small>
+      </div>
+      <svg id="easeCurve" class="ease-curve" viewBox="0 0 200 84" preserveAspectRatio="none" aria-hidden="true">
+        <path class="ease-guide" d="M12 72H188M12 12H188"/>
+        <path id="easeHandles" class="ease-handles" d=""/>
+        <path id="easeCurvePath" class="ease-line" d=""/>
+      </svg>
+      <div class="ease-row">
+        <label for="easeOut" title="Как плавно движение начинается после ключа">Разгон</label>
+        <input id="easeOut" type="range" min="0" max="100" step="1" value="60">
+        <output id="easeOutVal" for="easeOut">60%</output>
+      </div>
+      <div class="ease-row">
+        <label for="easeIn" title="Как плавно движение останавливается перед ключом">Торможение</label>
+        <input id="easeIn" type="range" min="0" max="100" step="1" value="60">
+        <output id="easeInVal" for="easeIn">60%</output>
+      </div>
+      <label class="switch">
+        <input id="easeLink" type="checkbox" checked>
+        <span class="track"></span>
+        <span class="text">Разгон и торможение одинаковые</span>
+      </label>
+      <div class="ease-actions">
+        <button id="easeOutBtn" class="ghost" title="Меняет только то, как движение начинается после ключа">Только разгон</button>
+        <button id="easeBothBtn" class="primary" title="Применяет к выделенным ключам и разгон, и торможение">Применить</button>
+        <button id="easeInBtn" class="ghost" title="Меняет только то, как движение останавливается перед ключом">Только торможение</button>
+      </div>
+    </section>
+
+    <section class="card tool-card">
+      <div class="tool-head">
+        <b>Точка привязки</b>
+        <small>Переносит точку привязки выделенных слоёв, сами слои остаются на месте</small>
+      </div>
+      <div class="anchor-wrap">
+        <div id="anchorGrid" class="anchor-grid" role="group" aria-label="Куда перенести точку привязки">
+          <button class="anchor-cell" data-fx="0" data-fy="0" aria-label="Левый верхний угол" title="Левый верхний угол" style="--turn: -45deg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V6"/><path d="M6.5 11.5L12 6l5.5 5.5"/></svg></button>
+          <button class="anchor-cell" data-fx="0.5" data-fy="0" aria-label="Верхний край, по центру" title="Верхний край, по центру" style="--turn: 0deg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V6"/><path d="M6.5 11.5L12 6l5.5 5.5"/></svg></button>
+          <button class="anchor-cell" data-fx="1" data-fy="0" aria-label="Правый верхний угол" title="Правый верхний угол" style="--turn: 45deg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V6"/><path d="M6.5 11.5L12 6l5.5 5.5"/></svg></button>
+          <button class="anchor-cell" data-fx="0" data-fy="0.5" aria-label="Левый край, по центру" title="Левый край, по центру" style="--turn: -90deg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V6"/><path d="M6.5 11.5L12 6l5.5 5.5"/></svg></button>
+          <button class="anchor-cell center" data-fx="0.5" data-fy="0.5" aria-label="Центр слоя" title="Центр слоя"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3"/></svg></button>
+          <button class="anchor-cell" data-fx="1" data-fy="0.5" aria-label="Правый край, по центру" title="Правый край, по центру" style="--turn: 90deg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V6"/><path d="M6.5 11.5L12 6l5.5 5.5"/></svg></button>
+          <button class="anchor-cell" data-fx="0" data-fy="1" aria-label="Левый нижний угол" title="Левый нижний угол" style="--turn: -135deg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V6"/><path d="M6.5 11.5L12 6l5.5 5.5"/></svg></button>
+          <button class="anchor-cell" data-fx="0.5" data-fy="1" aria-label="Нижний край, по центру" title="Нижний край, по центру" style="--turn: 180deg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V6"/><path d="M6.5 11.5L12 6l5.5 5.5"/></svg></button>
+          <button class="anchor-cell" data-fx="1" data-fy="1" aria-label="Правый нижний угол" title="Правый нижний угол" style="--turn: 135deg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V6"/><path d="M6.5 11.5L12 6l5.5 5.5"/></svg></button>
+        </div>
+        <div class="anchor-side">
+          <label for="anchorKeys">Если у слоя есть ключи</label>
+          <select id="anchorKeys" class="field select">
+            <option value="key">Добавить ключ</option>
+            <option value="shift">Сдвинуть все ключи</option>
+            <option value="skip">Не трогать слой</option>
+          </select>
+        </div>
+      </div>
+    </section>
+    <div id="statusSlotMotion" class="status-slot"></div>
     </div>
   </main>
 
