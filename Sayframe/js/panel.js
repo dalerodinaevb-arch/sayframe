@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.5.1";
+    var VERSION = "1.6.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -1480,8 +1480,35 @@
     // левый — входящая сторона ключа (in, как движение останавливается перед ключом),
     // правый — исходящая (out, как оно начинается после ключа). Длина ползунка — влияние в процентах.
 
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align" };
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align", sizes: "" };
+    var TOOL_MIN_WIDTH = 152;    // уже блок не сжимается: в него перестают помещаться три кнопки в ряд
+    var TOOL_FULL_SNAP_PX = 10;  // блок, дотянутый почти до края, занимает всю ширину
     var TOOL_NAMES = ["ease", "anchor", "align"];
+
+    // Ширина блоков, заданная пользователем: строка вида "ease=full;anchor=320".
+    // Число — пиксели, full — вся ширина. Блока в строке нет — ширина обычная, по месту.
+    function parseSizes(text) {
+        var out = {};
+        var parts = String(text).split(";");
+        var i, pair, n;
+        for (i = 0; i < parts.length; i++) {
+            pair = parts[i].split("=");
+            if (pair.length !== 2 || TOOL_NAMES.indexOf(pair[0]) < 0) { continue; }
+            if (pair[1] === "full") { out[pair[0]] = "full"; continue; }
+            n = Math.round(Number(pair[1]));
+            if (/^\d{1,4}$/.test(pair[1]) && n >= TOOL_MIN_WIDTH) { out[pair[0]] = n; }
+        }
+        return out;
+    }
+
+    function sizesText(sizes) {
+        var out = [];
+        var i;
+        for (i = 0; i < TOOL_NAMES.length; i++) {
+            if (sizes.hasOwnProperty(TOOL_NAMES[i])) { out.push(TOOL_NAMES[i] + "=" + sizes[TOOL_NAMES[i]]); }
+        }
+        return out.join(";");
+    }
 
     // Порядок блоков строкой через запятую. Незнакомые и повторные имена выбрасываются,
     // блоки, которых в сохранённом порядке нет (появились в новой версии), встают в конец.
@@ -1514,6 +1541,7 @@
         if (m.anchorKeys !== "shift" && m.anchorKeys !== "skip") { m.anchorKeys = "key"; }
         if (m.alignTo !== "selection") { m.alignTo = "comp"; }
         m.order = cleanToolOrder(m.order);
+        m.sizes = sizesText(parseSizes(m.sizes));
         return m;
     }
 
@@ -1741,7 +1769,7 @@
 
         ui.motionTools.addEventListener("mousedown", function (e) {
             var card = toolOf(e.target);
-            if (!arranging || !card || e.button !== 0) { return; }
+            if (!arranging || !card || e.button !== 0 || isResizeHandle(e.target)) { return; }
             finish();
             drag = { card: card, x: e.clientX, y: e.clientY, moved: false };
             e.preventDefault();
@@ -1752,6 +1780,8 @@
         ui.motionTools.addEventListener("dblclick", function (e) {
             var card = toolOf(e.target);
             if (!card || Date.now() - dragEndedAt < 300) { return; }
+            // Двойной щелчок по краю блока возвращает ему обычную ширину и перестановку не трогает.
+            if (isResizeHandle(e.target)) { setToolSize(card, null); storeMotion(); return; }
             if (!arranging && isToolControl(e.target, card)) { return; }
             setArranging(!arranging);
         });
@@ -1804,9 +1834,93 @@
         });
     }
 
+    // ---- ширина блоков: правый край блока тянут мышью
+
+    function isResizeHandle(node) {
+        return !!(node && node.className && /(^|\s)tool-resize(\s|$)/.test(String(node.className)));
+    }
+
+    function applyToolSizes() {
+        var sizes = parseSizes(motion.sizes);
+        var cards = toolCards();
+        var i, w;
+        for (i = 0; i < cards.length; i++) {
+            w = sizes[cards[i].getAttribute("data-tool")];
+            cards[i].style.flex = w === "full" ? "0 0 100%" : typeof w === "number" ? "0 0 " + w + "px" : "";
+        }
+    }
+
+    // width: число пикселей, "full" или null (обычная ширина). Возвращает то, что получилось после ограничений.
+    function setToolSize(card, width) {
+        var sizes = parseSizes(motion.sizes);
+        var name = card.getAttribute("data-tool");
+        var max = ui.motionTools.clientWidth;
+        if (typeof width === "number") {
+            width = Math.round(width);
+            if (width < TOOL_MIN_WIDTH) { width = TOOL_MIN_WIDTH; }
+            if (width >= max - TOOL_FULL_SNAP_PX) { width = "full"; }
+        }
+        if (width === null) { delete sizes[name]; } else { sizes[name] = width; }
+        motion.sizes = sizesText(sizes);
+        applyToolSizes();
+        return width;
+    }
+
+    function enableToolResizing() {
+        var rs = null;          // { card, startX, startW }
+
+        function finish() {
+            if (!rs) { return; }
+            rs.card.className = rs.card.className.replace(/\s*resizing/g, "");
+            ui.motionTools.className = ui.motionTools.className.replace(/\s*resizing/g, "");
+            storeMotion();
+            rs = null;
+        }
+
+        // На обычных событиях мыши, как и перестановка: события указателя в After Effects не срабатывали.
+        ui.motionTools.addEventListener("mousedown", function (e) {
+            var card;
+            if (e.button !== 0 || !isResizeHandle(e.target)) { return; }
+            card = toolOf(e.target);
+            if (!card) { return; }
+            finish();
+            rs = { card: card, startX: e.clientX, startW: card.getBoundingClientRect().width };
+            card.className += " resizing";
+            ui.motionTools.className += " resizing";
+            e.preventDefault();
+        });
+
+        document.addEventListener("mousemove", function (e) {
+            if (!rs) { return; }
+            setToolSize(rs.card, rs.startW + (e.clientX - rs.startX));
+            e.preventDefault();
+        });
+
+        document.addEventListener("mouseup", function () { finish(); }, true);
+        window.addEventListener("blur", function () { finish(); });
+
+        // С клавиатуры: фокус на крае блока, стрелки меняют ширину, Home возвращает обычную, End — на всю ширину.
+        ui.motionTools.addEventListener("keydown", function (e) {
+            var card, now;
+            if (!isResizeHandle(e.target) || e.metaKey || e.ctrlKey || e.altKey) { return; }
+            card = toolOf(e.target);
+            if (!card) { return; }
+            now = card.getBoundingClientRect().width;
+            if (e.key === "ArrowLeft") { setToolSize(card, now - 10); }
+            else if (e.key === "ArrowRight") { setToolSize(card, now + 10); }
+            else if (e.key === "Home") { setToolSize(card, null); }
+            else if (e.key === "End") { setToolSize(card, "full"); }
+            else { return; }
+            e.preventDefault();
+            storeMotion();
+        });
+    }
+
     function enableMotion() {
         applyToolOrder();
+        applyToolSizes();
         enableToolReordering();
+        enableToolResizing();
         ui.anchorKeys.value = motion.anchorKeys;
         showEaseCurve();
         drawEase();
