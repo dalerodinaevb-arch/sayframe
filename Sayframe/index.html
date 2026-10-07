@@ -35,9 +35,10 @@
       </div>
     </section>
 
-    <nav class="tabs" role="tablist" aria-label="Разделы панели">
-      <button id="tabClaude" class="tab" role="tab" aria-selected="true" aria-controls="viewClaude">Claude</button>
-      <button id="tabTools" class="tab" role="tab" aria-selected="false" aria-controls="viewTools">Инструменты</button>
+    <!-- Вкладки можно менять местами: перетащить мышью или Alt + стрелка влево/вправо -->
+    <nav id="tabs" class="tabs" role="tablist" aria-label="Разделы панели">
+      <button id="tabClaude" class="tab" role="tab" data-tab="claude" aria-selected="true" aria-controls="viewClaude" title="Перетащите, чтобы поменять вкладки местами">Claude</button>
+      <button id="tabTools" class="tab" role="tab" data-tab="tools" aria-selected="false" aria-controls="viewTools" title="Перетащите, чтобы поменять вкладки местами">Инструменты</button>
     </nav>
 
     <!-- Раздел Claude: задача словами, референс, запуск и ответ -->
