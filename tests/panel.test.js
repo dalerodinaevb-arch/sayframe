@@ -762,6 +762,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const center = async (p, sel) => { const b = await p.page.locator(sel).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
   async function dragTab(p, from, to, opts) {
     const a = await center(p, from), b = typeof to === "string" ? await center(p, to) : to;
+    // Mouse events carry whole pixels, so stopping exactly on a neighbour's middle may fall half a pixel short of it:
+    // go a couple of pixels past, as a hand does.
+    if (typeof to === "string") b.x += b.x >= a.x ? 2 : -2;
     await p.page.mouse.move(a.x, a.y); await p.page.mouse.down();
     await p.page.mouse.move(b.x, b.y, { steps: 12 });
     if (opts && opts.beforeUp) await opts.beforeUp();
@@ -1242,6 +1245,37 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
   // ------------------------------------------------------------------ updates
+  // ---------------------------------------------------------------- dragging must not depend on pointer events
+  // In After Effects 1.5.0 could not be rearranged although every test above passed: dragging relied on pointer
+  // events. Here they are swallowed before the panel sees them, and a native drag is refused, as a stand-in.
+  console.log("\n=== dragging without pointer events ===");
+  p = await open({});
+  await p.page.evaluate(() => { ["pointerdown", "pointermove", "pointerup", "pointercancel", "gotpointercapture", "lostpointercapture"].forEach((n) => window.addEventListener(n, (e) => e.stopImmediatePropagation(), true)); window.__nativeDrags = 0; window.addEventListener("dragstart", (e) => { if (!e.defaultPrevented) window.__nativeDrags++; }); });
+  await arrange(p);
+  await dragTab(p, "#tabClaude", "#tabTools");
+  check("X1 tabs can be dragged with pointer events swallowed", (await order(p)) === "tools,claude,motion" && (await savedOrder(p)) === '["tools","claude","motion"]', await order(p));
+  await p.page.waitForTimeout(350);
+  await p.page.click("#tabMotion");
+  t = await toolRects(p);
+  await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: middle(t.anchor).x + 10, y: t.ease.b - 5 });
+  check("X1 blocks too", (await toolOrder(p)) === "anchor,ease,align" && (await savedTools(p)) === "anchor,ease,align", await toolOrder(p));
+  check("X1 the press is cancelled, so the browser starts no drag or text selection of its own", (await p.page.evaluate(() => window.__nativeDrags)) === 0 && (await p.page.evaluate(() => String(window.getSelection()))) === "" && (await p.page.locator(".dragging, .reordering").count()) === 0);
+  t = await p.page.evaluate(() => { const hit = []; ["tabs", "motionTools"].forEach((id) => { const ev = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, clientX: 5, clientY: 5 }); document.querySelector("#" + id + (id === "tabs" ? " .tab" : " .tool-card")).dispatchEvent(ev); hit.push(ev.defaultPrevented); document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true })); }); return hit.join(); });
+  check("X1 while rearranging, a press on a tab or block is cancelled", t === "true,true", t);
+  await p.page.waitForTimeout(350);
+  await p.page.click("#arrangeDone");
+  t = await p.page.evaluate(() => { const ev = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }); document.querySelector("#tabs .tab").dispatchEvent(ev); document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true })); return ev.defaultPrevented; });
+  check("X1 outside the mode a press is left alone", t === false);
+  await arrange(p);
+  t = await toolRects(p);
+  await p.page.mouse.move(middle(t.anchor).x, middle(t.anchor).y); await p.page.mouse.down(); await p.page.mouse.move(middle(t.anchor).x + 30, middle(t.anchor).y, { steps: 4 });
+  check("X2 (scene) a block is being dragged", (await p.page.locator("#motionTools .dragging").count()) === 1);
+  await p.page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  check("X2 losing the window mid-drag ends the drag cleanly", (await p.page.locator(".dragging, .reordering").count()) === 0);
+  await p.page.mouse.up();
+  check("X2 no page errors", p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
   // ---------------------------------------------------------------- animation: align
   console.log("\n=== animation: align ===");
   const edgeBtn = async (p, edge) => { await p.page.click('#alignGrid button[data-edge="' + edge + '"]'); await p.idle(); };
