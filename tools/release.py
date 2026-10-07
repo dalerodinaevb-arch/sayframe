@@ -34,7 +34,9 @@ VERSION_JSON = ROOT / "version.json"
 MAC_ZIP = ROOT / "downloads" / "Install-Sayframe-Mac.zip"
 WIN_ZIP = ROOT / "downloads" / "Sayframe-Windows.zip"
 WIN_EXE = ROOT / "downloads" / "Install-Sayframe-Windows.exe"
-WIN_STUB = ROOT / "installer" / "windows" / "stub.exe"  # собирается tools/build-windows-stub.sh
+WIN_STUB = ROOT / "installer" / "windows" / "stub.exe"  # обе программы собирает tools/build-installers.sh
+MAC_LAUNCHER = ROOT / "installer" / "mac" / "launcher"
+INSTALL_SH = ROOT / "install.sh"
 SKIP = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
 VERSION_RE = re.compile(r'(var VERSION = ")(\d+\.\d+\.\d+)(";)')
@@ -147,13 +149,75 @@ def make_zip(entries, stamp, prefix=b""):
     return buf.getvalue()
 
 
+def mac_launcher():
+    """Программа внутри «Install Sayframe.app». Она должна быть настоящей программой Mac для Apple-чипа
+    и Intel: приложение, у которого вместо программы скрипт, macOS на Apple-чипе без Rosetta не запускает."""
+    data = MAC_LAUNCHER.read_bytes()
+    if data[:4] != b"\xca\xfe\xba\xbe":
+        fail("installer/mac/launcher не похож на универсальную программу Mac — запустите tools/build-installers.sh")
+    return data
+
+
+INSTALL_SH_TEMPLATE = r'''#!/bin/bash
+# Sayframe для After Effects: установка на Mac одной командой в Терминале.
+# Запасной способ на случай, если macOS не даёт открыть программу «Install Sayframe».
+#
+#   curl -fsSL __BASE__/install.sh | bash
+#
+# Делает то же, что установщик: скачивает панель, кладёт её в папку расширений Adobe
+# в вашей домашней папке и включает PlayerDebugMode (так After Effects загружает панели без подписи Adobe).
+# Этот файл создаёт tools/release.py, править его вручную не нужно.
+set -eu
+
+BASE="${SAYFRAME_BASE:-__BASE__}"
+EXT_DIR="$HOME/Library/Application Support/Adobe/CEP/extensions"
+DEST="$EXT_DIR/Sayframe"
+STAGING="$EXT_DIR/.Sayframe.installing"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+echo "Sayframe: скачиваю панель…"
+curl -fsSL "$BASE/downloads/Install-Sayframe-Mac.zip" -o "$TMP/sayframe.zip"
+unzip -q "$TMP/sayframe.zip" -d "$TMP/unpacked"
+SRC="$TMP/unpacked/Install Sayframe.app/Contents/Resources/Sayframe"
+if [ ! -f "$SRC/CSXS/manifest.xml" ]; then
+    echo "Не удалось скачать панель. Проверьте интернет и попробуйте ещё раз."
+    exit 1
+fi
+
+mkdir -p "$EXT_DIR"
+rm -rf "$STAGING"
+cp -R "$SRC" "$STAGING"
+rm -rf "$DEST"
+mv "$STAGING" "$DEST"
+rm -rf "$EXT_DIR/ClaudePanel"
+xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
+
+for v in 9 10 11 12 13 14 15 16; do
+    defaults write "com.adobe.CSXS.$v" PlayerDebugMode 1
+done
+
+VERSION="$(sed -n 's/.*ExtensionBundleVersion="\([0-9.]*\)".*/\1/p' "$DEST/CSXS/manifest.xml" | head -1)"
+echo "Sayframe $VERSION установлен."
+echo "Если After Effects открыт, полностью закройте его и откройте снова."
+echo "Панель находится в меню: Window > Extensions > Sayframe"
+echo "Для референсов и вставки картинок включите в After Effects:"
+echo "Settings > Scripting & Expressions > Allow Scripts to Write Files and Access Network"
+'''
+
+
+def install_sh(c):
+    base = "https://raw.githubusercontent.com/%s/%s/%s" % (c["owner"], c["repo"], c["branch"])
+    return INSTALL_SH_TEMPLATE.replace("__BASE__", base)
+
+
 def build_mac(files, stamp):
     app = "Install Sayframe.app/Contents/"
     mac = ROOT / "installer" / "mac"
     entries = [
         (app + "Info.plist", (mac / "Info.plist").read_bytes(), 0o644),
         (app + "PkgInfo", b"APPL????", 0o644),
-        (app + "MacOS/install-sayframe", (mac / "install-sayframe").read_bytes(), 0o755),
+        (app + "MacOS/install-sayframe", mac_launcher(), 0o755),
         (app + "Resources/AppIcon.icns", (mac / "AppIcon.icns").read_bytes(), 0o644),
     ]
     entries += [(app + "Resources/Sayframe/" + rel, data, 0o644) for rel, data in files]
@@ -197,8 +261,12 @@ def dump(info):
 
 
 def stamp_of(day):
+    """Время файлов внутри архивов: полночь накануне даты выпуска. В архиве zip время записано без
+    часового пояса, поэтому «сегодня, 12:00» у пользователя в другом поясе оказалось бы в будущем."""
+    from datetime import timedelta
     y, m, d = (int(x) for x in day.split("-"))
-    return (y, m, d, 12, 0, 0)
+    prev = date(y, m, d) - timedelta(days=1)
+    return (prev.year, prev.month, prev.day, 0, 0, 0)
 
 
 def build(version, day, notes, c):
@@ -208,6 +276,7 @@ def build(version, day, notes, c):
     MAC_ZIP.write_bytes(build_mac(files, stamp_of(day)))
     WIN_ZIP.write_bytes(build_win(files, stamp_of(day)))
     WIN_EXE.write_bytes(build_win_exe(files, stamp_of(day)))
+    write(INSTALL_SH, install_sh(c))
     write(VERSION_JSON, dump(info))
     return info
 
@@ -240,6 +309,8 @@ def check(c):
                     problems.append("downloads/Sayframe-Windows.zip не соответствует текущим файлам — запустите --build")
                 if not WIN_EXE.exists() or WIN_EXE.read_bytes() != build_win_exe(files, st):
                     problems.append("downloads/Install-Sayframe-Windows.exe не соответствует текущим файлам — запустите --build")
+                if not INSTALL_SH.exists() or read(INSTALL_SH) != install_sh(c):
+                    problems.append("install.sh не соответствует tools/config.json — запустите --build")
             except (KeyError, ValueError):
                 problems.append("в version.json нет правильной даты")
     return problems
