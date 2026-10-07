@@ -1,8 +1,10 @@
 {
-  "version": "1.3.1",
+  "version": "1.4.0",
   "date": "2026-10-07",
   "notes": [
-    "Окно обновления теперь зелёное"
+    "Новая вкладка «Анимация»",
+    "Плавность ключей: ползунки разгона и торможения для выделенных ключевых кадров",
+    "Точка привязки: перенос в угол, к краю или в центр слоя, слой остаётся на месте"
   ],
   "download": "https://github.com/dalerodinaevb-arch/sayframe#readme",
   "moved": "",
@@ -10,28 +12,28 @@
   "files": [
     {
       "path": "CSXS/manifest.xml",
-      "sha256": "a9509f71f080a86406efb128a701b62eaa1a7dbd857a67667c12f5be66377fbd",
+      "sha256": "ca46791f8e9be14600bfdce60ee42827981d90facefd94840aafe99ca46d6540",
       "size": 1642
     },
     {
       "path": "css/panel.css",
-      "sha256": "32b0a395f706750c044b33b3d868457f036dc0eafa3012873d9ea68ad2fc6958",
-      "size": 15374
+      "sha256": "119e1cc3688eb6595e0ed467ff03074e5db1c8dafa86fe4a90116600d4422017",
+      "size": 19352
     },
     {
       "path": "index.html",
-      "sha256": "501c45f505ec83fc328e0dc8c7ed83973f67c47b7691bee8d88b16ac59c75630",
-      "size": 8443
+      "sha256": "6aefc4e87311e82a560f8b70d14ff0392af804b84eefe0fa4925ab121c29316f",
+      "size": 15420
     },
     {
       "path": "js/panel.js",
-      "sha256": "6c6d88e0a0f6ccff76e6226422b25ce2b3b41ec7e83757eb949546afd7d1750b",
-      "size": 87093
+      "sha256": "af4cefa9938546b3027bd6792da40aa90a481c22d162cdfc68742283b4c2fdd7",
+      "size": 96377
     },
     {
       "path": "jsx/host.jsx",
-      "sha256": "381e690a9d21b90b73679bc120608b09acb647a590dd4d56f0471ed616271cb4",
-      "size": 16488
+      "sha256": "1e53615e275869699d4fd2d26ce99d007caea5fea9739b9fd1f30e4f0c7ebf9a",
+      "size": 27138
     }
   ]
 }
