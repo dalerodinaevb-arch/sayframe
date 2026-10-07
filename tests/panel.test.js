@@ -1,6 +1,7 @@
 // Drives the real panel (index.html + panel.js) in Chromium, wired to the real host.jsx
 // running in a Node vm against a mocked After Effects object model.
 const fs = require("fs");
+const http = require("http");
 const os = require("os");
 const path = require("path");
 const vm = require("vm");
@@ -155,9 +156,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false }, opts.settings || {});
     await page.addInitScript(({ stored, tmpDir, home, hostPath, withSystemPath, updateUrl, updateState }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
-      if (updateState && !sessionStorage.getItem("seeded")) { localStorage.setItem("sayframe.update.v1", JSON.stringify(updateState)); sessionStorage.setItem("seeded", "1"); }
       window.__opened = [];
-      if (stored) localStorage.setItem("sayframe.settings.v1", JSON.stringify(stored)); else localStorage.removeItem("sayframe.settings.v1");
+      // Seed saved state only when the page is first opened. Touching localStorage from this start-up
+      // script on a reload makes Chromium occasionally hand the page an empty store (a test-browser quirk).
+      const firstOpen = window.name !== "sayframe-test-seeded";
+      window.name = "sayframe-test-seeded";
+      if (firstOpen) { if (stored) localStorage.setItem("sayframe.settings.v1", JSON.stringify(stored)); else localStorage.removeItem("sayframe.settings.v1"); }
+      if (updateState && firstOpen) localStorage.setItem("sayframe.update.v1", JSON.stringify(updateState));
       window.__adobe_cep__ = { evalScript(script, cb) { window.__hostEval(script).then(cb); },
         getSystemPath() { return withSystemPath ? "file://" + hostPath : ""; } };
       const call = (name) => function () { return window.__plat(name, Array.prototype.slice.call(arguments)); };
@@ -176,7 +181,18 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       };
     }, { stored, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateState: opts.updateState || null });
 
-    await page.goto("file://" + extDir + "/index.html");
+    // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
+    // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
+    const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8" };
+    const server = http.createServer((req, res) => {
+      const rel = decodeURIComponent(req.url.split("?")[0]);
+      const file = path.join(extDir, rel);
+      if (rel.indexOf("..") >= 0 || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404); res.end(); return; }
+      res.writeHead(200, { "content-type": TYPES[path.extname(file)] || "application/octet-stream", "cache-control": "no-store" });
+      res.end(fs.readFileSync(file));
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    await page.goto("http://127.0.0.1:" + server.address().port + "/index.html");
     const h = {
       page, ae, net, sys, tmpDir, home, errors, extDir,
       status: () => page.locator("#status").innerText(),
@@ -184,12 +200,17 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       // waits until the panel is idle again (Run button enabled) and no dialog is waiting
       async idle() { await page.waitForFunction(() => !document.getElementById("runBtn").disabled || !document.getElementById("modal").hidden, null, { timeout: 15000 }); },
       async run(text) { await page.fill("#prompt", text); await page.click("#runBtn"); await h.idle(); },
+      // the panel script has finished starting up (it fills in the version last)
+      async ready() { await page.waitForFunction(() => { const v = document.getElementById("versionText"); return !!v && v.textContent !== ""; }); },
+      // Reopen the panel. The short pause lets the browser store what the panel has just saved:
+      // a reload within a few milliseconds of a localStorage write can lose that write.
+      async restart() { await page.waitForTimeout(400); await page.reload(); await h.ready(); },
       async tab(name) { await page.click(name === "tools" ? "#tabTools" : "#tabClaude"); },
       // the paste tool lives on the Tools tab
       async paste() { if (await page.locator("#viewTools").isHidden()) await page.click("#tabTools"); await page.click("#pasteBtn"); },
       async modalClick(label) { await page.locator("#modalButtons button", { hasText: label }).click(); await h.idle(); },
       tempLeft: () => fs.readdirSync(tmpDir).filter((f) => /sayframe_/.test(f)),
-      async close() { await page.close(); fs.rmSync(tmpDir, { recursive: true, force: true }); }
+      async close() { await page.close(); server.close(); fs.rmSync(tmpDir, { recursive: true, force: true }); }
     };
     return h;
   }
@@ -532,8 +553,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T4 Claude still works from its tab", p.ae.log.ran.join() === "one" && /^Готово: Создаю слой\./.test(await p.status()) && (await vis(p, "#replyCard")));
   await p.tab("tools");
   check("T4 the reply card stays on the Claude tab", !(await vis(p, "#replyCard")) && /^Готово: Создаю слой\./.test(await p.status()));
-  await p.page.reload();
-  await p.page.waitForSelector("#pasteBtn");
+  await p.restart();
   check("T5 the open tab is remembered", (await vis(p, "#pasteBtn")) && !(await vis(p, "#prompt")) && (await p.page.locator("#viewTools #statusBox").count()) === 1);
   check("T5 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
@@ -583,7 +603,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("O3 clicking still switches tabs after a drag", (await vis(p, "#pasteBtn")) && !(await vis(p, "#prompt")));
   await p.page.click("#pasteBtn"); await p.idle(); await p.modalClick("Оставить как есть");
   check("O3 tools still work in the new order", /^Картинка вставлена/.test(await p.status()), await p.status());
-  await p.page.reload(); await p.page.waitForSelector("#tabs");
+  await p.restart();
   check("O4 order and open tab survive a restart", (await order(p)) === "tools,claude" && (await vis(p, "#pasteBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true");
   await dragTab(p, "#tabTools", "#tabClaude");
   check("O5 dragging back restores the order", (await order(p)) === "claude,tools" && (await savedOrder(p)) === '["claude","tools"]');
@@ -594,7 +614,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   c = await center(p, "#tabTools");
   await dragTab(p, "#tabClaude", { x: c.x + 400, y: c.y + 200 });
   check("O7 releasing outside the tabs keeps a valid order", ["claude,tools", "tools,claude"].includes(await order(p)) && (await p.page.locator(".dragging, .reordering").count()) === 0, await order(p));
-  await p.page.evaluate(() => localStorage.setItem("sayframe.tabOrder.v1", '["claude","tools"]')); await p.page.reload(); await p.page.waitForSelector("#tabs");
+  await p.page.evaluate(() => localStorage.setItem("sayframe.tabOrder.v1", '["claude","tools"]')); await p.restart();
   await p.page.waitForTimeout(350);
   await p.page.focus("#tabClaude"); await p.page.keyboard.press("Alt+ArrowRight");
   check("O8 Alt+Right moves the focused tab right and keeps focus", (await order(p)) === "tools,claude" && (await p.page.evaluate(() => document.activeElement.id)) === "tabClaude" && (await savedOrder(p)) === '["tools","claude"]');
@@ -610,7 +630,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
   for (const [bad, want] of [['not json', "claude,tools"], ['{"a":1}', "claude,tools"], ['["tools"]', "tools,claude"], ['["ghost","tools","tools","claude",5]', "tools,claude"], ['[]', "claude,tools"]]) {
     p = await open({});
-    await p.page.evaluate((v) => localStorage.setItem("sayframe.tabOrder.v1", v), bad); await p.page.reload(); await p.page.waitForSelector("#tabs");
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.tabOrder.v1", v), bad); await p.restart();
     check("O9 saved order " + bad + " -> " + want, (await order(p)) === want && p.errors.length === 0 && (await vis(p, "#prompt")), await order(p));
     await p.close();
   }
@@ -691,8 +711,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("U6 banner announces the version", (await p.page.locator("#updateTitle").innerText()) === "Доступна версия 9.9.9" && (await p.page.locator("#updateNow").innerText()) === "Обновить");
   t = await p.page.evaluate(() => [document.querySelectorAll("#updateNotes li").length, document.querySelectorAll("#updateNotes img").length, window.__xss]);
   check("U6 notes are shown as plain text", t[0] === 3 && t[1] === 0 && t[2] === undefined, t.join());
+  t = await p.page.evaluate(() => { const rgb = (el, prop) => getComputedStyle(el)[prop].match(/\d+(\.\d+)?/g).slice(0, 3).map(Number); const green = (c) => c[1] > c[0] + 40 && c[1] > c[2] + 40; const bar = document.getElementById("updateBar"), btn = document.getElementById("updateNow");
+    return { border: green(rgb(bar, "borderTopColor")), fill: green(rgb(bar, "backgroundColor")), button: /rgb\(70, 214, 132\)/.test(getComputedStyle(btn).backgroundImage), title: green(rgb(document.getElementById("updateTitle"), "color")), run: /rgb\(70, 214, 132\)/.test(getComputedStyle(document.getElementById("runBtn")).backgroundImage) }; });
+  check("U6 update banner is green, the Run button keeps the accent colour", t.border && t.fill && t.button && t.title && !t.run, JSON.stringify(t));
   await p.page.screenshot({ path: path.join(SHOTS, "12-update-banner.png") });
   await p.tab("tools");
+  await p.page.evaluate(() => { document.documentElement.style.setProperty("--accent", "#ff7ac3"); document.documentElement.style.setProperty("--accent-rgb", "255, 122, 195"); });
+  t = await p.page.evaluate(() => getComputedStyle(document.getElementById("updateBar")).borderTopColor.match(/\d+/g).slice(0, 3).join());
+  check("U6 banner stays green with another accent colour", t === "70,214,132", t);
   check("U6 banner stays visible on the Tools tab", (await barVisible(p)) && (await p.page.locator("#pasteBtn").isVisible()));
   await p.tab("claude");
   t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
