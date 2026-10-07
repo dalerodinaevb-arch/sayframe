@@ -554,6 +554,73 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T8 Cmd/Ctrl+V handling is unchanged on the Claude tab", p.errors.length === 0);
   await p.close();
 
+  // ------------------------------------------------------------ tab reordering
+  console.log("\n=== tab order ===");
+  const order = (p) => p.page.evaluate(() => Array.from(document.querySelectorAll("#tabs .tab")).map((b) => b.getAttribute("data-tab")).join());
+  const savedOrder = (p) => p.page.evaluate(() => localStorage.getItem("sayframe.tabOrder.v1"));
+  const center = async (p, sel) => { const b = await p.page.locator(sel).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  async function dragTab(p, from, to, opts) {
+    const a = await center(p, from), b = typeof to === "string" ? await center(p, to) : to;
+    await p.page.mouse.move(a.x, a.y); await p.page.mouse.down();
+    await p.page.mouse.move(b.x, b.y, { steps: 12 });
+    if (opts && opts.beforeUp) await opts.beforeUp();
+    await p.page.mouse.up();
+  }
+  p = await open({ clip: "png", footage: IMG });
+  check("O1 default order", (await order(p)) === "claude,tools" && (await savedOrder(p)) === null);
+  await dragTab(p, "#tabClaude", "#tabTools", { beforeUp: async () => {
+    check("O2 tab is marked while it is dragged", (await p.page.locator("#tabClaude.dragging").count()) === 1 && (await p.page.locator("#tabs.reordering").count()) === 1);
+    await p.page.screenshot({ path: path.join(SHOTS, "19-tab-dragging.png") });
+  } });
+  check("O2 dragging Claude onto Tools swaps them", (await order(p)) === "tools,claude", await order(p));
+  check("O2 the new order is saved", (await savedOrder(p)) === '["tools","claude"]', await savedOrder(p));
+  check("O2 dragging does not switch tabs or leave marks", (await vis(p, "#prompt")) && !(await vis(p, "#pasteBtn")) && (await p.page.locator(".dragging, .reordering").count()) === 0);
+  t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect().left; return r("tabTools") < r("tabClaude"); });
+  check("O2 Tools is now drawn on the left", t === true);
+  await p.page.screenshot({ path: path.join(SHOTS, "20-tabs-swapped.png") });
+  await p.page.waitForTimeout(350);
+  await p.tab("tools");
+  check("O3 clicking still switches tabs after a drag", (await vis(p, "#pasteBtn")) && !(await vis(p, "#prompt")));
+  await p.page.click("#pasteBtn"); await p.idle(); await p.modalClick("Оставить как есть");
+  check("O3 tools still work in the new order", /^Картинка вставлена/.test(await p.status()), await p.status());
+  await p.page.reload(); await p.page.waitForSelector("#tabs");
+  check("O4 order and open tab survive a restart", (await order(p)) === "tools,claude" && (await vis(p, "#pasteBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true");
+  await dragTab(p, "#tabTools", "#tabClaude");
+  check("O5 dragging back restores the order", (await order(p)) === "claude,tools" && (await savedOrder(p)) === '["claude","tools"]');
+  await p.page.waitForTimeout(350);
+  c = await center(p, "#tabClaude");
+  await p.page.mouse.move(c.x, c.y); await p.page.mouse.down(); await p.page.mouse.move(c.x + 3, c.y + 1); await p.page.mouse.up();
+  check("O6 a click with a tiny hand movement is still a click", (await order(p)) === "claude,tools" && (await vis(p, "#prompt")));
+  c = await center(p, "#tabTools");
+  await dragTab(p, "#tabClaude", { x: c.x + 400, y: c.y + 200 });
+  check("O7 releasing outside the tabs keeps a valid order", ["claude,tools", "tools,claude"].includes(await order(p)) && (await p.page.locator(".dragging, .reordering").count()) === 0, await order(p));
+  await p.page.evaluate(() => localStorage.setItem("sayframe.tabOrder.v1", '["claude","tools"]')); await p.page.reload(); await p.page.waitForSelector("#tabs");
+  await p.page.waitForTimeout(350);
+  await p.page.focus("#tabClaude"); await p.page.keyboard.press("Alt+ArrowRight");
+  check("O8 Alt+Right moves the focused tab right and keeps focus", (await order(p)) === "tools,claude" && (await p.page.evaluate(() => document.activeElement.id)) === "tabClaude" && (await savedOrder(p)) === '["tools","claude"]');
+  await p.page.keyboard.press("Alt+ArrowRight");
+  check("O8 at the edge nothing happens", (await order(p)) === "tools,claude");
+  await p.page.keyboard.press("ArrowLeft");
+  check("O8 plain arrow moves focus, not the tab", (await order(p)) === "tools,claude" && (await p.page.evaluate(() => document.activeElement.id)) === "tabTools");
+  await p.page.keyboard.press("Alt+ArrowLeft");
+  check("O8 Alt+Left at the left edge does nothing", (await order(p)) === "tools,claude");
+  await p.page.focus("#tabClaude"); await p.page.keyboard.press("Alt+ArrowLeft");
+  check("O8 Alt+Left moves the tab back", (await order(p)) === "claude,tools");
+  check("O8 no page errors", p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+  for (const [bad, want] of [['not json', "claude,tools"], ['{"a":1}', "claude,tools"], ['["tools"]', "tools,claude"], ['["ghost","tools","tools","claude",5]', "tools,claude"], ['[]', "claude,tools"]]) {
+    p = await open({});
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.tabOrder.v1", v), bad); await p.page.reload(); await p.page.waitForSelector("#tabs");
+    check("O9 saved order " + bad + " -> " + want, (await order(p)) === want && p.errors.length === 0 && (await vis(p, "#prompt")), await order(p));
+    await p.close();
+  }
+  p = await open({ width: 300, height: 620 });
+  await dragTab(p, "#tabTools", "#tabClaude");
+  t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  check("O10 reordering works in a 300px panel", (await order(p)) === "tools,claude" && t <= 0);
+  check("O10 dragging a tab that is not open does not open it", (await vis(p, "#prompt")) && !(await vis(p, "#pasteBtn")) && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "true");
+  await p.close();
+
   // ------------------------------------------------------------------ updates
   console.log("\n=== updates ===");
   const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
