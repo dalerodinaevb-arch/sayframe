@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.6.0";
+    var VERSION = "1.7.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -13,7 +13,10 @@
     var TAB_ORDER_KEY = "sayframe.tabOrder.v1";
     var MOTION_KEY = "sayframe.motion.v1";   // положения ползунков и выбор в разделе «Анимация»
     var TAB_DRAG_START_PX = 6;   // сдвиг мыши, после которого нажатие на вкладку считается перетаскиванием
-    var UPDATE_CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
+    // Как часто открытая панель сама спрашивает сервер о новой версии. Ещё она спрашивает при запуске
+    // и когда в неё возвращаются (щелчок по панели), но не чаще, чем раз в UPDATE_THROTTLE_MS.
+    var UPDATE_CHECK_EVERY_MS = window.__SAYFRAME_TEST_UPDATE_EVERY_MS__ || 5 * 60 * 1000;
+    var UPDATE_THROTTLE_MS = Math.round(UPDATE_CHECK_EVERY_MS * 0.8);
     var UPDATE_MAX_FILES = 200;
 
     var API_URL = "https://api.anthropic.com/v1/messages";
@@ -43,7 +46,9 @@
         selfCheck: true,
         alwaysAsk: false,
         refFrames: 8,
-        panelWidth: 380     // ширина содержимого в пикселях; сама панель After Effects может быть шире
+        panelWidth: 380,    // ширина содержимого в пикселях; сама панель After Effects может быть шире
+        toolSize: "large",  // размер блоков раздела «Анимация»: "large" или "small"
+        toolTitles: true    // показывать ли названия блоков раздела «Анимация»
     };
     var PANEL_WIDTH_MIN = 280;
     var PANEL_WIDTH_MAX = 640;
@@ -112,6 +117,18 @@
         "            var url = $.NSURL.URLWithString(u);",
         '            if (!url.isNil() && !url.path.isNil()) { res = "FILE:" + url.path.js; }',
         "        }",
+        "    }",
+        // Anything else the system itself can read as a picture (JPEG, HEIC, GIF, a promised image...).
+        '    if (res === "NOIMAGE") {',
+        "        try {",
+        "            var img = $.NSImage.alloc.initWithPasteboard(pb);",
+        "            if (!img.isNil()) {",
+        "                var tiff2 = img.TIFFRepresentation;",
+        "                var rep2 = tiff2.isNil() ? null : $.NSBitmapImageRep.imageRepWithData(tiff2);",
+        "                var png2 = (!rep2 || rep2.isNil()) ? null : rep2.representationUsingTypeProperties(4, $.NSDictionary.dictionary);",
+        '                if (png2 && !png2.isNil()) { res = png2.writeToFileAtomically(out, true) ? "OK" : "WRITEFAIL"; }',
+        "            }",
+        "        } catch (e) {}",
         "    }",
         "    if (argv.length > 1) { $(res).writeToFileAtomicallyEncodingError(argv[1], true, $.NSUTF8StringEncoding, null); }",
         "    return res;",
@@ -442,6 +459,7 @@
             }
         } catch (e) {}
         s.panelWidth = clampPanelWidth(s.panelWidth);
+        if (s.toolSize !== "small") { s.toolSize = "large"; }
         return s;
     }
 
@@ -473,6 +491,8 @@
         root.setProperty("--on-accent", lum > 0.5 ? "#0b0c12" : "#ffffff");
         root.setProperty("--bg", bg.hex);
         root.setProperty("--panel-w", clampPanelWidth(s.panelWidth) + "px");
+        document.documentElement.setAttribute("data-tools", s.toolSize === "small" ? "small" : "large");
+        document.documentElement.setAttribute("data-titles", s.toolTitles === false ? "off" : "on");
     }
 
     // ------------------------------------------------------------------ ui
@@ -488,7 +508,8 @@
         sheet: el("settingsSheet"), settingsClose: el("settingsClose"), apiKey: el("apiKey"), testKey: el("testKey"),
         keyHint: el("keyHint"), models: el("models"), accentSwatches: el("accentSwatches"), accentHex: el("accentHex"),
         bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"),
+        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"),
+        anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"),
         frames: el("frames"), saveSettings: el("saveSettings"),
         modal: el("modal"), modalTitle: el("modalTitle"), modalText: el("modalText"), modalCode: el("modalCode"),
         modalButtons: el("modalButtons"),
@@ -1183,9 +1204,26 @@
             pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());
     }
 
+    var CLIPBOARD_RETRY_MS = [350, 700];  // паузы перед повторным чтением буфера, если картинки в нём не нашлось
+
+    function sleep(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+
     // Достаёт картинку из системного буфера обмена.
-    // { kind: "png", path } — временный PNG; { kind: "file", path } — скопированный файл; { kind: "none" }.
+    // Сразу после копирования система иногда ещё не отдаёт картинку — первое чтение говорит «пусто»,
+    // а следующее уже находит её. Поэтому «пусто» перепроверяем пару раз, прежде чем поверить.
     async function grabClipboard() {
+        var got = await readClipboardOnce();
+        var i;
+        for (i = 0; i < CLIPBOARD_RETRY_MS.length && got.kind === "none"; i++) {
+            await sleep(CLIPBOARD_RETRY_MS[i]);
+            got = await readClipboardOnce();
+        }
+        return got;
+    }
+
+    // Одно чтение буфера.
+    // { kind: "png", path } — временный PNG; { kind: "file", path } — скопированный файл; { kind: "none" }.
+    async function readClipboardOnce() {
         var stamp = String(new Date().getTime());
         var tmp = platform.tmpdir();
         var png = platform.join(tmp, "sayframe_clip_" + stamp + ".png");
@@ -1294,14 +1332,27 @@
     // Cmd/Ctrl+V в панели: если в буфере картинка, перехватываем её прямо из события вставки.
     function onPasteEvent(e) {
         var items = e.clipboardData ? e.clipboardData.items : null;
+        var files = e.clipboardData ? e.clipboardData.files : null;
         var file = null;
         var inField = e.target && (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT");
+        var text = "";
         var i;
         if (!ui.sheet.hidden || !ui.modal.hidden) { return; }
         if (items) {
             for (i = 0; i < items.length; i++) {
                 if (items[i].kind === "file" && /^image\//.test(items[i].type)) { file = items[i].getAsFile(); break; }
             }
+        }
+        if (!file && files) {
+            for (i = 0; i < files.length; i++) {
+                if (/^image\//.test(files[i].type)) { file = files[i]; break; }
+            }
+        }
+        // Курсор стоит в поле ввода (например, в задаче для Claude), а текста в буфере нет:
+        // значит, вставляют не текст. Раньше такое нажатие Cmd+V просто пропадало.
+        if (inField && !file) {
+            try { text = e.clipboardData ? String(e.clipboardData.getData("text/plain") || "") : ""; } catch (err) { text = "x"; }
+            if (text === "") { inField = false; }
         }
         if (file) {
             e.preventDefault();
@@ -1399,6 +1450,21 @@
         swatches(ui.accentSwatches, ui.accentHex, ACCENTS, "accent");
         swatches(ui.bgSwatches, ui.bgHex, BACKGROUNDS, "bg");
 
+        // Размер блоков тоже виден сразу и тоже возвращается, если настройки закрыть без сохранения.
+        ui.toolSize.addEventListener("click", function (e) {
+            var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
+            if (!draft || (v !== "large" && v !== "small")) { return; }
+            draft.toolSize = v;
+            pressGroup(ui.toolSize, v);
+            applyTheme(draft);
+        });
+
+        ui.toolTitles.addEventListener("change", function () {
+            if (!draft) { return; }
+            draft.toolTitles = ui.toolTitles.checked;
+            applyTheme(draft);
+        });
+
         // Ширина меняется сразу, пока тянут ползунок; без «Сохранить» вернётся прежняя.
         ui.panelWidth.addEventListener("input", function () {
             if (!draft) { return; }
@@ -1434,6 +1500,8 @@
         pressGroup(ui.accentSwatches, draft.accent);
         pressGroup(ui.bgSwatches, draft.bg);
         pressGroup(ui.frames, draft.refFrames);
+        pressGroup(ui.toolSize, draft.toolSize);
+        ui.toolTitles.checked = draft.toolTitles;
         ui.sheet.hidden = false;
         ui.sheet.scrollTop = 0;
     }
@@ -1443,6 +1511,7 @@
             draft.apiKey = ui.apiKey.value.replace(/\s/g, "");
             draft.selfCheck = ui.selfCheck.checked;
             draft.alwaysAsk = ui.alwaysAsk.checked;
+            draft.toolTitles = ui.toolTitles.checked;
             settings = draft;
             storeSettings(settings);
             setStatus(settings.apiKey ? "Настройки сохранены." : "Ключ API не задан.", settings.apiKey ? "done" : "");
@@ -1480,8 +1549,13 @@
     // левый — входящая сторона ключа (in, как движение останавливается перед ключом),
     // правый — исходящая (out, как оно начинается после ключа). Длина ползунка — влияние в процентах.
 
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align", sizes: "" };
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align", sizes: "", anchorOpts: true, alignOpts: true };
     var TOOL_MIN_WIDTH = 152;    // уже блок не сжимается: в него перестают помещаться три кнопки в ряд
+    var TOOL_MIN_WIDTH_SMALL = 112;  // то же для мелких блоков
+
+    function toolMinWidth() {
+        return document.documentElement.getAttribute("data-tools") === "small" ? TOOL_MIN_WIDTH_SMALL : TOOL_MIN_WIDTH;
+    }
     var TOOL_FULL_SNAP_PX = 10;  // блок, дотянутый почти до края, занимает всю ширину
     var TOOL_NAMES = ["ease", "anchor", "align"];
 
@@ -1496,7 +1570,7 @@
             if (pair.length !== 2 || TOOL_NAMES.indexOf(pair[0]) < 0) { continue; }
             if (pair[1] === "full") { out[pair[0]] = "full"; continue; }
             n = Math.round(Number(pair[1]));
-            if (/^\d{1,4}$/.test(pair[1]) && n >= TOOL_MIN_WIDTH) { out[pair[0]] = n; }
+            if (/^\d{1,4}$/.test(pair[1]) && n >= TOOL_MIN_WIDTH_SMALL) { out[pair[0]] = n; }
         }
         return out;
     }
@@ -1566,20 +1640,44 @@
         return n + " " + many;
     }
 
-    // Минус в углу прячет кривую и становится плюсом; плюс возвращает её.
-    // У SVG нет свойства hidden, поэтому меняем сам атрибут.
-    function showEaseCurve() {
-        var label = motion.curve ? "Скрыть кривую" : "Показать кривую";
-        if (motion.curve) { ui.easeCurve.removeAttribute("hidden"); } else { ui.easeCurve.setAttribute("hidden", ""); }
-        ui.easeCurveToggle.setAttribute("aria-expanded", motion.curve ? "true" : "false");
-        ui.easeCurveToggle.setAttribute("aria-label", label);
-        ui.easeCurveToggle.title = label;
+    // Минус в углу блока прячет его дополнительную часть и становится плюсом; плюс возвращает её.
+    // У плавности это кривая, у точки привязки и выравнивания — список с настройкой.
+    // Спрятанная настройка продолжает действовать: в подсказке плюса написано, что выбрано.
+    function foldParts() {
+        return [
+            { key: "curve", button: ui.easeCurveToggle, part: ui.easeCurve, hide: "Скрыть кривую", show: "Показать кривую" },
+            { key: "anchorOpts", button: ui.anchorOptsToggle, part: ui.anchorSide, hide: "Скрыть настройку", show: "Показать настройку", select: ui.anchorKeys },
+            { key: "alignOpts", button: ui.alignOptsToggle, part: ui.alignSide, hide: "Скрыть настройку", show: "Показать настройку", select: ui.alignTo }
+        ];
     }
 
-    function onEaseCurveToggle() {
-        motion.curve = !motion.curve;
-        showEaseCurve();
-        storeMotion();
+    // У SVG нет свойства hidden, поэтому меняем сам атрибут.
+    function showFoldParts() {
+        var parts = foldParts();
+        var i, f, open, label, opt;
+        for (i = 0; i < parts.length; i++) {
+            f = parts[i];
+            open = motion[f.key] !== false;
+            label = open ? f.hide : f.show;
+            if (!open && f.select) {
+                opt = f.select.options[f.select.selectedIndex];
+                if (opt) { label += " (сейчас: " + opt.text + ")"; }
+            }
+            if (open) { f.part.removeAttribute("hidden"); } else { f.part.setAttribute("hidden", ""); }
+            f.button.setAttribute("aria-expanded", open ? "true" : "false");
+            f.button.setAttribute("aria-label", label);
+            f.button.title = label;
+        }
+    }
+
+    function enableFolding() {
+        foldParts().forEach(function (f) {
+            f.button.addEventListener("click", function () {
+                motion[f.key] = motion[f.key] === false;
+                showFoldParts();
+                storeMotion();
+            });
+        });
     }
 
     // Обновляет ползунки, числа и кривую. Кривая — значение между двумя выделенными ключами:
@@ -1857,7 +1955,7 @@
         var max = ui.motionTools.clientWidth;
         if (typeof width === "number") {
             width = Math.round(width);
-            if (width < TOOL_MIN_WIDTH) { width = TOOL_MIN_WIDTH; }
+            if (width < toolMinWidth()) { width = toolMinWidth(); }
             if (width >= max - TOOL_FULL_SNAP_PX) { width = "full"; }
         }
         if (width === null) { delete sizes[name]; } else { sizes[name] = width; }
@@ -1922,7 +2020,6 @@
         enableToolReordering();
         enableToolResizing();
         ui.anchorKeys.value = motion.anchorKeys;
-        showEaseCurve();
         drawEase();
         ui.easeIn.addEventListener("input", function () { onEaseSlider("in"); });
         ui.easeOut.addEventListener("input", function () { onEaseSlider("out"); });
@@ -1936,7 +2033,7 @@
             });
         });
         ui.easeLink.addEventListener("change", onEaseLink);
-        ui.easeCurveToggle.addEventListener("click", onEaseCurveToggle);
+        enableFolding();
         ui.easeBothBtn.addEventListener("click", function () { onEase("both"); });
         ui.anchorKeys.addEventListener("change", function () {
             var v = ui.anchorKeys.value;
@@ -1944,6 +2041,7 @@
             storeMotion();
         });
         ui.alignTo.value = motion.alignTo;
+        showFoldParts();
         ui.alignTo.addEventListener("change", function () {
             motion.alignTo = ui.alignTo.value === "selection" ? "selection" : "comp";
             storeMotion();
@@ -1968,6 +2066,7 @@
 
     var updateOffer = null;       // { info, url } — найденная новая версия
     var updateDismissed = false;  // плашку закрыли до следующего запуска
+    var dismissedVersion = "";    // какую версию при этом предлагали: о более новой скажем снова
     var updating = false;
 
     function parseVersion(v) {
@@ -2073,6 +2172,10 @@
             return false;
         }
         if (manual) { updateDismissed = false; }
+        if (updateDismissed && String(offer.info.version) !== dismissedVersion) { updateDismissed = false; }
+        // Фоновая проверка не перерисовывает плашку, которая уже показывает эту версию:
+        // иначе пропало бы сообщение об ошибке или ходе обновления.
+        if (!manual && updateOffer && !ui.updateBar.hidden && String(updateOffer.info.version) === String(offer.info.version)) { return true; }
         if (!updateDismissed && !updating) { showUpdate(offer); }
         return true;
     }
@@ -2084,7 +2187,7 @@
         state = loadUpdateState();
         if (state.base !== UPDATE_URL) { state = { base: UPDATE_URL, justUpdated: state.justUpdated }; }
         if (!manual && state.latest && typeof state.lastCheck === "number" &&
-                Date.now() >= state.lastCheck && Date.now() - state.lastCheck < UPDATE_CHECK_EVERY_MS) {
+                Date.now() >= state.lastCheck && Date.now() - state.lastCheck < UPDATE_THROTTLE_MS) {
             considerOffer(state.latest, false);
             return Promise.resolve(state.latest);
         }
@@ -2215,6 +2318,7 @@
     function onUpdateLater() {
         if (updating) { return; }
         updateDismissed = true;
+        dismissedVersion = updateOffer ? String(updateOffer.info.version) : "";
         ui.updateBar.hidden = true;
     }
 
@@ -2287,5 +2391,16 @@
     announceUpdate();
     ensureHost().catch(function (e) { setStatus(humanError(e), "error"); });
     // Проверка обновлений идёт в фоне и не мешает работе: об ошибках сети молчим.
-    setTimeout(function () { checkForUpdate(false).catch(function () {}); }, 1200);
+    // Раньше панель спрашивала сервер только при запуске и не чаще раза в шесть часов, поэтому
+    // о свежем выпуске узнавала очень поздно. Теперь — при запуске, раз в несколько минут, пока открыта,
+    // и когда в неё возвращаются.
+    var backgroundChecking = false;
+    function backgroundUpdateCheck() {
+        if (updating || backgroundChecking) { return; }
+        backgroundChecking = true;
+        checkForUpdate(false).catch(function () {}).then(function () { backgroundChecking = false; });
+    }
+    setTimeout(backgroundUpdateCheck, 1200);
+    setInterval(backgroundUpdateCheck, UPDATE_CHECK_EVERY_MS);
+    window.addEventListener("focus", backgroundUpdateCheck);
 })();
