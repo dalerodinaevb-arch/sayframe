@@ -266,11 +266,25 @@ textarea:focus, .field:focus {
 
 /* --------------------------------------------------------- обновление */
 
+/* Плашка обновления всегда зелёная, от акцентного цвета из настроек не зависит. */
 .update {
+  --update: #46d684;
+  --update-hi: #92f0b8;
+  --update-rgb: 70, 214, 132;
   padding: 12px 14px;
-  border-color: rgba(var(--accent-rgb), 0.55);
-  background: rgba(var(--accent-rgb), 0.1);
+  border-color: rgba(var(--update-rgb), 0.6);
+  background: rgba(var(--update-rgb), 0.12);
+  box-shadow: 0 10px 30px -16px rgba(var(--update-rgb), 0.7);
 }
+.update-head b { color: var(--update-hi); }
+.update li::marker { color: var(--update); }
+.update .primary {
+  background: linear-gradient(180deg, var(--update-hi), var(--update));
+  color: #062313;
+  box-shadow: 0 10px 28px -8px rgba(var(--update-rgb), 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.update .primary:hover { box-shadow: 0 12px 34px -8px rgba(var(--update-rgb), 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.4); }
+.update .primary:focus-visible, .update .icon-btn:focus-visible, .update .ghost:focus-visible { outline-color: rgba(var(--update-rgb), 0.95); }
 .update-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .update-head b { font: 700 13.5px/1.25 var(--round); }
 .icon-btn.small { width: 24px; height: 24px; flex: none; font-size: 16px; line-height: 1; }
