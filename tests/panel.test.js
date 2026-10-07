@@ -645,6 +645,75 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
 
   // --------------------------------------------------------------------- tabs
+  // ---------------------------------------------------------------- fixed content width
+  console.log("\n=== panel width ===");
+  const box = (p, sel) => p.page.evaluate((sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)].join(); }, sel);
+  // Every visible block of the page: left edge, right edge.
+  const spans = (p) => p.page.evaluate(() => Array.prototype.slice.call(document.querySelectorAll("#app > *, #app .view:not([hidden]) > *, .sheet:not([hidden]) .sheet-card, .modal:not([hidden]) .modal-card")).filter((el) => el.offsetParent !== null || el.getClientRects().length).map((el) => { const r = el.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)]; }).filter((x) => x[1] > x[0]));
+  const within = (list, left, right) => list.length > 0 && list.every((x) => x[0] >= left && x[1] <= right);
+  const overflow = (p) => p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  const setWidth = (p, v) => p.page.evaluate((v) => { const el = document.getElementById("panelWidth"); el.value = String(v); el.dispatchEvent(new Event("input", { bubbles: true })); }, v);
+
+  p = await open({ width: 380 });
+  check("W1 at 380px the panel looks as before: content fills it", (await box(p, "#tabs")).split(",")[0] === "14" && (await box(p, "#tabs")).split(",")[2] === "352" && (await box(p, "#runBtn")).split(",")[2] === "326", await box(p, "#tabs") + " | " + await box(p, "#runBtn"));
+  await p.close();
+
+  p = await open({ width: 1000, replies: [msg("Создаю.\n```javascript\napp.__ran('ask');\n```")], settings: { alwaysAsk: true } });
+  t = await spans(p);
+  check("W2 in a wide panel nothing stretches: every block stays in the 380px column on the left", within(t, 14, 366) && (await box(p, "#tabs")).split(",")[2] === "352" && (await overflow(p)) <= 0, JSON.stringify(t));
+  c = [await box(p, "#runBtn"), await box(p, "#prompt"), await box(p, "#settingsBtn"), await box(p, "#tabs")].join(" | ");
+  await p.page.setViewportSize({ width: 1600, height: 900 });
+  check("W2 stretching the panel further moves and resizes nothing", [await box(p, "#runBtn"), await box(p, "#prompt"), await box(p, "#settingsBtn"), await box(p, "#tabs")].join(" | ") === c, c);
+  await p.page.setViewportSize({ width: 1000, height: 760 });
+  await p.page.screenshot({ path: path.join(SHOTS, "09b-wide-panel.png") });
+  await p.page.click("#tabTools");
+  check("W2 Tools tab stays in the column", within(await spans(p), 14, 366), JSON.stringify(await spans(p)));
+  await p.page.click("#tabMotion");
+  check("W2 Animation tab stays in the column", within(await spans(p), 14, 366) && (await box(p, "#easeIn")).split(",")[2] === (await box(p, "#easeOut")).split(",")[2], JSON.stringify(await spans(p)));
+  await p.page.click("#tabClaude");
+  await p.page.fill("#prompt", "сделай слой"); await p.page.click("#runBtn");
+  await p.page.waitForSelector("#modal:not([hidden])");
+  check("W2 the confirmation dialog sits over the column, not in the middle of the wide panel", within(await spans(p), 14, 366), JSON.stringify(await spans(p)));
+  await p.page.locator("#modalButtons button").last().click(); await p.idle();
+  await p.page.click("#settingsBtn");
+  check("W2 settings stay in the column", within(await spans(p), 14, 366) && (await p.page.inputValue("#panelWidth")) === "380" && (await p.page.locator("#panelWidthVal").innerText()) === "380 px", JSON.stringify(await spans(p)));
+
+  await setWidth(p, 520);
+  t = await spans(p);
+  check("W3 the width slider previews live", within(t, 14, 506) && (await box(p, ".sheet-card")).split(",")[2] === "492" && (await p.page.locator("#panelWidthVal").innerText()) === "520 px" && (await box(p, "#tabs")).split(",")[2] === "492", JSON.stringify(t));
+  await p.page.click("#settingsClose");
+  check("W3 closing without saving puts the old width back", (await box(p, "#tabs")).split(",")[2] === "352" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).panelWidth)) !== 520);
+  await p.page.click("#settingsBtn"); await setWidth(p, 520); await p.page.click("#saveSettings");
+  check("W3 saved width applies to the whole panel", (await box(p, "#tabs")) .split(",")[2] === "492" && (await box(p, "#tabs")).split(",")[0] === "14" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).panelWidth)) === 520);
+  await p.page.screenshot({ path: path.join(SHOTS, "09c-wide-panel-520.png") });
+  await p.restart();
+  check("W3 the width survives a restart", (await box(p, "#tabs")).split(",")[2] === "492" && p.errors.length === 0, p.errors.join(" | "));
+  await p.page.click("#settingsBtn");
+  check("W3 settings show the saved width", (await p.page.inputValue("#panelWidth")) === "520" && (await p.page.locator("#panelWidthVal").innerText()) === "520 px");
+  await p.page.focus("#panelWidth"); await p.page.keyboard.press("ArrowRight");
+  check("W3 the slider works from the keyboard in steps of 10", (await p.page.locator("#panelWidthVal").innerText()) === "530 px" && (await box(p, ".sheet-card")).split(",")[2] === "502");
+  await setWidth(p, 280); await p.page.click("#saveSettings");
+  t = await spans(p);
+  check("W3 the narrowest width still fits everything", within(t, 14, 266) && (await overflow(p)) <= 0, JSON.stringify(t));
+  await p.page.click("#tabMotion");
+  t = await p.page.evaluate(() => { const g = document.getElementById("anchorGrid").getBoundingClientRect(), a = document.getElementById("easeIn").getBoundingClientRect(); return [Math.round(g.right), Math.round(a.width)]; });
+  check("W3 Animation tools fit the narrowest width", within(await spans(p), 14, 266) && t[0] <= 266 && t[1] > 50, JSON.stringify(t));
+  await p.page.screenshot({ path: path.join(SHOTS, "09d-wide-panel-280.png") });
+  await p.close();
+
+  p = await open({ width: 300, settings: { panelWidth: 520 } });
+  t = await spans(p);
+  check("W4 a panel narrower than the chosen width: content shrinks to fit, no sideways scroll", within(t, 14, 286) && (await box(p, "#tabs")).split(",")[2] === "272" && (await overflow(p)) <= 0, JSON.stringify(t));
+  await p.close();
+  for (const bad of [5000, 10, "wide", null, 383]) {
+    p = await open({});
+    await p.page.evaluate((v) => { const s = JSON.parse(localStorage.getItem("sayframe.settings.v1")); s.panelWidth = v; localStorage.setItem("sayframe.settings.v1", JSON.stringify(s)); }, bad);
+    await p.restart();
+    t = await p.page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--panel-w").trim());
+    check("W5 a broken saved width (" + JSON.stringify(bad) + ") is made safe", t === ({ 5000: "640px", 10: "280px", 383: "380px" }[bad] || "380px") && p.errors.length === 0, t);
+    await p.close();
+  }
+
   console.log("\n=== tabs ===");
   const vis = (p, sel) => p.page.locator(sel).isVisible();
   p = await open({ replies: [msg("Создаю слой.\n```javascript\napp.__ran('one');\n```")], clip: "png", footage: IMG });
@@ -688,6 +757,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // ------------------------------------------------------------ tab reordering
   console.log("\n=== tab order ===");
   const order = (p) => p.page.evaluate(() => Array.from(document.querySelectorAll("#tabs .tab")).map((b) => b.getAttribute("data-tab")).join());
+  const overflow0 = (p) => p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   const savedOrder = (p) => p.page.evaluate(() => localStorage.getItem("sayframe.tabOrder.v1"));
   const center = async (p, sel) => { const b = await p.page.locator(sel).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
   async function dragTab(p, from, to, opts) {
@@ -697,25 +767,49 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     if (opts && opts.beforeUp) await opts.beforeUp();
     await p.page.mouse.up();
   }
+  const arrangingNow = (p) => p.page.evaluate(() => /(^|\s)arranging(\s|$)/.test(document.body.className) && !document.getElementById("arrangeBar").hidden);
+  // Rearranging is switched on by a double click on a tab (the open one unless told otherwise).
+  const arrange = async (p, sel) => { await p.page.dblclick(sel || '#tabs .tab[aria-selected="true"]'); await p.page.waitForFunction(() => /arranging/.test(document.body.className)); await p.page.waitForTimeout(350); };
   p = await open({ clip: "png", footage: IMG });
   check("O1 default order", (await order(p)) === "claude,tools,motion" && (await savedOrder(p)) === null);
+  check("O1 rearranging is off at first, its bar is hidden", !(await arrangingNow(p)) && !(await vis(p, "#arrangeBar")));
+  await dragTab(p, "#tabClaude", "#tabTools");
+  check("O1 without a double click a drag moves nothing and marks nothing", (await order(p)) === "claude,tools,motion" && (await savedOrder(p)) === null && (await p.page.locator(".dragging, .reordering").count()) === 0);
+  await p.page.waitForTimeout(350);
+  await p.page.click("#tabTools");
+  check("O1 a single click only switches the tab", (await vis(p, "#pasteBtn")) && !(await arrangingNow(p)));
+  await p.page.click("#tabClaude");
+  await p.page.waitForTimeout(350);
+  await p.page.dblclick("#tabClaude");
+  check("O1 a double click on a tab switches rearranging on and shows the bar", (await arrangingNow(p)) && (await vis(p, "#arrangeBar")) && (await vis(p, "#arrangeDone")) && (await vis(p, "#prompt")));
+  t = await p.page.evaluate(() => { const b = document.getElementById("arrangeBar").getBoundingClientRect(), tb = document.getElementById("tabs").getBoundingClientRect(); return b.top >= tb.bottom && Math.round(b.left) === 14 && Math.round(b.width) === 352; });
+  check("O1 the bar sits under the tabs, inside the column", t === true && (await overflow0(p)) <= 0);
+  await p.page.screenshot({ path: path.join(SHOTS, "19a-arranging.png") });
+  await p.page.waitForTimeout(350);
   await dragTab(p, "#tabClaude", "#tabTools", { beforeUp: async () => {
     check("O2 tab is marked while it is dragged", (await p.page.locator("#tabClaude.dragging").count()) === 1 && (await p.page.locator("#tabs.reordering").count()) === 1);
     await p.page.screenshot({ path: path.join(SHOTS, "19-tab-dragging.png") });
   } });
   check("O2 dragging Claude onto Tools swaps them", (await order(p)) === "tools,claude,motion", await order(p));
   check("O2 the new order is saved", (await savedOrder(p)) === '["tools","claude","motion"]', await savedOrder(p));
-  check("O2 dragging does not switch tabs or leave marks", (await vis(p, "#prompt")) && !(await vis(p, "#pasteBtn")) && (await p.page.locator(".dragging, .reordering").count()) === 0);
+  check("O2 dragging does not switch tabs or leave marks, rearranging stays on", (await vis(p, "#prompt")) && !(await vis(p, "#pasteBtn")) && (await p.page.locator(".dragging, .reordering").count()) === 0 && (await arrangingNow(p)));
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect().left; return r("tabTools") < r("tabClaude"); });
   check("O2 Tools is now drawn on the left", t === true);
   await p.page.screenshot({ path: path.join(SHOTS, "20-tabs-swapped.png") });
   await p.page.waitForTimeout(350);
   await p.tab("tools");
-  check("O3 clicking still switches tabs after a drag", (await vis(p, "#pasteBtn")) && !(await vis(p, "#prompt")));
+  check("O3 clicking still switches tabs after a drag, also while rearranging", (await vis(p, "#pasteBtn")) && !(await vis(p, "#prompt")) && (await arrangingNow(p)));
+  await p.page.click("#arrangeDone");
+  check("O3 'Done' switches rearranging off", !(await arrangingNow(p)) && !(await vis(p, "#arrangeBar")) && (await order(p)) === "tools,claude,motion");
+  await p.page.waitForTimeout(350);
+  await dragTab(p, "#tabTools", "#tabClaude");
+  check("O3 after 'Done' tabs do not move any more", (await order(p)) === "tools,claude,motion");
+  await p.page.waitForTimeout(350);
   await p.page.click("#pasteBtn"); await p.idle(); await p.modalClick("Оставить как есть");
   check("O3 tools still work in the new order", /^Картинка вставлена/.test(await p.status()), await p.status());
   await p.restart();
-  check("O4 order and open tab survive a restart", (await order(p)) === "tools,claude,motion" && (await vis(p, "#pasteBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true");
+  check("O4 order and open tab survive a restart; rearranging does not", (await order(p)) === "tools,claude,motion" && (await vis(p, "#pasteBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && !(await arrangingNow(p)));
+  await arrange(p);
   await dragTab(p, "#tabTools", "#tabClaude");
   check("O5 dragging back restores the order", (await order(p)) === "claude,tools,motion" && (await savedOrder(p)) === '["claude","tools","motion"]');
   await p.page.waitForTimeout(350);
@@ -731,10 +825,20 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   c = await center(p, "#tabTools");
   await dragTab(p, "#tabClaude", { x: c.x + 400, y: c.y + 200 });
   check("O7 releasing outside the tabs keeps a valid order", (await order(p)).split(",").sort().join() === "claude,motion,tools" && (await p.page.locator(".dragging, .reordering").count()) === 0, await order(p));
+  await p.page.waitForTimeout(350);
+  await p.page.keyboard.press("Escape");
+  check("O7 Esc switches rearranging off", !(await arrangingNow(p)));
+  await arrange(p);
+  await p.page.dblclick('#tabs .tab[aria-selected="true"]');
+  check("O7 a second double click switches it off too", !(await arrangingNow(p)));
+  await arrange(p);
+  await p.page.click("#settingsBtn"); await p.page.keyboard.press("Escape");
+  check("O7 Esc inside settings leaves rearranging alone", await arrangingNow(p));
+  await p.page.click("#settingsClose");
   await p.page.evaluate(() => localStorage.setItem("sayframe.tabOrder.v1", '["claude","tools","motion"]')); await p.restart();
   await p.page.waitForTimeout(350);
   await p.page.focus("#tabClaude"); await p.page.keyboard.press("Alt+ArrowRight");
-  check("O8 Alt+Right moves the focused tab right and keeps focus", (await order(p)) === "tools,claude,motion" && (await p.page.evaluate(() => document.activeElement.id)) === "tabClaude" && (await savedOrder(p)) === '["tools","claude","motion"]');
+  check("O8 Alt+Right moves the focused tab right and keeps focus (keyboard needs no double click)", !(await arrangingNow(p)) && (await order(p)) === "tools,claude,motion" && (await p.page.evaluate(() => document.activeElement.id)) === "tabClaude" && (await savedOrder(p)) === '["tools","claude","motion"]');
   await p.page.keyboard.press("Alt+ArrowRight");
   check("O8 Alt+Right again moves it to the end", (await order(p)) === "tools,motion,claude");
   await p.page.keyboard.press("Alt+ArrowRight");
@@ -755,6 +859,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
   p = await open({ width: 300, height: 620 });
+  await arrange(p);
+  t = await p.page.evaluate(() => { const b = document.getElementById("arrangeBar").getBoundingClientRect(), d = document.getElementById("arrangeDone").getBoundingClientRect(); return d.right <= b.right && d.left >= b.left && b.right <= 286; });
+  check("O10 the bar and its button fit a 300px panel", t === true);
   await dragTab(p, "#tabTools", "#tabClaude");
   t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check("O10 reordering works in a 300px panel", (await order(p)) === "tools,claude,motion" && t <= 0);
@@ -768,6 +875,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const eases = (list) => list.map((e) => e.speed + "/" + e.influence).join();
   const setSlider = (p, id, v) => p.page.evaluate(([id, v]) => { const el = document.getElementById(id); el.value = String(v); el.dispatchEvent(new Event("input", { bubbles: true })); }, [id, v]);
   const motionTab = async (p) => { await p.page.click("#tabMotion"); };
+  const typeNumber = async (p, id, text, key) => { await p.page.click("#" + id); await p.page.keyboard.type(text); await p.page.keyboard.press(key || "Enter"); };
+  const hostCall = (p, script) => p.page.evaluate((script) => new Promise((done) => window.__adobe_cep__.evalScript(script, done)), script);
+  const fillOf = (p, id) => p.page.locator("#" + id).evaluate((el) => el.style.getPropertyValue("--v"));
   let clock, prop1, prop2, grp, L, L2, before;
 
   p = await open({});
@@ -777,14 +887,28 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check("M1 no horizontal overflow at 380px", t <= 0, t);
   await p.page.screenshot({ path: path.join(SHOTS, "21-tab-motion.png") });
-  check("M2 sliders start linked at 60", (await p.page.inputValue("#easeIn")) === "60" && (await p.page.inputValue("#easeOut")) === "60" && (await p.page.isChecked("#easeLink")) && (await p.page.locator("#easeInVal").innerText()) === "60%");
+  check("M2 sliders start linked at 60", (await p.page.inputValue("#easeIn")) === "60" && (await p.page.inputValue("#easeOut")) === "60" && (await p.page.isChecked("#easeLink")) && (await p.page.inputValue("#easeInVal")) === "60" && (await p.page.inputValue("#easeOutVal")) === "60");
+  check("M2 nothing extra: apply button, curve toggle and the drag handle only, no labels", (await p.page.locator("#viewMotion .ease-card button").count()) === 3 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link), .ease-card .tool-head").count()) === 0 && (await p.page.locator("#showCurve").count()) === 0);
+  t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); const a = r("easeIn"), b = r("easeBothBtn"), c = r("easeOut"), n1 = r("easeInVal"), l = document.querySelector(".ease-link").getBoundingClientRect(), n2 = r("easeOutVal"); return { row: a.right <= b.left && b.right <= c.left && Math.abs((a.top + a.bottom) - (c.top + c.bottom)) < 2, equal: Math.abs(a.width - c.width) < 2, nums: n1.right <= l.left && l.right <= n2.left && n1.top >= b.bottom - 1, centered: Math.abs((l.left + l.right) / 2 - (b.left + b.right) / 2) < 2, rtl: getComputedStyle(document.getElementById("easeIn")).direction }; });
+  check("M2 layout: slider, button, slider in one row; numbers and link centred under the button", t.row && t.equal && t.nums && t.centered, JSON.stringify(t));
+  check("M2 the left slider grows away from the button", t.rtl === "rtl" && (await fillOf(p, "easeIn")) === "0.6" && (await fillOf(p, "easeOut")) === "0.6", t.rtl);
   c = await p.page.getAttribute("#easeCurvePath", "d");
   await setSlider(p, "easeOut", 85);
-  check("M2 linked: moving one slider moves the other, labels and curve follow", (await p.page.inputValue("#easeIn")) === "85" && (await p.page.locator("#easeInVal").innerText()) === "85%" && (await p.page.locator("#easeOutVal").innerText()) === "85%" && (await p.page.getAttribute("#easeCurvePath", "d")) !== c);
+  check("M2 linked: moving one slider moves the other, labels and curve follow", (await p.page.inputValue("#easeIn")) === "85" && (await p.page.inputValue("#easeInVal")) === "85" && (await p.page.inputValue("#easeOutVal")) === "85" && (await fillOf(p, "easeIn")) === "0.85" && (await p.page.getAttribute("#easeCurvePath", "d")) !== c);
   await p.page.locator("#easeLink").evaluate((el) => el.click());
   await setSlider(p, "easeIn", 20);
   check("M2 unlinked: sliders are independent", (await p.page.inputValue("#easeIn")) === "20" && (await p.page.inputValue("#easeOut")) === "85" && !(await p.page.isChecked("#easeLink")));
   check("M2 curve: left handle = start (85%), right handle = stop (20%)", (await p.page.getAttribute("#easeCurvePath", "d")) === "M12 72 C161.6 72 152.8 12 188 12", await p.page.getAttribute("#easeCurvePath", "d"));
+  await typeNumber(p, "easeOutVal", "42");
+  check("M2 a typed number moves its slider only (unlinked)", (await p.page.inputValue("#easeOut")) === "42" && (await p.page.inputValue("#easeIn")) === "20" && (await fillOf(p, "easeOut")) === "0.42");
+  await typeNumber(p, "easeOutVal", "250");
+  check("M2 a number above 100 is capped", (await p.page.inputValue("#easeOut")) === "100" && (await p.page.inputValue("#easeOutVal")) === "100");
+  await typeNumber(p, "easeInVal", "abc");
+  check("M2 text that is not a number is thrown away", (await p.page.inputValue("#easeIn")) === "20" && (await p.page.inputValue("#easeInVal")) === "20");
+  await typeNumber(p, "easeInVal", "77", "Escape");
+  check("M2 Escape cancels typing", (await p.page.inputValue("#easeIn")) === "20" && (await p.page.inputValue("#easeInVal")) === "20");
+  await typeNumber(p, "easeOutVal", "85%");
+  check("M2 a number typed with a percent sign is accepted", (await p.page.inputValue("#easeOut")) === "85" && (await p.page.inputValue("#easeIn")) === "20");
   await p.page.selectOption("#anchorKeys", "shift");
   await p.restart();
   check("M2 sliders, link and key option survive a restart, with the tab", (await p.page.inputValue("#easeIn")) === "20" && (await p.page.inputValue("#easeOut")) === "85" && !(await p.page.isChecked("#easeLink")) && (await p.page.inputValue("#anchorKeys")) === "shift" && (await vis(p, "#easeBothBtn")));
@@ -808,6 +932,153 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
+  p = await open({});
+  await motionTab(p);
+  const toggle = async (p) => { const b = p.page.locator("#easeCurveToggle"); return [await b.getAttribute("aria-expanded"), await b.getAttribute("title"), (await p.page.locator("#easeCurveToggle .ease-toggle-plus").evaluate((el) => getComputedStyle(el).display)) !== "none" ? "+" : "-"].join("|"); };
+  t = await p.page.evaluate(() => { const r = (el) => el.getBoundingClientRect(); const card = r(document.querySelector(".ease-card")), b = r(document.getElementById("easeCurveToggle")), c = r(document.getElementById("easeCurve")), s = r(document.getElementById("easeBothBtn")); return { corner: b.top >= card.top && b.right <= card.right && card.right - b.right < 16 && b.top - card.top < 8, clear: b.bottom <= c.top + 1, above: c.height > 40 && c.bottom <= s.top }; });
+  check("M8 the curve is shown at first, with a minus in the card's top right corner", (await vis(p, "#easeCurve")) && (await toggle(p)) === "true|Скрыть кривую|-" && t.corner && t.clear && t.above, JSON.stringify(t) + " " + await toggle(p));
+  await setSlider(p, "easeIn", 30);
+  check("M8 the curve follows the sliders", (await p.page.getAttribute("#easeCurvePath", "d")) === "M12 72 C64.8 72 135.2 12 188 12", await p.page.getAttribute("#easeCurvePath", "d"));
+  await p.page.screenshot({ path: path.join(SHOTS, "21b-tab-motion-curve.png") });
+  c = await p.page.evaluate(() => document.querySelector(".ease-card").getBoundingClientRect().height);
+  await p.page.click("#easeCurveToggle");
+  t = await p.page.evaluate(() => { const r = (el) => el.getBoundingClientRect(); const b = r(document.getElementById("easeCurveToggle")), a = r(document.getElementById("easeOut")); return { h: document.querySelector(".ease-card").getBoundingClientRect().height, clear: b.bottom <= a.top + 1 }; });
+  check("M8 minus hides the curve and turns into a plus; the card shrinks", !(await vis(p, "#easeCurve")) && (await toggle(p)) === "false|Показать кривую|+" && t.h < c - 60 && t.clear, JSON.stringify(t) + " " + c);
+  check("M8 the sliders still work while the curve is hidden", (await vis(p, "#easeBothBtn")) && (await vis(p, "#easeIn")) && (await p.page.inputValue("#easeInVal")) === "30");
+  await p.page.screenshot({ path: path.join(SHOTS, "21c-tab-motion-no-curve.png") });
+  await p.restart();
+  check("M8 hidden stays hidden after a restart", !(await vis(p, "#easeCurve")) && (await toggle(p)) === "false|Показать кривую|+");
+  await p.page.focus("#easeCurveToggle"); await p.page.keyboard.press("Enter");
+  check("M8 plus brings the curve back (keyboard too)", (await vis(p, "#easeCurve")) && (await toggle(p)) === "true|Скрыть кривую|-");
+  await p.restart();
+  check("M8 shown stays shown after a restart", (await vis(p, "#easeCurve")) && (await toggle(p)) === "true|Скрыть кривую|-" && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+  p = await open({});
+  await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ easeIn: 40, easeOut: 40, link: true, anchorKeys: "key" }))); await p.restart(); await motionTab(p);
+  check("M8 values saved by the previous version (no curve choice) show the curve", (await vis(p, "#easeCurve")) && (await p.page.inputValue("#easeIn")) === "40");
+  await p.close();
+
+  // ---------------------------------------------------------------- animation: two blocks side by side, swappable
+  const toolOrder = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), (c) => c.getAttribute("data-tool")).join());
+  const savedTools = (p) => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").order || null);
+  const toolRects = (p) => p.page.evaluate(() => { const o = {}; Array.prototype.forEach.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const r = c.getBoundingClientRect(); o[c.getAttribute("data-tool")] = { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width) }; }); return o; });
+  const grip = (tool) => '#motionTools [data-tool="' + tool + '"] .tool-grip';
+  async function dragFrom(p, from, to) {
+    await p.page.mouse.move(from.x, from.y); await p.page.mouse.down();
+    await p.page.mouse.move(to.x, to.y, { steps: 12 });
+    await p.page.mouse.up();
+  }
+  const middle = (r) => ({ x: (r.l + r.r) / 2, y: (r.t + r.b) / 2 });
+
+  p = await open({});
+  await motionTab(p);
+  t = await toolRects(p);
+  check("R1 at 380px easing and anchor stand side by side, align takes the row below", (await toolOrder(p)) === "ease,anchor,align" && t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && Math.abs(t.ease.w - t.anchor.w) <= 1 && t.ease.l === 14 && t.anchor.r === 366 && t.align.t >= Math.max(t.ease.b, t.anchor.b) && t.align.l === 14 && t.align.r === 366, JSON.stringify(t));
+  t = await p.page.evaluate(() => { const inside = (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button, select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5); }); }; return Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), inside).join(); });
+  check("R1 nothing sticks out of any block", t === "true,true,true" && (await overflow(p)) <= 0, t);
+  t = await p.page.evaluate(() => [document.getElementById("easeIn").getBoundingClientRect().width, document.getElementById("easeOut").getBoundingClientRect().width, document.getElementById("anchorGrid").getBoundingClientRect().width].map(Math.round));
+  check("R1 sliders stay usable and the arrow grid keeps its size", t[0] === t[1] && t[0] >= 40 && t[2] >= 118, t.join());
+  await p.page.screenshot({ path: path.join(SHOTS, "21d-tools-side-by-side.png") });
+
+  // Without the double click nothing can be dragged.
+  t = await toolRects(p);
+  await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: middle(t.anchor).x + 10, y: t.ease.b - 5 });
+  check("R2 without a double click a block cannot be dragged", (await toolOrder(p)) === "ease,anchor,align" && (await savedTools(p)) !== "anchor,ease,align" && (await p.page.locator("#motionTools .dragging").count()) === 0);
+  c = await center(p, "#easeOut");
+  await dragFrom(p, c, { x: middle(t.anchor).x + 20, y: c.y });
+  check("R2 the sliders work as usual", (await toolOrder(p)) === "ease,anchor,align" && (await p.page.inputValue("#easeOut")) === "100", await p.page.inputValue("#easeOut"));
+  await setSlider(p, "easeOut", 60);
+  await p.page.dblclick("#easeInVal");
+  check("R2 a double click on a number does not start rearranging", !(await arrangingNow(p)));
+  await p.page.keyboard.press("Escape");
+  await p.page.dblclick("#easeIn");
+  check("R2 nor does a double click on a slider", !(await arrangingNow(p)));
+  await setSlider(p, "easeIn", 60);
+
+  await p.page.dblclick("#motionTools .anchor-card .tool-head b");
+  check("R3 a double click on a free part of a block switches rearranging on", (await arrangingNow(p)) && (await vis(p, "#arrangeBar")));
+  check("R3 the double click does not select the block's title", (await p.page.evaluate(() => String(window.getSelection()))) === "");
+  await p.page.waitForTimeout(350);
+  await p.page.screenshot({ path: path.join(SHOTS, "21h-tools-arranging.png") });
+  t = await toolRects(p);
+  c = await center(p, "#easeOut");
+  await dragFrom(p, c, { x: middle(t.anchor).x + 10, y: c.y + 4 });
+  t = await toolRects(p);
+  check("R3 now the block is dragged by any place, even over a slider, and swaps past the middle of the other", (await toolOrder(p)) === "anchor,ease,align" && t.anchor.r < t.ease.l && t.anchor.l === 14 && (await savedTools(p)) === "anchor,ease,align" && (await p.page.inputValue("#easeOut")) === "60", await toolOrder(p) + " " + await p.page.inputValue("#easeOut"));
+  check("R3 no leftovers after the drop, rearranging stays on", (await p.page.locator("#motionTools .dragging").count()) === 0 && !(await p.page.locator("#motionTools").evaluate((el) => /reordering/.test(el.className))) && (await arrangingNow(p)));
+  await p.page.screenshot({ path: path.join(SHOTS, "21e-tools-swapped.png") });
+  await p.page.waitForTimeout(350);
+  c = await center(p, "#anchorGrid button:nth-child(5)");
+  await p.page.mouse.click(c.x, c.y); await p.idle();
+  check("R3 while rearranging the buttons inside the blocks do nothing", (await p.status()) === "Готов." && p.ae.log.undo.length === 0, await p.status());
+  t = await toolRects(p);
+  c = middle(t.ease);
+  await dragFrom(p, c, { x: c.x - 30, y: c.y });
+  check("R3 a short drag that does not reach the middle changes nothing", (await toolOrder(p)) === "anchor,ease,align");
+  await p.page.waitForTimeout(350);
+  await p.page.mouse.dblclick(middle(t.ease).x, middle(t.ease).y);
+  check("R3 a double click on a block switches rearranging off", !(await arrangingNow(p)) && (await toolOrder(p)) === "anchor,ease,align");
+  await p.page.click("#easeBothBtn"); await p.idle();
+  check("R3 the tools work again, in the new order", (await p.status()) === "Выделите ключевые кадры на таймлайне и нажмите ещё раз.");
+  await p.restart();
+  check("R3 the order survives a restart", (await toolOrder(p)) === "anchor,ease,align" && (await vis(p, "#easeBothBtn")) && !(await arrangingNow(p)));
+  await arrange(p);
+  t = await toolRects(p);
+  await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: middle(t.anchor).x - 10, y: t.ease.b - 5 });
+  check("R3 dragging back restores the order", (await toolOrder(p)) === "ease,anchor,align" && (await savedTools(p)) === "ease,anchor,align", await toolOrder(p));
+  await p.page.waitForTimeout(350);
+  await dragTab(p, "#tabMotion", "#tabClaude");
+  check("R3 the same mode moves the tabs", (await order(p)) === "motion,claude,tools");
+  await p.page.waitForTimeout(350);
+  await p.page.keyboard.press("Escape");
+  check("R3 Esc ends it", !(await arrangingNow(p)));
+
+  await p.page.focus(grip("anchor")); await p.page.keyboard.press("ArrowLeft");
+  check("R4 keyboard: arrow on the block's handle moves it and keeps focus (no double click needed)", !(await arrangingNow(p)) && (await toolOrder(p)) === "anchor,ease,align" && (await p.page.evaluate(() => document.activeElement.className)) === "tool-grip" && (await savedTools(p)) === "anchor,ease,align");
+  await p.page.keyboard.press("ArrowLeft");
+  check("R4 at the edge nothing happens", (await toolOrder(p)) === "anchor,ease,align");
+  await p.page.keyboard.press("ArrowRight");
+  check("R4 and back", (await toolOrder(p)) === "ease,anchor,align" && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  p = await open({ width: 300 });
+  await motionTab(p);
+  t = await toolRects(p);
+  check("R5 in a narrow panel the blocks stack, each full width", t.ease.b <= t.anchor.t && t.ease.l === 14 && t.ease.w === 272 && t.anchor.w === 272 && (await overflow(p)) <= 0, JSON.stringify(t));
+  await arrange(p);
+  t = await toolRects(p);
+  c = middle(t.anchor);
+  await dragFrom(p, c, { x: c.x + 3, y: middle(t.ease).y - 10 });
+  t = await toolRects(p);
+  check("R5 stacked blocks swap by dragging up or down", (await toolOrder(p)) === "anchor,ease,align" && t.anchor.b <= t.ease.t, await toolOrder(p));
+  await p.page.screenshot({ path: path.join(SHOTS, "21f-tools-stacked.png") });
+  await p.close();
+
+  p = await open({ width: 900, settings: { panelWidth: 600 } });
+  await motionTab(p);
+  t = await toolRects(p);
+  check("R6 with a wider panel setting all three blocks fit one row", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.ease.l === 14 && t.align.r === 586 && t.ease.w >= 170 && Math.abs(t.ease.w - t.align.w) <= 1, JSON.stringify(t));
+  await p.page.screenshot({ path: path.join(SHOTS, "21g-tools-wide.png") });
+  await p.close();
+  for (const [bad, want] of [['"anchor"', "anchor,ease,align"], ['"ease,ease"', "ease,anchor,align"], ["7", "ease,anchor,align"], ["null", "ease,anchor,align"], ['["anchor","ease"]', "ease,anchor,align"],
+    ['"anchor,ease"', "anchor,ease,align"] /* an order saved before the Align block existed */, ['"align,ghost,ease"', "align,ease,anchor"]]) {
+    p = await open({});
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", '{"order":' + v + "}"), bad); await p.restart(); await motionTab(p);
+    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card").count()) === 3 && p.errors.length === 0, await toolOrder(p));
+    await p.close();
+  }
+  p = await open({});
+  await motionTab(p); await arrange(p);
+  t = await toolRects(p);
+  await dragFrom(p, middle(t.align), { x: middle(t.ease).x - 20, y: middle(t.ease).y - 10 });
+  check("R8 the block from the second row can be dragged up to the front", (await toolOrder(p)) === "align,ease,anchor" && (await savedTools(p)) === "align,ease,anchor", await toolOrder(p));
+  await p.page.waitForTimeout(350);
+  t = await toolRects(p);
+  check("R8 then align and easing share the first row", t.align.t === t.ease.t && t.align.r < t.ease.l && t.anchor.t >= t.align.b, JSON.stringify(t));
+  await dragFrom(p, middle(t.align), { x: middle(t.anchor).x, y: middle(t.anchor).y + 10 });
+  check("R8 and down to the end again", (await toolOrder(p)) === "ease,anchor,align", await toolOrder(p));
+  await p.close();
+
   function easeScene() {
     clock = { time: 1 };
     prop1 = new Prop(50, clock).addKey(0, 0).addKey(1, 50, { selected: true }).addKey(2, 100, { selected: true });          // opacity: 1 ease per side
@@ -827,15 +1098,15 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
   p = await open(easeScene());
-  await motionTab(p); await setSlider(p, "easeIn", 90);
-  await p.page.click("#easeInBtn"); await p.idle();
-  check("M5 'stop only' changes the arriving side and keeps the leaving side", eases(prop1.keys[1].inEase) === "0/90" && eases(prop1.keys[1].outEase) === "22/16.67" && prop1.keys[1].inType === KIT.BEZIER && prop1.keys[1].outType === KIT.LINEAR, eases(prop1.keys[1].outEase) + " " + prop1.keys[1].outType);
+  await motionTab(p);
+  t = JSON.parse(await hostCall(p, 'sayframeHost.ease(90,60,"in")'));
+  check("M5 host 'in' mode changes the arriving side and keeps the leaving side", t.ok && eases(prop1.keys[1].inEase) === "0/90" && eases(prop1.keys[1].outEase) === "22/16.67" && prop1.keys[1].inType === KIT.BEZIER && prop1.keys[1].outType === KIT.LINEAR, eases(prop1.keys[1].outEase) + " " + prop1.keys[1].outType);
   check("M5 a linear leaving side stays linear on the 3D property too", eases(prop2.keys[1].inEase) === "0/90,0/90,0/90" && prop2.keys[1].outType === KIT.LINEAR && prop2.keys[1].inType === KIT.BEZIER);
   await p.close();
   p = await open(easeScene());
-  await motionTab(p); await setSlider(p, "easeOut", 30);
-  await p.page.click("#easeOutBtn"); await p.idle();
-  check("M5 'start only' changes the leaving side and keeps the arriving side", eases(prop1.keys[2].outEase) === "0/30" && eases(prop1.keys[2].inEase) === "11/16.67" && prop1.keys[2].inType === KIT.LINEAR && prop1.keys[2].outType === KIT.BEZIER);
+  await motionTab(p);
+  t = JSON.parse(await hostCall(p, 'sayframeHost.ease(60,30,"out")'));
+  check("M5 host 'out' mode changes the leaving side and keeps the arriving side", t.ok && eases(prop1.keys[2].outEase) === "0/30" && eases(prop1.keys[2].inEase) === "11/16.67" && prop1.keys[2].inType === KIT.LINEAR && prop1.keys[2].outType === KIT.BEZIER);
   check("M5 a hold on the arriving side stays a hold", prop2.keys[1].inType === KIT.HOLD && prop2.keys[1].outType === KIT.BEZIER && eases(prop2.keys[1].outEase) === "0/30,0/30,0/30");
   await p.close();
   p = await open(easeScene());
@@ -971,6 +1242,141 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
   // ------------------------------------------------------------------ updates
+  // ---------------------------------------------------------------- animation: align
+  console.log("\n=== animation: align ===");
+  const edgeBtn = async (p, edge) => { await p.page.click('#alignGrid button[data-edge="' + edge + '"]'); await p.idle(); };
+  // Where a layer's bounds end up in the composition, worked out by the mock itself (through the parents).
+  const compBox = (l) => {
+    const r = l.rect, pts = [[r.left, r.top], [r.left + r.width, r.top], [r.left, r.top + r.height], [r.left + r.width, r.top + r.height]].map((pt) => { let q = [pt[0], pt[1], 0]; for (let x = l; x; x = x.parent) q = x.world(q); return q; });
+    return { l: Math.min.apply(null, pts.map((q) => q[0])), r: Math.max.apply(null, pts.map((q) => q[0])), t: Math.min.apply(null, pts.map((q) => q[1])), b: Math.max.apply(null, pts.map((q) => q[1])) };
+  };
+  const close2 = (a, b) => Math.abs(a - b) < 1e-6;
+  let L3, kid, bx;
+
+  p = await open({});
+  await motionTab(p);
+  check("G1 the Align block: six buttons and a target list, composition first", (await p.page.locator("#alignGrid button").count()) === 6 && (await p.page.locator("#alignGrid button").evaluateAll((list) => list.map((b) => b.getAttribute("data-edge")).join())) === "left,hcenter,right,top,vcenter,bottom" && (await p.page.inputValue("#alignTo")) === "comp" && (await p.page.locator("#motionTools .align-card .tool-head b").innerText()) === "Выравнивание");
+  t = await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#alignGrid button"), (b) => { const r = b.getBoundingClientRect(), s = b.querySelector("svg").getBoundingClientRect(); return r.width >= 36 && r.height >= 36 && s.width > 10 && !!b.title && b.title === b.getAttribute("aria-label"); }).join());
+  check("G1 every button has a visible icon and a name", t === "true,true,true,true,true,true", t);
+  await edgeBtn(p, "left");
+  check("G1 nothing selected -> a hint, not an error", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && (await p.statusKind()) === "" && p.ae.log.undo.length === 0);
+  await p.page.selectOption("#alignTo", "selection");
+  await p.restart();
+  check("G1 the chosen target survives a restart", (await p.page.inputValue("#alignTo")) === "selection" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1")).alignTo)) === "selection");
+  await p.close();
+  p = await open({ noActiveComp: true });
+  await motionTab(p); await edgeBtn(p, "left");
+  check("G1 no open composition -> hint", /^Откройте композицию/.test(await p.status()) && (await p.statusKind()) === "");
+  await p.close();
+
+  // to the composition (1920x1080): a plain layer, 100x100 around its anchor
+  clock = { time: 0 };
+  L = mkLayer(clock, { rect: { left: 0, top: 0, width: 100, height: 100 }, anchor: [50, 50, 0], position: [300, 400, 0] });
+  p = await open({ selectedLayers: [L] });
+  await motionTab(p);
+  await edgeBtn(p, "left");
+  check("G2 left: the layer's left edge meets the composition's, height untouched", sameVec(P(L).value, [50, 400, 0]), P(L).value.join());
+  check("G2 result reported, one undo step", (await p.status()) === "Выровнено: 1 слой.\nОтменить: Cmd/Ctrl+Z." && (await p.statusKind()) === "done" && p.ae.log.undo.join() === "begin:Sayframe: align layers,end", await p.status());
+  await edgeBtn(p, "hcenter"); check("G2 horizontal centre", sameVec(P(L).value, [960, 400, 0]), P(L).value.join());
+  await edgeBtn(p, "right"); check("G2 right", sameVec(P(L).value, [1870, 400, 0]), P(L).value.join());
+  await edgeBtn(p, "top"); check("G2 top", sameVec(P(L).value, [1870, 50, 0]), P(L).value.join());
+  await edgeBtn(p, "vcenter"); check("G2 vertical centre", sameVec(P(L).value, [1870, 540, 0]), P(L).value.join());
+  await edgeBtn(p, "bottom"); check("G2 bottom", sameVec(P(L).value, [1870, 1030, 0]), P(L).value.join());
+  await edgeBtn(p, "bottom");
+  check("G2 already there -> says so, changes nothing", (await p.status()) === "Уже на месте: 1 слой." && (await p.statusKind()) === "" && sameVec(P(L).value, [1870, 1030, 0]));
+  check("G2 anchor, scale and rotation are never touched", sameVec(A(L).value, [50, 50, 0]) && sameVec(L.props["ADBE Scale"].value, [100, 100, 100]) && L.props["ADBE Rotate Z"].value === 0 && p.ae.log.nullsAdded === 0);
+  await p.close();
+
+  // scaled, rotated, anchor off-centre: what is aligned is the box the layer really covers
+  L = mkLayer(clock, { rect: { left: -20, top: 10, width: 200, height: 80 }, anchor: [0, 0, 0], position: [960, 540, 0], scale: [200, 50, 100], rotation: 90 });
+  p = await open({ selectedLayers: [L] });
+  await motionTab(p);
+  bx = compBox(L);
+  check("G3 (scene) the rotated layer covers 915..955 x 500..900", close2(bx.l, 915) && close2(bx.r, 955) && close2(bx.t, 500) && close2(bx.b, 900), JSON.stringify(bx));
+  await edgeBtn(p, "left"); bx = compBox(L);
+  check("G3 left with scale and rotation: visible left edge at 0, nothing moves vertically", close2(bx.l, 0) && close2(bx.t, 500) && sameVec(P(L).value, [45, 540, 0]), JSON.stringify(bx));
+  await edgeBtn(p, "bottom"); bx = compBox(L);
+  check("G3 bottom: visible bottom edge at 1080", close2(bx.b, 1080) && close2(bx.l, 0), JSON.stringify(bx));
+  await edgeBtn(p, "hcenter"); await edgeBtn(p, "vcenter"); bx = compBox(L);
+  check("G3 both centres: the covered box sits in the middle of the composition", close2((bx.l + bx.r) / 2, 960) && close2((bx.t + bx.b) / 2, 540), JSON.stringify(bx));
+  await p.close();
+
+  // to each other
+  L = mkLayer(clock, { name: "a", rect: { left: 0, top: 0, width: 100, height: 100 }, position: [200, 100, 0] });               // 200..300 x 100..200
+  L2 = mkLayer(clock, { name: "b", rect: { left: 0, top: 0, width: 300, height: 50 }, position: [500, 400, 0] });             // 500..800 x 400..450
+  L3 = mkLayer(clock, { name: "c", rect: { left: 0, top: 0, width: 40, height: 40 }, anchor: [20, 20, 0], position: [1000, 800, 0] }); // 980..1020 x 780..820
+  p = await open({ selectedLayers: [L, L2, L3] });
+  await motionTab(p); await p.page.selectOption("#alignTo", "selection");
+  await edgeBtn(p, "left");
+  check("G4 to the selection, left: everything lines up on the leftmost layer, which stays", [L, L2, L3].every((l) => close2(compBox(l).l, 200)) && sameVec(P(L).value, [200, 100, 0]) && close2(compBox(L2).t, 400) && close2(compBox(L3).t, 780));
+  check("G4 the report counts moved and untouched layers", (await p.status()) === "Выровнено: 2 слоя. Уже на месте: 1 слой.\nОтменить: Cmd/Ctrl+Z.", await p.status());
+  await edgeBtn(p, "bottom");
+  check("G4 bottom: everything lines up on the lowest edge", [L, L2, L3].every((l) => close2(compBox(l).b, 820)));
+  P(L).setValue([200, 100, 0]); P(L2).setValue([500, 400, 0]); P(L3).setValue([1000, 800, 0]);
+  await edgeBtn(p, "hcenter");
+  check("G4 centre: the middle of the box around all of them (200..1020 -> 610)", [L, L2, L3].every((l) => close2((compBox(l).l + compBox(l).r) / 2, 610)), [L, L2, L3].map((l) => (compBox(l).l + compBox(l).r) / 2).join());
+  await edgeBtn(p, "vcenter");
+  check("G4 vertical centre: (100..820 -> 460)", [L, L2, L3].every((l) => close2((compBox(l).t + compBox(l).b) / 2, 460)));
+  await p.close();
+  L = mkLayer(clock, { rect: { left: 0, top: 0, width: 100, height: 100 }, position: [200, 100, 0] });
+  p = await open({ selectedLayers: [L] });
+  await motionTab(p); await p.page.selectOption("#alignTo", "selection"); await edgeBtn(p, "right");
+  check("G4 one layer cannot be aligned to itself -> a hint, nothing moves", /выделите хотя бы два/.test(await p.status()) && (await p.statusKind()) === "" && sameVec(P(L).value, [200, 100, 0]), await p.status());
+  await p.close();
+
+  // a child of a scaled, rotated parent: the move is converted into the parent's space
+  L2 = mkLayer(clock, { name: "parent", rect: { left: 0, top: 0, width: 10, height: 10 }, anchor: [0, 0, 0], position: [400, 300, 0], scale: [200, 200, 100], rotation: 90 });
+  kid = mkLayer(clock, { name: "child", rect: { left: 0, top: 0, width: 50, height: 20 }, anchor: [0, 0, 0], position: [30, 10, 0] });
+  kid.parent = L2;
+  p = await open({ selectedLayers: [kid] });
+  await motionTab(p);
+  bx = compBox(kid);
+  check("G5 (scene) the child covers 340..380 x 360..460", close2(bx.l, 340) && close2(bx.r, 380) && close2(bx.t, 360) && close2(bx.b, 460), JSON.stringify(bx));
+  await edgeBtn(p, "left"); bx = compBox(kid);
+  check("G5 child of a rotated, scaled parent: lands on the composition's left edge", close2(bx.l, 0) && close2(bx.t, 360), JSON.stringify(bx) + " " + P(kid).value.join());
+  check("G5 the parent itself is not touched", sameVec(P(L2).value, [400, 300, 0]));
+  await edgeBtn(p, "vcenter"); bx = compBox(kid);
+  check("G5 and to the vertical centre", close2((bx.t + bx.b) / 2, 540) && close2(bx.l, 0), JSON.stringify(bx));
+  await p.close();
+
+  // layers that cannot be aligned this way, and ones After Effects refuses
+  L = mkLayer(clock, { name: "3d", threeD: true, position: [300, 300, 50] });
+  L2 = mkLayer(clock, { name: "cam", kind: "camera", position: [960, 540, -1000] });
+  L3 = mkLayer(clock, { name: "flat", rect: { left: 0, top: 0, width: 100, height: 100 }, position: [300, 300, 0] });
+  kid = mkLayer(clock, { name: "locked", locked: true, rect: { left: 0, top: 0, width: 100, height: 100 }, position: [700, 300, 0] });
+  p = await open({ selectedLayers: [L, L2, L3, kid] });
+  await motionTab(p); await edgeBtn(p, "left");
+  check("G6 3D layers and cameras are skipped, a locked layer is reported, the rest is aligned", (await p.status()) === "Выровнено: 1 слой. Пропущено: 2 слоя (3D-слой, камера или свет). Не получилось: 1 слой (слой заблокирован?).\nОтменить: Cmd/Ctrl+Z." && sameVec(P(L3).value, [0, 300, 0]) && sameVec(P(L).value, [300, 300, 50]) && sameVec(P(L2).value, [960, 540, -1000]), await p.status());
+  await p.close();
+  L = mkLayer(clock, { name: "3d parent", threeD: true, position: [300, 300, 50] });
+  kid = mkLayer(clock, { name: "kid", rect: { left: 0, top: 0, width: 100, height: 100 }, position: [10, 10, 0] }); kid.parent = L;
+  p = await open({ selectedLayers: [kid] });
+  await motionTab(p); await edgeBtn(p, "left");
+  check("G6 a flat layer parented to a 3D layer is skipped too, with an explanation", (await p.status()) === "Пропущено: 1 слой (3D-слой, камера или свет)." && sameVec(P(kid).value, [10, 10, 0]) && (await p.statusKind()) === "", await p.status());
+  await p.close();
+
+  // animated position: a keyframe at the current time, like After Effects' own Align
+  clock = { time: 2 };
+  L = mkLayer(clock, { rect: { left: 0, top: 0, width: 100, height: 100 }, position: [300, 400, 0] });
+  P(L).addKey(0, [300, 400, 0]).addKey(4, [900, 400, 0]);
+  p = await open({ selectedLayers: [L], compTime: 2 });
+  await motionTab(p); await edgeBtn(p, "left");
+  check("G7 animated position: a key appears at the current time, the others stay", P(L).keys.length === 3 && sameVec(P(L).keys[1].value, [0, 400, 0]) && close2(P(L).keys[1].time, 2) && sameVec(P(L).keys[0].value, [300, 400, 0]) && sameVec(P(L).keys[2].value, [900, 400, 0]), JSON.stringify(P(L).keys.map((k) => [k.time, k.value])));
+  await p.close();
+  clock = { time: 0 };
+  L = mkLayer(clock, { rect: { left: 0, top: 0, width: 100, height: 100 }, position: [300, 400, 0], separated: true });
+  p = await open({ selectedLayers: [L] });
+  await motionTab(p); await edgeBtn(p, "top");
+  check("G7 separated X and Y: only the Y property is written", L.props["ADBE Position_1"].value === 0 && L.props["ADBE Position_0"].value === 300 && L.props["ADBE Position_0"].calls.length === 0 && L.props["ADBE Position"].calls.length === 0, L.props["ADBE Position_1"].value + " " + L.props["ADBE Position_0"].calls.length);
+  await edgeBtn(p, "right");
+  check("G7 and X for a horizontal move", L.props["ADBE Position_0"].value === 1820 && L.props["ADBE Position_1"].value === 0);
+  check("G7 no page errors", p.errors.length === 0, p.errors.join(" | "));
+  await p.page.click("#tabMotion");
+  await p.page.screenshot({ path: path.join(SHOTS, "23-tab-motion-align.png") });
+  t = JSON.parse(await hostCall(p, 'sayframeHost.align("sideways","comp")'));
+  check("G8 the host refuses an unknown edge", t.ok === false && t.error === "BAD_ALIGN_EDGE" && L.props["ADBE Position_0"].value === 1820, JSON.stringify(t));
+  await p.close();
+
   console.log("\n=== updates ===");
   const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
   const U = "https://raw.example.com/acme/sayframe/main/version.json";
