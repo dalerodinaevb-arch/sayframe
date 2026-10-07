@@ -1,8 +1,10 @@
 {
-  "version": "1.5.1",
+  "version": "1.6.0",
   "date": "2026-10-07",
   "notes": [
-    "Исправлено: вкладки и блоки не перетаскивались в After Effects после двойного щелчка"
+    "Ширину каждого блока в разделе «Анимация» можно менять: потяните за правый край блока",
+    "В широком блоке список встаёт рядом с кнопками, в узком — под ними",
+    "У блока плавности появился заголовок, его можно растянуть на всю ширину"
   ],
   "download": "https://github.com/dalerodinaevb-arch/sayframe#readme",
   "moved": "",
@@ -10,23 +12,23 @@
   "files": [
     {
       "path": "CSXS/manifest.xml",
-      "sha256": "38d93081ea89c7a9d0df8c0adf658575dfd5b1bb34de4de78233ee23b28f8374",
+      "sha256": "f72b0441e0dc7a21c46b5c9f90ae505a6793c1bb537bc84986efab3881617201",
       "size": 1642
     },
     {
       "path": "css/panel.css",
-      "sha256": "a056b660422c7cb23c57a94b42fb3e2006c9963144e5624080e936e29aa432d1",
-      "size": 26408
+      "sha256": "e6978b7f720450909ee8ccc353db5365a9dc054ed6ed5b85d2d368e3e6855414",
+      "size": 27316
     },
     {
       "path": "index.html",
-      "sha256": "6360fbee19d99f4da1650e5191496ab8f63305acfd020bbe5ae2465e575e19ff",
-      "size": 22292
+      "sha256": "65c3517043fcb89194df0a58f372c5537bb37f5da51d08d71f9ca20a5271b5da",
+      "size": 23648
     },
     {
       "path": "js/panel.js",
-      "sha256": "cba7e852587a5b949ac1bfa17d7b8427b6ecca69fc921e910fc2ddc9011a4bc8",
-      "size": 111379
+      "sha256": "fcba0da17b8d57d23759368885561430b1827b28228f09f39804a55e6e702dbf",
+      "size": 116853
     },
     {
       "path": "jsx/host.jsx",
