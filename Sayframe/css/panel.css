@@ -282,9 +282,9 @@ textarea:focus, .field:focus {
 .tool-card { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 12px; }
 
 /* Блоки раздела стоят рядом, пока хватает ширины, иначе друг под другом. */
-.motion-tools { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; -webkit-user-select: none; user-select: none; }
+.motion-tools { --tool-min: 152px; --tool-basis: 160px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; -webkit-user-select: none; user-select: none; }
 .motion-tools input { -webkit-user-select: text; user-select: text; }
-.motion-tools > .tool-card { position: relative; flex: 1 1 160px; min-width: 0; max-width: 100%; }
+.motion-tools > .tool-card { position: relative; flex: 1 1 var(--tool-basis); min-width: var(--tool-min); max-width: 100%; }
 
 /* Правый край блока: за него тянут, чтобы сделать блок шире или уже. Полоска видна под курсором. */
 .tool-resize {
@@ -350,10 +350,16 @@ textarea:focus, .field:focus {
 /* Два ползунка расходятся от кнопки, как ручки ключа в редакторе графиков:
    светлая часть идёт от кнопки до бегунка, её длина и есть влияние. */
 .ease-card { gap: 6px; padding-bottom: 10px; }
-.ease-card .tool-head { padding-right: 22px; margin-bottom: 4px; }
+.motion-tools .tool-head { padding-right: 22px; }
+/* Название, которое не помещается рядом с минусом, обрезается многоточием, а не вылезает из блока. */
+.motion-tools .tool-head b { overflow: hidden; text-overflow: ellipsis; }
+.ease-card .tool-head { margin-bottom: 4px; }
+/* Без названий (настройка «Показывать названия блоков») минус и плюс получают сверху свою полоску. */
+[data-titles="off"] .motion-tools .tool-head { display: none; }
+[data-titles="off"] .motion-tools > .tool-card { padding-top: 22px; }
 
 /* Минус в углу прячет кривую и становится плюсом. */
-.ease-toggle {
+.tool-toggle {
   position: absolute;
   top: 2px; right: 9px;
   width: 22px; height: 20px;
@@ -365,13 +371,14 @@ textarea:focus, .field:focus {
   color: var(--muted);
   cursor: pointer;
 }
-.ease-toggle svg { width: 12px; height: 12px; }
-.ease-toggle:hover { color: var(--text); }
-.ease-toggle:focus-visible { outline: 2px solid rgba(var(--accent-rgb), 0.9); outline-offset: -2px; }
-.ease-toggle[aria-expanded="true"] .ease-toggle-plus { display: none; }
+.tool-toggle svg { width: 12px; height: 12px; }
+.tool-toggle:hover { color: var(--text); }
+.tool-toggle:focus-visible { outline: 2px solid rgba(var(--accent-rgb), 0.9); outline-offset: -2px; }
+.tool-toggle[aria-expanded="true"] .tool-toggle-plus { display: none; }
 .ease-card .ease-curve { margin-bottom: 8px; }
 .ease-bar { display: flex; align-items: center; gap: 8px; }
 .ease-slider {
+  --thumb: 16px;
   --v: 0.6;
   --fill: rgba(243, 242, 248, 0.92);
   --rest: rgba(0, 0, 0, 0.55);
@@ -388,10 +395,10 @@ textarea:focus, .field:focus {
 .ease-slider::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: 2px;
-  background: linear-gradient(to right, var(--fill) 0, var(--fill) calc(8px + (100% - 16px) * var(--v)), var(--rest) calc(8px + (100% - 16px) * var(--v)), var(--rest) 100%);
+  background: linear-gradient(to right, var(--fill) 0, var(--fill) calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--v)), var(--rest) calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--v)), var(--rest) 100%);
 }
 .ease-slider-in::-webkit-slider-runnable-track {
-  background: linear-gradient(to left, var(--fill) 0, var(--fill) calc(8px + (100% - 16px) * var(--v)), var(--rest) calc(8px + (100% - 16px) * var(--v)), var(--rest) 100%);
+  background: linear-gradient(to left, var(--fill) 0, var(--fill) calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--v)), var(--rest) calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--v)), var(--rest) 100%);
 }
 .ease-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -490,6 +497,39 @@ textarea:focus, .field:focus {
 }
 .select option { background: #1b1b22; color: #f3f2f8; }
 .select:disabled { opacity: 0.45; cursor: default; }
+
+/* Мелкие блоки (настройка «Блоки в разделе „Анимация“»): кнопки, отступы и подписи меньше,
+   поэтому в ряд встаёт больше блоков. Меняется только размер, все функции те же. */
+[data-tools="small"] .motion-tools { --tool-min: 112px; --tool-basis: 112px; gap: 8px; }
+[data-tools="small"] .motion-tools > .tool-card { padding: 9px 10px 10px; gap: 8px; border-radius: 14px; }
+[data-tools="small"] .motion-tools .tool-head { padding-right: 9px; }
+[data-tools="small"] .motion-tools .tool-head b { font-size: 11px; }
+[data-tools="small"] .motion-tools .anchor-wrap { gap: 8px; }
+[data-tools="small"] .motion-tools .anchor-grid { grid-template-columns: repeat(3, 26px); grid-auto-rows: 26px; gap: 2px; }
+[data-tools="small"] .motion-tools .anchor-cell { border-radius: 7px; }
+[data-tools="small"] .motion-tools .anchor-cell svg { width: 14px; height: 14px; }
+[data-tools="small"] .motion-tools .anchor-side { flex-basis: 110px; gap: 4px; }
+[data-tools="small"] .motion-tools .anchor-side label { font-size: 11px; }
+[data-tools="small"] .motion-tools .select { height: 28px; padding: 0 22px 0 8px; font-size: 11.5px; border-radius: 9px; background-position: calc(100% - 13px) 11px, calc(100% - 8px) 11px; }
+[data-tools="small"] .motion-tools .ease-card { gap: 4px; padding-bottom: 8px; }
+[data-tools="small"] .motion-tools .ease-card .tool-head { margin-bottom: 2px; }
+[data-tools="small"] .motion-tools .ease-curve { height: 56px; border-radius: 9px; margin-bottom: 4px; }
+[data-tools="small"] .motion-tools .ease-bar { gap: 5px; }
+[data-tools="small"] .motion-tools .ease-slider { --thumb: 12px; height: 18px; }
+[data-tools="small"] .motion-tools .ease-slider::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -4.5px; }
+[data-tools="small"] .motion-tools .ease-apply { width: 26px; height: 26px; border-radius: 7px; }
+[data-tools="small"] .motion-tools .ease-apply svg { width: 14px; height: 14px; }
+[data-tools="small"] .motion-tools .ease-nums { gap: 4px; }
+[data-tools="small"] .motion-tools .ease-num { width: 30px; height: 20px; font-size: 12px; }
+[data-tools="small"] .motion-tools .ease-link { width: 26px; height: 20px; }
+[data-tools="small"] .motion-tools .ease-link svg { width: 14px; height: 14px; }
+[data-tools="small"] .motion-tools .tool-toggle { top: 1px; right: 2px; width: 18px; height: 18px; }
+[data-tools="small"] .motion-tools .tool-toggle svg { width: 10px; height: 10px; }
+[data-tools="small"] .motion-tools .tool-resize { top: 10px; bottom: 10px; right: -5px; width: 10px; }
+[data-tools="small"] .motion-tools .tool-resize::after { left: 4px; }
+[data-titles="off"][data-tools="small"] .motion-tools > .tool-card { padding-top: 19px; }
+
+.tool-size button { min-width: 84px; padding: 0 12px; }
 
 /* --------------------------------------------------------- обновление */
 
