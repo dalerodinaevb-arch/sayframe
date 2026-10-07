@@ -35,12 +35,19 @@
       </div>
     </section>
 
-    <!-- Вкладки можно менять местами: перетащить мышью или Alt + стрелка влево/вправо -->
+    <!-- Вкладки и блоки раздела «Анимация» можно менять местами. Перетаскивание включается двойным щелчком
+         по вкладке или по блоку и выключается так же, кнопкой «Готово» или клавишей Esc.
+         С клавиатуры вкладку двигает Alt + стрелка влево/вправо. -->
     <nav id="tabs" class="tabs" role="tablist" aria-label="Разделы панели">
-      <button id="tabClaude" class="tab" role="tab" data-tab="claude" aria-selected="true" aria-controls="viewClaude" title="Перетащите, чтобы поменять вкладки местами">Claude</button>
-      <button id="tabTools" class="tab" role="tab" data-tab="tools" aria-selected="false" aria-controls="viewTools" title="Перетащите, чтобы поменять вкладки местами">Инструменты</button>
-      <button id="tabMotion" class="tab" role="tab" data-tab="motion" aria-selected="false" aria-controls="viewMotion" title="Перетащите, чтобы поменять вкладки местами">Анимация</button>
+      <button id="tabClaude" class="tab" role="tab" data-tab="claude" aria-selected="true" aria-controls="viewClaude" title="Двойной щелчок — поменять вкладки местами">Claude</button>
+      <button id="tabTools" class="tab" role="tab" data-tab="tools" aria-selected="false" aria-controls="viewTools" title="Двойной щелчок — поменять вкладки местами">Инструменты</button>
+      <button id="tabMotion" class="tab" role="tab" data-tab="motion" aria-selected="false" aria-controls="viewMotion" title="Двойной щелчок — поменять вкладки местами">Анимация</button>
     </nav>
+
+    <section id="arrangeBar" class="arrange-bar" hidden aria-live="polite">
+      <span>Перетащите вкладки или блоки, чтобы поменять их местами</span>
+      <button id="arrangeDone" class="ghost">Готово</button>
+    </section>
 
     <!-- Раздел Claude: задача словами, референс, запуск и ответ -->
     <div id="viewClaude" class="view" role="tabpanel" aria-labelledby="tabClaude">
@@ -98,44 +105,42 @@
     <div id="statusSlotTools" class="status-slot"></div>
     </div>
 
-    <!-- Раздел «Анимация»: плавность ключей и точка привязки -->
+    <!-- Раздел «Анимация»: плавность ключей, точка привязки и выравнивание слоёв -->
     <div id="viewMotion" class="view" role="tabpanel" aria-labelledby="tabMotion" hidden>
-    <section class="card tool-card">
-      <div class="tool-head">
-        <b>Плавность ключей</b>
-        <small>Выделите ключевые кадры на таймлайне</small>
-      </div>
+    <!-- Блоки стоят рядом, пока хватает ширины; в узкой панели — друг под другом. Двойной щелчок по блоку включает перестановку -->
+    <div id="motionTools" class="motion-tools">
+    <section class="card tool-card ease-card" data-tool="ease" aria-label="Плавность ключей" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Плавность ключей»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="easeCurveToggle" class="ease-toggle" aria-expanded="true" aria-controls="easeCurve" aria-label="Скрыть кривую" title="Скрыть кривую">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="ease-toggle-plus" d="M6 2v8"/></svg>
+      </button>
       <svg id="easeCurve" class="ease-curve" viewBox="0 0 200 84" preserveAspectRatio="none" aria-hidden="true">
         <path class="ease-guide" d="M12 72H188M12 12H188"/>
         <path id="easeHandles" class="ease-handles" d=""/>
         <path id="easeCurvePath" class="ease-line" d=""/>
       </svg>
-      <div class="ease-row">
-        <label for="easeOut" title="Как плавно движение начинается после ключа">Разгон</label>
-        <input id="easeOut" type="range" min="0" max="100" step="1" value="60">
-        <output id="easeOutVal" for="easeOut">60%</output>
+      <!-- Как у ключа в редакторе графиков: слева входящая сторона, справа исходящая, длина ползунка — влияние -->
+      <div class="ease-bar">
+        <input id="easeIn" class="ease-slider ease-slider-in" type="range" min="0" max="100" step="1" value="60" aria-label="Влияние на входе в ключ, процентов" title="Вход в ключ: как плавно движение останавливается">
+        <button id="easeBothBtn" class="ease-apply" aria-label="Применить плавность к выделенным ключам" title="Применить к выделенным ключам">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 4h14c0 5-4.2 6-4.2 8s4.2 3 4.2 8H5c0-5 4.2-6 4.2-8S5 9 5 4z"/></svg>
+        </button>
+        <input id="easeOut" class="ease-slider" type="range" min="0" max="100" step="1" value="60" aria-label="Влияние на выходе из ключа, процентов" title="Выход из ключа: как плавно движение начинается">
       </div>
-      <div class="ease-row">
-        <label for="easeIn" title="Как плавно движение останавливается перед ключом">Торможение</label>
-        <input id="easeIn" type="range" min="0" max="100" step="1" value="60">
-        <output id="easeInVal" for="easeIn">60%</output>
-      </div>
-      <label class="switch">
-        <input id="easeLink" type="checkbox" checked>
-        <span class="track"></span>
-        <span class="text">Разгон и торможение одинаковые</span>
-      </label>
-      <div class="ease-actions">
-        <button id="easeOutBtn" class="ghost" title="Меняет только то, как движение начинается после ключа">Только разгон</button>
-        <button id="easeBothBtn" class="primary" title="Применяет к выделенным ключам и разгон, и торможение">Применить</button>
-        <button id="easeInBtn" class="ghost" title="Меняет только то, как движение останавливается перед ключом">Только торможение</button>
+      <div class="ease-nums">
+        <input id="easeInVal" class="ease-num" type="text" inputmode="numeric" maxlength="3" value="60" spellcheck="false" autocomplete="off" aria-label="Влияние на входе в ключ, число от 0 до 100" title="Вход в ключ, от 0 до 100">
+        <label class="ease-link" title="Связать оба значения">
+          <input id="easeLink" type="checkbox" checked aria-label="Связать оба значения">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 8H8a4 4 0 0 0 0 8h2"/><path d="M14 8h2a4 4 0 0 1 0 8h-2"/><path d="M9 12h6"/></svg>
+        </label>
+        <input id="easeOutVal" class="ease-num" type="text" inputmode="numeric" maxlength="3" value="60" spellcheck="false" autocomplete="off" aria-label="Влияние на выходе из ключа, число от 0 до 100" title="Выход из ключа, от 0 до 100">
       </div>
     </section>
 
-    <section class="card tool-card">
-      <div class="tool-head">
+    <section class="card tool-card anchor-card" data-tool="anchor" aria-label="Точка привязки" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Точка привязки»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <div class="tool-head" title="Переносит точку привязки выделенных слоёв, сами слои остаются на месте">
         <b>Точка привязки</b>
-        <small>Переносит точку привязки выделенных слоёв, сами слои остаются на месте</small>
       </div>
       <div class="anchor-wrap">
         <div id="anchorGrid" class="anchor-grid" role="group" aria-label="Куда перенести точку привязки">
@@ -159,6 +164,31 @@
         </div>
       </div>
     </section>
+
+    <section class="card tool-card align-card" data-tool="align" aria-label="Выравнивание" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Выравнивание»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <div class="tool-head" title="Двигает выделенные слои к краю или к центру">
+        <b>Выравнивание</b>
+      </div>
+      <div class="anchor-wrap">
+        <div id="alignGrid" class="anchor-grid" role="group" aria-label="Как выровнять выделенные слои">
+          <button class="anchor-cell" data-edge="left" aria-label="По левому краю" title="По левому краю"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 3v18"/><rect x="8" y="6" width="12" height="4" rx="1" stroke="none"/><rect x="8" y="14" width="7" height="4" rx="1" stroke="none"/></svg></button>
+          <button class="anchor-cell" data-edge="hcenter" aria-label="По центру по горизонтали" title="По центру по горизонтали"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v18"/><rect x="5" y="6" width="14" height="4" rx="1" stroke="none"/><rect x="8" y="14" width="8" height="4" rx="1" stroke="none"/></svg></button>
+          <button class="anchor-cell" data-edge="right" aria-label="По правому краю" title="По правому краю"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 3v18"/><rect x="4" y="6" width="12" height="4" rx="1" stroke="none"/><rect x="9" y="14" width="7" height="4" rx="1" stroke="none"/></svg></button>
+          <button class="anchor-cell" data-edge="top" aria-label="По верхнему краю" title="По верхнему краю"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 4h18"/><rect x="6" y="8" width="4" height="12" rx="1" stroke="none"/><rect x="14" y="8" width="4" height="7" rx="1" stroke="none"/></svg></button>
+          <button class="anchor-cell" data-edge="vcenter" aria-label="По центру по вертикали" title="По центру по вертикали"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12h18"/><rect x="6" y="5" width="4" height="14" rx="1" stroke="none"/><rect x="14" y="8" width="4" height="8" rx="1" stroke="none"/></svg></button>
+          <button class="anchor-cell" data-edge="bottom" aria-label="По нижнему краю" title="По нижнему краю"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 20h18"/><rect x="6" y="4" width="4" height="12" rx="1" stroke="none"/><rect x="14" y="9" width="4" height="7" rx="1" stroke="none"/></svg></button>
+        </div>
+        <div class="anchor-side">
+          <label for="alignTo">Выровнять по</label>
+          <select id="alignTo" class="field select">
+            <option value="comp">Композиции</option>
+            <option value="selection">Выделенным слоям</option>
+          </select>
+        </div>
+      </div>
+    </section>
+    </div>
     <div id="statusSlotMotion" class="status-slot"></div>
     </div>
   </main>
@@ -198,6 +228,15 @@
         <div class="swatches" id="bgSwatches">
           <input id="bgHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Цвет фона, hex">
         </div>
+      </div>
+
+      <div class="group">
+        <label for="panelWidth">Ширина панели</label>
+        <div class="width-row">
+          <input id="panelWidth" class="range" type="range" min="280" max="640" step="10" value="380">
+          <output id="panelWidthVal" for="panelWidth">380 px</output>
+        </div>
+        <p class="hint">Кнопки и поля остаются такой ширины, даже если растянуть панель в After Effects.</p>
       </div>
 
       <div class="group">
