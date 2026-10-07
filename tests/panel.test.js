@@ -24,18 +24,128 @@ function fakePng(i) {
 const REAL_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP8z8DwnwEImBigAMwAAA8HAQHt0bq5AAAAAElFTkSuQmCC", "base64");
 
 // ------------------------------------------------------------ mocked After Effects
+function CompItem() {} function TextLayer() {} function ShapeLayer() {} function CameraLayer() {} function LightLayer() {} function SolidSource() {}
+
+// --- keyframes and transform properties, for the Animation tab
+const KIT = { LINEAR: 6612, BEZIER: 6613, HOLD: 6614 };
+const PROPERTY = 6212;
+function KeyframeEase(speed, influence) {
+  if (typeof speed !== "number" || !(influence >= 0.1 && influence <= 100)) throw new Error("KeyframeEase: influence must be between 0.1 and 100");
+  this.speed = speed; this.influence = influence;
+}
+const cloneValue = (v) => (Array.isArray(v) || (v && typeof v === "object" && typeof v.length === "number") ? Array.prototype.slice.call(v) : v);
+// A property with optional keyframes. clock.time is the composition's current time.
+function Prop(value, clock, opts) {
+  opts = opts || {};
+  this._v = cloneValue(value); this.clock = clock; this.keys = []; this.propertyType = opts.group ? 6213 : PROPERTY;
+  this.easeDims = opts.easeDims || 1; this.dimensionsSeparated = !!opts.separated; this.locked = !!opts.locked; this.calls = [];
+  this._expression = ""; this.evalExpression = opts.evalExpression || null;
+}
+Prop.prototype = {
+  get numKeys() { return this.keys.length; },
+  get value() { return this.keys.length ? this.valueAtTime(this.clock.time, true) : cloneValue(this._v); },
+  get expression() { return this._expression; },
+  set expression(x) { this._expression = x; },
+  get selectedKeys() { const r = []; this.keys.forEach((k, i) => { if (k.selected) r.push(i + 1); }); return r; },
+  _check(v) {
+    if (this.locked) throw new Error("After Effects error: layer is locked");
+    const want = Array.isArray(this._v) ? this._v.length : 0, got = (v && typeof v === "object") ? v.length : 0;
+    if (want !== got || (want === 0 && typeof v !== "number")) throw new Error("After Effects error: value has the wrong number of dimensions");
+    if (got && Array.prototype.some.call(v, (x) => typeof x !== "number" || isNaN(x))) throw new Error("After Effects error: value is not a number");
+  },
+  valueAtTime(t, preExpression) {
+    if (!preExpression && this._expression) { if (!this.evalExpression) throw new Error("expression error"); return this.evalExpression(this._expression, t); }
+    if (!this.keys.length) return cloneValue(this._v);
+    let k = this.keys[0]; for (const c of this.keys) if (c.time <= t + 1e-9) k = c;
+    return cloneValue(k.value);
+  },
+  setValue(v) { this._check(v); if (this.keys.length) throw new Error("After Effects error: the property has keyframes, use setValueAtTime"); this.calls.push("setValue"); this._v = cloneValue(v); },
+  setValueAtTime(t, v) {
+    this._check(v); this.calls.push("setValueAtTime");
+    const hit = this.keys.find((k) => Math.abs(k.time - t) < 1e-9);
+    if (hit) { hit.value = cloneValue(v); return; }
+    this.keys.push(this._key(t, v)); this.keys.sort((a, b) => a.time - b.time);
+  },
+  setValueAtKey(i, v) { this._check(v); this.calls.push("setValueAtKey"); this.keys[i - 1].value = cloneValue(v); },
+  keyValue(i) { return cloneValue(this.keys[i - 1].value); },
+  keyTime(i) { return this.keys[i - 1].time; },
+  _ease(speed, influence) { const r = []; for (let i = 0; i < this.easeDims; i++) r.push(new KeyframeEase(speed, influence)); return r; },
+  _key(t, v, o) { o = o || {}; return { time: t, value: cloneValue(v), selected: !!o.selected, inType: o.inType || KIT.LINEAR, outType: o.outType || KIT.LINEAR, inEase: this._ease(11, 16.67), outEase: this._ease(22, 16.67) }; },
+  addKey(t, v, o) { this.keys.push(this._key(t, v, o)); this.keys.sort((a, b) => a.time - b.time); return this; },
+  keyInTemporalEase(i) { return this.keys[i - 1].inEase.slice(); },
+  keyOutTemporalEase(i) { return this.keys[i - 1].outEase.slice(); },
+  keyInInterpolationType(i) { return this.keys[i - 1].inType; },
+  keyOutInterpolationType(i) { return this.keys[i - 1].outType; },
+  setInterpolationTypeAtKey(i, a, b) {
+    if (this.locked) throw new Error("After Effects error: layer is locked");
+    if (Object.values(KIT).indexOf(a) < 0 || Object.values(KIT).indexOf(b) < 0) throw new Error("bad interpolation type");
+    this.keys[i - 1].inType = a; this.keys[i - 1].outType = b;
+  },
+  setTemporalEaseAtKey(i, a, b) {
+    if (this.locked) throw new Error("After Effects error: layer is locked");
+    for (const list of [a, b]) {
+      if (!list || list.length !== this.easeDims) throw new Error("After Effects error: wrong number of KeyframeEase objects");
+      for (let n = 0; n < list.length; n++) if (!(list[n] instanceof KeyframeEase)) throw new Error("After Effects error: not a KeyframeEase");
+    }
+    this.keys[i - 1].inEase = Array.prototype.slice.call(a); this.keys[i - 1].outEase = Array.prototype.slice.call(b);
+  }
+};
+// A layer with a transform group. o: { rect, anchor, position, scale, rotation, threeD, kind, locked, separated }
+function mkLayer(clock, o) {
+  const proto = o.kind === "camera" ? CameraLayer.prototype : o.kind === "light" ? LightLayer.prototype : o.kind === "text" ? TextLayer.prototype : Object.prototype;
+  const L = Object.create(proto);
+  const lock = { locked: !!o.locked };
+  const pos = o.position || [0, 0, 0];
+  const props = {
+    "ADBE Anchor Point": new Prop(o.anchor || [0, 0, 0], clock, lock),
+    "ADBE Position": new Prop(pos, clock, Object.assign({ separated: !!o.separated }, lock)),
+    "ADBE Position_0": new Prop(pos[0], clock, lock), "ADBE Position_1": new Prop(pos[1], clock, lock), "ADBE Position_2": new Prop(pos[2] || 0, clock, lock),
+    "ADBE Scale": new Prop(o.scale || [100, 100, 100], clock, lock),
+    "ADBE Rotate Z": new Prop(o.rotation || 0, clock, lock)
+  };
+  Object.assign(L, { name: o.name || "Слой", index: o.index || 1, selected: true, threeDLayer: !!o.threeD, props, rect: o.rect || { left: 0, top: 0, width: 100, height: 100 },
+    property(n) { return n === "ADBE Transform Group" ? { property: (m) => props[m] || null } : null; },
+    sourceRectAtTime() { return Object.assign({}, L.rect); },
+    // where a point of the layer ends up in its parent's space, with the current transform
+    world(pt) {
+      const a = props["ADBE Anchor Point"].value, s = props["ADBE Scale"].value, r = props["ADBE Rotate Z"].value * Math.PI / 180;
+      const p = o.separated ? [props["ADBE Position_0"].value, props["ADBE Position_1"].value, props["ADBE Position_2"].value] : props["ADBE Position"].value;
+      const x = (pt[0] - a[0]) * s[0] / 100, y = (pt[1] - a[1]) * s[1] / 100;
+      return [p[0] + x * Math.cos(r) - y * Math.sin(r), p[1] + x * Math.sin(r) + y * Math.cos(r), (p[2] || 0) + ((pt[2] || 0) - (a[2] || 0))];
+    } });
+  return L;
+}
 function makeAE(opts, tmpDir) {
-  const log = { undo: [], removed: [], opened: 0, imports: [], layerAdds: [], precomposes: [], bins: [], ran: [], refComps: [] };
+  const log = { undo: [], removed: [], opened: 0, imports: [], layerAdds: [], precomposes: [], bins: [], ran: [], refComps: [], nullsAdded: 0, nullsRemoved: 0, nullSourcesRemoved: 0, nulls: [], nullExpressions: [] };
   function File(p) { this.fsName = p; this.name = encodeURI(path.basename(p)); }
   Object.defineProperty(File.prototype, "exists", { get() { return fs.existsSync(this.fsName); } });
   Object.defineProperty(File.prototype, "length", { get() { return fs.existsSync(this.fsName) ? fs.statSync(this.fsName).size : 0; } });
-  function CompItem() {} function TextLayer() {} function ShapeLayer() {} function CameraLayer() {} function LightLayer() {} function SolidSource() {}
   function ImportOptions(f) { this.file = f; }
   const rootFolder = { name: "Root" };
   function FolderItem(name) { this.name = name; this.parentFolder = rootFolder; }
-  const comp = Object.assign(new CompItem(), { name: "Тест", width: 1920, height: 1080, duration: 10, frameRate: 30, time: 0, numLayers: 2, workAreaStart: 0, workAreaDuration: 5,
+  const comp = Object.assign(new CompItem(), { name: "Тест", width: 1920, height: 1080, duration: 10, frameRate: 30, time: opts.compTime || 0, numLayers: 2, workAreaStart: 0, workAreaDuration: 5,
     openInViewer() { log.opened++; project.activeItem = comp; },
+    selectedProperties: opts.selectedProperties || [], selectedLayers: opts.selectedLayers || [],
     layers: { add(item) { log.layerAdds.push(item); return { index: 1, property() { return { property() { return { setValue() {} }; } }; } }; },
+      // A temporary null, as After Effects adds it: on top (other layers move down one index) and it becomes the only selected layer.
+      addNull() {
+        const all = comp.selectedLayers.slice();
+        all.forEach((l) => { l.index += 1; l.selected = false; });
+        const position = new Prop([0, 0, 0], comp, { evalExpression(expr) {
+          log.nullExpressions.push(expr);
+          if (opts.expressionsFail) throw new Error("expression disabled");
+          const idx = Number(/thisComp\.layer\((\d+)\)/.exec(expr)[1]);
+          const pt = /toWorld\(\[([^\]]+)\]\)/.exec(expr)[1].split(",").map(Number);
+          const target = all.find((l) => l.index === idx);
+          if (!target) throw new Error("expression: no layer " + idx);
+          return target.world(pt);
+        } });
+        const nul = { index: 1, threeDLayer: false, selected: true, source: { remove() { log.nullSourcesRemoved++; } },
+          property: (n) => (n === "ADBE Transform Group" ? { property: (m) => (m === "ADBE Position" ? position : null) } : null),
+          remove() { log.nullsRemoved++; all.forEach((l) => { l.index -= 1; }); } };
+        log.nullsAdded++; log.nulls.push(nul);
+        return nul;
+      },
       precompose(idx, name, moveAll) { log.precomposes.push({ idx: Array.prototype.slice.call(idx), name, moveAll }); return Object.assign(new CompItem(), { name }); } },
     layer(i) { const l = i === 1 ? new TextLayer() : {}; return Object.assign(l, { name: i === 1 ? "Заголовок" : "Фон", selected: i === 1, enabled: true, threeDLayer: false, parent: null, inPoint: 0, outPoint: 10, index: i, source: i === 2 ? { mainSource: new SolidSource() } : null }); } });
   const projItems = [comp];
@@ -60,7 +170,8 @@ function makeAE(opts, tmpDir) {
   const app = { version: "26.0", project,
     preferences: { getPrefAsLong: () => (opts.fileAccessOff ? 0 : 1) },
     beginUndoGroup: (n) => log.undo.push("begin:" + n), endUndoGroup: () => log.undo.push("end"), __ran: (x) => log.ran.push(x) };
-  const ctx = vm.createContext({ app, File, FolderItem, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} } });
+  const ctx = vm.createContext({ app, File, FolderItem, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
+    KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
   log.scripts = [];
   return { log, project, comp, projItems, ctx, evalScript(script) {
@@ -587,13 +698,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.mouse.up();
   }
   p = await open({ clip: "png", footage: IMG });
-  check("O1 default order", (await order(p)) === "claude,tools" && (await savedOrder(p)) === null);
+  check("O1 default order", (await order(p)) === "claude,tools,motion" && (await savedOrder(p)) === null);
   await dragTab(p, "#tabClaude", "#tabTools", { beforeUp: async () => {
     check("O2 tab is marked while it is dragged", (await p.page.locator("#tabClaude.dragging").count()) === 1 && (await p.page.locator("#tabs.reordering").count()) === 1);
     await p.page.screenshot({ path: path.join(SHOTS, "19-tab-dragging.png") });
   } });
-  check("O2 dragging Claude onto Tools swaps them", (await order(p)) === "tools,claude", await order(p));
-  check("O2 the new order is saved", (await savedOrder(p)) === '["tools","claude"]', await savedOrder(p));
+  check("O2 dragging Claude onto Tools swaps them", (await order(p)) === "tools,claude,motion", await order(p));
+  check("O2 the new order is saved", (await savedOrder(p)) === '["tools","claude","motion"]', await savedOrder(p));
   check("O2 dragging does not switch tabs or leave marks", (await vis(p, "#prompt")) && !(await vis(p, "#pasteBtn")) && (await p.page.locator(".dragging, .reordering").count()) === 0);
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect().left; return r("tabTools") < r("tabClaude"); });
   check("O2 Tools is now drawn on the left", t === true);
@@ -604,31 +715,40 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#pasteBtn"); await p.idle(); await p.modalClick("Оставить как есть");
   check("O3 tools still work in the new order", /^Картинка вставлена/.test(await p.status()), await p.status());
   await p.restart();
-  check("O4 order and open tab survive a restart", (await order(p)) === "tools,claude" && (await vis(p, "#pasteBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true");
+  check("O4 order and open tab survive a restart", (await order(p)) === "tools,claude,motion" && (await vis(p, "#pasteBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true");
   await dragTab(p, "#tabTools", "#tabClaude");
-  check("O5 dragging back restores the order", (await order(p)) === "claude,tools" && (await savedOrder(p)) === '["claude","tools"]');
+  check("O5 dragging back restores the order", (await order(p)) === "claude,tools,motion" && (await savedOrder(p)) === '["claude","tools","motion"]');
+  await p.page.waitForTimeout(350);
+  await dragTab(p, "#tabMotion", "#tabClaude");
+  check("O5 the last tab can be dragged to the front, past the one in between", (await order(p)) === "motion,claude,tools", await order(p));
+  await p.page.waitForTimeout(350);
+  await dragTab(p, "#tabMotion", "#tabTools");
+  check("O5 and back to the end", (await order(p)) === "claude,tools,motion", await order(p));
   await p.page.waitForTimeout(350);
   c = await center(p, "#tabClaude");
   await p.page.mouse.move(c.x, c.y); await p.page.mouse.down(); await p.page.mouse.move(c.x + 3, c.y + 1); await p.page.mouse.up();
-  check("O6 a click with a tiny hand movement is still a click", (await order(p)) === "claude,tools" && (await vis(p, "#prompt")));
+  check("O6 a click with a tiny hand movement is still a click", (await order(p)) === "claude,tools,motion" && (await vis(p, "#prompt")));
   c = await center(p, "#tabTools");
   await dragTab(p, "#tabClaude", { x: c.x + 400, y: c.y + 200 });
-  check("O7 releasing outside the tabs keeps a valid order", ["claude,tools", "tools,claude"].includes(await order(p)) && (await p.page.locator(".dragging, .reordering").count()) === 0, await order(p));
-  await p.page.evaluate(() => localStorage.setItem("sayframe.tabOrder.v1", '["claude","tools"]')); await p.restart();
+  check("O7 releasing outside the tabs keeps a valid order", (await order(p)).split(",").sort().join() === "claude,motion,tools" && (await p.page.locator(".dragging, .reordering").count()) === 0, await order(p));
+  await p.page.evaluate(() => localStorage.setItem("sayframe.tabOrder.v1", '["claude","tools","motion"]')); await p.restart();
   await p.page.waitForTimeout(350);
   await p.page.focus("#tabClaude"); await p.page.keyboard.press("Alt+ArrowRight");
-  check("O8 Alt+Right moves the focused tab right and keeps focus", (await order(p)) === "tools,claude" && (await p.page.evaluate(() => document.activeElement.id)) === "tabClaude" && (await savedOrder(p)) === '["tools","claude"]');
+  check("O8 Alt+Right moves the focused tab right and keeps focus", (await order(p)) === "tools,claude,motion" && (await p.page.evaluate(() => document.activeElement.id)) === "tabClaude" && (await savedOrder(p)) === '["tools","claude","motion"]');
   await p.page.keyboard.press("Alt+ArrowRight");
-  check("O8 at the edge nothing happens", (await order(p)) === "tools,claude");
+  check("O8 Alt+Right again moves it to the end", (await order(p)) === "tools,motion,claude");
+  await p.page.keyboard.press("Alt+ArrowRight");
+  check("O8 at the edge nothing happens", (await order(p)) === "tools,motion,claude");
   await p.page.keyboard.press("ArrowLeft");
-  check("O8 plain arrow moves focus, not the tab", (await order(p)) === "tools,claude" && (await p.page.evaluate(() => document.activeElement.id)) === "tabTools");
-  await p.page.keyboard.press("Alt+ArrowLeft");
-  check("O8 Alt+Left at the left edge does nothing", (await order(p)) === "tools,claude");
-  await p.page.focus("#tabClaude"); await p.page.keyboard.press("Alt+ArrowLeft");
-  check("O8 Alt+Left moves the tab back", (await order(p)) === "claude,tools");
+  check("O8 plain arrow moves focus, not the tab", (await order(p)) === "tools,motion,claude" && (await p.page.evaluate(() => document.activeElement.id)) === "tabMotion");
+  await p.page.focus("#tabTools"); await p.page.keyboard.press("Alt+ArrowLeft");
+  check("O8 Alt+Left at the left edge does nothing", (await order(p)) === "tools,motion,claude");
+  await p.page.focus("#tabClaude"); await p.page.keyboard.press("Alt+ArrowLeft"); await p.page.keyboard.press("Alt+ArrowLeft");
+  check("O8 Alt+Left twice moves the tab back to the front", (await order(p)) === "claude,tools,motion");
   check("O8 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
-  for (const [bad, want] of [['not json', "claude,tools"], ['{"a":1}', "claude,tools"], ['["tools"]', "tools,claude"], ['["ghost","tools","tools","claude",5]', "tools,claude"], ['[]', "claude,tools"]]) {
+  for (const [bad, want] of [['not json', "claude,tools,motion"], ['{"a":1}', "claude,tools,motion"], ['["tools"]', "tools,claude,motion"], ['["ghost","tools","tools","claude",5]', "tools,claude,motion"], ['[]', "claude,tools,motion"],
+    ['["tools","claude"]', "tools,claude,motion"] /* order saved by 1.3, before the Animation tab existed */, ['["motion","claude"]', "motion,claude,tools"]]) {
     p = await open({});
     await p.page.evaluate((v) => localStorage.setItem("sayframe.tabOrder.v1", v), bad); await p.restart();
     check("O9 saved order " + bad + " -> " + want, (await order(p)) === want && p.errors.length === 0 && (await vis(p, "#prompt")), await order(p));
@@ -637,8 +757,217 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 300, height: 620 });
   await dragTab(p, "#tabTools", "#tabClaude");
   t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  check("O10 reordering works in a 300px panel", (await order(p)) === "tools,claude" && t <= 0);
+  check("O10 reordering works in a 300px panel", (await order(p)) === "tools,claude,motion" && t <= 0);
   check("O10 dragging a tab that is not open does not open it", (await vis(p, "#prompt")) && !(await vis(p, "#pasteBtn")) && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "true");
+  await p.close();
+
+  // ---------------------------------------------------------------- animation tab
+  console.log("\n=== animation: easing ===");
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  const sameVec = (a, b) => a.length === b.length && a.every((x, i) => near(x, b[i]));
+  const eases = (list) => list.map((e) => e.speed + "/" + e.influence).join();
+  const setSlider = (p, id, v) => p.page.evaluate(([id, v]) => { const el = document.getElementById(id); el.value = String(v); el.dispatchEvent(new Event("input", { bubbles: true })); }, [id, v]);
+  const motionTab = async (p) => { await p.page.click("#tabMotion"); };
+  let clock, prop1, prop2, grp, L, L2, before;
+
+  p = await open({});
+  check("M1 three tabs, Animation closed at first", (await order(p)) === "claude,tools,motion" && !(await vis(p, "#easeBothBtn")));
+  await motionTab(p);
+  check("M1 Animation tab shows both tools and nothing from the other tabs", (await vis(p, "#easeBothBtn")) && (await vis(p, "#anchorGrid")) && (await p.page.locator("#anchorGrid button").count()) === 9 && !(await vis(p, "#prompt")) && !(await vis(p, "#pasteBtn")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1);
+  t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  check("M1 no horizontal overflow at 380px", t <= 0, t);
+  await p.page.screenshot({ path: path.join(SHOTS, "21-tab-motion.png") });
+  check("M2 sliders start linked at 60", (await p.page.inputValue("#easeIn")) === "60" && (await p.page.inputValue("#easeOut")) === "60" && (await p.page.isChecked("#easeLink")) && (await p.page.locator("#easeInVal").innerText()) === "60%");
+  c = await p.page.getAttribute("#easeCurvePath", "d");
+  await setSlider(p, "easeOut", 85);
+  check("M2 linked: moving one slider moves the other, labels and curve follow", (await p.page.inputValue("#easeIn")) === "85" && (await p.page.locator("#easeInVal").innerText()) === "85%" && (await p.page.locator("#easeOutVal").innerText()) === "85%" && (await p.page.getAttribute("#easeCurvePath", "d")) !== c);
+  await p.page.locator("#easeLink").evaluate((el) => el.click());
+  await setSlider(p, "easeIn", 20);
+  check("M2 unlinked: sliders are independent", (await p.page.inputValue("#easeIn")) === "20" && (await p.page.inputValue("#easeOut")) === "85" && !(await p.page.isChecked("#easeLink")));
+  check("M2 curve: left handle = start (85%), right handle = stop (20%)", (await p.page.getAttribute("#easeCurvePath", "d")) === "M12 72 C161.6 72 152.8 12 188 12", await p.page.getAttribute("#easeCurvePath", "d"));
+  await p.page.selectOption("#anchorKeys", "shift");
+  await p.restart();
+  check("M2 sliders, link and key option survive a restart, with the tab", (await p.page.inputValue("#easeIn")) === "20" && (await p.page.inputValue("#easeOut")) === "85" && !(await p.page.isChecked("#easeLink")) && (await p.page.inputValue("#anchorKeys")) === "shift" && (await vis(p, "#easeBothBtn")));
+  await p.page.locator("#easeLink").evaluate((el) => el.click());
+  check("M2 linking again copies the start value to the stop", (await p.page.inputValue("#easeIn")) === "85" && (await p.page.inputValue("#easeOut")) === "85");
+  await p.page.click("#easeBothBtn"); await p.idle();
+  check("M3 no keys selected -> a hint, not an error", (await p.status()) === "Выделите ключевые кадры на таймлайне и нажмите ещё раз." && (await p.statusKind()) === "" && !(await p.page.locator("#easeBothBtn").isDisabled()));
+  check("M3 an empty run still closes its undo group", p.ae.log.undo.join() === "begin:Sayframe: ease keyframes,end");
+  await p.close();
+  p = await open({ noActiveComp: true });
+  await motionTab(p); await p.page.click("#easeBothBtn"); await p.idle();
+  t = await p.status();
+  await p.page.locator("#anchorGrid button").nth(4).click(); await p.idle();
+  check("M3 no open composition -> hint for both tools", /^Откройте композицию/.test(t) && /^Откройте композицию/.test(await p.status()) && (await p.statusKind()) === "" && p.ae.log.undo.length === 0);
+  await p.close();
+  for (const garbage of ["not json", '{"easeIn":"x","easeOut":900,"link":"yes","anchorKeys":"explode"}', "[]", "null"]) {
+    p = await open({});
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", v), garbage); await p.restart(); await motionTab(p);
+    t = [await p.page.inputValue("#easeIn"), await p.page.inputValue("#easeOut"), await p.page.inputValue("#anchorKeys")].join();
+    check("M3 broken saved values (" + garbage.slice(0, 10) + ") fall back safely", (t === "60,60,key" || t === "60,100,key") && p.errors.length === 0, t);
+    await p.close();
+  }
+
+  function easeScene() {
+    clock = { time: 1 };
+    prop1 = new Prop(50, clock).addKey(0, 0).addKey(1, 50, { selected: true }).addKey(2, 100, { selected: true });          // opacity: 1 ease per side
+    prop2 = new Prop([100, 100, 100], clock, { easeDims: 3 }).addKey(0, [0, 0, 100]).addKey(2, [100, 100, 100], { selected: true, inType: KIT.HOLD, outType: KIT.LINEAR }); // scale: 3 eases per side
+    grp = { propertyType: 6213, numKeys: 0, selectedKeys: [1] };                                                              // a selected group must be ignored
+    return { selectedProperties: [grp, prop1, prop2, new Prop(5, clock).addKey(0, 5)], compTime: 1 };
+  }
+  p = await open(easeScene());
+  await motionTab(p);
+  await p.page.locator("#easeLink").evaluate((el) => el.click());
+  await setSlider(p, "easeOut", 75); await setSlider(p, "easeIn", 40);
+  await p.page.click("#easeBothBtn"); await p.idle();
+  check("M4 'apply' eases both sides of every selected key", [prop1.keys[1], prop1.keys[2]].every((k) => eases(k.inEase) === "0/40" && eases(k.outEase) === "0/75" && k.inType === KIT.BEZIER && k.outType === KIT.BEZIER), eases(prop1.keys[1].inEase) + " | " + eases(prop1.keys[1].outEase));
+  check("M4 one ease per dimension (3 for scale)", eases(prop2.keys[1].inEase) === "0/40,0/40,0/40" && eases(prop2.keys[1].outEase) === "0/75,0/75,0/75" && prop2.keys[1].inType === KIT.BEZIER);
+  check("M4 unselected keys and values are untouched", eases(prop1.keys[0].inEase) === "11/16.67" && eases(prop1.keys[0].outEase) === "22/16.67" && prop1.keys[0].inType === KIT.LINEAR && prop1.keys.map((k) => k.value).join() === "0,50,100" && eases(prop2.keys[0].outEase) === "22/16.67,22/16.67,22/16.67");
+  check("M4 result reported, one undo step", (await p.status()) === "Плавность применена: 3 ключа.\nОтменить: Cmd/Ctrl+Z." && (await p.statusKind()) === "done" && p.ae.log.undo.join() === "begin:Sayframe: ease keyframes,end", await p.status());
+  await p.close();
+
+  p = await open(easeScene());
+  await motionTab(p); await setSlider(p, "easeIn", 90);
+  await p.page.click("#easeInBtn"); await p.idle();
+  check("M5 'stop only' changes the arriving side and keeps the leaving side", eases(prop1.keys[1].inEase) === "0/90" && eases(prop1.keys[1].outEase) === "22/16.67" && prop1.keys[1].inType === KIT.BEZIER && prop1.keys[1].outType === KIT.LINEAR, eases(prop1.keys[1].outEase) + " " + prop1.keys[1].outType);
+  check("M5 a linear leaving side stays linear on the 3D property too", eases(prop2.keys[1].inEase) === "0/90,0/90,0/90" && prop2.keys[1].outType === KIT.LINEAR && prop2.keys[1].inType === KIT.BEZIER);
+  await p.close();
+  p = await open(easeScene());
+  await motionTab(p); await setSlider(p, "easeOut", 30);
+  await p.page.click("#easeOutBtn"); await p.idle();
+  check("M5 'start only' changes the leaving side and keeps the arriving side", eases(prop1.keys[2].outEase) === "0/30" && eases(prop1.keys[2].inEase) === "11/16.67" && prop1.keys[2].inType === KIT.LINEAR && prop1.keys[2].outType === KIT.BEZIER);
+  check("M5 a hold on the arriving side stays a hold", prop2.keys[1].inType === KIT.HOLD && prop2.keys[1].outType === KIT.BEZIER && eases(prop2.keys[1].outEase) === "0/30,0/30,0/30");
+  await p.close();
+  p = await open(easeScene());
+  await motionTab(p); await setSlider(p, "easeOut", 0);
+  await p.page.click("#easeBothBtn"); await p.idle();
+  check("M6 slider at 0 is sent as the smallest influence After Effects accepts", eases(prop1.keys[1].inEase) === "0/0.1" && eases(prop1.keys[1].outEase) === "0/0.1" && (await p.statusKind()) === "done", eases(prop1.keys[1].inEase));
+  await setSlider(p, "easeOut", 100);
+  await p.page.click("#easeBothBtn"); await p.idle();
+  check("M6 slider at 100", eases(prop1.keys[2].inEase) === "0/100" && eases(prop1.keys[2].outEase) === "0/100");
+  await p.close();
+  p = await open(easeScene());
+  prop1.locked = true;
+  await motionTab(p); await p.page.click("#easeBothBtn"); await p.idle();
+  check("M7 keys After Effects refuses are counted, the rest are done", /^Плавность применена: 1 ключ\. Не получилось для 2 ключей\./.test(await p.status()) && eases(prop2.keys[1].inEase) === "0/60,0/60,0/60", await p.status());
+  prop2.locked = true;
+  await p.page.click("#easeBothBtn"); await p.idle();
+  check("M7 nothing could be changed -> error", (await p.statusKind()) === "error" && /Не удалось изменить выделенные ключи/.test(await p.status()));
+  check("M7 no page errors", p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  console.log("\n=== animation: anchor point ===");
+  const CELLS = [[0, 0], [0.5, 0], [1, 0], [0, 0.5], [0.5, 0.5], [1, 0.5], [0, 1], [0.5, 1], [1, 1]];
+  const cell = async (p, i) => { await p.page.locator("#anchorGrid button").nth(i).click(); await p.idle(); };
+  const A = (l) => l.props["ADBE Anchor Point"], P = (l) => l.props["ADBE Position"];
+  const PROBE = [[7, 3, 0], [120, -40, 0], [0, 0, 0]];
+  const worlds = (l) => PROBE.map((pt) => l.world(pt));
+  const sameWorlds = (a, b) => a.every((w, i) => sameVec(w, b[i]));
+
+  clock = { time: 0 };
+  L = mkLayer(clock, { rect: { left: -20, top: 10, width: 200, height: 80 }, anchor: [0, 0, 0], position: [960, 540, 0], scale: [200, 50, 100], rotation: 90 });
+  p = await open({ selectedLayers: [L] });
+  await motionTab(p);
+  before = worlds(L);
+  await cell(p, 4);
+  check("A1 centre: anchor moves to the middle of the layer's bounds", sameVec(A(L).value, [80, 50, 0]), A(L).value.join());
+  check("A1 position compensates for scale and rotation exactly", sameVec(P(L).value, [960 - 25, 540 + 160, 0]), P(L).value.join());
+  check("A1 the layer does not move on screen", sameWorlds(before, worlds(L)));
+  check("A1 result reported, one undo step", (await p.status()) === "Точка привязки перенесена: 1 слой.\nОтменить: Cmd/Ctrl+Z." && (await p.statusKind()) === "done" && p.ae.log.undo.join() === "begin:Sayframe: move anchor point,end", await p.status());
+  t = true; c = [];
+  for (let i = 0; i < 9; i++) {
+    await cell(p, i);
+    const want = [-20 + 200 * CELLS[i][0], 10 + 80 * CELLS[i][1], 0];
+    if (!sameVec(A(L).value, want) || !sameWorlds(before, worlds(L))) { t = false; c.push(i + ":" + A(L).value.join("/")); }
+  }
+  check("A2 all nine cells: right point, layer stays put every time", t, c.join(" "));
+  await cell(p, 8);
+  check("A3 already there -> says so, changes nothing", (await p.status()) === "Уже на месте: 1 слой." && (await p.statusKind()) === "" && sameVec(A(L).value, [180, 90, 0]));
+  check("A3 labels for screen readers", (await p.page.locator("#anchorGrid button").nth(0).getAttribute("aria-label")) === "Левый верхний угол" && (await p.page.locator("#anchorGrid button").nth(4).getAttribute("aria-label")) === "Центр слоя" && (await p.page.locator("#anchorGrid button").nth(8).getAttribute("aria-label")) === "Правый нижний угол");
+  await p.close();
+
+  p = await open({ selectedLayers: [] });
+  await motionTab(p); await cell(p, 4);
+  check("A4 no layer selected -> hint", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && (await p.statusKind()) === "" && p.ae.log.undo.length === 0);
+  await p.close();
+
+  // keyframes: three ways to treat an animated layer
+  function keyedLayer() {
+    clock = { time: 2 };
+    const l = mkLayer(clock, { rect: { left: 0, top: 0, width: 100, height: 60 }, anchor: [0, 0, 0], position: [300, 200, 0], scale: [100, 100, 100], rotation: 0 });
+    A(l).addKey(0, [0, 0, 0]).addKey(4, [10, 0, 0]);
+    P(l).addKey(0, [300, 200, 0]).addKey(4, [500, 200, 0]);
+    return l;
+  }
+  L = keyedLayer();
+  p = await open({ selectedLayers: [L], compTime: 2 });
+  await motionTab(p); await cell(p, 4);
+  check("A5 'add a key': a key appears at the current time on both properties", A(L).numKeys === 3 && P(L).numKeys === 3 && A(L).keys[1].time === 2 && sameVec(A(L).keys[1].value, [50, 30, 0]) && sameVec(P(L).keys[1].value, [350, 230, 0]), JSON.stringify(A(L).keys.map((k) => [k.time, k.value])));
+  check("A5 'add a key': the other keys are left alone", sameVec(A(L).keys[0].value, [0, 0, 0]) && sameVec(A(L).keys[2].value, [10, 0, 0]) && sameVec(P(L).keys[2].value, [500, 200, 0]) && A(L).calls.indexOf("setValue") < 0);
+  await p.close();
+  L = keyedLayer();
+  p = await open({ selectedLayers: [L], compTime: 2 });
+  await motionTab(p); await p.page.selectOption("#anchorKeys", "shift"); await cell(p, 4);
+  check("A6 'shift all keys': every key moves by the same amount, none are added", A(L).numKeys === 2 && P(L).numKeys === 2 && sameVec(A(L).keys[0].value, [50, 30, 0]) && sameVec(A(L).keys[1].value, [60, 30, 0]) && sameVec(P(L).keys[0].value, [350, 230, 0]) && sameVec(P(L).keys[1].value, [550, 230, 0]), JSON.stringify(P(L).keys.map((k) => k.value)));
+  await p.close();
+  L = keyedLayer(); L2 = mkLayer(clock, { index: 2, rect: { left: 0, top: 0, width: 40, height: 40 }, position: [10, 10, 0] });
+  p = await open({ selectedLayers: [L, L2], compTime: 2 });
+  await motionTab(p); await p.page.selectOption("#anchorKeys", "skip"); await cell(p, 4);
+  check("A7 'leave such a layer': the animated layer is untouched, the other one is moved", A(L).numKeys === 2 && sameVec(A(L).keys[0].value, [0, 0, 0]) && sameVec(P(L).keys[1].value, [500, 200, 0]) && sameVec(A(L2).value, [20, 20, 0]) && sameVec(P(L2).value, [30, 30, 0]));
+  check("A7 both outcomes are reported", (await p.status()) === "Точка привязки перенесена: 1 слой. Пропущено: 1 слой (камера, свет или слой с ключами).\nОтменить: Cmd/Ctrl+Z.", await p.status());
+  await p.close();
+
+  // separated position dimensions, with a key on X only
+  clock = { time: 1 };
+  L = mkLayer(clock, { separated: true, rect: { left: 0, top: 0, width: 100, height: 100 }, position: [100, 200, 0], scale: [50, 50, 100], rotation: 180 });
+  L.props["ADBE Position_0"].addKey(0, 100).addKey(3, 400);
+  before = null;
+  p = await open({ selectedLayers: [L], compTime: 1 });
+  await motionTab(p); await cell(p, 8);
+  t = [L.props["ADBE Position_0"], L.props["ADBE Position_1"]];
+  check("A8 separated dimensions: X gets a key, Y is set directly, combined position untouched", t[0].numKeys === 3 && near(t[0].keys[1].value, 50) && t[0].keys[1].time === 1 && near(t[1].value, 150) && t[1].numKeys === 0 && P(L).calls.length === 0 && sameVec(A(L).value, [100, 100, 0]), t[0].keys.map((k) => k.time + ":" + k.value).join() + " y=" + t[1].value);
+  await p.close();
+
+  // cameras, lights, locked layers, several layers at once
+  clock = { time: 0 };
+  L = mkLayer(clock, { rect: { left: 0, top: 0, width: 10, height: 10 }, position: [5, 5, 0] });
+  L2 = mkLayer(clock, { index: 2, locked: true, rect: { left: 0, top: 0, width: 10, height: 10 } });
+  const cam = mkLayer(clock, { index: 3, kind: "camera" }), light = mkLayer(clock, { index: 4, kind: "light" });
+  const text = mkLayer(clock, { index: 5, kind: "text", rect: { left: -30, top: -50, width: 60, height: 20 }, position: [100, 100, 0] });
+  p = await open({ selectedLayers: [L, L2, cam, light, text] });
+  await motionTab(p); await cell(p, 2);
+  check("A9 mixed selection: movable layers moved, camera and light skipped, locked layer reported", sameVec(A(L).value, [10, 0, 0]) && sameVec(A(text).value, [30, -50, 0]) && sameVec(P(text).value, [130, 50, 0]) && sameVec(A(L2).value, [0, 0, 0]) && sameVec(A(cam).value, [0, 0, 0]));
+  check("A9 status lists every outcome", (await p.status()) === "Точка привязки перенесена: 2 слоя. Пропущено: 2 слоя (камера, свет или слой с ключами). Не получилось: 1 слой (слой заблокирован?).\nОтменить: Cmd/Ctrl+Z." && (await p.statusKind()) === "done", await p.status());
+  await p.close();
+  p = await open({ selectedLayers: [mkLayer({ time: 0 }, { locked: true })] });
+  await motionTab(p); await cell(p, 4);
+  check("A9 only a locked layer -> error", (await p.statusKind()) === "error" && /^Не получилось: 1 слой/.test(await p.status()), await p.status());
+  await p.close();
+
+  // 3D layers: After Effects converts the point through a temporary null
+  clock = { time: 0 };
+  L = mkLayer(clock, { index: 1, rect: { left: 0, top: 0, width: 40, height: 40 }, position: [0, 0, 0] });
+  L2 = mkLayer(clock, { index: 2, threeD: true, rect: { left: 0, top: 0, width: 100, height: 100 }, anchor: [0, 0, 25], position: [500, 500, -300], scale: [200, 200, 200], rotation: 0 });
+  p = await open({ selectedLayers: [L, L2] });
+  before = worlds(L2);
+  await motionTab(p); await cell(p, 4);
+  check("A10 3D layer: point is converted by an expression on a temporary null", p.ae.log.nullsAdded === 1 && p.ae.log.nulls[0].threeDLayer === true && /thisComp\.layer\(3\)/.test(p.ae.log.nullExpressions[0]) && /toWorld\(\[50,50,25\]\)/.test(p.ae.log.nullExpressions[0]) && /hasParent/.test(p.ae.log.nullExpressions[0]), p.ae.log.nullExpressions[0]);
+  check("A10 3D layer: anchor keeps its depth, position follows, layer stays put", sameVec(A(L2).value, [50, 50, 25]) && sameVec(P(L2).value, [600, 600, -300]) && sameWorlds(before, worlds(L2)), A(L2).value.join() + " | " + P(L2).value.join());
+  check("A10 the temporary null and its solid are removed", p.ae.log.nullsRemoved === 1 && p.ae.log.nullSourcesRemoved === 1 && L.index === 1 && L2.index === 2);
+  check("A10 the user's selection is put back", L.selected === true && L2.selected === true && sameVec(A(L).value, [20, 20, 0]));
+  await p.close();
+  L2 = mkLayer(clock, { index: 1, threeD: true, rect: { left: 0, top: 0, width: 100, height: 100 }, position: [500, 500, 0] });
+  p = await open({ selectedLayers: [L2], expressionsFail: true });
+  await motionTab(p); await cell(p, 4);
+  check("A11 3D layer when the expression cannot run: nothing is changed, null removed, error reported", sameVec(A(L2).value, [0, 0, 0]) && sameVec(P(L2).value, [500, 500, 0]) && p.ae.log.nullsRemoved === 1 && p.ae.log.nullSourcesRemoved === 1 && (await p.statusKind()) === "error" && L2.selected === true, await p.status());
+  check("A11 no page errors", p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  p = await open({ width: 300, height: 760 });
+  await motionTab(p);
+  t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  check("A12 Animation tab fits a 300px panel", t <= 0, t);
+  await p.page.screenshot({ path: path.join(SHOTS, "22-tab-motion-narrow.png") });
   await p.close();
 
   // ------------------------------------------------------------------ updates
