@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.10.0";
+    var VERSION = "1.11.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -14,6 +14,22 @@
     var MOTION_KEY = "sayframe.motion.v1";
     var SCRIPTS_KEY = "sayframe.scripts.v1";  // «Мои скрипты»: { open, items: [{ id, name, codes, created }] }
     var MAX_SCRIPTS = 100;
+    var EXPR_OPEN_KEY = "sayframe.exprOpen.v1";
+    var EXPR_MAX_TOKENS = 4096;
+    var EXPR_RETRIES = 2;   // сколько раз нейросеть может поправить выражение, которое After Effects не принял
+    var QUICK_KEY = "sayframe.quick.v1";      // быстрые задачи: { open, items: [{ id, name, text }] }
+    var MAX_QUICK = 30;
+    // Стандартные быстрые задачи. Текст написан подробно: так нейросеть точнее понимает, что нужно.
+    var QUICK_DEFAULTS = [
+        { id: "q-text", name: "Появление текста",
+          text: "Сделай плавное появление текста: у выделенных текстовых слоёв (если ничего не выделено — у всех текстовых слоёв открытой композиции) буквы проявляются по очереди, слегка поднимаясь снизу и из прозрачности. Начало — текущее время, длительность около 1 секунды, с плавным замедлением в конце." },
+        { id: "q-lower", name: "Подпись внизу кадра",
+          text: "Сделай подпись внизу кадра (lower third) в открытой композиции: аккуратная плашка в левой нижней части кадра, на ней имя «Имя Фамилия» и строкой ниже «Должность» мельче. Плашка и текст плавно выезжают слева с текущего времени, держатся 4 секунды и так же плавно уезжают. Всё собери в отдельную прекомпозицию «Подпись»." },
+        { id: "q-logo", name: "Логотип с отскоком",
+          text: "Анимируй появление выделенного слоя как логотипа: масштаб от 0 до 100% с упругим отскоком (лёгкий перелёт и возврат), прозрачность от 0 до 100% в начале. Начало — текущее время, длительность около 0,8 секунды. Точку привязки поставь в центр слоя, чтобы он рос из середины." },
+        { id: "q-tidy", name: "Упорядочить проект",
+          text: "Упорядочи панель Project: разложи элементы по папкам «Композиции», «Видео», «Картинки», «Звук», «Заливки» и «Прочее». Уже существующие папки с такими именами используй, пустые не создавай, ничего не удаляй и не переименовывай." }
+    ];
     var SCRIPT_NAME_MAX = 60;   // положения ползунков и выбор в разделе «Инструменты»
     var TAB_DRAG_START_PX = 6;   // сдвиг мыши, после которого нажатие на вкладку считается перетаскиванием
     // Как часто открытая панель сама спрашивает сервер о новой версии. Ещё она спрашивает при запуске
@@ -623,6 +639,10 @@
     var ui = {
         prompt: el("prompt"), runBtn: el("runBtn"), fixBtn: el("fixBtn"), newBtn: el("newBtn"),
         refBtn: el("refBtn"), refChip: el("refChip"), refText: el("refText"), refClear: el("refClear"),
+        exprCard: el("exprCard"), exprToggle: el("exprToggle"), exprBody: el("exprBody"), exprWish: el("exprWish"),
+        exprApplyBtn: el("exprApplyBtn"), exprFixBtn: el("exprFixBtn"),
+        quickBox: el("quickBox"), quickToggle: el("quickToggle"), quickAdd: el("quickAdd"), quickEdit: el("quickEdit"), quickList: el("quickList"),
+        quickForm: el("quickForm"), quickName: el("quickName"), quickText: el("quickText"), quickSave: el("quickSave"), quickCancel: el("quickCancel"),
         saveRow: el("saveRow"), saveScriptBtn: el("saveScriptBtn"), saveForm: el("saveForm"), saveName: el("saveName"),
         saveConfirm: el("saveConfirm"), saveCancel: el("saveCancel"),
         scriptsCard: el("scriptsCard"), scriptsToggle: el("scriptsToggle"), scriptsCount: el("scriptsCount"), scriptsList: el("scriptsList"),
@@ -874,6 +894,9 @@
         ui.refBtn.disabled = on;
         ui.refLinkBtn.disabled = on;
         ui.saveScriptBtn.disabled = on;
+        ui.exprApplyBtn.disabled = on;
+        ui.exprFixBtn.disabled = on;
+        Array.prototype.forEach.call(ui.quickList.querySelectorAll("button"), function (b) { b.disabled = on; });
         ui.saveConfirm.disabled = on;
         Array.prototype.forEach.call(ui.scriptsList.querySelectorAll("button"), function (b) { b.disabled = on; });
         ui.refLinkAdd.disabled = on;
@@ -1034,13 +1057,13 @@
         });
     }
 
-    function callAI(messages, maxTokens) {
-        return settings.provider === "openai" ? callOpenAI(messages, maxTokens) : callClaude(messages, maxTokens);
+    function callAI(messages, maxTokens, system) {
+        return settings.provider === "openai" ? callOpenAI(messages, maxTokens, system) : callClaude(messages, maxTokens, system);
     }
 
     // История хранится в формате Claude; для ChatGPT картинки и текст перекладываются в его формат.
-    function openAIMessages(messages) {
-        var out = [{ role: "system", content: SYSTEM_PROMPT }];
+    function openAIMessages(messages, system) {
+        var out = [{ role: "system", content: system || SYSTEM_PROMPT }];
         messages.forEach(function (m) {
             var parts;
             if (!(m.content instanceof Array)) { out.push({ role: m.role, content: m.content }); return; }
@@ -1055,11 +1078,11 @@
         return out;
     }
 
-    function callOpenAI(messages, maxTokens) {
+    function callOpenAI(messages, maxTokens, system) {
         var body = JSON.stringify({
             model: settings.openaiModel,
             max_completion_tokens: Math.max(maxTokens || 0, OPENAI_MAX_TOKENS),
-            messages: openAIMessages(messages)
+            messages: openAIMessages(messages, system)
         });
         var headers = {
             "authorization": "Bearer " + settings.openaiKey,
@@ -1095,11 +1118,11 @@
         });
     }
 
-    function callClaude(messages, maxTokens) {
+    function callClaude(messages, maxTokens, system) {
         var body = JSON.stringify({
             model: settings.model,
             max_tokens: maxTokens || MAX_TOKENS,
-            system: SYSTEM_PROMPT,
+            system: system || SYSTEM_PROMPT,
             messages: messages
         });
         var headers = {
@@ -1570,6 +1593,385 @@
         });
     }
 
+    // --------------------------------------------------------- expressions
+    // Нейросеть пишет выражения для выделенных свойств или чинит выражения с ошибкой. Ответ — JSON,
+    // панель ставит выражения сама и, если After Effects сообщает об ошибке, просит поправить.
+
+    var EXPR_SYSTEM = [
+        "You write Adobe After Effects expressions for a panel inside After Effects.",
+        "Either the user selected properties and says what they should do, or the panel sends expressions that give errors and asks you to fix them.",
+        "",
+        "Reply with ONE json code block and nothing outside it:",
+        "```json",
+        "{\"note\": \"one short sentence in the user's language\", \"expressions\": [{\"id\": 1, \"expression\": \"...\"}]}",
+        "```",
+        "",
+        "Rules:",
+        "- Give an expression for every listed property, by its id. If a property cannot sensibly do what is asked, leave it out and say why in \"note\".",
+        "- Write for the JavaScript expression engine of After Effects. Use the expression language only (value, time, thisComp, thisLayer, thisProperty, wiggle(), loopOut(), loopIn(), linear(), ease(), valueAtTime(), key(), numKeys, nearestKey(), effect(\"...\")(\"...\"), comp(\"...\").layer(\"...\"), etc.). Never use ExtendScript (app., CompItem, $.).",
+        "- The result must have the same dimension as the property's value: a number, a 2D or 3D array, or a color [r, g, b, a] from 0 to 1.",
+        "- Build on the current value or animation when it makes sense (value + ..., wiggle() on top of value, loopOut() for existing keyframes).",
+        "- Keep it short and readable. Put the numbers a user may want to change in named variables at the top (var freq = 2;).",
+        "- When fixing, keep what the expression was meant to do and change as little as possible."
+    ].join("\n");
+
+    function exprPropText(p, i, withError) {
+        var t = (i + 1) + ". Layer " + p.layer + ' "' + p.layerName + '" > ' + p.trail + " (matchName " + p.matchName + ")" +
+            (p.value !== null ? ", value " + p.value : "") + ", keyframes: " + p.keys;
+        if (p.expression) {
+            t += "\n   current expression:\n" + p.expression.replace(/^/gm, "      ");
+        } else {
+            t += ", no expression yet";
+        }
+        if (withError && p.error) { t += "\n   error: " + p.error; }
+        return t;
+    }
+
+    // Достаёт из ответа JSON с выражениями. Возвращает { note, list: [{ id, expression }] } или null.
+    function parseExprReply(text) {
+        var m = /```(?:json)?[ \t]*\r?\n([\s\S]*?)```/.exec(text);
+        var raw = m ? m[1] : text.substring(text.indexOf("{"), text.lastIndexOf("}") + 1);
+        var data, list = [];
+        try { data = JSON.parse(raw); } catch (e) { return null; }
+        if (!data || !(data.expressions instanceof Array)) { return null; }
+        data.expressions.forEach(function (x) {
+            if (x && typeof x.expression === "string" && x.expression.replace(/\s/g, "") && Math.floor(Number(x.id)) === Number(x.id)) {
+                list.push({ id: Number(x.id), expression: x.expression });
+            }
+        });
+        return { note: typeof data.note === "string" ? data.note : "", list: list };
+    }
+
+    function showExprReply(note, done) {
+        ui.replyCard.hidden = false;
+        ui.replyText.hidden = !note;
+        ui.replyText.textContent = note || "";
+        ui.codeBox.hidden = done.length === 0;
+        ui.replyCode.textContent = done.map(function (d) { return "// " + d.trail + "\n" + d.expression; }).join("\n\n");
+        lastRun = null;
+        showSaveRow();
+    }
+
+    // Общий ход: спросить нейросеть, поставить выражения, при ошибках попросить поправить.
+    // props — свойства из After Effects (с адресами), firstMessage — первый вопрос.
+    async function runExpressions(props, firstMessage, verb) {
+        var messages = [{ role: "user", content: firstMessage }];
+        var pending = props.map(function (p, i) { return i; });   // какие свойства ещё без рабочего выражения
+        var done = [];
+        var failed = {};
+        var note = "";
+        var round = 0;
+        var reply, parsed, items, map, res, errors, steps = 0;
+
+        while (true) {
+            setStatus(round === 0 ? "Жду выражение от " + aiName() + "…" : "After Effects не принял выражение, прошу " + aiName() + " поправить (попытка " + (round + 1) + ")…", "busy");
+            reply = await callAI(messages, EXPR_MAX_TOKENS, EXPR_SYSTEM);
+            if (!reply.ok) { return finishExpr(done, failed, props, note, steps, reply.error); }
+            messages.push({ role: "assistant", content: reply.text });
+            parsed = parseExprReply(reply.text);
+            if (!parsed) { return finishExpr(done, failed, props, note, steps, aiName() + " ответил не в том виде: выражение не найдено."); }
+            if (parsed.note) { note = parsed.note; }
+            items = [];
+            map = [];
+            parsed.list.forEach(function (x) {
+                var i = x.id - 1;
+                if (pending.indexOf(i) < 0) { return; }
+                items.push({ layer: props[i].layer, path: props[i].path, expression: x.expression });
+                map.push(i);
+            });
+            if (!items.length) { return finishExpr(done, failed, props, note, steps, null); }
+            try {
+                res = await host("exprApply", [items]);
+            } catch (e) {
+                return finishExpr(done, failed, props, note, steps, humanError(e));
+            }
+            steps++;
+            errors = [];
+            res.results.forEach(function (r, k) {
+                var i = map[k];
+                if (r.ok) {
+                    done.push({ trail: r.trail || props[i].trail, expression: items[k].expression });
+                    delete failed[i];
+                    pending.splice(pending.indexOf(i), 1);
+                } else {
+                    failed[i] = r.error;
+                    errors.push("id " + (i + 1) + ": " + r.error);
+                }
+            });
+            if (!errors.length || round >= EXPR_RETRIES) { return finishExpr(done, failed, props, note, steps, null); }
+            round++;
+            messages.push({ role: "user", content: "After Effects reported errors for these expressions:\n" + errors.join("\n") +
+                "\nReturn corrected expressions for these ids in the same JSON format." });
+        }
+    }
+
+    function finishExpr(done, failed, props, note, steps, error) {
+        var bad = Object.keys(failed);
+        var text;
+        showExprReply(note, done);
+        setBusy(false);
+        if (error && !done.length) { setStatus(error, "error"); return; }
+        if (!done.length && !bad.length) { setStatus(note || aiName() + " не предложил выражений.", ""); return; }
+        text = done.length ? "Выражение стоит: " + done.map(function (d) { return d.trail; }).join(", ") + "." : "";
+        if (bad.length) {
+            text += (text ? "\n" : "") + "Не получилось для: " + bad.map(function (i) { return props[i].trail + " (" + failed[i] + ")"; }).join("; ") + ".";
+        }
+        if (note) { text += "\n" + note; }
+        if (error) { text += "\n" + error; }
+        if (steps) { text += steps > 1 ? "\nОтменить: Cmd/Ctrl+Z, каждая попытка — отдельный шаг." : "\nОтменить: Cmd/Ctrl+Z."; }
+        setStatus(text, bad.length && !done.length ? "error" : "done");
+    }
+
+    function exprReady() {
+        if (busy) { return false; }
+        if (!aiKey()) {
+            setStatus("Нужен " + providerOf().keyLabel.replace(/^Ключ/, "ключ") + ". Вставьте его в настройках.", "error");
+            openSettings();
+            return false;
+        }
+        return true;
+    }
+
+    async function onExprApply() {
+        var wish = ui.exprWish.value.replace(/^\s+|\s+$/g, "");
+        var t;
+        if (!exprReady()) { return; }
+        if (!wish) { setStatus("Напишите, что должно делать выделенное свойство, например: «пусть качается».", ""); ui.exprWish.focus(); return; }
+        setBusy(true);
+        setStatus("Смотрю, что выделено…", "busy");
+        try {
+            t = await host("exprTargets", []);
+        } catch (e) {
+            setBusy(false);
+            setStatus(humanError(e), /^Откройте композицию/.test(humanError(e)) ? "" : "error");
+            return;
+        }
+        if (!t.props.length) {
+            setBusy(false);
+            setStatus("Выделите свойство на таймлайне (например, Position или Opacity) и нажмите ещё раз.", "");
+            return;
+        }
+        await runExpressions(t.props, "[Request]\n" + wish + '\n\n[Properties] (composition "' + t.compName + '")\n' +
+            t.props.map(function (p, i) { return exprPropText(p, i, false); }).join("\n"), "put");
+    }
+
+    async function onExprFix() {
+        var t;
+        if (!exprReady()) { return; }
+        setBusy(true);
+        setStatus("Ищу выражения с ошибкой…", "busy");
+        try {
+            t = await host("exprBroken", []);
+        } catch (e) {
+            setBusy(false);
+            setStatus(humanError(e), /^Откройте композицию/.test(humanError(e)) ? "" : "error");
+            return;
+        }
+        if (!t.props.length) {
+            setBusy(false);
+            setStatus("В открытой композиции «" + t.compName + "» нет выражений с ошибкой.", "done");
+            return;
+        }
+        await runExpressions(t.props, "[Request]\nThese expressions give errors in After Effects. Fix each one." +
+            (ui.exprWish.value.replace(/\s/g, "") ? "\nThe user adds: " + ui.exprWish.value.replace(/^\s+|\s+$/g, "") : "") +
+            '\n\n[Properties] (composition "' + t.compName + '")\n' + t.props.map(function (p, i) { return exprPropText(p, i, true); }).join("\n"), "fix");
+    }
+
+    function enableExpressions() {
+        var open = true;
+        try { open = window.localStorage.getItem(EXPR_OPEN_KEY) !== "0"; } catch (e) {}
+        function draw() {
+            ui.exprToggle.setAttribute("aria-expanded", open ? "true" : "false");
+            ui.exprBody.hidden = !open;
+        }
+        draw();
+        ui.exprToggle.addEventListener("click", function () {
+            open = !open;
+            try { window.localStorage.setItem(EXPR_OPEN_KEY, open ? "1" : "0"); } catch (e) {}
+            draw();
+        });
+        ui.exprApplyBtn.addEventListener("click", onExprApply);
+        ui.exprFixBtn.addEventListener("click", onExprFix);
+        ui.exprWish.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onExprApply(); }
+        });
+    }
+
+    // --------------------------------------------------------- quick tasks
+    // Кнопки с частыми просьбами. Нажатие кладёт текст задачи в поле запроса: его можно поправить
+    // (имя в подписи, длительность) и нажать «Выполнить». Свои задачи сохраняются кнопкой «+».
+
+    function defaultQuick() {
+        return QUICK_DEFAULTS.map(function (q) { return { id: q.id, name: q.name, text: q.text }; });
+    }
+
+    function loadQuick() {
+        var d, out = [];
+        try { d = JSON.parse(window.localStorage.getItem(QUICK_KEY) || "null"); } catch (e) { d = null; }
+        if (!d || typeof d !== "object" || !(d.items instanceof Array)) { return { open: !(d && d.open === false), items: defaultQuick() }; }
+        d.items.forEach(function (q) {
+            if (!q || typeof q.name !== "string" || typeof q.text !== "string" || !q.name || !q.text || out.length >= MAX_QUICK) { return; }
+            out.push({ id: String(q.id || ("q" + out.length + "_" + Date.now())), name: q.name.substring(0, 40), text: q.text });
+        });
+        return { open: d.open !== false, items: out };
+    }
+
+    var quick = loadQuick();
+    var quickEditing = false;
+    var quickFormFor = null;   // id задачи, которую правят; "" — новая
+
+    function storeQuick() {
+        try { window.localStorage.setItem(QUICK_KEY, JSON.stringify(quick)); } catch (e) {}
+    }
+
+    function quickById(id) {
+        var i;
+        for (i = 0; i < quick.items.length; i++) { if (quick.items[i].id === id) { return quick.items[i]; } }
+        return null;
+    }
+
+    function missingDefaults() {
+        return QUICK_DEFAULTS.filter(function (q) { return !quickById(q.id); });
+    }
+
+    function drawQuick() {
+        var reset;
+        ui.quickToggle.setAttribute("aria-expanded", quick.open ? "true" : "false");
+        ui.quickList.hidden = !quick.open;
+        ui.quickEdit.setAttribute("aria-pressed", quickEditing ? "true" : "false");
+        ui.quickBox.className = "quick" + (quickEditing ? " editing" : "");
+        ui.quickList.textContent = "";
+        quick.items.forEach(function (q) {
+            var b = document.createElement("button");
+            var label = document.createElement("span");
+            var del;
+            b.className = "quick-chip";
+            b.setAttribute("data-id", q.id);
+            b.title = quickEditing ? "Изменить «" + q.name + "»" : q.text;
+            label.textContent = q.name;
+            b.appendChild(label);
+            if (quickEditing) {
+                del = document.createElement("span");
+                del.className = "quick-del";
+                del.setAttribute("data-act", "delete");
+                del.setAttribute("aria-label", "Удалить «" + q.name + "»");
+                del.title = "Удалить";
+                del.textContent = "×";
+                b.appendChild(del);
+            }
+            b.disabled = busy;
+            ui.quickList.appendChild(b);
+        });
+        if (quickEditing && missingDefaults().length) {
+            reset = document.createElement("button");
+            reset.className = "quick-link";
+            reset.setAttribute("data-act", "reset");
+            reset.textContent = "Вернуть стандартные";
+            reset.disabled = busy;
+            ui.quickList.appendChild(reset);
+        }
+    }
+
+    function openQuickForm(q) {
+        var text = ui.prompt.value.replace(/^\s+|\s+$/g, "");
+        quickFormFor = q ? q.id : "";
+        ui.quickName.value = q ? q.name : (text ? text.replace(/\s+/g, " ").substring(0, 30) : "");
+        ui.quickText.value = q ? q.text : text;
+        ui.quickForm.hidden = false;
+        quick.open = true;
+        drawQuick();
+        (ui.quickName.value ? ui.quickText : ui.quickName).focus();
+    }
+
+    function closeQuickForm() {
+        quickFormFor = null;
+        ui.quickForm.hidden = true;
+    }
+
+    function saveQuickForm() {
+        var name = ui.quickName.value.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "").substring(0, 40);
+        var text = ui.quickText.value.replace(/^\s+|\s+$/g, "");
+        var q;
+        if (!name) { ui.quickName.focus(); return; }
+        if (!text) { ui.quickText.focus(); return; }
+        if (quickFormFor) {
+            q = quickById(quickFormFor);
+            if (q) { q.name = name; q.text = text; }
+        } else {
+            if (quick.items.length >= MAX_QUICK) {
+                setStatus("Быстрых задач уже " + MAX_QUICK + ". Удалите ненужные, чтобы добавить новую.", "error");
+                return;
+            }
+            quick.items.push({ id: "q" + Date.now().toString(36) + Math.floor(Math.random() * 1000), name: name, text: text });
+        }
+        storeQuick();
+        closeQuickForm();
+        drawQuick();
+        setStatus("Быстрая задача «" + name + "» сохранена.", "done");
+    }
+
+    async function deleteQuick(q) {
+        var ok = await modal({
+            title: "Удалить задачу «" + q.name + "»?",
+            text: QUICK_DEFAULTS.some(function (d) { return d.id === q.id; }) ?
+                "Стандартную задачу можно будет вернуть: «✎» → «Вернуть стандартные»." : "Свою задачу вернуть будет нельзя.",
+            buttons: [{ label: "Отмена", value: false }, { label: "Удалить", value: true, primary: true }]
+        });
+        if (!ok) { return; }
+        quick.items = quick.items.filter(function (x) { return x !== q; });
+        if (quickFormFor === q.id) { closeQuickForm(); }
+        storeQuick();
+        drawQuick();
+    }
+
+    function useQuick(q) {
+        ui.prompt.value = q.text;
+        ui.prompt.focus();
+        try { ui.prompt.setSelectionRange(q.text.length, q.text.length); } catch (e) {}
+        setStatus("Задача «" + q.name + "» в поле запроса. Поправьте, если нужно, и нажмите «Выполнить».", "");
+    }
+
+    function enableQuick() {
+        drawQuick();
+        ui.quickToggle.addEventListener("click", function () {
+            quick.open = !quick.open;
+            if (!quick.open) { closeQuickForm(); }
+            storeQuick();
+            drawQuick();
+        });
+        ui.quickAdd.addEventListener("click", function () { if (!busy) { openQuickForm(null); } });
+        ui.quickEdit.addEventListener("click", function () {
+            quickEditing = !quickEditing;
+            if (quickEditing) { quick.open = true; } else { closeQuickForm(); }
+            drawQuick();
+        });
+        ui.quickSave.addEventListener("click", saveQuickForm);
+        ui.quickCancel.addEventListener("click", closeQuickForm);
+        [ui.quickName, ui.quickText].forEach(function (f) {
+            f.addEventListener("keydown", function (e) {
+                if (e.key === "Escape") { e.preventDefault(); closeQuickForm(); }
+                if (e.key === "Enter" && (f === ui.quickName || e.metaKey || e.ctrlKey)) { e.preventDefault(); saveQuickForm(); }
+            });
+        });
+        ui.quickList.addEventListener("click", function (e) {
+            var t = e.target;
+            var act = t.getAttribute ? t.getAttribute("data-act") : null;
+            var chip = t.closest ? t.closest(".quick-chip") : null;
+            var q = chip ? quickById(chip.getAttribute("data-id")) : null;
+            if (busy) { return; }
+            if (act === "reset") {
+                missingDefaults().forEach(function (d) { quick.items.push({ id: d.id, name: d.name, text: d.text }); });
+                storeQuick();
+                drawQuick();
+                return;
+            }
+            if (!q) { return; }
+            if (act === "delete") { deleteQuick(q); return; }
+            if (quickEditing) { openQuickForm(q); return; }
+            useQuick(q);
+        });
+    }
+
     // ----------------------------------------------------------- reference
 
     // Снимает кадры с файла и делает его референсом. name — как его показать, note — добавка к сообщению.
@@ -1921,22 +2323,50 @@
             try { text = e.clipboardData ? String(e.clipboardData.getData("text/plain") || "") : ""; } catch (err) { text = "x"; }
             if (text === "") { inField = false; }
         }
+        // Во вкладке AI картинка из буфера становится референсом, а не слоем в композиции.
+        var handle = ui.viewClaude.hidden ? pasteImage : pasteAsReference;
         if (file) {
             e.preventDefault();
             if (busy) { return; }
             blobToPng(file).then(function (bytes) {
                 var png = platform.join(platform.tmpdir(), "sayframe_clip_" + new Date().getTime() + ".png");
                 return platform.writeBytes(png, bytes).then(function () {
-                    return pasteImage({ kind: "png", path: png });
+                    return handle({ kind: "png", path: png });
                 });
             }).catch(function () {
                 // Не получилось взять картинку из события — читаем системный буфер обычным путём.
-                pasteImage(null);
+                handle(null);
             });
         } else if (!inField) {
             e.preventDefault();
-            pasteImage(null);
+            handle(null);
         }
+    }
+
+    // Cmd/Ctrl+V во вкладке AI: снимок экрана или скопированная картинка — референс для задачи.
+    async function pasteAsReference(grabbed) {
+        var temp = null;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Читаю буфер обмена…", "busy");
+        try {
+            if (!grabbed) { grabbed = await grabClipboard(); }
+            if (grabbed.kind === "none") {
+                setBusy(false);
+                setStatus("В буфере обмена нет картинки. Скопируйте изображение или снимок экрана и попробуйте ещё раз.", "");
+                return;
+            }
+            if (grabbed.kind === "png") { temp = grabbed.path; }
+            else if (!(await platform.exists(grabbed.path))) { throw new Error("Скопированный файл не найден: " + grabbed.path); }
+            setStatus("Снимаю кадры с референса…", "busy");
+            await useReference(grabbed.path, grabbed.kind === "png" ? "Снимок из буфера" : platform.basename(grabbed.path), "");
+        } catch (e) {
+            setBusy(false);
+            setStatus("Не удалось взять референс из буфера: " + humanError(e), "error");
+        } finally {
+            if (temp) { try { await platform.remove(temp); } catch (e2) {} }
+        }
+        showRef();
     }
 
     // Любой формат из буфера (JPEG, WebP, GIF) приводим к PNG, который After Effects точно откроет.
@@ -3481,6 +3911,8 @@
     ui.fixBtn.addEventListener("click", onFix);
     ui.newBtn.addEventListener("click", onNew);
     enableScripts();
+    enableQuick();
+    enableExpressions();
     ui.refBtn.addEventListener("click", onAttachReference);
     ui.refLinkBtn.addEventListener("click", function () { showLinkRow(ui.refLinkRow.hidden); });
     ui.refLinkCancel.addEventListener("click", function () { showLinkRow(false); });
