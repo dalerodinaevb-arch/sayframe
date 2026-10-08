@@ -53,6 +53,26 @@
     <!-- Раздел AI (внутреннее имя claude): задача словами, референс, запуск и ответ -->
     <div id="viewClaude" class="view" role="tabpanel" aria-labelledby="tabClaude">
     <section class="card composer">
+      <!-- Быстрые задачи: готовые просьбы одной кнопкой; свои тоже можно сохранить -->
+      <div id="quickBox" class="quick">
+        <div class="quick-head">
+          <button id="quickToggle" class="quick-title" aria-expanded="true" aria-controls="quickList">
+            <span>Быстрые задачи</span>
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg>
+          </button>
+          <button id="quickAdd" class="quick-icon" aria-label="Сохранить свою быструю задачу" title="Сохранить свою задачу: текст из поля ниже станет кнопкой">+</button>
+          <button id="quickEdit" class="quick-icon" aria-pressed="false" aria-label="Изменить быстрые задачи" title="Изменить или удалить задачи">✎</button>
+        </div>
+        <div id="quickList" class="quick-list"></div>
+        <div id="quickForm" class="quick-form" hidden>
+          <input id="quickName" class="field" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Название кнопки" aria-label="Название кнопки">
+          <textarea id="quickText" rows="3" placeholder="Что сделать — так же, как в поле запроса" aria-label="Текст задачи"></textarea>
+          <div class="quick-form-actions">
+            <button id="quickSave" class="ghost">Сохранить</button>
+            <button id="quickCancel" class="ghost">Отмена</button>
+          </div>
+        </div>
+      </div>
       <textarea id="prompt" rows="4" placeholder="Опишите, что сделать в композиции" aria-label="Задача для нейросети"></textarea>
       <div class="attach-row">
         <button id="refBtn" class="chip-btn" title="Прикрепить видео или картинку">+ Референс</button>
@@ -82,6 +102,21 @@
       <button id="fixBtn" class="ghost warn" disabled hidden>Исправить ошибку</button>
       <button id="newBtn" class="ghost">Новый диалог</button>
     </div>
+
+    <!-- Выражения: нейросеть ставит выражение на выделенные свойства или чинит выражения с ошибками -->
+    <section id="exprCard" class="card expr">
+      <button id="exprToggle" class="scripts-head" aria-expanded="true" aria-controls="exprBody" title="Выражения (expressions) для выделенных свойств">
+        <b>Выражения</b>
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg>
+      </button>
+      <div id="exprBody" class="expr-body">
+        <textarea id="exprWish" rows="2" placeholder="Что должно делать выделенное свойство? Например: пусть качается" aria-label="Что должно делать выражение"></textarea>
+        <div class="expr-actions">
+          <button id="exprApplyBtn" class="ghost" title="Выделите свойство на таймлайне (например, Position), напишите, что нужно, и нажмите">Поставить на выделенное</button>
+          <button id="exprFixBtn" class="ghost" title="Найти в открытой композиции выражения с ошибкой и починить их">Починить ошибки</button>
+        </div>
+      </div>
+    </section>
 
     <section id="replyCard" class="card reply" hidden>
       <p id="replyText"></p>
