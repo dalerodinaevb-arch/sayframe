@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.13.0";
+    var VERSION = "1.14.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -657,6 +657,8 @@
         panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         fxBtn: el("fxBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
+        fxKeys: el("fxKeys"), fxKeysCombo: el("fxKeysCombo"),
+        setTabAI: el("setTabAI"), setTabOther: el("setTabOther"), setPaneAI: el("setPaneAI"), setPaneOther: el("setPaneOther"),
         hotkeys: el("hotkeys"), hotkeysReset: el("hotkeysReset"), hotkeyNote: el("hotkeyNote"),
         organizeBtn: el("organizeBtn"), organizeOptsToggle: el("organizeOptsToggle"), organizeHint: el("organizeHint"),
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
@@ -2510,6 +2512,20 @@
         });
     }
 
+    // Настройки разбиты на два раздела: всё про нейросеть (AI) и остальное («Общие»).
+    var setPane = "ai";
+
+    function showSetPane(name) {
+        setPane = name === "other" ? "other" : "ai";
+        ui.setPaneAI.hidden = setPane !== "ai";
+        ui.setPaneOther.hidden = setPane !== "other";
+        ui.setTabAI.setAttribute("aria-selected", String(setPane === "ai"));
+        ui.setTabAI.setAttribute("aria-pressed", String(setPane === "ai"));
+        ui.setTabOther.setAttribute("aria-selected", String(setPane === "other"));
+        ui.setTabOther.setAttribute("aria-pressed", String(setPane === "other"));
+        if (setPane !== "other") { stopHotkeyEdit(); }
+    }
+
     function openSettings() {
         var k;
         if (busy) { return; }
@@ -2528,15 +2544,16 @@
         pressGroup(ui.toolSize, draft.toolSize);
         ui.toolTitles.checked = draft.toolTitles;
         closeFxConsole();
-        hotkeyCapture = null;
+        hotkeyEdit = null;
         ui.hotkeyNote.textContent = "";
         renderHotkeys();
+        showSetPane("ai");
         ui.sheet.hidden = false;
         ui.sheet.scrollTop = 0;
     }
 
     function closeSettings(save) {
-        if (save) {
+        if (save && draft) {
             keepTypedKey();
             draft.selfCheck = ui.selfCheck.checked;
             draft.alwaysAsk = ui.alwaysAsk.checked;
@@ -2548,7 +2565,7 @@
             setStatus(aiKey() ? "Настройки сохранены." : "Ключ API не задан.", aiKey() ? "done" : "");
         }
         draft = null;
-        hotkeyCapture = null;
+        stopHotkeyEdit();
         applyTheme(settings);
         ui.sheet.hidden = true;
     }
@@ -3220,7 +3237,6 @@
         { id: "tabTools", label: "Вкладка «Инструменты»", def: "" }
     ];
     var HOTKEY_RESERVED = { C: 1, V: 1, X: 1, A: 1, Z: 1 };
-    var hotkeyCapture = null;    // { id, button } — ждём нажатия нового сочетания
 
     function isMac() { return !platform.isWindows(); }
 
@@ -3310,7 +3326,7 @@
 
     function onHotkeyDown(e) {
         var combo, id;
-        if (hotkeyCapture) { captureHotkey(e); return; }
+        if (hotkeyEdit && !ui.sheet.hidden) { captureHotkey(e); return; }
         if (!ui.sheet.hidden || !ui.modal.hidden) { return; }
         combo = comboOf(e);
         id = combo ? hotkeyAction(combo) : null;
@@ -3321,68 +3337,178 @@
         }
     }
 
-    // В настройках: строка на каждое действие, кнопка показывает сочетание; щелчок — записать новое.
+    // В настройках: строка на каждое действие, кнопка показывает сочетание. Щелчок открывает редактор:
+    // можно нажать сочетание на клавиатуре или собрать его мышью (модификаторы и клавиша из списка) —
+    // второй способ нужен, если After Effects перехватывает какое-то сочетание раньше панели.
+    // Изменения сохраняются сразу, без кнопки «Сохранить».
+
+    var HOTKEY_KEYS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+        "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+        "Space", "Enter", "Up", "Down", "Left", "Right", "`", "-", "=", "[", "]", ";", "'", ",", ".", "/", "\\"];
+    var hotkeyEdit = null;       // { id, mods: { Ctrl, Alt, Shift, Cmd }, key } — открытый редактор
+
+    function hotkeyModNames() { return isMac() ? ["Ctrl", "Alt", "Shift", "Cmd"] : ["Ctrl", "Alt", "Shift"]; }
+
+    function modLabel(m) { return isMac() ? MAC_MODS[m] + " " + (m === "Alt" ? "Option" : m) : m; }
+
+    function startHotkeyEdit(id) {
+        var map = parseHotkeys(settings.hotkeys), parts = map[id] ? map[id].split("+") : [], mods = {};
+        parts.slice(0, -1).forEach(function (m) { mods[m] = true; });
+        hotkeyEdit = { id: id, mods: mods, key: parts.length ? parts[parts.length - 1] : "" };
+        ui.hotkeyNote.textContent = "";
+        registerAllKeys();
+        renderHotkeys();
+        ui.hotkeys.querySelector('[data-action="' + id + '"]').focus();
+    }
+
+    function stopHotkeyEdit() {
+        if (!hotkeyEdit) { return; }
+        hotkeyEdit = null;
+        registerHotkeys();
+        renderHotkeys();
+    }
+
+    function editorCombo() {
+        var parts = [];
+        if (!hotkeyEdit.key) { return ""; }
+        ["Ctrl", "Alt", "Shift", "Cmd"].forEach(function (m) { if (hotkeyEdit.mods[m]) { parts.push(m); } });
+        parts.push(hotkeyEdit.key);
+        return parts.join("+");
+    }
+
+    // Записывает сочетание действию и сразу сохраняет. Пустая строка — убрать сочетание.
+    function setHotkey(id, combo) {
+        var map = parseHotkeys(settings.hotkeys), k, taken = null, text;
+        if (combo) {
+            combo = normalCombo(combo);
+            if (!combo) {
+                ui.hotkeyNote.textContent = "Нужно сочетание с " + (isMac() ? "Cmd, Ctrl или Option" : "Ctrl или Alt") + " (F1–F12 — можно без них).";
+                return false;
+            }
+            if (/^(Ctrl|Cmd)\+[A-Z]$/.test(combo) && HOTKEY_RESERVED[combo.slice(-1)]) {
+                ui.hotkeyNote.textContent = comboLabel(combo) + " занято: копирование, вставка и отмена должны работать как обычно.";
+                return false;
+            }
+            for (k in map) {
+                if (map.hasOwnProperty(k) && k !== id && map[k] === combo) { map[k] = ""; taken = k; }
+            }
+        }
+        map[id] = combo || "";
+        text = hotkeysText(map);
+        settings.hotkeys = text;
+        if (draft) { draft.hotkeys = text; }
+        storeSettings(settings);
+        hotkeyHint();
+        hotkeyEdit = null;
+        registerHotkeys();
+        ui.hotkeyNote.textContent = taken ? comboLabel(combo) + " было у «" + HOTKEY_ACTIONS.filter(function (a) { return a.id === taken; })[0].label + "» — там теперь пусто." : "";
+        renderHotkeys();
+        return true;
+    }
+
+    function renderHotkeyEditor() {
+        var box = document.createElement("div");
+        var hint = document.createElement("p");
+        var mods = document.createElement("div");
+        var key = document.createElement("select");
+        var actions = document.createElement("div");
+        var ok = document.createElement("button");
+        var clear = document.createElement("button");
+        var cancel = document.createElement("button");
+        box.className = "hotkey-edit";
+        hint.textContent = "Нажмите сочетание на клавиатуре — или выберите клавиши ниже и нажмите «Готово».";
+        mods.className = "frames hotkey-mods";
+        hotkeyModNames().forEach(function (m) {
+            var b = document.createElement("button");
+            b.textContent = modLabel(m);
+            b.setAttribute("data-mod", m);
+            b.setAttribute("aria-pressed", hotkeyEdit.mods[m] ? "true" : "false");
+            b.addEventListener("click", function () {
+                hotkeyEdit.mods[m] = !hotkeyEdit.mods[m];
+                b.setAttribute("aria-pressed", hotkeyEdit.mods[m] ? "true" : "false");
+            });
+            mods.appendChild(b);
+        });
+        key.className = "hotkey-key";
+        key.setAttribute("aria-label", "Клавиша");
+        [""].concat(HOTKEY_KEYS).forEach(function (k) {
+            var o = document.createElement("option");
+            o.value = k;
+            o.textContent = k === "" ? "Клавиша…" : k;
+            key.appendChild(o);
+        });
+        key.value = hotkeyEdit.key;
+        key.addEventListener("change", function () { hotkeyEdit.key = key.value; });
+        mods.appendChild(key);
+        actions.className = "hotkey-actions";
+        ok.className = "primary";
+        ok.textContent = "Готово";
+        ok.addEventListener("click", function () { setHotkey(hotkeyEdit.id, editorCombo() || "x"); });
+        clear.className = "ghost";
+        clear.textContent = "Убрать";
+        clear.addEventListener("click", function () { setHotkey(hotkeyEdit.id, ""); });
+        cancel.className = "ghost";
+        cancel.textContent = "Отмена";
+        cancel.addEventListener("click", function () { ui.hotkeyNote.textContent = ""; stopHotkeyEdit(); });
+        actions.appendChild(ok);
+        actions.appendChild(clear);
+        actions.appendChild(cancel);
+        box.appendChild(hint);
+        box.appendChild(mods);
+        box.appendChild(actions);
+        return box;
+    }
+
     function renderHotkeys() {
-        var map = parseHotkeys(draft ? draft.hotkeys : settings.hotkeys);
+        var map = parseHotkeys(settings.hotkeys);
         ui.hotkeys.innerHTML = "";
         HOTKEY_ACTIONS.forEach(function (a) {
             var row = document.createElement("div");
             var label = document.createElement("span");
             var btn = document.createElement("button");
+            var editing = hotkeyEdit && hotkeyEdit.id === a.id;
             row.className = "hotkey-row";
             label.textContent = a.label;
-            btn.className = "hotkey-btn" + (map[a.id] ? "" : " empty");
+            btn.className = "hotkey-btn" + (map[a.id] ? "" : " empty") + (editing ? " recording" : "");
             btn.setAttribute("data-action", a.id);
-            btn.textContent = hotkeyCapture && hotkeyCapture.id === a.id ? "Нажмите сочетание…" : comboLabel(map[a.id]);
-            if (hotkeyCapture && hotkeyCapture.id === a.id) { btn.className += " recording"; }
-            btn.title = "Нажмите, чтобы задать сочетание";
+            btn.textContent = editing ? "Нажмите сочетание…" : comboLabel(map[a.id]);
+            btn.title = "Изменить сочетание";
             btn.addEventListener("click", function () {
-                hotkeyCapture = { id: a.id };
-                ui.hotkeyNote.textContent = "";
-                renderHotkeys();
-                ui.hotkeys.querySelector('[data-action="' + a.id + '"]').focus();
+                if (hotkeyEdit && hotkeyEdit.id === a.id) { stopHotkeyEdit(); } else { startHotkeyEdit(a.id); }
             });
             row.appendChild(label);
             row.appendChild(btn);
             ui.hotkeys.appendChild(row);
+            if (editing) { ui.hotkeys.appendChild(renderHotkeyEditor()); }
         });
     }
 
+    // Нажатие на клавиатуре, пока открыт редактор.
     function captureHotkey(e) {
-        var id = hotkeyCapture.id, map, combo, k, taken = null;
+        var plain = !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey;
         if (/^(Control|Alt|Shift|Meta|OS)/.test(e.key)) { return; }   // ждём саму клавишу
+        if (e.key === "Tab" || (plain && (e.key === "Enter" || e.key === " ") && e.target && e.target.tagName === "BUTTON" && !e.target.classList.contains("hotkey-btn"))) { return; }
+        if (e.target && e.target.tagName === "SELECT" && plain) { return; }
         e.preventDefault();
         e.stopPropagation();
-        map = parseHotkeys(draft.hotkeys);
-        if (e.key === "Escape" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
-            hotkeyCapture = null;
-            renderHotkeys();
-            return;
+        if (e.key === "Escape" && plain) { ui.hotkeyNote.textContent = ""; stopHotkeyEdit(); return; }
+        if ((e.key === "Backspace" || e.key === "Delete") && plain) { setHotkey(hotkeyEdit.id, ""); return; }
+        setHotkey(hotkeyEdit.id, comboOf(e) || "x");
+    }
+
+    // Пока открыт редактор, просим After Effects отдавать панели все сочетания с модификаторами,
+    // иначе на Mac программа забирает себе те, что есть в её меню, и до панели они не доходят.
+    function registerAllKeys() {
+        var cep = window.__adobe_cep__, list = [], i, k, code;
+        if (!cep || typeof cep.registerKeyEventsInterest !== "function") { return; }
+        for (k = 0; k < HOTKEY_KEYS.length; k++) {
+            code = keyCodeOf(HOTKEY_KEYS[k]);
+            if (code === null) { continue; }
+            for (i = 0; i < 16; i++) {
+                list.push({ keyCode: code, ctrlKey: !!(i & 1), altKey: !!(i & 2), shiftKey: !!(i & 4), metaKey: !!(i & 8) });
+            }
         }
-        if ((e.key === "Backspace" || e.key === "Delete") && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
-            map[id] = "";
-            draft.hotkeys = hotkeysText(map);
-            hotkeyCapture = null;
-            renderHotkeys();
-            return;
-        }
-        combo = normalCombo(comboOf(e));
-        if (!combo) {
-            ui.hotkeyNote.textContent = "Нужно сочетание с Cmd, Ctrl или Alt (F1–F12 — можно без них).";
-            return;
-        }
-        if (/^(Ctrl|Cmd)\+[A-Z]$/.test(combo) && HOTKEY_RESERVED[combo.slice(-1)]) {
-            ui.hotkeyNote.textContent = comboLabel(combo) + " занято: копирование, вставка и отмена должны работать как обычно.";
-            return;
-        }
-        for (k in map) {
-            if (map.hasOwnProperty(k) && k !== id && map[k] === combo) { map[k] = ""; taken = k; }
-        }
-        map[id] = combo;
-        draft.hotkeys = hotkeysText(map);
-        hotkeyCapture = null;
-        ui.hotkeyNote.textContent = taken ? comboLabel(combo) + " было у «" + HOTKEY_ACTIONS.filter(function (a) { return a.id === taken; })[0].label + "» — там теперь пусто." : "";
-        renderHotkeys();
+        try { cep.registerKeyEventsInterest(JSON.stringify(list)); } catch (e) {}
     }
 
     // Mac: After Effects сам обрабатывает сочетания из своего меню, даже когда активна панель.
@@ -3419,6 +3545,17 @@
     function hotkeyHint() {
         var combo = parseHotkeys(settings.hotkeys).console;
         ui.fxBtn.title = "Поиск эффектов" + (combo ? " (" + comboLabel(combo) + ")" : "");
+        ui.fxKeysCombo.textContent = combo ? comboLabel(combo) : "не задано";
+    }
+
+    // Из окна поиска — сразу к настройке его сочетания.
+    function onFxKeys() {
+        closeFxConsole();
+        openSettings();
+        if (ui.sheet.hidden) { return; }
+        showSetPane("other");
+        startHotkeyEdit("console");
+        ui.hotkeys.scrollIntoView({ block: "center" });
     }
 
     // ---- порядок в проекте: всё из окна Project — по папкам. Двигаются только сами элементы внутри проекта.
@@ -4472,15 +4609,24 @@
     ui.fxBtn.addEventListener("click", openFxConsole);
     ui.fxClose.addEventListener("click", closeFxConsole);
     ui.fxSnap.addEventListener("click", onSnapshot);
+    ui.fxKeys.addEventListener("mousedown", function (e) { e.preventDefault(); });
+    ui.fxKeys.addEventListener("click", onFxKeys);
     ui.fxSearch.addEventListener("input", function () { fxActive = 0; renderFx(); });
     ui.fxSearch.addEventListener("keydown", onFxKey);
     ui.fxConsole.addEventListener("mousedown", function (e) { if (e.target === ui.fxConsole) { closeFxConsole(); } });
     ui.hotkeysReset.addEventListener("click", function () {
-        hotkeyCapture = null;
-        draft.hotkeys = "";
+        var text = hotkeysText(parseHotkeys(""));
+        settings.hotkeys = text;
+        if (draft) { draft.hotkeys = text; }
+        storeSettings(settings);
+        hotkeyEdit = null;
         ui.hotkeyNote.textContent = "";
+        registerHotkeys();
+        hotkeyHint();
         renderHotkeys();
     });
+    ui.setTabAI.addEventListener("click", function () { showSetPane("ai"); });
+    ui.setTabOther.addEventListener("click", function () { showSetPane("other"); });
     document.addEventListener("keydown", onHotkeyDown, true);
     registerHotkeys();
     hotkeyHint();
