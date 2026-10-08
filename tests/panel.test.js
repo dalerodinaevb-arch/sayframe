@@ -25,6 +25,7 @@ const REAL_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFk
 
 // ------------------------------------------------------------ mocked After Effects
 function CompItem() {} function TextLayer() {} function ShapeLayer() {} function CameraLayer() {} function LightLayer() {} function SolidSource() {}
+function FootageItem() {} function FileSource() {} function PlaceholderSource() {}
 
 // --- keyframes and transform properties, for the Animation tab
 const KIT = { LINEAR: 6612, BEZIER: 6613, HOLD: 6614 };
@@ -208,6 +209,28 @@ function makeAE(opts, tmpDir) {
       precompose(idx, name, moveAll) { log.precomposes.push({ idx: Array.prototype.slice.call(idx), name, moveAll }); return Object.assign(new CompItem(), { name }); } },
     layer(i) { if (opts.exprLayers) return opts.exprLayers[i - 1] || null; const l = i === 1 ? new TextLayer() : {}; return Object.assign(l, { name: i === 1 ? "Заголовок" : "Фон", selected: i === 1, enabled: true, threeDLayer: false, parent: null, inPoint: 0, outPoint: 10, index: i, source: i === 2 ? { mainSource: new SolidSource() } : null }); } });
   const projItems = [comp];
+  log.moves = [];
+  // opts.org: a messy project for "Organize". Folders are listed before what goes into them.
+  if (opts.org) {
+    const folders = {}; let id = 100;
+    const track = (it, parent) => {
+      it.id = ++id; let pf = parent ? folders[parent] : rootFolder;
+      Object.defineProperty(it, "parentFolder", { configurable: true, get: () => pf, set(v) { pf = v; log.moves.push(it.name + " -> " + v.name); } });
+      projItems.push(it); return it;
+    };
+    const byName = (n) => projItems.find((x) => x.name === n);
+    opts.org.forEach((o) => {
+      if (o.folder) { folders[o.folder] = track(new FolderItem(o.folder), o.in); return; }
+      if (o.comp) {
+        const c = Object.assign(new CompItem(), { name: o.comp, numLayers: (o.layers || []).length, layer: (i) => ({ index: i, source: o.layers[i - 1] ? byName(o.layers[i - 1]) || null : null }) });
+        track(c, o.in); return;
+      }
+      const src = o.solid ? new SolidSource() : o.placeholder ? new PlaceholderSource()
+        : Object.assign(new FileSource(), { file: o.missing ? null : new File("/media/" + o.file), missingFootagePath: o.missing ? "/media/" + o.file : "", isStill: !!o.still });
+      if (o.solid || o.placeholder) src.isStill = true;
+      track(Object.assign(new FootageItem(), { name: o.name, mainSource: src, hasVideo: o.video !== undefined ? o.video : !o.audio, hasAudio: !!o.audio, duration: o.still || o.solid ? 0 : (o.duration !== undefined ? o.duration : 5), footageMissing: !!o.missing }), o.in);
+    });
+  }
   const project = { get numItems() { return projItems.length; }, activeItem: opts.noActiveComp ? null : comp, item(i) { return projItems[i - 1]; },
     file: opts.projectFile ? new File(opts.projectFile) : null, rootFolder,
     importFile(io) {
@@ -217,7 +240,7 @@ function makeAE(opts, tmpDir) {
       project.activeItem = it;
       return it;
     },
-    items: { addFolder(name) { const f = new FolderItem(name); projItems.push(f); log.bins.push(name); return f; },
+    items: { addFolder(name) { const f = new FolderItem(name); f.id = 900 + log.bins.length; projItems.push(f); log.bins.push(name); return f; },
       addComp(name, w, h, par, dur, fps) {
         const c = Object.assign(new CompItem(), { name, width: w, height: h, duration: dur, frameRate: fps, saved: [], scaleSet: null,
           openInViewer() { log.opened++; project.activeItem = c; },
@@ -229,7 +252,7 @@ function makeAE(opts, tmpDir) {
   const app = { version: "26.0", project,
     preferences: { getPrefAsLong: () => (opts.fileAccessOff ? 0 : 1) },
     beginUndoGroup: (n) => log.undo.push("begin:" + n), endUndoGroup: () => log.undo.push("end"), __ran: (x) => log.ran.push(x) };
-  const ctx = vm.createContext({ app, File, FolderItem, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
+  const ctx = vm.createContext({ app, File, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
   log.scripts = [];
@@ -1089,9 +1112,59 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     ev.clipboardData = { items: [], files: [file], getData() { return ""; } };
     document.getElementById("prompt").dispatchEvent(ev);
   }, REAL_PNG.toString("base64"));
+  await p.page.waitForFunction(() => !document.getElementById("refChip").hidden, null, { timeout: 15000 });
   await p.idle();
   for (let i = 0; i < 20 && p.tempLeft().length; i++) await p.page.waitForTimeout(50);
   check("P13 a picture listed only under the event's files is taken from there, even inside a field", (await p.page.locator("#refText").innerText()) === "Снимок из буфера — картинка" && reads(p) === 0 && p.errors.length === 0 && p.tempLeft().length === 0, await p.status());
+  await p.close();
+
+  console.log("\n=== organize project ===");
+  const log0 = (x) => false;
+  const where = (p) => p.ae.projItems.filter((x) => !(x instanceof p.ae.ctx.FolderItem) || true).map((x) => x.name + "@" + (x.parentFolder ? x.parentFolder.name : "-")).join(" | ");
+  const folderOf = (p, n) => { const it = p.ae.projItems.find((x) => x.name === n); return it && it.parentFolder ? it.parentFolder.name : "?"; };
+  const organize = async (p) => { await p.tab("motion"); await p.page.click("#organizeBtn"); await p.idle(); };
+  const MESSY = [
+    { folder: "Мои папки" }, { folder: "Solids" }, { folder: "Old stuff", in: "Мои папки" }, { folder: "images", in: "Мои папки" },
+    { name: "intro.mp4", file: "intro.mp4" }, { name: "Clip 02", file: "clip.MOV" }, { name: "seq_[0001-0120].png", file: "seq_0001.png", video: true, duration: 4 },
+    { name: "music.mp3", file: "music.mp3", audio: true }, { name: "voice.wav", file: "voice.wav", audio: true, in: "Old stuff" },
+    { name: "logo.png", file: "logo.png", still: true }, { name: "photo.jpg", file: "photo.jpg", still: true, in: "images" }, { name: "art.ai", file: "art.ai", still: true },
+    { name: "Black Solid 1", solid: true }, { name: "Null 1", solid: true, in: "Solids" },
+    { name: "data.json", file: "data.json", video: false }, { name: "model.obj", file: "model.obj", video: false },
+    { name: "Missing Footage", placeholder: true }, { name: "lost.xyz", file: "lost.xyz", missing: true, video: false },
+    { comp: "Logo Anim", layers: ["logo.png"] }, { comp: "Main", layers: ["Logo Anim", "intro.mp4", "music.mp3"] }, { comp: "Unused idea", layers: [] }
+  ];
+  p = await open({ org: MESSY });
+  check("J1 a 'Project order' block on the Tools tab with the button 'Organize After Effects Project'", (await p.page.locator("#viewMotion .organize-card #organizeBtn").count()) === 1 && (await p.page.locator("#organizeBtn").innerText()).trim() === "Organize After Effects Project");
+  await organize(p);
+  check("J1 short message: Project organized successfully", /^Project organized successfully\n/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+  const expect = { "intro.mp4": "Videos", "Clip 02": "Videos", "seq_[0001-0120].png": "Videos", "music.mp3": "Audio", "voice.wav": "Audio", "logo.png": "images", "photo.jpg": "images", "art.ai": "images",
+    "Black Solid 1": "Solids", "Null 1": "Solids", "data.json": "Assets", "model.obj": "Assets", "Missing Footage": "Other", "lost.xyz": "Other",
+    "Logo Anim": "Precomps", "Main": "Compositions", "Unused idea": "Compositions", "Тест": "Compositions" };
+  t = Object.keys(expect).filter((n) => folderOf(p, n) !== expect[n]);
+  check("J2 every item goes to its folder: comps, precomps (used inside another comp), videos incl. image sequences, audio, images, solids, assets, other", t.length === 0, t.map((n) => n + "@" + folderOf(p, n)).join(", "));
+  check("J3 existing folders are reused (Solids at the top, 'images' even inside another folder), only missing ones are created, at the top level", p.ae.log.bins.slice().sort().join() === "Assets,Audio,Compositions,Other,Precomps,Videos" && p.ae.projItems.filter((x) => log0(x)).length === 0, p.ae.log.bins.join());
+  check("J3 no duplicates: one folder per kind", ["solids", "images", "videos", "audio"].every((n) => p.ae.projItems.filter((x) => x instanceof p.ae.ctx.FolderItem && x.name.toLowerCase() === n).length === 1));
+  check("J4 items already in the right folder are not touched (photo in 'images', Null in 'Solids')", !p.ae.log.moves.some((m) => /^(photo\.jpg|Null 1) /.test(m)));
+  check("J4 user folders themselves stay where they were, nothing is removed or renamed", folderOf(p, "Old stuff") === "Мои папки" && folderOf(p, "images") === "Мои папки" && p.ae.log.removed.length === 0 && MESSY.every((o) => p.ae.projItems.some((x) => x.name === (o.folder || o.comp || o.name))));
+  check("J5 links stay: Main still holds Logo Anim, the video and the music", p.ae.projItems.find((x) => x.name === "Main").layer(1).source.name === "Logo Anim" && p.ae.projItems.find((x) => x.name === "Main").layer(3).source.name === "music.mp3");
+  check("J6 one undo step", p.ae.log.undo.join("|") === "begin:Sayframe: organize project|end");
+  check("J6 the message says what moved and which folders are new", /Перемещено: композиции 3, прекомпозиции 1, видео 3, аудио 2, картинки 2, солиды 1, ресурсы 2, прочее 2\./.test(await p.status()) && /Новые папки: /.test(await p.status()) && /Cmd\/Ctrl\+Z/.test(await p.status()), await p.status());
+  await p.page.evaluate(() => document.querySelector(".organize-card").scrollIntoView());
+  await p.page.screenshot({ path: path.join(SHOTS, "21i-organize.png") });
+  t = p.ae.log.moves.length; c = p.ae.log.bins.length;
+  await p.page.click("#organizeBtn"); await p.idle();
+  check("J7 a second press moves nothing and creates nothing", p.ae.log.moves.length === t && p.ae.log.bins.length === c && (await p.status()) === "Project organized successfully\nВсё уже лежало по своим папкам." && p.ae.log.undo.length === 2, await p.status());
+  await p.close();
+
+  p = await open({ org: [{ folder: "Precomps" }, { comp: "Parked", in: "Precomps" }, { folder: "COMPS" }, { comp: "Shot", layers: ["Inner"] }, { comp: "Inner", in: "COMPS" }, { name: "a.mp3", file: "a.mp3", audio: true }, { folder: "Audio / MP3" }] });
+  await organize(p);
+  check("J8 an unused comp parked in Precomps stays; a used comp leaves the comps folder for Precomps; folder names match regardless of case ('COMPS', 'Audio / MP3')", folderOf(p, "Parked") === "Precomps" && folderOf(p, "Inner") === "Precomps" && folderOf(p, "Shot") === "COMPS" && folderOf(p, "Тест") === "COMPS" && folderOf(p, "a.mp3") === "Audio / MP3" && p.ae.log.bins.length === 0, where(p));
+  await p.close();
+
+  p = await open({ org: [{ folder: "Compositions" }], noActiveComp: false });
+  p.ae.projItems.splice(0, 1);
+  await organize(p);
+  check("J9 a project with nothing to sort: the same short message, nothing created", (await p.status()) === "Project organized successfully\nВ проекте пока нечего раскладывать." && p.ae.log.bins.length === 0 && p.ae.log.undo.length === 0, await p.status());
   await p.close();
 
   console.log("\n=== settings ===");
@@ -1170,7 +1243,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#tabMotion");
   t = await p.page.evaluate(() => { const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; }; return { tabs: r("#tabs"), top: r(".top"), status: r("#statusBox"), tools: r("#motionTools"), cards: Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width)]; }) }; });
   check("W2 Animation tab in a wide panel: tabs and blocks get the whole width, the status line stays in the column", t.tabs.join() === "14,986" && t.top.join() === "14,986" && t.status[1] <= 366 && t.tools.join() === "14,986" && (await overflow(p)) <= 0, JSON.stringify(t));
-  check("W2 the blocks are not stretched: 4 cells (168px) each, side by side in one row", t.cards.map((c) => c[2]).join() === "168,168,168,168,168" && t.cards.map((c) => c[0]).join() === "14,190,366,542,718" && t.cards.every((c) => c[1] === t.cards[0][1]) && (await box(p, "#easeIn")).split(",")[2] === (await box(p, "#easeOut")).split(",")[2], JSON.stringify(t.cards));
+  check("W2 the blocks are not stretched: 4 cells (168px) each, five side by side in one row, the sixth below", t.cards.map((c) => c[2]).join() === "168,168,168,168,168,168" && t.cards.map((c) => c[0]).join() === "14,190,366,542,718,718" && t.cards.slice(0, 5).every((c) => c[1] === t.cards[0][1]) && t.cards[5][1] > t.cards[4][1] && (await box(p, "#easeIn")).split(",")[2] === (await box(p, "#easeOut")).split(",")[2], JSON.stringify(t.cards));
   await p.page.click("#tabClaude");
   await p.page.fill("#prompt", "сделай слой"); await p.page.click("#runBtn");
   await p.page.waitForSelector("#modal:not([hidden])");
@@ -1490,13 +1563,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({});
   await motionTab(p);
   t = await toolRects(p);
-  check("R1 at 380px easing and anchor stand side by side, align goes to the row below at the same size", (await toolOrder(p)) === "ease,anchor,align,shift,paste" && t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && t.ease.w === 168 && t.anchor.w === 168 && t.align.w === 168 && t.ease.l === 14 && t.anchor.r === 358 && t.align.t >= t.ease.b && t.align.l === 14, JSON.stringify(t));
+  check("R1 at 380px easing and anchor stand side by side, align goes to the row below at the same size", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && t.ease.w === 168 && t.anchor.w === 168 && t.align.w === 168 && t.ease.l === 14 && t.anchor.r === 358 && t.align.t >= t.ease.b && t.align.l === 14, JSON.stringify(t));
   t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.display, cs.gridAutoRows, cs.rowGap, cs.columnGap, g.style.gridTemplateColumns].join("|"); });
   check("R1 the blocks stand on a grid of 36px cells with 8px gaps, 8 cells across at 380px", t === "grid|36px|8px|8px|repeat(8, 36px)", t);
   t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const r = c.getBoundingClientRect(), g = document.getElementById("motionTools").getBoundingClientRect(); return (r.left - g.left) % 44 === 0 && (r.top - g.top) % 44 === 0 && (r.width + 8) % 44 === 0 && (r.height + 8) % 44 === 0; }));
   check("R1 every block starts on a cell and is a whole number of cells wide and tall", t);
   t = await p.page.evaluate(() => { const inside = (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button, select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5); }); }; return Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), inside).join(); });
-  check("R1 nothing sticks out of any block", t === "true,true,true,true,true" && (await overflow(p)) <= 0, t);
+  check("R1 nothing sticks out of any block", t === "true,true,true,true,true,true" && (await overflow(p)) <= 0, t);
   t = await p.page.evaluate(() => [document.getElementById("easeIn").getBoundingClientRect().width, document.getElementById("easeOut").getBoundingClientRect().width, document.getElementById("anchorGrid").getBoundingClientRect().width].map(Math.round));
   check("R1 sliders stay usable and the arrow grid keeps its size", t[0] === t[1] && t[0] >= 40 && t[2] >= 118, t.join());
   await p.page.screenshot({ path: path.join(SHOTS, "21d-tools-side-by-side.png") });
@@ -1504,10 +1577,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // Without the double click nothing can be dragged.
   t = await toolRects(p);
   await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: t.ease.l + 6 + 4 * CELL, y: t.ease.b - 5 });
-  check("R2 without a double click a block cannot be dragged", (await toolOrder(p)) === "ease,anchor,align,shift,paste" && (await savedTools(p)) !== "anchor,ease,align,shift,paste" && (await p.page.locator("#motionTools .dragging").count()) === 0);
+  check("R2 without a double click a block cannot be dragged", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && (await savedTools(p)) !== "anchor,ease,align,shift,paste,organize" && (await p.page.locator("#motionTools .dragging").count()) === 0);
   c = await center(p, "#easeOut");
   await dragFrom(p, c, { x: middle(t.anchor).x + 20, y: c.y });
-  check("R2 the sliders work as usual", (await toolOrder(p)) === "ease,anchor,align,shift,paste" && (await p.page.inputValue("#easeOut")) === "100", await p.page.inputValue("#easeOut"));
+  check("R2 the sliders work as usual", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && (await p.page.inputValue("#easeOut")) === "100", await p.page.inputValue("#easeOut"));
   await setSlider(p, "easeOut", 60);
   await p.page.dblclick("#easeInVal");
   check("R2 a double click on a number does not start rearranging", !(await arrangingNow(p)));
@@ -1557,7 +1630,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await arrange(p);
   t = await toolRects(p);
   await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: t.ease.l + 6 - 4 * CELL, y: t.ease.b - 5 });
-  check("R3 dragging back restores the order", (await toolOrder(p)) === "ease,anchor,align,shift,paste" && (await savedTools(p)) === "ease,anchor,align,shift,paste", await toolOrder(p));
+  check("R3 dragging back restores the order", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && (await savedTools(p)) === "ease,anchor,align,shift,paste,organize", await toolOrder(p));
   await p.page.waitForTimeout(350);
   await dragTab(p, "#tabMotion", "#tabClaude");
   check("R3 the same mode moves the tabs", (await order(p)) === "motion,claude,tools");
@@ -1566,15 +1639,15 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R3 Esc ends it", !(await arrangingNow(p)));
 
   await p.page.focus(grip("anchor")); await p.page.keyboard.press("ArrowLeft");
-  check("R4 keyboard: arrow on the block's handle moves it and keeps focus (no double click needed)", !(await arrangingNow(p)) && (await toolOrder(p)) === "anchor,ease,align,shift,paste" && (await p.page.evaluate(() => document.activeElement.className)) === "tool-grip" && (await savedTools(p)) === "anchor,ease,align,shift,paste");
+  check("R4 keyboard: arrow on the block's handle moves it and keeps focus (no double click needed)", !(await arrangingNow(p)) && (await toolOrder(p)) === "anchor,ease,align,shift,paste,organize" && (await p.page.evaluate(() => document.activeElement.className)) === "tool-grip" && (await savedTools(p)) === "anchor,ease,align,shift,paste,organize");
   await p.page.keyboard.press("ArrowLeft");
-  check("R4 at the edge nothing happens", (await toolOrder(p)) === "anchor,ease,align,shift,paste");
+  check("R4 at the edge nothing happens", (await toolOrder(p)) === "anchor,ease,align,shift,paste,organize");
   await p.page.keyboard.press("ArrowRight");
-  check("R4 and back", (await toolOrder(p)) === "ease,anchor,align,shift,paste" && p.errors.length === 0, p.errors.join(" | "));
+  check("R4 and back", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && p.errors.length === 0, p.errors.join(" | "));
   await p.page.focus(grip("ease")); await p.page.keyboard.press("ArrowDown");
   check("R4 down moves it a cell down", /ease:0,1,/.test(await cellsNow(p)), await cellsNow(p));
   await p.page.keyboard.press("ArrowUp");
-  check("R4 up brings it back", (await toolOrder(p)) === "ease,anchor,align,shift,paste" && /ease:0,0/.test(await cellsNow(p)), await cellsNow(p));
+  check("R4 up brings it back", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && /ease:0,0/.test(await cellsNow(p)), await cellsNow(p));
   await arrange(p); await p.page.click("#arrangeReset"); await p.page.waitForTimeout(350); await p.page.keyboard.press("Escape");
   await p.page.focus(grip("ease")); await p.page.keyboard.press("ArrowDown");
   check("R4 with a block right underneath, down swaps them", (await toolOrder(p)).split(",").slice(0, 2).join() === "align,anchor" && /ease:0,6/.test(await cellsNow(p)) && /align:0,0/.test(await cellsNow(p)), await cellsNow(p));
@@ -1593,7 +1666,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   c = middle(t.anchor);
   await dragFrom(p, c, { x: c.x + 3, y: c.y - (t.anchor.t - t.ease.t) });
   t = await toolRects(p);
-  check("R5 stacked blocks swap by dragging up or down", (await toolOrder(p)) === "anchor,ease,align,shift,paste" && t.anchor.b <= t.ease.t, await toolOrder(p));
+  check("R5 stacked blocks swap by dragging up or down", (await toolOrder(p)) === "anchor,ease,align,shift,paste,organize" && t.anchor.b <= t.ease.t, await toolOrder(p));
   await p.page.screenshot({ path: path.join(SHOTS, "21f-tools-stacked.png") });
   await p.close();
 
@@ -1603,23 +1676,23 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R6 in a wide panel all four blocks fit one row, still 168px each", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.align.t === t.shift.t && t.ease.l === 14 && t.anchor.l === 190 && t.align.l === 366 && t.shift.l === 542 && [t.ease, t.anchor, t.align, t.shift].every((x) => x.w === 168), JSON.stringify(t));
   await p.page.screenshot({ path: path.join(SHOTS, "21g-tools-wide.png") });
   await p.close();
-  for (const [bad, want] of [['"anchor"', "anchor,ease,align,shift,paste"], ['"ease,ease"', "ease,anchor,align,shift,paste"], ["7", "ease,anchor,align,shift,paste"], ["null", "ease,anchor,align,shift,paste"], ['["anchor","ease"]', "ease,anchor,align,shift,paste"],
-    ['"anchor,ease"', "anchor,ease,align,shift,paste"] /* an order saved before the Align block existed */, ['"align,ghost,ease"', "align,ease,anchor,shift,paste"]]) {
+  for (const [bad, want] of [['"anchor"', "anchor,ease,align,shift,paste,organize"], ['"ease,ease"', "ease,anchor,align,shift,paste,organize"], ["7", "ease,anchor,align,shift,paste,organize"], ["null", "ease,anchor,align,shift,paste,organize"], ['["anchor","ease"]', "ease,anchor,align,shift,paste,organize"],
+    ['"anchor,ease"', "anchor,ease,align,shift,paste,organize"] /* an order saved before the Align block existed */, ['"align,ghost,ease"', "align,ease,anchor,shift,paste,organize"]]) {
     p = await open({});
     await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", '{"order":' + v + "}"), bad); await p.restart(); await motionTab(p);
-    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card").count()) === 5 && p.errors.length === 0, await toolOrder(p));
+    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card").count()) === 6 && p.errors.length === 0, await toolOrder(p));
     await p.close();
   }
   p = await open({});
   await motionTab(p); await arrange(p);
   t = await toolRects(p);
   await dragFrom(p, middle(t.align), by(middle(t.align), 0, t.ease.t - t.align.t));
-  check("R8 the block from the second row can be dragged up into the corner; the easing block takes its place", (await toolOrder(p)) === "align,anchor,ease,shift,paste" && (await savedTools(p)) === "align,anchor,ease,shift,paste" && /align:0,0/.test(await cellsNow(p)), await toolOrder(p) + " " + await cellsNow(p));
+  check("R8 the block from the second row can be dragged up into the corner; the easing block takes its place", (await toolOrder(p)) === "align,anchor,ease,shift,paste,organize" && (await savedTools(p)) === "align,anchor,ease,shift,paste,organize" && /align:0,0/.test(await cellsNow(p)), await toolOrder(p) + " " + await cellsNow(p));
   await p.page.waitForTimeout(350);
   t = await toolRects(p);
   check("R8 then align and anchor share the first row", t.align.t === t.anchor.t && t.align.r < t.anchor.l && t.ease.t >= t.align.b, JSON.stringify(t));
   await dragFrom(p, middle(t.align), by(middle(t.align), 0, t.ease.t - t.align.t));
-  check("R8 and down again", (await toolOrder(p)) === "ease,anchor,align,shift,paste", await toolOrder(p));
+  check("R8 and down again", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize", await toolOrder(p));
   await p.close();
 
   function easeScene() {
@@ -1854,26 +1927,26 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 380 });
   await motionTab(p);
   c = await sizesNow(p);
-  check("E1 at 380px (8 cells): two blocks in the first row, the rest below", (await firstRow(p)) === 2 && (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:0,6,4,6 shift:4,7,4,11 paste:0,12,4,5", await cellsNow(p));
-  check("E1 (scene) block sizes", c === "168x212,168x256,168x256,168x300,168x476", c);
+  check("E1 at 380px (8 cells): two blocks in the first row, the rest below", (await firstRow(p)) === 2 && (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:0,6,4,6 shift:4,7,4,11 paste:0,12,4,5 organize:0,17,4,7", await cellsNow(p));
+  check("E1 (scene) block sizes", c === "168x212,168x256,168x256,168x300,168x300,168x476", c);
   await resizeTo(p, 600);
   check("E1 stretched to 600px: three in the first row, every block exactly the same size as before", (await firstRow(p)) === 3 && (await sizesNow(p)) === c, (await firstRow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 800);
   check("E1 stretched to 800px: four in a row, same sizes", (await firstRow(p)) === 4 && (await sizesNow(p)) === c, (await firstRow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 1400);
   t = await toolRects(p);
-  check("E1 stretched to 1400px: all five in a row, still the same sizes, the blocks stay on the left", (await firstRow(p)) === 5 && (await sizesNow(p)) === c && t.ease.l === 14 && t.paste.r === 886 && (await overflow(p)) <= 0, JSON.stringify(t));
+  check("E1 stretched to 1400px: all six in a row, still the same sizes, the blocks stay on the left", (await firstRow(p)) === 6 && (await sizesNow(p)) === c && t.ease.l === 14 && t.paste.r === 886 && (await overflow(p)) <= 0, JSON.stringify(t));
   await resizeTo(p, 300);
   check("E1 squeezed to 300px: one under another, same sizes again", (await oneColumn(p)) && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await cellsNow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 380);
-  check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:0,6,4,6 shift:4,7,4,11 paste:0,12,4,5" && (await sizesNow(p)) === c);
+  check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:0,6,4,6 shift:4,7,4,11 paste:0,12,4,5 organize:0,17,4,7" && (await sizesNow(p)) === c);
   await p.page.click("#settingsBtn"); await setWidth(p, 640); await p.page.click("#saveSettings");
   check("E2 the width setting is for fields and buttons: it changes neither the blocks nor the tab bar", (await box(p, "#tabs")).split(",")[2] === "352" && (await sizesNow(p)) === c && (await firstRow(p)) === 2);
   await resizeTo(p, 1000);
   await p.page.click("#settingsBtn"); await p.page.click('#toolSize button[data-value="small"]'); await p.page.click("#saveSettings");
   c = await sizesNow(p);
   t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.gridAutoRows, cs.columnGap].join("|"); });
-  check("E3 small blocks: a finer grid (22px cells, 6px gaps), blocks 4 cells = 106px wide, all in a row", t === "22px|6px" && (await firstRow(p)) === 5 && c.split(",").every((x) => x.indexOf("106x") === 0), t + " " + c);
+  check("E3 small blocks: a finer grid (22px cells, 6px gaps), blocks 4 cells = 106px wide, all in a row", t === "22px|6px" && (await firstRow(p)) === 6 && c.split(",").every((x) => x.indexOf("106x") === 0), t + " " + c);
   await resizeTo(p, 270);
   check("E3 and wrap without changing size when the panel is narrow", (await firstRow(p)) === 2 && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await cellsNow(p)) + " " + (await sizesNow(p)));
   check("E3 no page errors", p.errors.length === 0, p.errors.join(" | "));
@@ -2004,7 +2077,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await resizeTo(p, 900);
   check("G2 widened again, they go back to their cells", /shift:0,0,4,/.test(await cellsNow(p)) && /ease:12,0/.test(await cellsNow(p)), await cellsNow(p));
   await p.page.click("#arrangeReset");
-  check("G3 'Reset' returns the usual sizes and order, blocks follow each other again", (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:8,0,4,6 shift:12,0,4,11 paste:16,0,4,5" && (await savedPlaces(p)) === "" && (await savedSizes(p)) === "", await cellsNow(p));
+  check("G3 'Reset' returns the usual sizes and order, blocks follow each other again", (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:8,0,4,6 shift:12,0,4,11 paste:16,0,4,5 organize:16,5,4,7" && (await savedPlaces(p)) === "" && (await savedSizes(p)) === "", await cellsNow(p));
   check("G3 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
@@ -2081,7 +2154,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-toggle").count()) === 5 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
+  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-toggle").count()) === 6 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "organizeOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
   check("F1 the corner buttons do not cover titles or controls", await togglesClear(p));
   c = await cardH(p, "anchor");
   await p.page.click("#anchorOptsToggle");
@@ -2114,7 +2187,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("F5 titles are shown unless switched off", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность ключей,Точка привязки,Выравнивание,Сдвиг во времени,Картинка из буфера");
+  check("F5 titles are shown unless switched off", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность ключей,Точка привязки,Выравнивание,Сдвиг во времени,Картинка из буфера,Порядок в проекте");
   c = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
   await p.page.click("#settingsBtn");
   check("F5 settings have the switch, on", await p.page.isChecked("#toolTitles"));
