@@ -269,6 +269,24 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           fs.writeFileSync(args[1], body);
           return { status: 200, sha256: crypto.createHash("sha256").update(body).digest("hex"), size: body.length };
         }
+        case "fetchUrl": {
+          // opts.web: { url: { type, body } | { status } | { error } } — what the internet answers.
+          const [url, base] = args;
+          net.fetches = net.fetches || [];
+          net.fetches.push(url);
+          const r = (opts.web || {})[url];
+          if (!r) throw new Error("getaddrinfo ENOTFOUND " + url.replace(/^https?:\/\/([^\/]+).*$/, "$1"));
+          if (r.error) throw new Error(r.error);
+          if (r.status && r.status !== 200) return { status: r.status, contentType: "text/html", finalUrl: url };
+          const type = r.type || "";
+          if (/^text\/html/.test(type)) return { status: 200, contentType: type, finalUrl: r.finalUrl || url, text: r.body };
+          const ext = { "image/png": ".png", "image/jpeg": ".jpg", "video/mp4": ".mp4", "image/gif": ".gif" }[type.split(";")[0]] || ((/\.(png|jpg|gif|mp4|mov)$/i.exec(new URL(url).pathname) || [""])[0]);
+          if (!ext) return { status: 200, contentType: type, finalUrl: url };
+          const body = Buffer.isBuffer(r.body) ? r.body : Buffer.from(String(r.body || "x"));
+          fs.writeFileSync(base + ext, body);
+          net.saved = (net.saved || []).concat([base + ext]);
+          return { status: 200, contentType: type, finalUrl: url, path: base + ext, size: body.length };
+        }
         case "reloaded": net.reloads = (net.reloads || 0) + 1; return null;
         case "pickFile": return opts.pickFile || null;
         case "imageSize": return opts.imageSize === undefined ? { width: 800, height: 600 } : opts.imageSize;
@@ -320,7 +338,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         writeBytes: (p, bytes) => window.__plat("writeBytes", [p, Array.from(bytes)]),
         remove: call("remove"), exists: call("exists"), mkdirp: call("mkdirp"), move: call("move"),
         exec: call("exec"), pickFile: call("pickFile"), imageSize: call("imageSize"), postJSON: call("postJSON"),
-        getText: call("getText"), download: call("download"),
+        getText: call("getText"), download: call("download"), fetchUrl: call("fetchUrl"),
         openExternal: (u) => { window.__opened.push(u); return true; },
         reload: () => { window.__plat("reloaded", []).then(() => window.location.reload()); }
       };
@@ -494,6 +512,216 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ settings: { selfCheck: true }, replies: [first(), msg("Удаляю лишний слой.\n```javascript\napp.project.activeItem.layer(2).remove();\n```")] });
   await p.run("задача"); await p.modalClick("Не запускать");
   check("K8 declined fix leaves the result", (await p.status()) === "Готово: Создаю заголовок.\nПравка не запущена, результат оставлен как есть.\nОтменить всё: Cmd/Ctrl+Z.");
+  await p.close();
+
+  console.log("\n=== my scripts ===");
+  const savedScripts = (p) => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.scripts.v1") || "null"));
+  const scriptNames = (p) => p.page.locator("#scriptsList .script-run span").allInnerTexts();
+  p = await open({ replies: [msg("Создаю титр.\n```javascript\napp.__ran('title');\n```"), msg("Просто текст, без скрипта."), msg("Ломаю.\n```javascript\nthrow new Error('boom');\n```")] });
+  check("K1 no saved scripts yet: the list is not shown", (await p.page.locator("#scriptsCard").isHidden()) && (await p.page.locator("#saveRow").isHidden()));
+  await p.run("сделай титр с названием канала");
+  check("K1 after a script ran, the reply offers to save it", (await p.page.locator("#saveScriptBtn").isVisible()) && /Сохранить скрипт/.test(await p.page.locator("#saveScriptBtn").innerText()));
+  await p.page.click("#saveScriptBtn");
+  check("K2 saving asks for a name, the request is offered", (await p.page.locator("#saveForm").isVisible()) && (await p.page.inputValue("#saveName")) === "сделай титр с названием канала" && (await p.page.evaluate(() => document.activeElement.id)) === "saveName");
+  await p.page.fill("#saveName", "  Титр   канала ");
+  await p.page.keyboard.press("Enter");
+  t = await savedScripts(p);
+  check("K2 saved under the given name with its script; the list appears", t.items.length === 1 && t.items[0].name === "Титр канала" && t.items[0].codes.join("|").trim() === "app.__ran('title');" && (await scriptNames(p)).join() === "Титр канала" && (await p.page.locator("#scriptsCard").isVisible()) && (await p.page.locator("#scriptsCount").innerText()) === "1", JSON.stringify(t));
+  check("K2 the offer disappears after saving, the status explains", (await p.page.locator("#saveRow").isHidden()) && (await p.page.locator("#saveForm").isHidden()) && /сохранён в «Мои скрипты»/.test(await p.status()));
+  t = [p.net.requests.length, p.ae.log.ran.length];
+  await p.page.click("#scriptsList .script-run"); await p.idle();
+  check("K3 a saved script runs with one press: no request to the AI, one undo step named after it", p.net.requests.length === t[0] && p.ae.log.ran.length === t[1] + 1 && p.ae.log.ran[p.ae.log.ran.length - 1] === "title" && p.ae.log.undo.slice(-2).join() === "begin:Sayframe: Титр канала,end" && (await p.status()) === "Готово: «Титр канала».\nОтменить: Cmd/Ctrl+Z.", await p.status());
+  await p.run("объясни");
+  check("K4 a text-only answer offers nothing to save", (await p.page.locator("#saveRow").isHidden()));
+  await p.run("сломай");
+  check("K4 nor does a script that failed", (await p.page.locator("#saveRow").isHidden()) && /^Ошибка при выполнении/.test(await p.status()));
+  await p.restart();
+  check("K5 saved scripts survive a restart", (await scriptNames(p)).join() === "Титр канала" && (await p.page.locator("#saveRow").isHidden()));
+  await p.page.click("#scriptsList [data-act=rename]");
+  check("K5 rename: the name turns into a field", (await p.page.locator("#scriptsList .script-rename").count()) === 1 && (await p.page.evaluate(() => document.activeElement.className)).indexOf("script-rename") >= 0);
+  await p.page.fill("#scriptsList .script-rename", "Титр");
+  await p.page.keyboard.press("Enter");
+  check("K5 Enter saves the new name", (await scriptNames(p)).join() === "Титр" && (await savedScripts(p)).items[0].name === "Титр");
+  await p.page.click("#scriptsList [data-act=rename]"); await p.page.fill("#scriptsList .script-rename", "Другое"); await p.page.keyboard.press("Escape");
+  check("K5 Escape keeps the old name", (await scriptNames(p)).join() === "Титр");
+  await p.page.click("#scriptsToggle");
+  check("K6 the list folds and stays folded after a restart", (await p.page.locator("#scriptsList").isHidden()) && (await p.page.getAttribute("#scriptsToggle", "aria-expanded")) === "false");
+  await p.restart();
+  check("K6 (after restart)", (await p.page.locator("#scriptsList").isHidden()) && (await p.page.locator("#scriptsCard").isVisible()));
+  await p.page.click("#scriptsToggle");
+  await p.page.click("#scriptsList [data-act=delete]");
+  check("K7 delete asks first", (await p.page.locator("#modal").isVisible()) && /Удалить «Титр»\?/.test(await p.page.locator("#modalTitle").innerText()));
+  await p.modalClick("Отмена");
+  check("K7 cancel keeps it", (await scriptNames(p)).join() === "Титр");
+  await p.page.click("#scriptsList [data-act=delete]"); await p.modalClick("Удалить");
+  check("K7 confirmed: gone, and the empty list hides", (await savedScripts(p)).items.length === 0 && (await p.page.locator("#scriptsCard").isHidden()) && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  // a script saved with its corrections runs them in order; a risky one asks first; a failing one stops
+  p = await open({});
+  await p.page.evaluate(() => localStorage.setItem("sayframe.scripts.v1", JSON.stringify({ open: true, items: [
+    { id: "a", name: "Две части", codes: ["app.__ran('one');", "app.__ran('two');"] },
+    { id: "b", name: "Опасный", codes: ["var f = new File('/tmp/x'); app.__ran('risky');"] },
+    { id: "c", name: "Ломается", codes: ["app.__ran('first');", "throw new Error('нет слоя');", "app.__ran('never');"] },
+    { id: "d", name: 42, codes: ["x"] }, { id: "e", name: "Пустой", codes: [] }, "мусор" ] })));
+  await p.restart();
+  check("K8 broken entries in the saved list are skipped", (await scriptNames(p)).join() === "Две части,Опасный,Ломается" && p.errors.length === 0, (await scriptNames(p)).join());
+  await p.page.locator("#scriptsList .script-run").nth(0).click(); await p.idle();
+  check("K8 several parts run in order, each its own undo step", p.ae.log.ran.join() === "one,two" && p.ae.log.undo.join() === "begin:Sayframe: Две части 1,end,begin:Sayframe: Две части 2,end" && /каждый шаг — отдельно/.test(await p.status()), p.ae.log.undo.join());
+  await p.page.locator("#scriptsList .script-run").nth(1).click();
+  check("K9 a script that touches files asks first, showing the code", (await p.page.locator("#modal").isVisible()) && /new File/.test(await p.page.locator("#modalCode").textContent()));
+  await p.modalClick("Не запускать");
+  check("K9 declined -> not run", p.ae.log.ran.join() === "one,two" && (await p.status()) === "Скрипт не запущен.");
+  await p.page.locator("#scriptsList .script-run").nth(2).click(); await p.idle();
+  check("K10 an error stops it at that step and says which", p.ae.log.ran.join() === "one,two,first" && /^Ошибка в «Ломается» \(шаг 2 из 3\): Error: нет слоя/.test(await p.status()) && (await p.statusKind()) === "error", await p.status());
+  await p.close();
+  p = await open({ hostDelayMs: 300 });
+  await p.page.evaluate(() => localStorage.setItem("sayframe.scripts.v1", JSON.stringify({ open: true, items: [{ id: "a", name: "X", codes: ["app.__ran('x');"] }] })));
+  await p.restart();
+  await p.page.click("#scriptsList .script-run");
+  t = [await p.page.locator("#scriptsList button").evaluateAll((l) => l.every((b) => b.disabled)), await p.page.locator("#runBtn").isDisabled()];
+  await p.idle();
+  check("K11 while a saved script runs, the panel is busy and the list cannot start another", t[0] && t[1] && !(await p.page.locator("#scriptsList .script-run").isDisabled()) && p.ae.log.ran.join() === "x", t.join());
+  await p.close();
+
+  console.log("\n=== reference by link ===");
+  const addLink = async (p, url) => { if (await p.page.locator("#refLinkRow").isHidden()) await p.page.click("#refLinkBtn"); await p.page.fill("#refLink", url); await p.page.click("#refLinkAdd"); await p.idle(); };
+  const PAGE = (head, body) => "<!doctype html><html><head>" + head + "</head><body>" + (body || "") + "</body></html>";
+  p = await open({});
+  check("L1 a '+ Link' button next to '+ Reference', the field is hidden at first", (await p.page.locator("#refLinkBtn").innerText()) === "+ Ссылка" && (await p.page.locator("#refLinkRow").isHidden()));
+  await p.page.click("#refLinkBtn");
+  check("L1 it opens a field for the link, with the cursor in it", (await p.page.locator("#refLinkRow").isVisible()) && (await p.page.evaluate(() => document.activeElement.id)) === "refLink" && (await p.page.getAttribute("#refLink", "placeholder")) === "https://…");
+  await p.page.keyboard.press("Escape");
+  check("L1 Escape closes it", await p.page.locator("#refLinkRow").isHidden());
+  await p.page.click("#refLinkBtn"); await p.page.click("#refLinkCancel");
+  check("L1 so does the cross", await p.page.locator("#refLinkRow").isHidden());
+  await addLink(p, "   ");
+  check("L1 an empty field -> a hint, nothing is downloaded", /^Вставьте ссылку/.test(await p.status()) && !(p.net.fetches || []).length);
+  await addLink(p, "привет");
+  check("L1 text that is not a link -> the same hint", /^Вставьте ссылку/.test(await p.status()) && !(p.net.fetches || []).length && p.errors.length === 0);
+  await p.close();
+
+  p = await open({ footage: IMG, web: { "https://example.com/art/poster.png": { type: "image/png" } }, replies: [msg("Повторяю.\n```javascript\napp.__ran('ref');\n```")] });
+  await addLink(p, "example.com/art/poster.png");
+  check("L2 a direct link to a picture (https:// added by itself): downloaded and attached like a file", p.net.fetches.join() === "https://example.com/art/poster.png" && (await p.page.locator("#refText").innerText()) === "poster.png — картинка" && /^Картинка прикреплена/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+  check("L2 After Effects opened the downloaded copy, the copy is deleted afterwards, the field closes", /sayframe_link_\d+\.png$/.test(p.ae.log.imports[0]) && p.tempLeft().length === 0 && !fs.existsSync(p.net.saved[0]) && (await p.page.locator("#refLinkRow").isHidden()) && (await p.page.inputValue("#refLink")) === "");
+  await p.run("сделай такую же картинку");
+  c = p.net.requests[0].body.messages[0].content;
+  check("L2 Claude gets the picture with its name", Array.isArray(c) && c[0].type === "image" && /\("poster\.png", 800x600\)/.test(c[c.length - 1].text), c[c.length - 1].text.slice(0, 120));
+  await p.close();
+
+  p = await open({ footage: VIDEO, web: {
+    "https://dribbble.com/shots/123-logo": { type: "text/html; charset=utf-8", body: PAGE('<title>Logo reveal by Ann</title><meta property="og:image" content="https://cdn.dribbble.com/still.png"><meta property="og:video" content="/media/shot.mp4">') },
+    "https://dribbble.com/media/shot.mp4": { type: "video/mp4" } } });
+  await addLink(p, "https://dribbble.com/shots/123-logo");
+  check("L3 a page with a video: the video is taken (its address resolved), not the still", p.net.fetches.join() === "https://dribbble.com/shots/123-logo,https://dribbble.com/media/shot.mp4" && (await p.page.locator("#refText").innerText()) === "shot.mp4 — 8 кадр. из 4.0 с" && /^Видео прикреплено: 8 кадров/.test(await p.status()), (p.net.fetches || []).join() + " " + await p.status());
+  await p.close();
+
+  p = await open({ footage: IMG, web: {
+    "https://www.pinterest.com/pin/42/": { type: "text/html", body: PAGE("<meta name='og:title' content='Neon &amp; glass'><meta property=\"og:image\" content=\"https://i.pinimg.com/736x/ab/cd.jpg?x=1&amp;y=2\"><meta property=\"og:video\" content=\"https://www.pinterest.com/embed/42\">") },
+    "https://i.pinimg.com/736x/ab/cd.jpg?x=1&y=2": { type: "image/jpeg" } } });
+  await addLink(p, "https://www.pinterest.com/pin/42/");
+  check("L4 a page with a picture: the main picture is taken; an embed page that is not a video file is ignored; &amp; is decoded", p.net.fetches[1] === "https://i.pinimg.com/736x/ab/cd.jpg?x=1&y=2" && (await p.page.locator("#refText").innerText()) === "cd.jpg — картинка", (p.net.fetches || []).join() + " " + await p.status());
+  await p.close();
+
+  p = await open({ footage: IMG, web: {
+    "https://www.youtube.com/watch?v=abc": { type: "text/html", body: PAGE('<meta property="og:title" content="Motion tutorial"><meta property="og:image" content="https://i.ytimg.com/vi/abc/maxresdefault.jpg"><meta property="og:video:url" content="https://www.youtube.com/embed/abc"><meta property="og:video:type" content="text/html">') },
+    "https://i.ytimg.com/vi/abc/maxresdefault.jpg": { type: "image/jpeg" } } });
+  await addLink(p, "https://www.youtube.com/watch?v=abc");
+  check("L5 YouTube: only the cover picture, and the panel says so", p.net.fetches[1] === "https://i.ytimg.com/vi/abc/maxresdefault.jpg" && (await p.page.locator("#refText").innerText()) === "maxresdefault.jpg — картинка" && /С YouTube панель берёт только обложку ролика/.test(await p.status()), await p.status());
+  await p.close();
+
+  p = await open({ footage: IMG, web: {
+    "https://example.com/empty": { type: "text/html", body: PAGE("<title>Nothing</title>", "<p>text</p>") },
+    "https://example.com/private": { status: 403 },
+    "https://example.com/gone.png": { status: 404 },
+    "https://example.com/doc.pdf": { type: "application/pdf" },
+    "https://example.com/slow": { error: "TIMEOUT" } } });
+  await addLink(p, "https://example.com/empty");
+  check("L6 a page without pictures or video -> says so", /^Не удалось взять референс по ссылке: на странице не нашлось картинки или видео/.test(await p.status()) && (await p.statusKind()) === "error" && (await p.page.locator("#refLinkRow").isVisible()) && (await p.page.inputValue("#refLink")) === "https://example.com/empty", await p.status());
+  await addLink(p, "https://example.com/private");
+  check("L6 a site that wants a login -> says so and suggests downloading the file", /не пускает без входа в аккаунт \(код 403\)/.test(await p.status()), await p.status());
+  await addLink(p, "https://example.com/gone.png");
+  check("L6 nothing at the address", /по ссылке ничего нет \(код 404\)/.test(await p.status()), await p.status());
+  await addLink(p, "https://example.com/doc.pdf");
+  check("L6 not a picture or a video", /по ссылке не картинка и не видео/.test(await p.status()), await p.status());
+  await addLink(p, "https://example.com/slow");
+  check("L6 no answer from the site", /нет связи с сайтом/.test(await p.status()), await p.status());
+  await addLink(p, "https://nowhere.example/x.png");
+  check("L6 no such site", /нет связи с сайтом/.test(await p.status()) && (await p.page.locator("#refChip").isHidden()) && p.tempLeft().length === 0 && p.errors.length === 0, await p.status());
+  await p.close();
+
+  console.log("\n=== ChatGPT ===");
+  const gpt = (text, finish) => ({ id: "chatcmpl-1", object: "chat.completion", choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: finish || "stop" }] });
+  const providerNow = (p) => p.page.locator('#provider button[aria-pressed="true"]').getAttribute("data-value");
+  const modelNames = (p) => p.page.locator("#models button b").allInnerTexts();
+  p = await open({});
+  await p.page.click("#settingsBtn");
+  check("C1 settings: a choice between Claude and ChatGPT, Claude by default", (await p.page.locator("#provider button").allInnerTexts()).join() === "Claude,ChatGPT" && (await providerNow(p)) === "claude" && (await p.page.locator("#apiKeyLabel").innerText()) === "Ключ Anthropic API" && (await p.page.inputValue("#apiKey")) === "sk-ant-test" && (await modelNames(p)).join() === "Sonnet 5.5,Opus 5.5,Haiku 4.5");
+  await p.page.click('#provider button[data-value="openai"]');
+  check("C1 ChatGPT: its own key field, hint and models", (await providerNow(p)) === "openai" && (await p.page.locator("#apiKeyLabel").innerText()) === "Ключ OpenAI API" && (await p.page.inputValue("#apiKey")) === "" && (await p.page.getAttribute("#apiKey", "placeholder")) === "sk-…" && /platform\.openai\.com/.test(await p.page.locator("#keyHint").innerText()) && /ChatGPT Plus/.test(await p.page.locator("#keyHint").innerText()) && (await modelNames(p)).join() === "GPT-6.1 Sol,GPT-6 Astra,GPT-6 Luna" && (await p.page.getAttribute('#models button[data-value="gpt-6.1-sol"]', "aria-pressed")) === "true");
+  await p.page.fill("#apiKey", " sk-openai-test ");
+  await p.page.click('#provider button[data-value="claude"]');
+  t = await p.page.inputValue("#apiKey");
+  await p.page.click('#provider button[data-value="openai"]');
+  check("C1 switching back and forth keeps both keys", t === "sk-ant-test" && (await p.page.inputValue("#apiKey")) === "sk-openai-test");
+  await p.page.click('#models button[data-value="gpt-6-astra"]');
+  await p.page.click("#saveSettings");
+  t = await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")));
+  check("C2 saved: ChatGPT, its key and model; the Claude key stays", t.provider === "openai" && t.openaiKey === "sk-openai-test" && t.openaiModel === "gpt-6-astra" && t.apiKey === "sk-ant-test" && t.model === "claude-sonnet-5-5", JSON.stringify(t));
+  check("C2 the first tab is called AI whichever is chosen", (await p.page.locator("#tabClaude").innerText()) === "AI");
+  await p.restart();
+  check("C2 and ChatGPT stays chosen after a restart", (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).provider)) === "openai" && (await p.page.locator("#tabClaude").innerText()) === "AI");
+  await p.close();
+
+  p = await open({ settings: { provider: "openai", openaiKey: "sk-openai-test" }, replies: [gpt("Создаю слой.\n```javascript\napp.__ran('one');\n```")] });
+  await p.run("сделай слой");
+  c = p.net.requests[0];
+  check("C3 the request goes to OpenAI with its key, not to Anthropic", c.url === "https://api.openai.com/v1/chat/completions" && c.headers.authorization === "Bearer sk-openai-test" && !c.headers["x-api-key"] && c.body.model === "gpt-6.1-sol" && c.body.max_completion_tokens === 32768 && c.body.max_tokens === undefined, JSON.stringify(c.headers));
+  check("C3 the instructions go first as a system message, then the request", c.body.messages[0].role === "system" && /Adobe After Effects/.test(c.body.messages[0].content) && c.body.messages[1].role === "user" && /\[Request\]\nсделай слой$/.test(c.body.messages[1].content) && c.body.messages.length === 2);
+  check("C3 the script runs, the status names ChatGPT's answer", p.ae.log.ran.join() === "one" && /^Готово: Создаю слой\./.test(await p.status()), await p.status());
+  await p.close();
+
+  p = await open({ settings: { provider: "openai", openaiKey: "sk-openai-test" }, pickFile: "/a/poster.png", footage: IMG, replies: [gpt("Повторяю.\n```javascript\napp.__ran('ref');\n```"), gpt("Готово, всё на месте.")] });
+  await p.page.click("#refBtn"); await p.idle();
+  check("C4 the reference status names ChatGPT", (await p.page.locator("#refText").innerText()) === "poster.png — картинка");
+  await p.run("сделай такую же картинку");
+  c = p.net.requests[0].body.messages[1].content;
+  check("C4 reference frames go as pictures in ChatGPT's format", Array.isArray(c) && c.length === 2 && c[0].type === "image_url" && c[0].image_url.url.indexOf("data:image/png;base64,") === 0 && Buffer.from(c[0].image_url.url.split(",")[1], "base64").equals(fakePng(0)) && c[1].type === "text" && /^\[Reference\]/.test(c[1].text), JSON.stringify(c).slice(0, 200));
+  check("C4 after sending: 'ChatGPT remembers it'", (await p.page.locator("#refText").innerText()) === "Референс отправлен, ChatGPT помнит его в этом диалоге");
+  await p.run("ещё раз");
+  m = p.net.requests[1].body.messages;
+  check("C4 a follow-up keeps the whole dialog: system, user, assistant, user", m.map((x) => x.role).join() === "system,user,assistant,user" && /Повторяю/.test(m[2].content) && (await p.status()) === "ChatGPT ответил текстом, скрипт не запускался.", m.map((x) => x.role).join() + " " + await p.status());
+  await p.close();
+
+  p = await open({ settings: { provider: "openai", openaiKey: "sk-bad" }, replies: [{ error: { message: "Incorrect API key provided: sk-bad.", type: "invalid_request_error", code: "invalid_api_key" } }] });
+  await p.run("сделай слой");
+  check("C5 an OpenAI error is shown as it is", (await p.status()) === "ChatGPT API: Incorrect API key provided: sk-bad." && (await p.statusKind()) === "error" && p.ae.log.ran.length === 0, await p.status());
+  await p.close();
+  p = await open({ settings: { provider: "openai", openaiKey: "sk-openai-test" }, replies: [gpt("Начинаю длинный скрипт", "length")] });
+  await p.run("сделай всё");
+  check("C5 an answer cut by the length limit is reported", (await p.status()) === "Ответ оборвался по длине. Попробуйте разбить задачу на части.", await p.status());
+  await p.close();
+  p = await open({ settings: { provider: "openai", openaiKey: "" } });
+  await p.run("сделай слой");
+  check("C6 ChatGPT chosen but no OpenAI key -> asks for that key, not the Anthropic one", /^Нужен ключ OpenAI API\./.test(await p.status()) && p.net.requests.length === 0 && (await p.page.locator("#settingsSheet").isVisible()) && (await p.page.locator("#apiKeyLabel").innerText()) === "Ключ OpenAI API", await p.status());
+  await p.close();
+  p = await open({ settings: { provider: "openai", openaiKey: "sk-openai-test" }, replies: [gpt("pong")] });
+  await p.page.click("#settingsBtn"); await p.page.click("#testKey");
+  await p.page.waitForFunction(() => !document.getElementById("testKey").disabled);
+  check("C7 'Check' tests the OpenAI key against OpenAI", p.net.requests[0].url === "https://api.openai.com/v1/chat/completions" && p.net.requests[0].headers.authorization === "Bearer sk-openai-test" && (await p.page.locator("#keyHint").innerText()) === "Ключ работает.");
+  await p.page.click("#settingsClose");
+  check("C7 the test does not change the saved settings", (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).provider)) === "openai" && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+  for (const bad of ["gemini", 5, null]) {
+    p = await open({ settings: { provider: bad, openaiModel: "gpt-2" } });
+    await p.page.click("#settingsBtn");
+    check("C8 a broken saved choice (" + JSON.stringify(bad) + ") means Claude", (await providerNow(p)) === "claude" && (await p.page.locator("#apiKeyLabel").innerText()) === "Ключ Anthropic API" && p.errors.length === 0);
+    await p.close();
+  }
+  p = await open({ settings: { provider: "openai", openaiKey: "k", openaiModel: "gpt-2" } });
+  await p.page.click("#settingsBtn");
+  check("C8 an unknown saved OpenAI model falls back to the first one", (await p.page.getAttribute('#models button[data-value="gpt-6.1-sol"]', "aria-pressed")) === "true");
   await p.close();
 
   console.log("\n=== reference ===");

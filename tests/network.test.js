@@ -18,7 +18,9 @@ const src = fs.readFileSync((process.env.SAYFRAME_EXT || path.join(__dirname, ".
 const a = src.indexOf("    function makePlatform() {"), b = src.indexOf("    var platform = window.__SAYFRAME_TEST_PLATFORM__");
 const window = { cep_node: { require }, location: { reload() {} } };
 const ctx = vm.createContext({ window, URL, Promise, setTimeout, navigator: { platform: "MacIntel" }, Image: function () {}, console });
-vm.runInContext(src.slice(a, b) + "\nthis.P = makePlatform();", ctx);
+// The link helpers (types, size limit) live just above the platform layer in the panel.
+const la = src.indexOf("    var LINK_MAX_BYTES"), lb = src.indexOf("    var MODELS = [");
+vm.runInContext(src.slice(la, lb) + src.slice(a, b) + "\nthis.P = makePlatform();", ctx);
 const P = ctx.P;
 let pass = 0, fail = 0;
 const check = (n, c, x) => { c ? pass++ : fail++; console.log((c ? "  ok   " : "  FAIL ") + n + (c || x === undefined ? "" : "  -> " + x)); };
@@ -29,6 +31,12 @@ const server = https.createServer({ key: fs.readFileSync(TLS + "/key.pem"), cert
   const u = new URL(req.url, "https://localhost");
   if (u.pathname === "/version.json") { res.writeHead(200, { "content-type": "text/plain" }); res.end(JSON.stringify({ version: "1.2.3", notes: ["Привет"] })); }
   else if (u.pathname === "/file.bin") { res.writeHead(200); res.write(BIN.subarray(0, 1000)); setTimeout(() => res.end(BIN.subarray(1000)), 50); }
+  else if (u.pathname === "/page") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end("<html><head><meta property='og:image' content='/pic'></head>Привет</html>"); }
+  else if (u.pathname === "/pic") { res.writeHead(200, { "content-type": "image/png" }); res.end(BIN.subarray(0, 5000)); }
+  else if (u.pathname === "/clip.mp4") { res.writeHead(200, { "content-type": "application/octet-stream" }); res.end(BIN.subarray(0, 7000)); }
+  else if (u.pathname === "/doc") { res.writeHead(200, { "content-type": "application/pdf" }); res.end("%PDF"); }
+  else if (u.pathname === "/to-pic") { res.writeHead(302, { location: "/pic" }); res.end(); }
+  else if (u.pathname === "/private") { res.writeHead(403, { "content-type": "text/html" }); res.end("no"); }
   else if (u.pathname === "/rel") { res.writeHead(302, { location: "/version.json?from=rel" }); res.end(); }
   else if (u.pathname === "/abs") { res.writeHead(301, { location: "https://localhost:" + server.address().port + "/rel" }); res.end(); }
   else if (u.pathname === "/loop") { res.writeHead(302, { location: "/loop" }); res.end(); }
@@ -64,6 +72,26 @@ server.listen(0, "127.0.0.1", async () => {
     check("slow server -> TIMEOUT", r === "TIMEOUT", r);
     r = await P.download(B + "/huge", path.join(tmp, "huge"), 20000).then(() => "resolved", (e) => e.message);
     check("oversized download is cut off and not written", r === "TOO_BIG" && !fs.existsSync(path.join(tmp, "huge")), r);
+    // links used as a reference
+    r = await P.fetchUrl(B + "/page", path.join(tmp, "l1"));
+    check("fetchUrl: a page comes back as text, nothing is written", r.status === 200 && /Привет/.test(r.text) && /^text\/html/.test(r.contentType) && r.path === undefined && fs.readdirSync(tmp).filter((f) => /^l1/.test(f)).length === 0, JSON.stringify(r).slice(0, 120));
+    check("fetchUrl: asks like a normal browser, not as 'Sayframe'", /Mozilla\/5\.0/.test(seen[seen.length - 1].ua), seen[seen.length - 1].ua);
+    r = await P.fetchUrl(B + "/to-pic", path.join(tmp, "l2"));
+    check("fetchUrl: a picture (after a redirect) is saved with the extension of its type", r.status === 200 && r.path === path.join(tmp, "l2.png") && fs.readFileSync(r.path).equals(BIN.subarray(0, 5000)) && r.finalUrl === B + "/pic", JSON.stringify(r));
+    r = await P.fetchUrl(B + "/clip.mp4?x=1", path.join(tmp, "l3"));
+    check("fetchUrl: a file the server does not name gets the extension from its address", r.path === path.join(tmp, "l3.mp4") && fs.statSync(r.path).size === 7000, JSON.stringify(r));
+    r = await P.fetchUrl(B + "/doc", path.join(tmp, "l4"));
+    check("fetchUrl: something that is not a picture, video or page is not saved", r.status === 200 && r.path === undefined && r.text === undefined && !fs.existsSync(path.join(tmp, "l4.pdf")));
+    r = await P.fetchUrl(B + "/private", path.join(tmp, "l5"));
+    check("fetchUrl: an error status is returned, not thrown, nothing saved", r.status === 403 && r.path === undefined);
+    for (const bad of ["file:///etc/passwd", "ftp://x.org/a.png", "not a url"]) {
+      r = await P.fetchUrl(bad, path.join(tmp, "l6")).then(() => "resolved", (e) => e.message);
+      check("fetchUrl: refused " + JSON.stringify(bad), r === "LINK_BAD", r);
+    }
+    ctx.LINK_MAX_BYTES = 2 * 1024 * 1024;
+    r = await P.fetchUrl(B + "/huge", path.join(tmp, "l7")).then(() => "resolved", (e) => e.message);
+    check("fetchUrl: a file over the size limit is cut off", r === "LINK_TOO_BIG", r);
+    check("fetchUrl: media types map to the right extensions", ctx.mediaExt("image/jpeg; charset=x", "https://a/b") === ".jpg" && ctx.mediaExt("video/quicktime", "https://a/b") === ".mov" && ctx.mediaExt("", "https://a/b/C.JPEG") === ".jpg" && ctx.mediaExt("text/plain", "https://a/b.png") === "");
     r = await P.getText("https://localhost:1/x", 3000).then(() => "resolved", (e) => e.code || e.message);
     check("unreachable server -> error", r !== "resolved", r);
   } finally {
