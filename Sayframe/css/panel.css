@@ -287,11 +287,14 @@ textarea:focus, .field:focus {
 
 .tool-card { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 12px; }
 
-/* Блоки раздела стоят рядом, пока хватает ширины, иначе друг под другом. Размер блока от ширины панели
-   не зависит: его меняют только за правый край блока или настройкой «Крупные / Мелкие». */
-.motion-tools { --tool-min: 152px; --tool-basis: 170px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; -webkit-user-select: none; user-select: none; }
+/* Блоки раздела стоят на сетке из квадратных клеток (размер клетки и колонки задаёт panel.js).
+   Ширина панели меняет только число клеток в ряду, сами блоки своих размеров не меняют. */
+.motion-tools { position: relative; display: grid; grid-template-columns: repeat(auto-fill, 36px); grid-auto-rows: 36px; gap: 8px; justify-content: start; -webkit-user-select: none; user-select: none; }
 .motion-tools input { -webkit-user-select: text; user-select: text; }
-.motion-tools > .tool-card { position: relative; flex: 0 0 var(--tool-basis); min-width: var(--tool-min); max-width: 100%; }
+.motion-tools > .tool-card { position: relative; min-width: 0; margin: 0; overflow: visible; }
+/* Клетки сетки видны, пока блоки переставляют или растягивают. */
+.grid-cells { position: absolute; left: 0; top: 0; pointer-events: none; opacity: 0; transition: opacity 0.15s ease; }
+.arranging .grid-cells, .motion-tools.resizing .grid-cells { opacity: 1; }
 
 /* Правый край блока: за него тянут, чтобы сделать блок шире или уже. Полоска видна под курсором. */
 .tool-resize {
@@ -310,14 +313,46 @@ textarea:focus, .field:focus {
   background: transparent;
   transition: background 0.12s ease;
 }
-.tool-resize:hover::after, .tool-resize:focus-visible::after, .tool-card.resizing > .tool-resize::after { background: rgba(var(--accent-rgb), 0.95); }
-.motion-tools.resizing { cursor: ew-resize; }
-.motion-tools.resizing > .tool-card > *:not(.tool-resize) { pointer-events: none; }
+.tool-resize:hover::after, .tool-resize:focus-visible::after, .motion-tools.resizing-x .tool-card.resizing > .tool-resize::after { background: rgba(var(--accent-rgb), 0.95); }
+/* Нижний край — высота, правый нижний угол — ширина и высота сразу. */
+.tool-resize-y {
+  position: absolute;
+  left: 14px; right: 14px; bottom: -7px;
+  height: 12px;
+  cursor: ns-resize;
+  outline: none;
+}
+.tool-resize-y::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 5px;
+  height: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.tool-resize-y:hover::after, .tool-resize-y:focus-visible::after, .motion-tools.resizing-y .tool-card.resizing > .tool-resize-y::after { background: rgba(var(--accent-rgb), 0.95); }
+.tool-resize-xy { position: absolute; right: -7px; bottom: -7px; width: 16px; height: 16px; cursor: nwse-resize; }
+.tool-resize-xy::after {
+  content: "";
+  position: absolute;
+  right: 5px; bottom: 5px;
+  width: 8px; height: 8px;
+  border-right: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-bottom-right-radius: 4px;
+  transition: border-color 0.12s ease;
+}
+.tool-resize-xy:hover::after, .motion-tools.resizing-xy .tool-card.resizing > .tool-resize-xy::after { border-color: rgba(var(--accent-rgb), 0.95); }
+.motion-tools.resizing-x { cursor: ew-resize; }
+.motion-tools.resizing-y { cursor: ns-resize; }
+.motion-tools.resizing-xy { cursor: nwse-resize; }
+.motion-tools.resizing > .tool-card > *:not([data-resize]) { pointer-events: none; }
 /* В режиме перестановки блок берут за любое место: ползунки и кнопки внутри на это время не работают. */
 .arranging .motion-tools > .tool-card { border-style: dashed; border-color: rgba(var(--accent-rgb), 0.7); cursor: grab; }
 .arranging .motion-tools > .tool-card > * { pointer-events: none; opacity: 0.6; }
 .arranging .motion-tools > .tool-card > .tool-grip { opacity: 0; }
-.arranging .motion-tools > .tool-card > .tool-resize { pointer-events: auto; opacity: 1; }
+.arranging .motion-tools > .tool-card > [data-resize] { pointer-events: auto; opacity: 1; }
 .motion-tools.reordering { cursor: grabbing; }
 .motion-tools > .tool-card.dragging {
   border-color: rgba(var(--accent-rgb), 0.95);
@@ -487,7 +522,7 @@ textarea:focus, .field:focus {
 .anchor-cell:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.2); border-color: rgba(var(--accent-rgb), 0.7); }
 .anchor-cell:active:not(:disabled) { transform: scale(0.94); }
 .anchor-cell:disabled { opacity: 0.45; cursor: default; }
-.anchor-side { flex: 1 1 150px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.anchor-side { flex: 1 1 130px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .anchor-side label { color: var(--muted); font: 600 12px/1.2 var(--round); }
 /* Выравнивание — как панель Align в After Effects: список «Выровнять по», ряд из шести значков,
    черта, ряд «Распределить слои». Значки стоят тройками: в узком блоке тройки встают друг под другом. */
@@ -605,7 +640,6 @@ textarea:focus, .field:focus {
 
 /* Мелкие блоки (настройка «Блоки в разделе „Анимация“»): кнопки, отступы и подписи меньше,
    поэтому в ряд встаёт больше блоков. Меняется только размер, все функции те же. */
-[data-tools="small"] .motion-tools { --tool-min: 112px; --tool-basis: 112px; gap: 8px; }
 [data-tools="small"] .motion-tools > .tool-card { padding: 9px 10px 10px; gap: 8px; border-radius: 14px; }
 [data-tools="small"] .motion-tools .tool-head { padding-right: 9px; }
 [data-tools="small"] .motion-tools .tool-head b { font-size: 11px; }
@@ -639,6 +673,9 @@ textarea:focus, .field:focus {
 [data-tools="small"] .motion-tools .shift-row-step .shift-num { text-align: center; }
 [data-tools="small"] .motion-tools .shift-row .select { flex-basis: 64px; height: 24px; background-position: calc(100% - 13px) 9px, calc(100% - 8px) 9px; }
 [data-tools="small"] .motion-tools .shift-do { height: 24px; padding: 0 6px; font-size: 11px; border-radius: 7px; }
+[data-tools="small"] .motion-tools .paste-do { min-height: 32px; padding: 5px 6px; gap: 5px; font-size: 11.5px; border-radius: 8px; }
+[data-tools="small"] .motion-tools .paste-do svg { width: 16px; height: 16px; }
+[data-tools="small"] .motion-tools .paste-hint { font-size: 10.5px; }
 [data-tools="small"] .motion-tools .ease-card { gap: 4px; padding-bottom: 8px; }
 [data-tools="small"] .motion-tools .ease-card .tool-head { margin-bottom: 2px; }
 [data-tools="small"] .motion-tools .ease-curve { height: 56px; border-radius: 9px; margin-bottom: 4px; }
@@ -655,6 +692,10 @@ textarea:focus, .field:focus {
 [data-tools="small"] .motion-tools .tool-toggle svg { width: 10px; height: 10px; }
 [data-tools="small"] .motion-tools .tool-resize { top: 10px; bottom: 10px; right: -5px; width: 10px; }
 [data-tools="small"] .motion-tools .tool-resize::after { left: 4px; }
+[data-tools="small"] .motion-tools .tool-resize-y { left: 10px; right: 10px; bottom: -5px; height: 10px; }
+[data-tools="small"] .motion-tools .tool-resize-y::after { top: 4px; }
+[data-tools="small"] .motion-tools .tool-resize-xy { right: -5px; bottom: -5px; width: 12px; height: 12px; }
+[data-tools="small"] .motion-tools .tool-resize-xy::after { right: 3px; bottom: 3px; width: 6px; height: 6px; }
 [data-titles="off"][data-tools="small"] .motion-tools > .tool-card { padding-top: 19px; }
 
 .tool-size button { min-width: 84px; padding: 0 12px; }
@@ -717,7 +758,28 @@ pre {
 
 /* -------------------------------------------------------- инструменты */
 
-.tools { display: flex; flex-direction: column; gap: 8px; }
+.empty-note { margin: 4px 4px 0; color: var(--muted); font: 600 12.5px/1.4 var(--round); }
+
+/* Блок «Картинка из буфера»: одна большая кнопка и подсказка под ней. */
+.paste-do {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--glass);
+  color: var(--text);
+  font: 600 13px/1.2 var(--round);
+}
+.paste-do svg { flex: none; width: 20px; height: 20px; color: var(--accent-hi); }
+.paste-do:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.2); border-color: rgba(var(--accent-rgb), 0.7); }
+.paste-do:active:not(:disabled) { transform: scale(0.97); }
+.paste-do:disabled { opacity: 0.45; cursor: default; }
+.paste-hint { color: var(--muted); font: 600 11.5px/1.35 var(--round); }
 
 .tool {
   width: 100%;
