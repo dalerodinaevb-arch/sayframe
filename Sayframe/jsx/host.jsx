@@ -237,6 +237,75 @@ var sayframeHost = (function () {
         return SAYFRAME_CHECK_TIMES;
     }
 
+    // ---- project organizer helpers
+
+    var ORG_FOLDERS = {
+        Compositions: ["compositions", "composition", "comps", "comp"],
+        Precomps: ["precomps", "precomp", "pre-comps", "pre-comp", "pre comps", "precompositions"],
+        Videos: ["videos", "video"],
+        Audio: ["audio", "audio / mp3", "audio/mp3", "mp3", "sound", "sounds", "music", "sfx"],
+        Images: ["images", "image", "pictures", "photos", "stills"],
+        Solids: ["solids", "solid"],
+        Assets: ["assets", "asset", "resources"],
+        Other: ["other", "misc"]
+    };
+    var ORG_VIDEO = ",mov,mp4,m4v,avi,mkv,webm,mxf,mpg,mpeg,m2v,m2ts,mts,ts,wmv,flv,3gp,r3d,braw,dv,ogv,gif,swf,";
+    var ORG_AUDIO = ",mp3,wav,aif,aiff,aac,m4a,ogg,flac,wma,caf,";
+    var ORG_IMAGE = ",png,jpg,jpeg,jpe,tif,tiff,psd,psb,ai,eps,pdf,svg,bmp,tga,exr,dpx,cin,hdr,heic,heif,webp,dng,cr2,cr3,nef,arw,raw,iff,pct,pict,sgi,";
+    var ORG_ASSET = ",json,mgjson,csv,tsv,txt,obj,c4d,fbx,gltf,glb,usd,usdz,aep,aepx,prproj,mogrt,ttf,otf,";
+
+    function orgFolderCategory(name) {
+        var low = String(name).toLowerCase().replace(/^\s+|\s+$/g, "");
+        var k, i;
+        for (k in ORG_FOLDERS) {
+            if (ORG_FOLDERS.hasOwnProperty(k)) {
+                for (i = 0; i < ORG_FOLDERS[k].length; i++) {
+                    if (ORG_FOLDERS[k][i] === low) { return k; }
+                }
+            }
+        }
+        return null;
+    }
+
+    function orgExt(name) {
+        var m = /\.([A-Za-z0-9]+)$/.exec(String(name || ""));
+        return m ? m[1].toLowerCase() : "";
+    }
+
+    function orgCategory(item, used) {
+        var src, ext, fname = "", seq;
+        if (item instanceof CompItem) { return used["i" + item.id] ? "Precomps" : "Compositions"; }
+        src = item.mainSource;
+        if (!src) { return "Other"; }
+        if (src instanceof SolidSource) { return "Solids"; }
+        if (typeof PlaceholderSource !== "undefined" && src instanceof PlaceholderSource) { return "Other"; }
+        try { if (src.file) { fname = src.file.name; } } catch (e0) {}
+        if (!fname) { try { fname = src.missingFootagePath || ""; } catch (e1) {} }
+        try { fname = decodeURI(fname); } catch (e2) {}
+        ext = orgExt(fname) || orgExt(item.name);
+        seq = !src.isStill && item.duration > 0;
+        if (ext && ORG_VIDEO.indexOf("," + ext + ",") >= 0) { return "Videos"; }
+        if (ext && ORG_AUDIO.indexOf("," + ext + ",") >= 0) { return "Audio"; }
+        if (ext && ORG_IMAGE.indexOf("," + ext + ",") >= 0) { return (seq && item.hasVideo) ? "Videos" : "Images"; }
+        if (ext && ORG_ASSET.indexOf("," + ext + ",") >= 0) { return "Assets"; }
+        if (item.hasVideo) { return src.isStill ? "Images" : "Videos"; }
+        if (item.hasAudio) { return "Audio"; }
+        if (fname && !item.footageMissing) { return "Assets"; }
+        return "Other";
+    }
+
+    // Is the item already somewhere inside a folder of this category?
+    function orgInside(item, cat, root) {
+        var f = item.parentFolder;
+        var depth = 0;
+        while (f && f !== root && depth < 64) {
+            if (orgFolderCategory(f.name) === cat) { return true; }
+            f = f.parentFolder;
+            depth++;
+        }
+        return false;
+    }
+
     function projectBin(name) {
         var proj = app.project;
         var i, it;
@@ -1068,6 +1137,70 @@ var sayframeHost = (function () {
                     restoreActive(prevActive);
                 }
                 return { ref: ref };
+            });
+        },
+
+        // Sorts the Project panel into category folders. Only parentFolder changes:
+        // files on disk, names, comps and layers stay as they are. One undo step.
+        organizeProject: function () {
+            return reply(function () {
+                var proj = app.project;
+                var root = proj.rootFolder;
+                var n = proj.numItems;
+                var items = [], used = {}, folders = [], plan = [], made = [], counts = {}, found = {};
+                var i, j, it, c, L, cat, f, target, moved = 0, total = 0;
+
+                for (i = 1; i <= n; i++) {
+                    it = proj.item(i);
+                    if (it instanceof FolderItem) { folders.push(it); } else { items.push(it); }
+                }
+                // Comps that sit as a layer inside another comp are precomps.
+                for (i = 0; i < items.length; i++) {
+                    c = items[i];
+                    if (!(c instanceof CompItem)) { continue; }
+                    for (j = 1; j <= c.numLayers; j++) {
+                        L = c.layer(j);
+                        if (L && L.source && L.source instanceof CompItem && L.source !== c) { used["i" + L.source.id] = true; }
+                    }
+                }
+                // Existing folders: a top-level one wins over a nested one with the same meaning.
+                for (i = 0; i < folders.length; i++) {
+                    cat = orgFolderCategory(folders[i].name);
+                    if (!cat) { continue; }
+                    if (!found[cat] || (folders[i].parentFolder === root && found[cat].parentFolder !== root)) { found[cat] = folders[i]; }
+                }
+                for (i = 0; i < items.length; i++) {
+                    it = items[i];
+                    cat = orgCategory(it, used);
+                    total++;
+                    if (orgInside(it, cat, root)) { continue; }
+                    // An unused comp the user parked among precomps stays there.
+                    if (cat === "Compositions" && orgInside(it, "Precomps", root)) { continue; }
+                    plan.push({ item: it, cat: cat });
+                }
+                if (plan.length) {
+                    app.beginUndoGroup("Sayframe: organize project");
+                    try {
+                        for (i = 0; i < plan.length; i++) {
+                            cat = plan[i].cat;
+                            target = found[cat];
+                            if (!target) {
+                                target = proj.items.addFolder(cat);
+                                found[cat] = target;
+                                made.push(cat);
+                            }
+                            f = plan[i].item;
+                            if (f.parentFolder !== target) {
+                                f.parentFolder = target;
+                                moved++;
+                                counts[cat] = (counts[cat] || 0) + 1;
+                            }
+                        }
+                    } finally {
+                        app.endUndoGroup();
+                    }
+                }
+                return { organized: { total: total, moved: moved, counts: counts, created: made } };
             });
         },
 
