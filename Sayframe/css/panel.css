@@ -122,6 +122,48 @@ button { cursor: pointer; }
 
 .composer { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 
+/* Быстрые задачи */
+.quick { display: flex; flex-direction: column; gap: 6px; }
+.quick-head { display: flex; align-items: center; gap: 2px; }
+.quick-title {
+  display: flex; align-items: center; gap: 6px;
+  margin-right: auto; padding: 2px 4px;
+  border: 0; background: none;
+  color: var(--muted); font: 600 12px/1.2 var(--round);
+}
+.quick-title:hover { color: var(--text); }
+.quick-title svg { width: 11px; height: 11px; transition: transform 0.15s ease; }
+.quick-title[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.quick-icon {
+  width: 24px; height: 24px; padding: 0;
+  display: grid; place-items: center;
+  border: 0; border-radius: 7px; background: none;
+  color: var(--muted); font: 600 15px/1 var(--round);
+}
+.quick-icon:hover:not(:disabled) { color: var(--text); background: var(--glass-strong); }
+.quick-icon[aria-pressed="true"] { color: var(--text); background: rgba(var(--accent-rgb), 0.25); }
+.quick-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.quick-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: 100%; height: 28px; padding: 0 11px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--glass); color: var(--text);
+  font: 600 12px/1 var(--round); white-space: nowrap;
+}
+.quick-chip span { overflow: hidden; text-overflow: ellipsis; }
+.quick-chip:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.2); border-color: rgba(var(--accent-rgb), 0.7); }
+.quick-chip:disabled { opacity: 0.45; cursor: default; }
+.quick-chip .quick-del { margin-right: -5px; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); font-size: 14px; }
+.quick-chip .quick-del:hover { color: var(--text); background: rgba(255, 255, 255, 0.14); }
+.quick.editing .quick-chip { border-style: dashed; }
+.quick-form { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: rgba(0, 0, 0, 0.18); }
+.quick-form .field { height: 32px; font-size: 12.5px; }
+.quick-form textarea { min-height: 64px; font-size: 12.5px; }
+.quick-form-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.quick-form-actions .ghost { height: 30px; padding: 0 12px; }
+.quick-link { margin-left: auto; border: 0; background: none; color: var(--muted); font: 600 11.5px/1 var(--round); text-decoration: underline; padding: 4px; }
+.quick-link:hover { color: var(--text); }
+
 textarea, .field {
   width: 100%;
   border: 1px solid var(--line);
@@ -248,6 +290,11 @@ textarea:focus, .field:focus {
 .save-form .ghost { height: 32px; padding: 0 12px; }
 .save-form .icon-btn { flex: none; width: 30px; height: 30px; }
 .scripts { padding: 6px 8px 8px; }
+.expr { padding: 6px 8px 8px; }
+.expr-body { display: flex; flex-direction: column; gap: 8px; padding: 2px 4px 2px; }
+.expr-body textarea { min-height: 52px; font-size: 12.5px; }
+.expr-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.expr-actions .ghost { flex: 1 1 auto; height: 32px; padding: 0 12px; font-size: 12.5px; }
 .scripts-head {
   width: 100%;
   display: flex; align-items: center; gap: 8px;
