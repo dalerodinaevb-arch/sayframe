@@ -1038,3 +1038,117 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ------------------------------------------------------- FX Console */
+
+.top-actions { display: flex; align-items: center; gap: 8px; }
+.icon-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* Окно поиска всплывает у верхнего края панели, как строка поиска FX Console над композицией. */
+.fx-console {
+  position: fixed;
+  left: 0; top: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 52px 14px 14px;
+  background: rgba(4, 4, 8, 0.55);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+.fx-card {
+  width: 100%;
+  max-width: calc(var(--panel-w) - 28px);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: #15161d;
+  box-shadow: 0 30px 80px -20px #000;
+}
+.fx-row { display: flex; align-items: center; gap: 6px; }
+.fx-glass { flex: none; width: 16px; height: 16px; margin-left: 4px; color: var(--accent-hi); }
+.fx-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: 600 14px/1 var(--round);
+  outline: none;
+}
+.fx-search::placeholder { color: var(--muted); }
+.fx-row .icon-btn { flex: none; width: 28px; height: 28px; font-size: 17px; line-height: 1; }
+.fx-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  max-height: 360px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+.fx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 6px 4px 8px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.fx-item:hover { background: var(--glass); }
+.fx-item.active { background: rgba(var(--accent-rgb), 0.22); }
+.fx-badge {
+  flex: none;
+  min-width: 22px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  text-align: center;
+  font: 700 9.5px/1.3 var(--round);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-hi);
+  background: rgba(var(--accent-rgb), 0.16);
+}
+.fx-badge.preset { color: #ffd38a; background: rgba(255, 185, 87, 0.14); }
+.fx-name { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 600 13px/1.25 var(--round); }
+.fx-cat { flex: 0 1 auto; max-width: 42%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font: 600 10.5px/1.2 var(--round); }
+.fx-star {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+}
+.fx-star:hover { color: var(--text); background: var(--glass-strong); }
+.fx-star.on { color: #ffb957; }
+.fx-head { padding: 6px 8px 2px; color: var(--muted); font: 700 10.5px/1.2 var(--round); text-transform: uppercase; letter-spacing: 0.06em; }
+.fx-note { padding: 8px; color: var(--muted); font: 600 12px/1.4 var(--round); }
+.fx-hint { margin: 0; padding: 0 4px; color: var(--muted); font: 600 10.5px/1.35 var(--round); }
+
+/* Горячие клавиши в настройках */
+.hotkeys { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.hotkey-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; }
+.hotkey-row span { min-width: 0; }
+.hotkey-btn {
+  flex: none;
+  min-width: 96px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--glass);
+  color: var(--text);
+  font: 700 12px/1 var(--round);
+}
+.hotkey-btn.empty { color: var(--muted); }
+.hotkey-btn.recording { border-color: rgba(var(--accent-rgb), 0.85); color: var(--accent-hi); background: rgba(var(--accent-rgb), 0.15); }
+#hotkeyNote:empty { display: none; }
