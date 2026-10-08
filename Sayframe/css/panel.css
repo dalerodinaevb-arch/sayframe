@@ -145,6 +145,10 @@ textarea:focus, .field:focus {
 }
 
 .attach-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 28px; }
+.link-row { display: flex; align-items: center; gap: 6px; }
+.link-row .field { flex: 1; min-width: 0; height: 34px; font-size: 12.5px; }
+.link-row .ghost { height: 34px; padding: 0 12px; }
+.link-row .icon-btn { flex: none; width: 30px; height: 30px; }
 
 .chip-btn, .chip {
   display: inline-flex;
@@ -235,6 +239,48 @@ textarea:focus, .field:focus {
 }
 
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Сохранить скрипт и «Мои скрипты» */
+.save-row { margin-top: 10px; }
+.save-row .ghost { height: 30px; padding: 0 12px; font-size: 12.5px; }
+.save-form { margin-top: 10px; display: flex; align-items: center; gap: 6px; }
+.save-form .field { flex: 1; min-width: 0; height: 32px; font-size: 12.5px; }
+.save-form .ghost { height: 32px; padding: 0 12px; }
+.save-form .icon-btn { flex: none; width: 30px; height: 30px; }
+.scripts { padding: 6px 8px 8px; }
+.scripts-head {
+  width: 100%;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 6px;
+  border: 0; background: none;
+  color: var(--text); text-align: left;
+}
+.scripts-head b { font: 600 13px/1.2 var(--round); }
+.scripts-count { color: var(--muted); font: 600 12px/1 var(--round); }
+.scripts-head svg { width: 12px; height: 12px; margin-left: auto; color: var(--muted); transition: transform 0.15s ease; }
+.scripts-head[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.scripts-list { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.scripts-list li { display: flex; align-items: center; gap: 4px; }
+.script-run {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 8px;
+  height: 34px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--glass); color: var(--text);
+  font: 600 12.5px/1 var(--round); text-align: left;
+}
+.script-run span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.script-run svg { flex: none; width: 12px; height: 12px; color: var(--accent-hi); }
+.script-run:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.2); border-color: rgba(var(--accent-rgb), 0.7); }
+.script-run:disabled, .script-act:disabled { opacity: 0.45; cursor: default; }
+.script-act {
+  flex: none; width: 28px; height: 28px; padding: 0;
+  display: grid; place-items: center;
+  border: 0; border-radius: 8px; background: none; color: var(--muted);
+  font-size: 15px; line-height: 1;
+}
+.script-act:hover:not(:disabled) { color: var(--text); background: var(--glass-strong); }
+.script-rename { flex: 1; min-width: 0; height: 34px; font-size: 12.5px; }
 
 /* ------------------------------------------------------------ вкладки */
 
@@ -698,7 +744,7 @@ textarea:focus, .field:focus {
 [data-tools="small"] .motion-tools .tool-resize-xy::after { right: 3px; bottom: 3px; width: 6px; height: 6px; }
 [data-titles="off"][data-tools="small"] .motion-tools > .tool-card { padding-top: 19px; }
 
-.tool-size button { min-width: 84px; padding: 0 12px; }
+.tool-size button, .provider button { min-width: 84px; padding: 0 12px; }
 
 /* --------------------------------------------------------- обновление */
 
