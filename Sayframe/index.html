@@ -39,7 +39,7 @@
          по вкладке или по блоку и выключается так же, кнопкой «Готово» или клавишей Esc.
          С клавиатуры вкладку двигает Alt + стрелка влево/вправо. -->
     <nav id="tabs" class="tabs" role="tablist" aria-label="Разделы панели">
-      <button id="tabClaude" class="tab" role="tab" data-tab="claude" aria-selected="true" aria-controls="viewClaude" title="Двойной щелчок — поменять вкладки местами">Claude</button>
+      <button id="tabClaude" class="tab" role="tab" data-tab="claude" aria-selected="true" aria-controls="viewClaude" title="Двойной щелчок — поменять вкладки местами">AI</button>
       <button id="tabTools" class="tab" role="tab" data-tab="tools" aria-selected="false" aria-controls="viewTools" title="Двойной щелчок — поменять вкладки местами">Анимация</button>
       <button id="tabMotion" class="tab" role="tab" data-tab="motion" aria-selected="false" aria-controls="viewMotion" title="Двойной щелчок — поменять вкладки местами">Инструменты</button>
     </nav>
@@ -50,16 +50,22 @@
       <button id="arrangeDone" class="ghost">Готово</button>
     </section>
 
-    <!-- Раздел Claude: задача словами, референс, запуск и ответ -->
+    <!-- Раздел AI (внутреннее имя claude): задача словами, референс, запуск и ответ -->
     <div id="viewClaude" class="view" role="tabpanel" aria-labelledby="tabClaude">
     <section class="card composer">
-      <textarea id="prompt" rows="4" placeholder="Опишите, что сделать в композиции" aria-label="Задача для Claude"></textarea>
+      <textarea id="prompt" rows="4" placeholder="Опишите, что сделать в композиции" aria-label="Задача для нейросети"></textarea>
       <div class="attach-row">
         <button id="refBtn" class="chip-btn" title="Прикрепить видео или картинку">+ Референс</button>
+        <button id="refLinkBtn" class="chip-btn" title="Референс по ссылке: картинка, видео или страница с ними (Pinterest, Behance, Dribbble…)">+ Ссылка</button>
         <span id="refChip" class="chip" hidden>
           <span id="refText"></span>
           <button id="refClear" aria-label="Убрать референс" title="Убрать референс">&times;</button>
         </span>
+      </div>
+      <div id="refLinkRow" class="link-row" hidden>
+        <input id="refLink" class="field" type="url" placeholder="https://…" autocomplete="off" spellcheck="false" aria-label="Ссылка на картинку, видео или страницу с ними">
+        <button id="refLinkAdd" class="ghost">Добавить</button>
+        <button id="refLinkCancel" class="icon-btn" aria-label="Закрыть" title="Закрыть">&times;</button>
       </div>
       <button id="runBtn" class="primary">Выполнить</button>
     </section>
@@ -83,6 +89,23 @@
         <summary>Показать скрипт</summary>
         <pre id="replyCode"></pre>
       </details>
+      <div id="saveRow" class="save-row" hidden>
+        <button id="saveScriptBtn" class="ghost" title="Сохранить этот скрипт: потом он запускается одной кнопкой, без нейросети">☆ Сохранить скрипт</button>
+      </div>
+      <div id="saveForm" class="save-form" hidden>
+        <input id="saveName" class="field" maxlength="60" autocomplete="off" spellcheck="false" aria-label="Название скрипта">
+        <button id="saveConfirm" class="ghost">Сохранить</button>
+        <button id="saveCancel" class="icon-btn" aria-label="Не сохранять" title="Не сохранять">&times;</button>
+      </div>
+    </section>
+
+    <!-- Мои скрипты: сохранённые удачные скрипты, запускаются одной кнопкой, без нейросети -->
+    <section id="scriptsCard" class="card scripts" hidden>
+      <button id="scriptsToggle" class="scripts-head" aria-expanded="true" aria-controls="scriptsList">
+        <b>Мои скрипты</b><span id="scriptsCount" class="scripts-count"></span>
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg>
+      </button>
+      <ul id="scriptsList" class="scripts-list"></ul>
     </section>
 
     </div>
@@ -309,7 +332,15 @@
       </div>
 
       <div class="group">
-        <label for="apiKey">Ключ Anthropic API</label>
+        <span class="label">Нейросеть</span>
+        <div id="provider" class="frames provider" role="group" aria-label="Какая нейросеть пишет скрипты">
+          <button data-value="claude">Claude</button>
+          <button data-value="openai">ChatGPT</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <label id="apiKeyLabel" for="apiKey">Ключ Anthropic API</label>
         <div class="key-row">
           <input id="apiKey" class="field" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
           <button id="testKey" class="ghost">Проверить</button>
@@ -342,7 +373,7 @@
           <input id="panelWidth" class="range" type="range" min="280" max="640" step="10" value="380">
           <output id="panelWidthVal" for="panelWidth">380 px</output>
         </div>
-        <p class="hint">Поля и кнопки в разделах Claude и «Анимация» остаются такой ширины, даже если растянуть панель в After Effects. Вкладки и раздел «Инструменты» занимают всю ширину панели.</p>
+        <p class="hint">Поля и кнопки в разделах AI и «Анимация» остаются такой ширины, даже если растянуть панель в After Effects. Вкладки и раздел «Инструменты» занимают всю ширину панели.</p>
       </div>
 
       <div class="group">
