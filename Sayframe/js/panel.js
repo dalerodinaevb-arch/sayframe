@@ -5,13 +5,16 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.9.0";
+    var VERSION = "1.10.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
     var TAB_KEY = "sayframe.tab.v1";
     var TAB_ORDER_KEY = "sayframe.tabOrder.v1";
-    var MOTION_KEY = "sayframe.motion.v1";   // положения ползунков и выбор в разделе «Инструменты»
+    var MOTION_KEY = "sayframe.motion.v1";
+    var SCRIPTS_KEY = "sayframe.scripts.v1";  // «Мои скрипты»: { open, items: [{ id, name, codes, created }] }
+    var MAX_SCRIPTS = 100;
+    var SCRIPT_NAME_MAX = 60;   // положения ползунков и выбор в разделе «Инструменты»
     var TAB_DRAG_START_PX = 6;   // сдвиг мыши, после которого нажатие на вкладку считается перетаскиванием
     // Как часто открытая панель сама спрашивает сервер о новой версии. Ещё она спрашивает при запуске
     // и когда в неё возвращаются (щелчок по панели), но не чаще, чем раз в UPDATE_THROTTLE_MS.
@@ -29,18 +32,53 @@
     var SETTINGS_KEY = "sayframe.settings.v1";
     var OLD_SETTINGS_KEY = "claudePanel.settings.v2"; // настройки прежней версии панели
     var PASTE_BIN = "Из буфера";
+    var LINK_MAX_BYTES = 150 * 1024 * 1024;   // больше ссылка-референс не скачивается
+    var MEDIA_TYPES = {
+        "image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/gif": ".gif", "image/webp": ".webp",
+        "image/bmp": ".bmp", "image/tiff": ".tif", "image/heic": ".heic",
+        "video/mp4": ".mp4", "video/quicktime": ".mov", "video/x-m4v": ".m4v", "video/webm": ".webm", "video/x-msvideo": ".avi"
+    };
+    var MEDIA_EXT = /\.(png|jpe?g|gif|webp|bmp|tiff?|heic|mp4|mov|m4v|webm|avi)$/i;
+
+    // Расширение для скачанного файла: по типу из ответа сервера, а если он ничего не сказал — по адресу.
+    function mediaExt(type, url) {
+        var t = String(type || "").split(";")[0].replace(/\s/g, "").toLowerCase();
+        var m;
+        if (MEDIA_TYPES.hasOwnProperty(t)) { return MEDIA_TYPES[t]; }
+        try { m = MEDIA_EXT.exec(new URL(url).pathname); } catch (e) { m = null; }
+        if (m && (t === "" || t === "application/octet-stream" || t === "binary/octet-stream")) { return m[0].toLowerCase().replace(".jpeg", ".jpg"); }
+        return "";
+    }
 
     var MODELS = [
         { id: "claude-sonnet-5-5", name: "Sonnet 5.5", note: "Быстрый и умный" },
         { id: "claude-opus-5-5", name: "Opus 5.5", note: "Для сложных задач" },
         { id: "claude-haiku-4-5-20251001", name: "Haiku 4.5", note: "Самый быстрый" }
     ];
+    // ChatGPT (OpenAI API). Отвечает через Chat Completions; у этих моделей есть размышление,
+    // поэтому лимит ответа больше: он делится между размышлением и самим ответом.
+    var OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+    var OPENAI_MAX_TOKENS = 32768;
+    var OPENAI_MODELS = [
+        { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", note: "Быстрый и умный" },
+        { id: "gpt-6-astra", name: "GPT-6 Astra", note: "Для сложных задач" },
+        { id: "gpt-6-luna", name: "GPT-6 Luna", note: "Самый быстрый" }
+    ];
+    var PROVIDERS = {
+        claude: { name: "Claude", keyLabel: "Ключ Anthropic API", placeholder: "sk-ant-…", keyField: "apiKey", modelField: "model", models: MODELS,
+            hint: "Создаётся на platform.claude.com, в разделе Settings → API keys. Хранится только на этом компьютере." },
+        openai: { name: "ChatGPT", keyLabel: "Ключ OpenAI API", placeholder: "sk-…", keyField: "openaiKey", modelField: "openaiModel", models: OPENAI_MODELS,
+            hint: "Создаётся на platform.openai.com, в разделе API keys. Оплата там отдельная: подписка ChatGPT Plus для API не подходит. Хранится только на этом компьютере." }
+    };
     var ACCENTS = ["#9d7bff", "#62c8ff", "#ff7ac3", "#ffb957", "#b8f25a", "#f4f4f8"];
     var BACKGROUNDS = ["#0b0c12", "#101014", "#0d1117", "#140d17", "#0c1311"];
 
     var DEFAULTS = {
         apiKey: "",
         model: MODELS[0].id,
+        provider: "claude",          // кто пишет скрипты: "claude" или "openai" (ChatGPT)
+        openaiKey: "",
+        openaiModel: OPENAI_MODELS[0].id,
         accent: ACCENTS[0],
         bg: BACKGROUNDS[0],
         selfCheck: true,
@@ -146,7 +184,7 @@
     function makePlatform() {
         var req = (window.cep_node && window.cep_node.require) ||
             (typeof window.require === "function" ? window.require : null);
-        var fs, os, path, https, cp, crypto, Buf;
+        var fs, os, path, https, httpMod, cp, crypto, Buf;
 
         function cb(resolve, reject) {
             return function (err, value) { if (err) { reject(err); } else { resolve(value); } };
@@ -224,6 +262,45 @@
             });
         }
 
+        // GET по http(s) для ссылок-референсов: с заголовками обычного браузера (иначе многие сайты
+        // отдают пустую страницу), по перенаправлениям, не больше LINK_MAX_BYTES.
+        function fetchRaw(url, redirects) {
+            return new Promise(function (resolve, reject) {
+                var u, mod, rq;
+                try { u = new URL(url); } catch (e) { reject(new Error("LINK_BAD")); return; }
+                if (u.protocol !== "https:" && u.protocol !== "http:") { reject(new Error("LINK_BAD")); return; }
+                mod = u.protocol === "https:" ? https : httpMod;
+                rq = mod.get({
+                    hostname: u.hostname, port: u.port || (u.protocol === "https:" ? 443 : 80), path: u.pathname + u.search,
+                    headers: {
+                        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+                        "accept": "text/html,application/xhtml+xml,image/*,video/*,*/*;q=0.8",
+                        "accept-language": "ru,en;q=0.8"
+                    }
+                }, function (res) {
+                    var chunks = [];
+                    var size = 0;
+                    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                        res.resume();
+                        if (redirects <= 0) { reject(new Error("TOO_MANY_REDIRECTS")); return; }
+                        resolve(fetchRaw(new URL(res.headers.location, url).toString(), redirects - 1));
+                        return;
+                    }
+                    res.on("data", function (c) {
+                        size += c.length;
+                        if (size > LINK_MAX_BYTES) { rq.destroy(new Error("LINK_TOO_BIG")); return; }
+                        chunks.push(c);
+                    });
+                    res.on("end", function () {
+                        resolve({ status: res.statusCode, type: String(res.headers["content-type"] || "").toLowerCase(), url: url, body: Buf.concat(chunks) });
+                    });
+                    res.on("error", reject);
+                });
+                rq.on("error", reject);
+                rq.setTimeout(60000, function () { rq.destroy(new Error("TIMEOUT")); });
+            });
+        }
+
         if (!req) {
             return {
                 available: false,
@@ -246,6 +323,7 @@
                     });
                 },
                 download: need,
+                fetchUrl: need,
                 postJSON: function (url, headers, body) {
                     var h = {};
                     var k;
@@ -259,6 +337,7 @@
         }
 
         fs = req("fs"); os = req("os"); path = req("path"); https = req("https"); cp = req("child_process");
+        httpMod = req("http");
         crypto = req("crypto");
         Buf = req("buffer").Buffer;
 
@@ -328,6 +407,21 @@
                         .then(function () {
                             return { status: 200, sha256: crypto.createHash("sha256").update(r.body).digest("hex"), size: r.body.length };
                         });
+                });
+            },
+            // Ссылка-референс: страница возвращается текстом, картинка или видео — файлом во временной папке.
+            // destBase — путь без расширения: расширение берётся из типа файла или из адреса.
+            fetchUrl: function (url, destBase) {
+                return fetchRaw(url, 6).then(function (r) {
+                    var ext;
+                    if (r.status !== 200) { return { status: r.status, contentType: r.type, finalUrl: r.url }; }
+                    if (/^(text\/html|application\/xhtml)/.test(r.type)) {
+                        return { status: 200, contentType: r.type, finalUrl: r.url, text: r.body.toString("utf8") };
+                    }
+                    ext = mediaExt(r.type, r.url);
+                    if (!ext) { return { status: 200, contentType: r.type, finalUrl: r.url }; }
+                    return new Promise(function (resolve, reject) { fs.writeFile(destBase + ext, r.body, cb(resolve, reject)); })
+                        .then(function () { return { status: 200, contentType: r.type, finalUrl: r.url, path: destBase + ext, size: r.body.length }; });
                 });
             },
             postJSON: function (url, headers, body, timeoutMs) {
@@ -437,7 +531,18 @@
         if (m === "FRAME_NOT_SAVED") { return "After Effects не сохранил кадр. " + FILE_ACCESS_HINT; }
         if (m === "NO_PICTURE_IN_FILE") { return "В этом файле нет изображения — нужен ролик или картинка."; }
         if (m === "NOT_AN_IMAGE") { return "Скопированный файл не является изображением."; }
-        if (m === "TIMEOUT") { return "Claude не ответил вовремя. Попробуйте ещё раз."; }
+        if (m === "LINK_BAD") { return "это не ссылка на сайт (нужна ссылка, которая начинается с https://)."; }
+        if (m === "LINK_NO_MEDIA") { return "на странице не нашлось картинки или видео. Откройте картинку или видео отдельно и скопируйте ссылку на него."; }
+        if (m === "LINK_NOT_MEDIA") { return "по ссылке не картинка и не видео."; }
+        if (m === "LINK_TOO_BIG") { return "файл больше 150 МБ. Скачайте его и прикрепите кнопкой «+ Референс»."; }
+        if (m === "TOO_MANY_REDIRECTS") { return "сайт слишком много раз перенаправляет запрос."; }
+        if (/^LINK_HTTP:/.test(m)) {
+            m = m.split(":")[1];
+            if (m === "401" || m === "403") { return "сайт не пускает без входа в аккаунт (код " + m + "). Скачайте файл и прикрепите его кнопкой «+ Референс»."; }
+            if (m === "404") { return "по ссылке ничего нет (код 404)."; }
+            return "сайт ответил ошибкой (код " + m + ").";
+        }
+        if (m === "TIMEOUT") { return aiName() + " не ответил вовремя. Попробуйте ещё раз."; }
         if (m === "NO_ACTIVE_COMP") { return "Откройте композицию: инструмент работает с открытой композицией."; }
         if (m === "NO_KEYS_SELECTED") { return "Выделите ключевые кадры на таймлайне и нажмите ещё раз."; }
         if (m === "NO_LAYERS_SELECTED") { return "Выделите слой в композиции и нажмите ещё раз."; }
@@ -463,8 +568,20 @@
         } catch (e) {}
         s.panelWidth = clampPanelWidth(s.panelWidth);
         if (s.toolSize !== "small") { s.toolSize = "large"; }
+        if (!PROVIDERS.hasOwnProperty(s.provider)) { s.provider = "claude"; }
+        if (!knownModel(OPENAI_MODELS, s.openaiModel)) { s.openaiModel = OPENAI_MODELS[0].id; }
         return s;
     }
+
+    function knownModel(list, id) {
+        var i;
+        for (i = 0; i < list.length; i++) { if (list[i].id === id) { return true; } }
+        return false;
+    }
+
+    function providerOf(s) { return PROVIDERS[(s || settings).provider] || PROVIDERS.claude; }
+    function aiName() { return providerOf().name; }
+    function aiKey(s) { s = s || settings; return s[providerOf(s).keyField] || ""; }
 
     function storeSettings(s) {
         try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {}
@@ -506,11 +623,15 @@
     var ui = {
         prompt: el("prompt"), runBtn: el("runBtn"), fixBtn: el("fixBtn"), newBtn: el("newBtn"),
         refBtn: el("refBtn"), refChip: el("refChip"), refText: el("refText"), refClear: el("refClear"),
+        saveRow: el("saveRow"), saveScriptBtn: el("saveScriptBtn"), saveForm: el("saveForm"), saveName: el("saveName"),
+        saveConfirm: el("saveConfirm"), saveCancel: el("saveCancel"),
+        scriptsCard: el("scriptsCard"), scriptsToggle: el("scriptsToggle"), scriptsCount: el("scriptsCount"), scriptsList: el("scriptsList"),
+        refLinkBtn: el("refLinkBtn"), refLinkRow: el("refLinkRow"), refLink: el("refLink"), refLinkAdd: el("refLinkAdd"), refLinkCancel: el("refLinkCancel"),
         statusBox: el("statusBox"), status: el("status"),
         replyCard: el("replyCard"), replyText: el("replyText"), replyCode: el("replyCode"), codeBox: el("codeBox"),
         pasteBtn: el("pasteBtn"), settingsBtn: el("settingsBtn"),
         sheet: el("settingsSheet"), settingsClose: el("settingsClose"), apiKey: el("apiKey"), testKey: el("testKey"),
-        keyHint: el("keyHint"), models: el("models"), accentSwatches: el("accentSwatches"), accentHex: el("accentHex"),
+        keyHint: el("keyHint"), models: el("models"), provider: el("provider"), apiKeyLabel: el("apiKeyLabel"), accentSwatches: el("accentSwatches"), accentHex: el("accentHex"),
         bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
         panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
@@ -540,12 +661,13 @@
     var draft = null;            // копия настроек, пока открыт экран настроек
     var history = [];
     var lastError = null;
+    var currentRun = null;       // скрипты, выполненные за текущий запрос: { name, codes }
+    var lastRun = null;          // то же для последнего законченного запроса — его можно сохранить
     var pendingRef = null;       // референс, который уйдёт со следующим запросом
     var refSentNote = false;     // показываем «референс отправлен»
     var dialogHasRef = false;
     var checkMsgs = [];
     var busy = false;
-    var KEY_HINT = ui.keyHint.textContent;
 
     // Вкладки: «Claude» (задача, референс, запуск, ответ), «Анимация» (внутреннее имя tools, пока пустая)
     // и «Инструменты» (внутреннее имя motion: блоки на сетке). Внутренние имена прежние, чтобы не сбить сохранённый порядок.
@@ -750,6 +872,12 @@
         ui.runBtn.disabled = on;
         ui.newBtn.disabled = on;
         ui.refBtn.disabled = on;
+        ui.refLinkBtn.disabled = on;
+        ui.saveScriptBtn.disabled = on;
+        ui.saveConfirm.disabled = on;
+        Array.prototype.forEach.call(ui.scriptsList.querySelectorAll("button"), function (b) { b.disabled = on; });
+        ui.refLinkAdd.disabled = on;
+        ui.refLink.disabled = on;
         ui.pasteBtn.disabled = on;
         setMotionDisabled(on);
         ui.settingsBtn.disabled = on;
@@ -770,7 +898,7 @@
             ui.refChip.hidden = false;
             ui.refChip.className = "chip sent";
             ui.refClear.hidden = true;
-            ui.refText.textContent = "Референс отправлен, Claude помнит его в этом диалоге";
+            ui.refText.textContent = "Референс отправлен, " + aiName() + " помнит его в этом диалоге";
         } else {
             ui.refChip.hidden = true;
         }
@@ -906,6 +1034,67 @@
         });
     }
 
+    function callAI(messages, maxTokens) {
+        return settings.provider === "openai" ? callOpenAI(messages, maxTokens) : callClaude(messages, maxTokens);
+    }
+
+    // История хранится в формате Claude; для ChatGPT картинки и текст перекладываются в его формат.
+    function openAIMessages(messages) {
+        var out = [{ role: "system", content: SYSTEM_PROMPT }];
+        messages.forEach(function (m) {
+            var parts;
+            if (!(m.content instanceof Array)) { out.push({ role: m.role, content: m.content }); return; }
+            parts = m.content.map(function (b) {
+                if (b.type === "image") {
+                    return { type: "image_url", image_url: { url: "data:" + b.source.media_type + ";base64," + b.source.data } };
+                }
+                return { type: "text", text: b.text };
+            });
+            out.push({ role: m.role, content: parts });
+        });
+        return out;
+    }
+
+    function callOpenAI(messages, maxTokens) {
+        var body = JSON.stringify({
+            model: settings.openaiModel,
+            max_completion_tokens: Math.max(maxTokens || 0, OPENAI_MAX_TOKENS),
+            messages: openAIMessages(messages)
+        });
+        var headers = {
+            "authorization": "Bearer " + settings.openaiKey,
+            "content-type": "application/json"
+        };
+        return platform.postJSON(OPENAI_URL, headers, body, 300000).then(function (res) {
+            var data, choice, content;
+            var out = { ok: false, text: "", stopReason: "", error: "" };
+            try { data = JSON.parse(res.text); } catch (e) {
+                out.error = "Не удалось разобрать ответ сервера (код " + res.status + ").";
+                return out;
+            }
+            if (data && data.error) {
+                out.error = "ChatGPT API: " + (data.error.message || data.error.code || data.error.type || "ошибка");
+                return out;
+            }
+            choice = data && data.choices instanceof Array ? data.choices[0] : null;
+            if (!choice || !choice.message) {
+                out.error = "Неожиданный ответ сервера (код " + res.status + ").";
+                return out;
+            }
+            content = choice.message.content;
+            if (content instanceof Array) {
+                content = content.map(function (c) { return c && c.text ? c.text : ""; }).join("");
+            }
+            out.text = typeof content === "string" ? content : "";
+            if (choice.message.refusal && !out.text) { out.text = String(choice.message.refusal); }
+            out.stopReason = choice.finish_reason === "length" ? "max_tokens" : (choice.finish_reason || "");
+            out.ok = true;
+            return out;
+        }, function (e) {
+            return { ok: false, text: "", stopReason: "", error: "Нет связи с сервером: " + humanError(e) };
+        });
+    }
+
     function callClaude(messages, maxTokens) {
         var body = JSON.stringify({
             model: settings.model,
@@ -969,8 +1158,8 @@
             finish(message, scriptsRun > 0 ? "done" : "error");
         }
 
-        if (!settings.apiKey) {
-            giveUp("Нужен ключ Anthropic API. Вставьте его в настройках.");
+        if (!aiKey()) {
+            giveUp("Нужен " + providerOf().keyLabel.replace(/^Ключ/, "ключ") + ". Вставьте его в настройках.");
             openSettings();
             return;
         }
@@ -983,14 +1172,14 @@
             attempt = 0;
             while (true) {
                 if (attempt > 0) {
-                    setStatus("В скрипте синтаксическая ошибка, прошу Claude исправить (попытка " + (attempt + 1) + ")…", "busy");
+                    setStatus("В скрипте синтаксическая ошибка, прошу " + aiName() + " исправить (попытка " + (attempt + 1) + ")…", "busy");
                 } else if (round > 0) {
-                    setStatus(doneText() + "\nClaude смотрит на кадры результата (проверка " + round + " из " + MAX_CHECK_ROUNDS + ")…", "busy");
+                    setStatus(doneText() + "\n" + aiName() + " смотрит на кадры результата (проверка " + round + " из " + MAX_CHECK_ROUNDS + ")…", "busy");
                 } else {
-                    setStatus("Жду ответ Claude…", "busy");
+                    setStatus("Жду ответ " + aiName() + "…", "busy");
                 }
 
-                reply = await callClaude(history);
+                reply = await callAI(history);
                 if (!reply.ok) {
                     giveUp(scriptsRun > 0 ?
                         doneText() + "\nПроверить результат не удалось: " + reply.error + undoHint() :
@@ -1008,11 +1197,11 @@
 
                 if (code === null) {
                     if (scriptsRun > 0) {
-                        finish(doneText() + "\nClaude проверил результат: " + (expl || "замечаний нет.") + undoHint(), "done");
+                        finish(doneText() + "\n" + aiName() + " проверил результат: " + (expl || "замечаний нет.") + undoHint(), "done");
                     } else if (reply.stopReason === "max_tokens") {
                         finish("Ответ оборвался по длине. Попробуйте разбить задачу на части.", "error");
                     } else {
-                        finish("Claude ответил текстом, скрипт не запускался.", "");
+                        finish(aiName() + " ответил текстом, скрипт не запускался.", "");
                     }
                     return;
                 }
@@ -1045,7 +1234,7 @@
             if (needsConfirmation(code)) {
                 reason = "Этот скрипт удаляет что-то или обращается к файлам, сети, рендеру или проекту целиком. Проверьте его перед запуском.";
             } else if (settings.alwaysAsk) {
-                reason = expl || "Claude подготовил скрипт.";
+                reason = expl || aiName() + " подготовил скрипт.";
             }
             if (reason !== null) {
                 ok = await modal({
@@ -1062,7 +1251,7 @@
                 }
             }
 
-            setStatus(scriptsRun > 0 ? "Claude нашёл недочёт: " + (expl || "вношу правку") + "…" : "Выполняю скрипт…", "busy");
+            setStatus(scriptsRun > 0 ? aiName() + " нашёл недочёт: " + (expl || "вношу правку") + "…" : "Выполняю скрипт…", "busy");
             try {
                 res = await host("run", [code, scriptsRun > 0 ? "правка " + scriptsRun : label,
                     wantCheck && round < MAX_CHECK_ROUNDS, platform.tmpdir()]);
@@ -1080,6 +1269,7 @@
 
             scriptsRun++;
             if (scriptsRun === 1) { firstExpl = expl; }
+            if (currentRun) { currentRun.codes.push(code); }
 
             frames = null;
             if (res.frames && res.frames.length) {
@@ -1131,7 +1321,9 @@
         }
         trimHistory();
         text = text.replace(/\s+/g, " ");
+        beginRun(text);
         await askAndRun(text.length > 40 ? text.substring(0, 40) + "…" : text, sent, info.fileAccess);
+        endRun();
     }
 
     async function onFix() {
@@ -1150,7 +1342,9 @@
                 "\nAssume any partial changes it made have been undone. Return the full corrected script."
         });
         trimHistory();
+        beginRun(lastRun && lastRun.name ? lastRun.name : "исправление");
         await askAndRun("исправление", null, info.fileAccess);
+        endRun();
     }
 
     function onNew() {
@@ -1164,37 +1358,399 @@
         ui.fixBtn.disabled = true;
         ui.fixBtn.hidden = true;
         showRef();
-        setStatus("Начат новый диалог: Claude больше не помнит предыдущие запросы.", "");
+        setStatus("Начат новый диалог: " + aiName() + " больше не помнит предыдущие запросы.", "");
+    }
+
+    // ---------------------------------------------------------- my scripts
+    // Удачный скрипт (или несколько, если нейросеть после проверки вносила правки) можно сохранить
+    // и потом запускать одной кнопкой: без нейросети, мгновенно и бесплатно.
+
+    function beginRun(text) {
+        currentRun = { name: String(text).substring(0, SCRIPT_NAME_MAX), codes: [] };
+        lastRun = null;
+        showSaveRow();
+    }
+
+    function endRun() {
+        lastRun = currentRun && currentRun.codes.length ? currentRun : null;
+        currentRun = null;
+        showSaveRow();
+    }
+
+    function showSaveRow() {
+        ui.saveRow.hidden = !lastRun || !!lastRun.saved;
+        ui.saveForm.hidden = true;
+    }
+
+    function loadScripts() {
+        var d, items, out = [];
+        try { d = JSON.parse(window.localStorage.getItem(SCRIPTS_KEY) || "{}"); } catch (e) { d = {}; }
+        if (!d || typeof d !== "object") { d = {}; }
+        items = d.items instanceof Array ? d.items : [];
+        items.forEach(function (it) {
+            if (!it || typeof it.name !== "string" || !(it.codes instanceof Array) || !it.codes.length) { return; }
+            if (!it.codes.every(function (c) { return typeof c === "string" && c.length > 0; })) { return; }
+            if (out.length >= MAX_SCRIPTS) { return; }
+            out.push({ id: String(it.id || ("s" + out.length + "_" + Date.now())), name: it.name.substring(0, SCRIPT_NAME_MAX) || "Скрипт",
+                codes: it.codes.slice(), created: String(it.created || "") });
+        });
+        return { open: d.open !== false, items: out };
+    }
+
+    var scripts = loadScripts();
+
+    function storeScripts() {
+        try { window.localStorage.setItem(SCRIPTS_KEY, JSON.stringify(scripts)); } catch (e) {}
+    }
+
+    function scriptById(id) {
+        var i;
+        for (i = 0; i < scripts.items.length; i++) { if (scripts.items[i].id === id) { return scripts.items[i]; } }
+        return null;
+    }
+
+    function drawScripts() {
+        var n = scripts.items.length;
+        ui.scriptsCard.hidden = n === 0;
+        ui.scriptsCount.textContent = n ? String(n) : "";
+        ui.scriptsToggle.setAttribute("aria-expanded", scripts.open ? "true" : "false");
+        ui.scriptsList.hidden = !scripts.open;
+        ui.scriptsList.textContent = "";
+        scripts.items.forEach(function (it) {
+            var li = document.createElement("li");
+            var run = document.createElement("button");
+            var label = document.createElement("span");
+            var ren = document.createElement("button");
+            var del = document.createElement("button");
+            li.setAttribute("data-id", it.id);
+            run.className = "script-run";
+            run.setAttribute("data-act", "run");
+            run.title = "Запустить: " + it.name + (it.codes.length > 1 ? " (" + it.codes.length + " шага)" : "");
+            run.innerHTML = '<svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M3 1.8v8.4L10 6z"/></svg>';
+            label.textContent = it.name;
+            run.appendChild(label);
+            ren.className = "script-act";
+            ren.setAttribute("data-act", "rename");
+            ren.setAttribute("aria-label", "Переименовать «" + it.name + "»");
+            ren.title = "Переименовать";
+            ren.textContent = "✎";
+            del.className = "script-act";
+            del.setAttribute("data-act", "delete");
+            del.setAttribute("aria-label", "Удалить «" + it.name + "»");
+            del.title = "Удалить";
+            del.textContent = "×";
+            [run, ren, del].forEach(function (b) { b.disabled = busy; li.appendChild(b); });
+            ui.scriptsList.appendChild(li);
+        });
+    }
+
+    function onSaveScript() {
+        if (busy || !lastRun) { return; }
+        ui.saveRow.hidden = true;
+        ui.saveForm.hidden = false;
+        ui.saveName.value = lastRun.name;
+        ui.saveName.focus();
+        ui.saveName.select();
+    }
+
+    function confirmSaveScript() {
+        var name = ui.saveName.value.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+        if (busy || !lastRun) { return; }
+        if (!name) { ui.saveName.focus(); return; }
+        if (scripts.items.length >= MAX_SCRIPTS) {
+            setStatus("В «Моих скриптах» уже " + MAX_SCRIPTS + " скриптов. Удалите ненужные, чтобы сохранить новый.", "error");
+            return;
+        }
+        scripts.items.unshift({ id: "s" + Date.now().toString(36) + Math.floor(Math.random() * 1000), name: name.substring(0, SCRIPT_NAME_MAX),
+            codes: lastRun.codes.slice(), created: new Date().toISOString() });
+        scripts.open = true;
+        lastRun.saved = true;
+        storeScripts();
+        drawScripts();
+        showSaveRow();
+        setStatus("Скрипт «" + name + "» сохранён в «Мои скрипты». Теперь он запускается одной кнопкой, без нейросети.", "done");
+    }
+
+    async function runSavedScript(it) {
+        var all = it.codes.join("\n\n");
+        var i, res, ok;
+        if (busy) { return; }
+        if (it.codes.some(needsConfirmation)) {
+            ok = await modal({
+                title: "Запустить «" + it.name + "»?",
+                text: "Этот скрипт удаляет что-то или обращается к файлам, сети, рендеру или проекту целиком. Проверьте его перед запуском.",
+                code: all,
+                buttons: [{ label: "Не запускать", value: false }, { label: "Запустить", value: true, primary: true }]
+            });
+            if (!ok) { setStatus("Скрипт не запущен.", ""); return; }
+        }
+        setBusy(true);
+        setStatus("Запускаю «" + it.name + "»…", "busy");
+        for (i = 0; i < it.codes.length; i++) {
+            try {
+                res = await host("run", [it.codes[i], it.name + (it.codes.length > 1 ? " " + (i + 1) : ""), false, platform.tmpdir()]);
+            } catch (e) {
+                setBusy(false);
+                setStatus(humanError(e), "error");
+                return;
+            }
+            if (res.runError) {
+                setBusy(false);
+                setStatus("Ошибка в «" + it.name + "»" + (it.codes.length > 1 ? " (шаг " + (i + 1) + " из " + it.codes.length + ")" : "") + ": " + res.runError +
+                    "\nСкрипт мог рассчитывать на другую композицию или слои. Если он успел что-то изменить, нажмите Cmd/Ctrl+Z.", "error");
+                return;
+            }
+        }
+        setBusy(false);
+        setStatus("Готово: «" + it.name + "»." + (it.codes.length > 1 ? "\nОтменить: Cmd/Ctrl+Z, каждый шаг — отдельно." : "\nОтменить: Cmd/Ctrl+Z."), "done");
+    }
+
+    function renameScript(li, it) {
+        var input = document.createElement("input");
+        var run = li.querySelector(".script-run");
+        var done = false;
+        function finish(save) {
+            var name;
+            if (done) { return; }
+            done = true;
+            name = input.value.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+            if (save && name) { it.name = name.substring(0, SCRIPT_NAME_MAX); storeScripts(); }
+            drawScripts();
+        }
+        input.className = "field script-rename";
+        input.maxLength = SCRIPT_NAME_MAX;
+        input.value = it.name;
+        input.setAttribute("aria-label", "Новое название");
+        li.replaceChild(input, run);
+        input.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") { e.preventDefault(); finish(true); }
+            if (e.key === "Escape") { e.preventDefault(); finish(false); }
+        });
+        input.addEventListener("blur", function () { finish(true); });
+        input.focus();
+        input.select();
+    }
+
+    async function deleteScript(it) {
+        var ok = await modal({
+            title: "Удалить «" + it.name + "»?",
+            text: "Скрипт пропадёт из «Моих скриптов». Вернуть его будет нельзя.",
+            buttons: [{ label: "Отмена", value: false }, { label: "Удалить", value: true, primary: true }]
+        });
+        if (!ok) { return; }
+        scripts.items = scripts.items.filter(function (x) { return x !== it; });
+        storeScripts();
+        drawScripts();
+        setStatus("Скрипт «" + it.name + "» удалён.", "");
+    }
+
+    function enableScripts() {
+        drawScripts();
+        showSaveRow();
+        ui.saveScriptBtn.addEventListener("click", onSaveScript);
+        ui.saveConfirm.addEventListener("click", confirmSaveScript);
+        ui.saveCancel.addEventListener("click", function () { showSaveRow(); });
+        ui.saveName.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") { e.preventDefault(); confirmSaveScript(); }
+            if (e.key === "Escape") { e.preventDefault(); showSaveRow(); }
+        });
+        ui.scriptsToggle.addEventListener("click", function () {
+            scripts.open = !scripts.open;
+            storeScripts();
+            drawScripts();
+        });
+        ui.scriptsList.addEventListener("click", function (e) {
+            var btn = e.target.closest ? e.target.closest("button") : null;
+            var li = btn ? btn.closest("li") : null;
+            var it = li ? scriptById(li.getAttribute("data-id")) : null;
+            if (!btn || !it || btn.disabled) { return; }
+            if (btn.getAttribute("data-act") === "run") { runSavedScript(it); }
+            else if (btn.getAttribute("data-act") === "rename") { renameScript(li, it); }
+            else if (btn.getAttribute("data-act") === "delete") { deleteScript(it); }
+        });
     }
 
     // ----------------------------------------------------------- reference
 
+    // Снимает кадры с файла и делает его референсом. name — как его показать, note — добавка к сообщению.
+    async function useReference(path, name, note) {
+        var info = await host("info", []);
+        var res, frames;
+        if (!info.fileAccess) { throw new Error(FILE_ACCESS_HINT); }
+        res = await host("reference", [path, settings.refFrames, platform.tmpdir()]);
+        frames = await loadFrames(res.ref.frames);
+        pendingRef = {
+            name: name || res.ref.name, isStill: res.ref.isStill, duration: res.ref.duration,
+            width: res.ref.width, height: res.ref.height, frames: frames
+        };
+        refSentNote = false;
+        setBusy(false);
+        setStatus((pendingRef.isStill ?
+            "Картинка прикреплена. Напишите, что с ней сделать, и нажмите «Выполнить»." :
+            "Видео прикреплено: " + frames.length + " кадров. " + aiName() + " увидит их по порядку, само движение опишите словами.") +
+            (note ? "\n" + note : ""), "done");
+    }
+
     async function onAttachReference() {
-        var path, info, res, frames;
+        var path;
         if (busy) { return; }
         path = await platform.pickFile("Выберите видео или картинку-референс");
         if (!path) { return; }
         setBusy(true);
         setStatus("Снимаю кадры с референса…", "busy");
         try {
-            info = await host("info", []);
-            if (!info.fileAccess) { throw new Error(FILE_ACCESS_HINT); }
-            res = await host("reference", [path, settings.refFrames, platform.tmpdir()]);
-            frames = await loadFrames(res.ref.frames);
-            pendingRef = {
-                name: res.ref.name, isStill: res.ref.isStill, duration: res.ref.duration,
-                width: res.ref.width, height: res.ref.height, frames: frames
-            };
-            refSentNote = false;
-            setBusy(false);
-            setStatus(pendingRef.isStill ?
-                "Картинка прикреплена. Напишите, что с ней сделать, и нажмите «Выполнить»." :
-                "Видео прикреплено: " + frames.length + " кадров. Claude увидит их по порядку, само движение опишите словами.", "done");
+            await useReference(path, null, "");
         } catch (e) {
             setBusy(false);
             setStatus("Не удалось подготовить референс: " + humanError(e), "error");
         }
         showRef();
+    }
+
+    // ---- референс по ссылке: прямая ссылка на картинку или видео либо страница, где они есть
+
+    function decodeEntities(t) {
+        return String(t).replace(/&#x([0-9a-f]+);/gi, function (m, h) { return String.fromCharCode(parseInt(h, 16)); })
+            .replace(/&#(\d+);/g, function (m, d) { return String.fromCharCode(Number(d)); })
+            .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    }
+
+    function tagAttrs(tag) {
+        var out = {};
+        var re = /([a-zA-Z_:.-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/g;
+        var m;
+        while ((m = re.exec(tag)) !== null) {
+            out[m[1].toLowerCase()] = decodeEntities(m[3] !== undefined ? m[3] : m[4] !== undefined ? m[4] : m[5]);
+        }
+        return out;
+    }
+
+    function absoluteUrl(u, base) {
+        var r;
+        try { r = new URL(u, base); } catch (e) { return null; }
+        return r.protocol === "https:" || r.protocol === "http:" ? r.toString() : null;
+    }
+
+    function isVideoUrl(u) {
+        try { return /\.(mp4|mov|m4v|webm)$/i.test(new URL(u).pathname); } catch (e) { return false; }
+    }
+
+    // Что есть на странице: видео (только прямой файл), главная картинка и заголовок.
+    // Берётся то, что сайт сам показывает при публикации ссылки (og:video, og:image и т. п.).
+    function pageMedia(html, base) {
+        var metas = {};
+        var found = { video: null, image: null, title: "" };
+        var re = /<(meta|link|video|source)\b[^>]*>/gi;
+        var m, a, key, i, u, t;
+        function first(keys, test) {
+            var j, k, v;
+            for (j = 0; j < keys.length; j++) {
+                k = metas[keys[j]];
+                if (!k) { continue; }
+                v = absoluteUrl(k, base);
+                if (v && (!test || test(v))) { return v; }
+            }
+            return null;
+        }
+        while ((m = re.exec(html)) !== null) {
+            a = tagAttrs(m[0]);
+            t = m[1].toLowerCase();
+            if (t === "meta") {
+                key = String(a.property || a.name || a.itemprop || "").toLowerCase();
+                if (key && a.content && !metas.hasOwnProperty(key)) { metas[key] = a.content; }
+            } else if (t === "link" && /(^|\s)image_src(\s|$)/i.test(a.rel || "") && a.href && !metas.hasOwnProperty("link:image_src")) {
+                metas["link:image_src"] = a.href;
+            } else if ((t === "video" || t === "source") && a.src && !found.video) {
+                u = absoluteUrl(a.src, base);
+                if (u && (isVideoUrl(u) || /^video\/(mp4|quicktime|webm)/.test(a.type || ""))) { found.video = u; }
+            }
+        }
+        if (!found.video) {
+            i = /^video\/(mp4|quicktime|webm|x-m4v)/.test(String(metas["og:video:type"] || ""));
+            found.video = first(["og:video:secure_url", "og:video:url", "og:video", "twitter:player:stream"], function (v) { return i || isVideoUrl(v); });
+        }
+        found.image = first(["og:image:secure_url", "og:image:url", "og:image", "twitter:image", "twitter:image:src", "link:image_src"], null);
+        m = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
+        found.title = decodeEntities(metas["og:title"] || (m ? m[1] : "")).replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+        return found;
+    }
+
+    function isYouTube(u) {
+        try { return /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/i.test(new URL(u).hostname); } catch (e) { return false; }
+    }
+
+    // Как ссылку показать: имя файла из адреса, иначе заголовок страницы, иначе сайт.
+    function linkName(mediaUrl, title, pageUrl) {
+        var u, last;
+        try { u = new URL(mediaUrl); } catch (e) { u = null; }
+        if (u) {
+            last = u.pathname.replace(/\/+$/, "").replace(/^.*\//, "");
+            try { last = decodeURIComponent(last); } catch (e2) {}
+            if (MEDIA_EXT.test(last) && last.length <= 80) { return last; }
+        }
+        if (title) { return title.length > 60 ? title.substring(0, 60) + "…" : title; }
+        try { return new URL(pageUrl || mediaUrl).hostname.replace(/^www\./, ""); } catch (e3) { return "ссылка"; }
+    }
+
+    function normalizeLink(text) {
+        var t = String(text || "").replace(/^\s+|\s+$/g, "");
+        if (!t) { return null; }
+        if (!/^[a-z][a-z0-9+.-]*:/i.test(t)) { t = "https://" + t; }
+        return absoluteUrl(t, undefined) && /^https?:\/\/[^\s\/]+\.[^\s\/]+/i.test(t) ? absoluteUrl(t, undefined) : null;
+    }
+
+    async function onAttachLink() {
+        var url = normalizeLink(ui.refLink.value);
+        var base, r, found, target, note, name, title, path;
+        if (busy) { return; }
+        if (!url) {
+            setStatus("Вставьте ссылку на картинку, видео или страницу с ними (начинается с https://).", "");
+            ui.refLink.focus();
+            return;
+        }
+        setBusy(true);
+        setStatus("Скачиваю по ссылке…", "busy");
+        base = platform.join(platform.tmpdir(), "sayframe_link_" + Date.now());
+        note = "";
+        title = "";
+        try {
+            r = await platform.fetchUrl(url, base);
+            if (r.status !== 200) { throw new Error("LINK_HTTP:" + r.status); }
+            target = url;
+            if (r.text !== undefined) {
+                found = pageMedia(r.text, r.finalUrl || url);
+                title = found.title;
+                if (isYouTube(r.finalUrl || url)) {
+                    target = found.image;
+                    note = "С YouTube панель берёт только обложку ролика. Чтобы показать само движение, скачайте или запишите видео и прикрепите файл.";
+                } else {
+                    target = found.video || found.image;
+                }
+                if (!target) { throw new Error("LINK_NO_MEDIA"); }
+                setStatus("Скачиваю " + (target === found.video ? "видео" : "картинку") + " со страницы…", "busy");
+                r = await platform.fetchUrl(target, base);
+                if (r.status !== 200) { throw new Error("LINK_HTTP:" + r.status); }
+            }
+            if (!r.path) { throw new Error("LINK_NOT_MEDIA"); }
+            path = r.path;
+            setStatus("Снимаю кадры с референса…", "busy");
+            name = linkName(r.finalUrl || target, title, url);
+            await useReference(path, name, note);
+            ui.refLink.value = "";
+            ui.refLinkRow.hidden = true;
+        } catch (e) {
+            setBusy(false);
+            setStatus("Не удалось взять референс по ссылке: " + (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|^TIMEOUT$/.test(String(e && e.message)) ?
+                "нет связи с сайтом. Проверьте ссылку и интернет." : humanError(e)), "error");
+        } finally {
+            if (path) { platform.remove(path); }
+        }
+        showRef();
+    }
+
+    function showLinkRow(on) {
+        ui.refLinkRow.hidden = !on;
+        if (on) { ui.refLink.focus(); }
     }
 
     function onClearReference() {
@@ -1418,8 +1974,12 @@
         }
     }
 
-    function buildSettings() {
-        MODELS.forEach(function (m) {
+    // Модели и ключ в настройках — той нейросети, что выбрана сверху. Ключи у Claude и ChatGPT свои,
+    // при переключении набранный ключ не теряется.
+    function showProvider() {
+        var p = providerOf(draft);
+        ui.models.textContent = "";
+        p.models.forEach(function (m) {
             var b = document.createElement("button");
             var name = document.createElement("b");
             var note = document.createElement("small");
@@ -1429,8 +1989,29 @@
             note.textContent = m.note;
             b.appendChild(name);
             b.appendChild(note);
-            b.addEventListener("click", function () { draft.model = m.id; pressGroup(ui.models, m.id); });
+            b.addEventListener("click", function () { draft[p.modelField] = m.id; pressGroup(ui.models, m.id); });
             ui.models.appendChild(b);
+        });
+        pressGroup(ui.models, draft[p.modelField]);
+        pressGroup(ui.provider, draft.provider);
+        ui.apiKeyLabel.textContent = p.keyLabel;
+        ui.apiKey.placeholder = p.placeholder;
+        ui.apiKey.value = draft[p.keyField] || "";
+        ui.keyHint.textContent = p.hint;
+        ui.keyHint.className = "hint";
+    }
+
+    function keepTypedKey() {
+        if (draft) { draft[providerOf(draft).keyField] = ui.apiKey.value.replace(/\s/g, ""); }
+    }
+
+    function buildSettings() {
+        ui.provider.addEventListener("click", function (e) {
+            var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
+            if (!draft || !PROVIDERS.hasOwnProperty(v) || v === draft.provider) { return; }
+            keepTypedKey();
+            draft.provider = v;
+            showProvider();
         });
 
         function swatches(container, input, colors, key) {
@@ -1498,16 +2079,13 @@
         if (busy) { return; }
         draft = {};
         for (k in settings) { if (settings.hasOwnProperty(k)) { draft[k] = settings[k]; } }
-        ui.apiKey.value = draft.apiKey;
         ui.accentHex.value = draft.accent;
         ui.bgHex.value = draft.bg;
         ui.selfCheck.checked = draft.selfCheck;
         ui.alwaysAsk.checked = draft.alwaysAsk;
         ui.panelWidth.value = String(draft.panelWidth);
         ui.panelWidthVal.textContent = draft.panelWidth + " px";
-        ui.keyHint.textContent = KEY_HINT;
-        ui.keyHint.className = "hint";
-        pressGroup(ui.models, draft.model);
+        showProvider();
         pressGroup(ui.accentSwatches, draft.accent);
         pressGroup(ui.bgSwatches, draft.bg);
         pressGroup(ui.frames, draft.refFrames);
@@ -1519,36 +2097,38 @@
 
     function closeSettings(save) {
         if (save) {
-            draft.apiKey = ui.apiKey.value.replace(/\s/g, "");
+            keepTypedKey();
             draft.selfCheck = ui.selfCheck.checked;
             draft.alwaysAsk = ui.alwaysAsk.checked;
             draft.toolTitles = ui.toolTitles.checked;
             settings = draft;
             storeSettings(settings);
-            setStatus(settings.apiKey ? "Настройки сохранены." : "Ключ API не задан.", settings.apiKey ? "done" : "");
+            setStatus(aiKey() ? "Настройки сохранены." : "Ключ API не задан.", aiKey() ? "done" : "");
         }
         draft = null;
         applyTheme(settings);
         ui.sheet.hidden = true;
     }
 
-    // Проверяет ключ самым коротким запросом из возможных.
+    // Проверяет ключ самым коротким запросом из возможных — у той нейросети, что выбрана в настройках.
     function onTestKey() {
-        var saved = { apiKey: settings.apiKey, model: settings.model };
+        var saved = settings;
         var key = ui.apiKey.value.replace(/\s/g, "");
+        var trial = {};
+        var k;
         if (!key) {
             ui.keyHint.textContent = "Сначала вставьте ключ.";
             ui.keyHint.className = "hint bad";
             return;
         }
+        for (k in draft) { if (draft.hasOwnProperty(k)) { trial[k] = draft[k]; } }
+        trial[providerOf(trial).keyField] = key;
         ui.testKey.disabled = true;
         ui.keyHint.textContent = "Проверяю…";
         ui.keyHint.className = "hint";
-        settings.apiKey = key;
-        settings.model = draft.model;
-        callClaude([{ role: "user", content: "ping" }], 1).then(function (r) {
-            settings.apiKey = saved.apiKey;
-            settings.model = saved.model;
+        settings = trial;
+        callAI([{ role: "user", content: "ping" }], 1).then(function (r) {
+            settings = saved;
             ui.testKey.disabled = false;
             ui.keyHint.textContent = r.ok ? "Ключ работает." : r.error;
             ui.keyHint.className = "hint " + (r.ok ? "ok" : "bad");
@@ -2900,7 +3480,15 @@
     ui.runBtn.addEventListener("click", onRun);
     ui.fixBtn.addEventListener("click", onFix);
     ui.newBtn.addEventListener("click", onNew);
+    enableScripts();
     ui.refBtn.addEventListener("click", onAttachReference);
+    ui.refLinkBtn.addEventListener("click", function () { showLinkRow(ui.refLinkRow.hidden); });
+    ui.refLinkCancel.addEventListener("click", function () { showLinkRow(false); });
+    ui.refLinkAdd.addEventListener("click", onAttachLink);
+    ui.refLink.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); onAttachLink(); }
+        if (e.key === "Escape") { e.preventDefault(); showLinkRow(false); }
+    });
     ui.refClear.addEventListener("click", onClearReference);
     ui.pasteBtn.addEventListener("click", function () { pasteImage(null); });
     ui.settingsBtn.addEventListener("click", openSettings);
@@ -2918,8 +3506,8 @@
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onRun(); }
     });
 
-    if (!settings.apiKey) {
-        setStatus("Сначала откройте настройки (значок шестерёнки) и вставьте ключ Anthropic API.", "");
+    if (!aiKey()) {
+        setStatus("Сначала откройте настройки (значок шестерёнки) и вставьте " + providerOf().keyLabel.replace(/^Ключ/, "ключ") + ".", "");
     }
     announceUpdate();
     ensureHost().catch(function (e) { setStatus(humanError(e), "error"); });
