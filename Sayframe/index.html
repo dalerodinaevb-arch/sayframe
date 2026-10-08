@@ -393,95 +393,104 @@
         <button id="settingsClose" class="icon-btn" aria-label="Закрыть настройки" title="Закрыть">&times;</button>
       </div>
 
-      <div class="group">
-        <span class="label">Нейросеть</span>
-        <div id="provider" class="frames provider" role="group" aria-label="Какая нейросеть пишет скрипты">
-          <button data-value="claude">Claude</button>
-          <button data-value="openai">ChatGPT</button>
+      <div id="setTabs" class="frames set-tabs" role="tablist" aria-label="Разделы настроек">
+        <button id="setTabAI" role="tab" data-pane="ai" aria-selected="true" aria-pressed="true">AI</button>
+        <button id="setTabOther" role="tab" data-pane="other" aria-selected="false" aria-pressed="false">Общие</button>
+      </div>
+
+      <div id="setPaneAI" class="set-pane" role="tabpanel" aria-labelledby="setTabAI">
+        <div class="group">
+          <span class="label">Нейросеть</span>
+          <div id="provider" class="frames provider" role="group" aria-label="Какая нейросеть пишет скрипты">
+            <button data-value="claude">Claude</button>
+            <button data-value="openai">ChatGPT</button>
+          </div>
+        </div>
+
+        <div class="group">
+          <label id="apiKeyLabel" for="apiKey">Ключ Anthropic API</label>
+          <div class="key-row">
+            <input id="apiKey" class="field" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+            <button id="testKey" class="ghost">Проверить</button>
+          </div>
+          <p id="keyHint" class="hint">Создаётся на platform.claude.com, в разделе Settings → API keys. Хранится только на этом компьютере.</p>
+        </div>
+
+        <div class="group">
+          <span class="label">Модель</span>
+          <div id="models" class="models"></div>
+        </div>
+
+        <div class="group">
+          <label class="switch">
+            <input id="selfCheck" type="checkbox">
+            <span class="track"></span>
+            <span class="text">Claude проверяет результат по кадрам
+              <small>После запуска видит композицию и сам вносит правки. Дольше и дороже.</small>
+            </span>
+          </label>
+          <label class="switch">
+            <input id="alwaysAsk" type="checkbox">
+            <span class="track"></span>
+            <span class="text">Спрашивать перед каждым запуском
+              <small>Показывает скрипт и ждёт подтверждения.</small>
+            </span>
+          </label>
+        </div>
+
+        <div class="group">
+          <span class="label">Кадров из видео-референса</span>
+          <div id="frames" class="frames"></div>
         </div>
       </div>
 
-      <div class="group">
-        <label id="apiKeyLabel" for="apiKey">Ключ Anthropic API</label>
-        <div class="key-row">
-          <input id="apiKey" class="field" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
-          <button id="testKey" class="ghost">Проверить</button>
+      <div id="setPaneOther" class="set-pane" role="tabpanel" aria-labelledby="setTabOther" hidden>
+        <div class="group">
+          <span class="label">Акцентный цвет</span>
+          <div class="swatches" id="accentSwatches">
+            <input id="accentHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Акцентный цвет, hex">
+          </div>
         </div>
-        <p id="keyHint" class="hint">Создаётся на platform.claude.com, в разделе Settings → API keys. Хранится только на этом компьютере.</p>
-      </div>
 
-      <div class="group">
-        <span class="label">Модель</span>
-        <div id="models" class="models"></div>
-      </div>
-
-      <div class="group">
-        <span class="label">Акцентный цвет</span>
-        <div class="swatches" id="accentSwatches">
-          <input id="accentHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Акцентный цвет, hex">
+        <div class="group">
+          <span class="label">Цвет фона</span>
+          <div class="swatches" id="bgSwatches">
+            <input id="bgHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Цвет фона, hex">
+          </div>
         </div>
-      </div>
 
-      <div class="group">
-        <span class="label">Цвет фона</span>
-        <div class="swatches" id="bgSwatches">
-          <input id="bgHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Цвет фона, hex">
+        <div class="group">
+          <label for="panelWidth">Ширина полей и кнопок</label>
+          <div class="width-row">
+            <input id="panelWidth" class="range" type="range" min="280" max="640" step="10" value="380">
+            <output id="panelWidthVal" for="panelWidth">380 px</output>
+          </div>
+          <p class="hint">Поля и кнопки в разделах AI и «Анимация» остаются такой ширины, даже если растянуть панель в After Effects. Вкладки и раздел «Инструменты» занимают всю ширину панели.</p>
         </div>
-      </div>
 
-      <div class="group">
-        <label for="panelWidth">Ширина полей и кнопок</label>
-        <div class="width-row">
-          <input id="panelWidth" class="range" type="range" min="280" max="640" step="10" value="380">
-          <output id="panelWidthVal" for="panelWidth">380 px</output>
+        <div class="group">
+          <span class="label">Блоки в разделе «Инструменты»</span>
+          <div id="toolSize" class="frames tool-size">
+            <button data-value="large">Крупные</button>
+            <button data-value="small">Мелкие</button>
+          </div>
+          <p class="hint">Мелкие кнопки занимают меньше места: в ряд помещается больше блоков.</p>
+          <label class="switch">
+            <input id="toolTitles" type="checkbox">
+            <span class="track"></span>
+            <span class="text">Показывать названия блоков
+              <small>«Плавность ключей», «Точка привязки», «Выравнивание».</small>
+            </span>
+          </label>
         </div>
-        <p class="hint">Поля и кнопки в разделах AI и «Анимация» остаются такой ширины, даже если растянуть панель в After Effects. Вкладки и раздел «Инструменты» занимают всю ширину панели.</p>
-      </div>
 
-      <div class="group">
-        <span class="label">Блоки в разделе «Инструменты»</span>
-        <div id="toolSize" class="frames tool-size">
-          <button data-value="large">Крупные</button>
-          <button data-value="small">Мелкие</button>
+        <div class="group">
+          <span class="label">Горячие клавиши</span>
+          <div id="hotkeys" class="hotkeys"></div>
+          <p id="hotkeyNote" class="hint bad" aria-live="polite"></p>
+          <button id="hotkeysReset" class="ghost">Вернуть стандартные</button>
+          <p class="hint">Нажмите на сочетание, чтобы изменить его: нажмите новое на клавиатуре или выберите клавиши мышью. Сохраняется сразу. Сочетания работают, когда активна панель Sayframe: щёлкните по ней перед нажатием.</p>
         </div>
-        <p class="hint">Мелкие кнопки занимают меньше места: в ряд помещается больше блоков.</p>
-        <label class="switch">
-          <input id="toolTitles" type="checkbox">
-          <span class="track"></span>
-          <span class="text">Показывать названия блоков
-            <small>«Плавность ключей», «Точка привязки», «Выравнивание».</small>
-          </span>
-        </label>
-      </div>
-
-      <div class="group">
-        <label class="switch">
-          <input id="selfCheck" type="checkbox">
-          <span class="track"></span>
-          <span class="text">Claude проверяет результат по кадрам
-            <small>После запуска видит композицию и сам вносит правки. Дольше и дороже.</small>
-          </span>
-        </label>
-        <label class="switch">
-          <input id="alwaysAsk" type="checkbox">
-          <span class="track"></span>
-          <span class="text">Спрашивать перед каждым запуском
-            <small>Показывает скрипт и ждёт подтверждения.</small>
-          </span>
-        </label>
-      </div>
-
-      <div class="group">
-        <span class="label">Горячие клавиши</span>
-        <div id="hotkeys" class="hotkeys"></div>
-        <p id="hotkeyNote" class="hint bad" aria-live="polite"></p>
-        <button id="hotkeysReset" class="ghost">Вернуть стандартные</button>
-        <p class="hint">Нажмите на сочетание, чтобы задать новое: держите Cmd, Ctrl, Alt или Shift и нажмите клавишу (F1–F12 можно и без них). Backspace — убрать, Esc — отмена. Сочетания работают, когда активна панель Sayframe: щёлкните по ней перед нажатием.</p>
-      </div>
-
-      <div class="group">
-        <span class="label">Кадров из видео-референса</span>
-        <div id="frames" class="frames"></div>
       </div>
 
       <button id="saveSettings" class="primary">Сохранить</button>
@@ -509,6 +518,7 @@
       </div>
       <ul id="fxList" class="fx-list" role="listbox" aria-label="Эффекты и пресеты"></ul>
       <p id="fxHint" class="fx-hint">↑↓ — выбрать · Enter — добавить на выделенные слои · ☆ — в избранное · Esc — закрыть</p>
+      <button id="fxKeys" class="ghost fx-keys" title="Открыть настройку горячих клавиш">Сочетание для поиска: <b id="fxKeysCombo"></b> — изменить</button>
     </div>
   </div>
 
