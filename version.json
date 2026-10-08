@@ -1,9 +1,10 @@
 {
-  "version": "1.12.0",
+  "version": "1.13.0",
   "date": "2026-10-08",
   "notes": [
-    "Новый блок «Порядок в проекте» во вкладке «Инструменты»: кнопка «Organize After Effects Project» раскладывает композиции, прекомпозиции, видео, аудио, картинки, солиды и прочие ресурсы по папкам",
-    "Файлы, названия и связи между композициями не меняются, уже существующие папки используются, а лишние не создаются; Cmd/Ctrl+Z отменяет"
+    "Поиск эффектов, как в FX Console: лупа в шапке или Ctrl+Space, печатаете название эффекта или пресета — Enter добавляет его на выделенные слои; есть избранное и недавние",
+    "Снимок кадра одной кнопкой: PNG в «Документы › Sayframe Snapshots» и сразу в буфер обмена",
+    "Горячие клавиши в настройках: поиск эффектов, снимок кадра, Organize, вставка картинки, вкладки"
   ],
   "download": "https://github.com/dalerodinaevb-arch/sayframe#readme",
   "moved": "",
@@ -11,28 +12,28 @@
   "files": [
     {
       "path": "CSXS/manifest.xml",
-      "sha256": "4a7b7b9d29394f145a92e0b28564917af467ab3850ab0b32f95d33286c9c6685",
+      "sha256": "abdda952bc64d718e472219af8fcdd2e3029b1ad6a5cede3bacc02764d197bd5",
       "size": 1644
     },
     {
       "path": "css/panel.css",
-      "sha256": "3a028d06ec51261b066a78b024669b24531e7dc18b9914ce3588c0635220caf3",
-      "size": 46921
+      "sha256": "03637d9f6c5ad1358c16dd2e46c00315856a60701ce073787dcff3882e8c0c3e",
+      "size": 50686
     },
     {
       "path": "index.html",
-      "sha256": "8cad2dbb85edc986a509b14a0f73536c05b2adba4be4ce943cfffa0961a15a3a",
-      "size": 47513
+      "sha256": "e2a5372579bce3fa40873c0970e1c5015aa450ff69f38cc094d52a50b979ae50",
+      "size": 50395
     },
     {
       "path": "js/panel.js",
-      "sha256": "aa94abfb62eaebc613330debd32bc16f2698c895d99e3d2e4d66d5c7e493b49e",
-      "size": 213651
+      "sha256": "959ff85eb96044761f8e99d0fe8cbcd676b22270c40d138141938a0860d646c4",
+      "size": 239128
     },
     {
       "path": "jsx/host.jsx",
-      "sha256": "ffb1d5a661eb779ba9627ebc27f14a4d2c0bb7770b450a92451b81dc45bf6506",
-      "size": 63826
+      "sha256": "28252b277c39afbaaff4c18383cb6c87518434857b1d07ae93078a658e0fce34",
+      "size": 68954
     }
   ]
 }
