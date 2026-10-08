@@ -146,6 +146,34 @@ function mkLayer(clock, o) {
     } });
   return L;
 }
+// --- layers with expressions, for the expression helper: groups, properties, errors like After Effects gives
+// An expression "fails" when it is not valid JavaScript or mentions BAD (the error text then names the line).
+function exprError(expr) {
+  if (/BAD/.test(expr)) return "Error: ReferenceError: BAD is not defined (line 1)";
+  try { new Function(expr); return ""; } catch (e) { return "Error: SyntaxError: " + e.message; }
+}
+function mkEProp(name, matchName, value, o) {
+  o = o || {};
+  const p = { name, matchName, propertyType: 6212, canSetExpression: o.canSetExpression !== false, value, numKeys: o.keys || 0,
+    expressionEnabled: true, expressionError: "", _expr: "", sets: [] };
+  Object.defineProperty(p, "expression", { get: () => p._expr, set(v) { if (o.locked) throw new Error("After Effects error: layer is locked"); p._expr = v; p.sets.push(v); p.expressionError = v ? exprError(v) : ""; } });
+  if (o.expression) { p._expr = o.expression; p.expressionError = exprError(o.expression); p.expressionEnabled = o.enabled !== false; }
+  return p;
+}
+function mkEGroup(name, matchName, kids) {
+  const g = { name, matchName, propertyType: 6214, numProperties: kids.length, property: (i) => (typeof i === "number" ? kids[i - 1] : kids.find((k) => k.name === i || k.matchName === i)) || null };
+  kids.forEach((k, i) => { k.parentProperty = g; k.propertyIndex = i + 1; });
+  return g;
+}
+function mkELayer(index, name, groups) {
+  const L = { name, index, propertyDepth: 0, numProperties: groups.length, property: (i) => (typeof i === "number" ? groups[i - 1] : groups.find((k) => k.name === i)) || null };
+  groups.forEach((g, i) => { g.parentProperty = L; g.propertyIndex = i + 1; });
+  // depth: groups are 1 below the layer, their children 2
+  const setDepth = (node, d) => { node.propertyDepth = d; if (node.numProperties && node !== L) for (let k = 1; k <= node.numProperties; k++) setDepth(node.property(k), d + 1); };
+  groups.forEach((g) => setDepth(g, 1));
+  return L;
+}
+
 function makeAE(opts, tmpDir) {
   const log = { undo: [], removed: [], opened: 0, imports: [], layerAdds: [], precomposes: [], bins: [], ran: [], refComps: [], nullsAdded: 0, nullsRemoved: 0, nullSourcesRemoved: 0, nulls: [], nullExpressions: [] };
   function File(p) { this.fsName = p; this.name = encodeURI(path.basename(p)); }
@@ -154,7 +182,7 @@ function makeAE(opts, tmpDir) {
   function ImportOptions(f) { this.file = f; }
   const rootFolder = { name: "Root" };
   function FolderItem(name) { this.name = name; this.parentFolder = rootFolder; }
-  const comp = Object.assign(new CompItem(), { name: "Тест", width: 1920, height: 1080, duration: 10, frameRate: 30, frameDuration: 1 / 30, time: opts.compTime || 0, numLayers: 2, workAreaStart: 0, workAreaDuration: 5,
+  const comp = Object.assign(new CompItem(), { name: "Тест", width: 1920, height: 1080, duration: 10, frameRate: 30, frameDuration: 1 / 30, time: opts.compTime || 0, numLayers: opts.exprLayers ? opts.exprLayers.length : 2, workAreaStart: 0, workAreaDuration: 5,
     openInViewer() { log.opened++; project.activeItem = comp; },
     selectedProperties: opts.selectedProperties || [], selectedLayers: opts.selectedLayers || [],
     layers: { add(item) { log.layerAdds.push(item); return { index: 1, property() { return { property() { return { setValue() {} }; } }; } }; },
@@ -178,7 +206,7 @@ function makeAE(opts, tmpDir) {
         return nul;
       },
       precompose(idx, name, moveAll) { log.precomposes.push({ idx: Array.prototype.slice.call(idx), name, moveAll }); return Object.assign(new CompItem(), { name }); } },
-    layer(i) { const l = i === 1 ? new TextLayer() : {}; return Object.assign(l, { name: i === 1 ? "Заголовок" : "Фон", selected: i === 1, enabled: true, threeDLayer: false, parent: null, inPoint: 0, outPoint: 10, index: i, source: i === 2 ? { mainSource: new SolidSource() } : null }); } });
+    layer(i) { if (opts.exprLayers) return opts.exprLayers[i - 1] || null; const l = i === 1 ? new TextLayer() : {}; return Object.assign(l, { name: i === 1 ? "Заголовок" : "Фон", selected: i === 1, enabled: true, threeDLayer: false, parent: null, inPoint: 0, outPoint: 10, index: i, source: i === 2 ? { mainSource: new SolidSource() } : null }); } });
   const projItems = [comp];
   const project = { get numItems() { return projItems.length; }, activeItem: opts.noActiveComp ? null : comp, item(i) { return projItems[i - 1]; },
     file: opts.projectFile ? new File(opts.projectFile) : null, rootFolder,
@@ -368,7 +396,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       // Reopen the panel. The short pause lets the browser store what the panel has just saved:
       // a reload within a few milliseconds of a localStorage write can lose that write.
       async restart() { await page.waitForTimeout(400); await page.reload(); await h.ready(); },
-      async tab(name) { await page.click(name === "tools" ? "#tabTools" : "#tabClaude"); },
+      async tab(name) { await page.click(name === "tools" ? "#tabTools" : name === "motion" ? "#tabMotion" : "#tabClaude"); },
       // the paste tool lives on the Tools tab
       async paste() { if (await page.locator("#viewMotion").isHidden()) await page.click("#tabMotion"); await page.click("#pasteBtn"); },
       async modalClick(label) { await page.locator("#modalButtons button", { hasText: label }).click(); await h.idle(); },
@@ -582,6 +610,150 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = [await p.page.locator("#scriptsList button").evaluateAll((l) => l.every((b) => b.disabled)), await p.page.locator("#runBtn").isDisabled()];
   await p.idle();
   check("K11 while a saved script runs, the panel is busy and the list cannot start another", t[0] && t[1] && !(await p.page.locator("#scriptsList .script-run").isDisabled()) && p.ae.log.ran.join() === "x", t.join());
+  await p.close();
+
+  console.log("\n=== expressions ===");
+  const exprReply = (list, note) => msg("```json\n" + JSON.stringify({ note: note || "Готово.", expressions: list }) + "\n```");
+  const exprScene = () => {
+    const pos = mkEProp("Position", "ADBE Position", [960, 540], { keys: 2 });
+    const rot = mkEProp("Rotation", "ADBE Rotate Z", 0);
+    const op = mkEProp("Opacity", "ADBE Opacity", 100, { expression: "wiggle(2, BAD)" });
+    const sc = mkEProp("Scale", "ADBE Scale", [100, 100], { expression: "[100, 100" });
+    const off = mkEProp("Anchor Point", "ADBE Anchor Point", [0, 0], { expression: "BAD stuff", enabled: false });
+    const L1 = mkELayer(1, "Logo", [mkEGroup("Transform", "ADBE Transform Group", [pos, rot, op])]);
+    const L2 = mkELayer(2, "Title", [mkEGroup("Transform", "ADBE Transform Group", [sc, off])]);
+    return { pos, rot, op, sc, off, layers: [L1, L2] };
+  };
+  let X = exprScene();
+  p = await open({ exprLayers: X.layers, selectedProperties: [X.pos.parentProperty, X.pos, X.rot], replies: [exprReply([{ id: 1, expression: "var freq = 2;\nwiggle(freq, 30)" }, { id: 2, expression: "time * 90" }], "Позиция качается, поворот крутится.")] });
+  check("E1 an 'Expressions' card on the AI tab: a field and two buttons", (await p.page.locator("#exprCard").isVisible()) && (await p.page.locator("#exprApplyBtn").innerText()) === "Поставить на выделенное" && (await p.page.locator("#exprFixBtn").innerText()) === "Починить ошибки");
+  await p.page.click("#exprApplyBtn");
+  check("E1 nothing written -> a hint, nothing sent", /Напишите, что должно делать/.test(await p.status()) && p.net.requests.length === 0);
+  await p.page.fill("#exprWish", "пусть качается, а поворот крутится");
+  await p.page.click("#exprApplyBtn"); await p.idle();
+  c = p.net.requests[0].body;
+  check("E2 the AI gets the wish and each selected property with its layer, path, value and keyframes (groups are skipped)", /\[Request\]\nпусть качается, а поворот крутится/.test(c.messages[0].content) && /1\. Layer 1 "Logo" > Transform > Position \(matchName ADBE Position\), value \[960, 540\], keyframes: 2, no expression yet/.test(c.messages[0].content) && /2\. Layer 1 "Logo" > Transform > Rotation/.test(c.messages[0].content) && !/3\./.test(c.messages[0].content), c.messages[0].content);
+  check("E2 with its own instructions for expressions, not the script ones", /You write Adobe After Effects expressions/.test(c.system) && !/writing a script that the panel runs/.test(c.system));
+  check("E3 the expressions are on the properties", X.pos.expression === "var freq = 2;\nwiggle(freq, 30)" && X.rot.expression === "time * 90" && X.op.sets.length === 0);
+  check("E3 one undo step, the status lists what got an expression", p.ae.log.undo.join() === "begin:Sayframe: expression,end" && /^Выражение стоит: Transform > Position, Transform > Rotation\.\nПозиция качается, поворот крутится\.\nОтменить: Cmd\/Ctrl\+Z\.$/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+  check("E3 the expressions are shown in the reply card, nothing to save as a script", /\/\/ Transform > Position\nvar freq = 2;/.test(await p.page.locator("#replyCode").textContent()) && (await p.page.locator("#saveRow").isHidden()));
+  await p.close();
+
+  // After Effects does not accept the first answer: the AI is asked again with the error
+  X = exprScene();
+  p = await open({ exprLayers: X.layers, selectedProperties: [X.rot], replies: [exprReply([{ id: 1, expression: "time * BAD" }]), exprReply([{ id: 1, expression: "time * 45" }], "Исправил.")] });
+  await p.page.fill("#exprWish", "крутись"); await p.page.click("#exprApplyBtn"); await p.idle();
+  m = p.net.requests[1] && p.net.requests[1].body.messages;
+  check("E4 an expression After Effects rejects goes back to the AI with the error, and the fix is applied", m && m.length === 3 && /After Effects reported errors for these expressions:\nid 1: Error: ReferenceError: BAD is not defined/.test(m[2].content) && X.rot.expression === "time * 45" && X.rot.sets.length === 2, JSON.stringify(m && m[2]));
+  check("E4 two attempts, two undo steps, the status says so", /^Выражение стоит: Transform > Rotation\./.test(await p.status()) && /каждая попытка — отдельный шаг/.test(await p.status()), await p.status());
+  await p.close();
+  X = exprScene();
+  p = await open({ exprLayers: X.layers, selectedProperties: [X.rot], replies: [exprReply([{ id: 1, expression: "BAD 1" }]), exprReply([{ id: 1, expression: "BAD 2" }]), exprReply([{ id: 1, expression: "BAD 3" }])] });
+  await p.page.fill("#exprWish", "крутись"); await p.page.click("#exprApplyBtn"); await p.idle();
+  check("E5 after three refused attempts it stops and reports the error", p.net.requests.length === 3 && /^Не получилось для: Transform > Rotation \(Error: ReferenceError/.test(await p.status()) && (await p.statusKind()) === "error", await p.status());
+  await p.close();
+
+  X = exprScene();
+  p = await open({ exprLayers: X.layers, selectedProperties: [], replies: [] });
+  await p.page.fill("#exprWish", "качайся"); await p.page.click("#exprApplyBtn"); await p.idle();
+  check("E6 nothing selected -> a hint, nothing sent", /^Выделите свойство на таймлайне/.test(await p.status()) && p.net.requests.length === 0 && (await p.statusKind()) === "");
+  await p.close();
+  p = await open({ noActiveComp: true });
+  await p.page.fill("#exprWish", "качайся"); await p.page.click("#exprApplyBtn"); await p.idle();
+  check("E6 no composition open -> a hint", /^Откройте композицию/.test(await p.status()) && (await p.statusKind()) === "");
+  await p.close();
+  X = exprScene();
+  p = await open({ exprLayers: X.layers, selectedProperties: [X.rot], replies: [msg("Не могу.")] });
+  await p.page.fill("#exprWish", "качайся"); await p.page.click("#exprApplyBtn"); await p.idle();
+  check("E6 an answer without the JSON is reported, nothing changes", /ответил не в том виде/.test(await p.status()) && X.rot.sets.length === 0 && (await p.statusKind()) === "error", await p.status());
+  await p.close();
+  X = exprScene();
+  p = await open({ settings: { apiKey: "" }, exprLayers: X.layers, selectedProperties: [X.rot] });
+  await p.page.fill("#exprWish", "качайся"); await p.page.click("#exprApplyBtn");
+  check("E6 no key -> asks for it", /^Нужен ключ Anthropic API/.test(await p.status()) && (await p.page.locator("#settingsSheet").isVisible()));
+  await p.close();
+
+  // fixing broken expressions in the open composition
+  X = exprScene();
+  p = await open({ exprLayers: X.layers, replies: [exprReply([{ id: 1, expression: "wiggle(2, 20)" }, { id: 2, expression: "[100, 100]" }], "Починил обе.")] });
+  await p.page.click("#exprFixBtn"); await p.idle();
+  c = p.net.requests[0].body.messages[0].content;
+  check("E7 'Fix errors' finds the broken expressions that are switched on (not the switched-off one) and sends them with their errors", /These expressions give errors/.test(c) && /1\. Layer 1 "Logo" > Transform > Opacity/.test(c) && /wiggle\(2, BAD\)/.test(c) && /error: Error: ReferenceError/.test(c) && /2\. Layer 2 "Title" > Transform > Scale/.test(c) && /error: Error: SyntaxError/.test(c) && !/Anchor Point/.test(c), c);
+  check("E7 both fixed", X.op.expression === "wiggle(2, 20)" && X.sc.expression === "[100, 100]" && X.op.expressionError === "" && /^Выражение стоит: Transform > Opacity, Transform > Scale\.\nПочинил обе\./.test(await p.status()), await p.status());
+  await p.page.click("#exprFixBtn"); await p.idle();
+  check("E7 asked again: nothing left to fix, no request", /нет выражений с ошибкой/.test(await p.status()) && p.net.requests.length === 1 && (await p.statusKind()) === "done", await p.status());
+  await p.page.click("#exprToggle");
+  check("E8 the card folds and stays folded", (await p.page.locator("#exprBody").isHidden()));
+  await p.restart();
+  check("E8 (after restart)", (await p.page.locator("#exprBody").isHidden()) && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+  X = exprScene();
+  p = await open({ settings: { provider: "openai", openaiKey: "sk-o" }, exprLayers: X.layers, selectedProperties: [X.rot], replies: [{ choices: [{ index: 0, message: { role: "assistant", content: "```json\n" + JSON.stringify({ note: "ok", expressions: [{ id: 1, expression: "time*10" }] }) + "\n```" }, finish_reason: "stop" }] }] });
+  await p.page.fill("#exprWish", "крутись"); await p.page.click("#exprApplyBtn"); await p.idle();
+  c = p.net.requests[0];
+  check("E9 works with ChatGPT too: the expression instructions go as its system message", c.url === "https://api.openai.com/v1/chat/completions" && /You write Adobe After Effects expressions/.test(c.body.messages[0].content) && X.rot.expression === "time*10", JSON.stringify(c.body.messages[0]).slice(0, 100));
+  await p.close();
+
+  console.log("\n=== quick tasks ===");
+  const chips = (p) => p.page.locator("#quickList .quick-chip span:first-child").allInnerTexts();
+  const savedQuick = (p) => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.quick.v1") || "null"));
+  p = await open({ replies: [msg("Делаю подпись.\n```javascript\napp.__ran('lower');\n```")] });
+  check("Q1 four ready tasks above the request field", (await chips(p)).join() === "Появление текста,Подпись внизу кадра,Логотип с отскоком,Упорядочить проект" && (await p.page.evaluate(() => { const q = document.getElementById("quickBox").getBoundingClientRect(), t = document.getElementById("prompt").getBoundingClientRect(); return q.bottom <= t.top; })));
+  await p.page.locator("#quickList .quick-chip").nth(1).click();
+  t = await p.page.inputValue("#prompt");
+  check("Q2 a press puts the task into the field (not sent yet) with the cursor at the end", /^Сделай подпись внизу кадра/.test(t) && /«Имя Фамилия»/.test(t) && p.net.requests.length === 0 && (await p.page.evaluate(() => document.activeElement.id)) === "prompt" && (await p.page.evaluate(() => document.getElementById("prompt").selectionStart === document.getElementById("prompt").value.length)) && /в поле запроса/.test(await p.status()));
+  await p.page.fill("#prompt", t.replace("«Имя Фамилия»", "«Далер»"));
+  await p.page.click("#runBtn"); await p.idle();
+  check("Q2 after a tweak it runs like any request", /«Далер»/.test(p.net.requests[0].body.messages[0].content) && p.ae.log.ran.join() === "lower");
+  await p.page.fill("#prompt", "Сделай тряску камеры на 2 секунды с текущего времени");
+  await p.page.click("#quickAdd");
+  check("Q3 '+' offers to save the text from the field as a task", (await p.page.locator("#quickForm").isVisible()) && (await p.page.inputValue("#quickText")) === "Сделай тряску камеры на 2 секунды с текущего времени" && (await p.page.inputValue("#quickName")) === "Сделай тряску камеры на 2 секунды".slice(0, 30), await p.page.inputValue("#quickName"));
+  await p.page.fill("#quickName", "Тряска");
+  await p.page.click("#quickSave");
+  check("Q3 saved: a new button at the end, remembered", (await chips(p)).slice(-1)[0] === "Тряска" && (await p.page.locator("#quickForm").isHidden()) && (await savedQuick(p)).items.slice(-1)[0].text === "Сделай тряску камеры на 2 секунды с текущего времени" && /сохранена/.test(await p.status()));
+  await p.page.fill("#prompt", "");
+  await p.page.click("#quickAdd");
+  check("Q3 with an empty field the form is empty, the name gets the cursor", (await p.page.inputValue("#quickName")) === "" && (await p.page.inputValue("#quickText")) === "" && (await p.page.evaluate(() => document.activeElement.id)) === "quickName");
+  await p.page.click("#quickSave");
+  check("Q3 an empty task is not saved", (await p.page.locator("#quickForm").isVisible()) && (await chips(p)).length === 5);
+  await p.page.keyboard.press("Escape");
+  check("Q3 Escape closes the form", await p.page.locator("#quickForm").isHidden());
+  await p.restart();
+  check("Q4 own tasks survive a restart", (await chips(p)).join() === "Появление текста,Подпись внизу кадра,Логотип с отскоком,Упорядочить проект,Тряска");
+  await p.page.click("#quickEdit");
+  check("Q5 edit mode: every button gets a cross", (await p.page.getAttribute("#quickEdit", "aria-pressed")) === "true" && (await p.page.locator("#quickList .quick-del").count()) === 5);
+  await p.page.locator("#quickList .quick-chip").nth(4).click();
+  check("Q5 in edit mode a press opens the task for editing", (await p.page.locator("#quickForm").isVisible()) && (await p.page.inputValue("#quickName")) === "Тряска" && (await p.page.inputValue("#prompt")) === "");
+  await p.page.fill("#quickName", "Тряска камеры"); await p.page.fill("#quickText", "Сделай сильную тряску камеры");
+  await p.page.click("#quickSave");
+  check("Q5 edited in place", (await chips(p)).slice(-1)[0] === "Тряска камеры" && (await savedQuick(p)).items.length === 5 && (await savedQuick(p)).items[4].text === "Сделай сильную тряску камеры");
+  await p.page.locator("#quickList .quick-chip").nth(0).locator(".quick-del").click();
+  check("Q6 delete asks first", (await p.page.locator("#modal").isVisible()) && /Удалить задачу «Появление текста»\?/.test(await p.page.locator("#modalTitle").innerText()) && /можно будет вернуть/.test(await p.page.locator("#modalText").innerText()));
+  await p.modalClick("Удалить");
+  check("Q6 gone; a 'bring back' link appears for the standard ones", !(await chips(p)).includes("Появление текста") && (await p.page.locator("#quickList [data-act=reset]").isVisible()));
+  await p.page.click("#quickList [data-act=reset]");
+  check("Q6 the standard task is back, own ones kept", (await chips(p)).includes("Появление текста") && (await chips(p)).includes("Тряска камеры") && (await p.page.locator("#quickList [data-act=reset]").count()) === 0);
+  await p.page.click("#quickEdit");
+  check("Q6 leaving edit mode removes the crosses", (await p.page.locator("#quickList .quick-del").count()) === 0);
+  await p.page.click("#quickToggle");
+  check("Q7 the row folds and stays folded after a restart", (await p.page.locator("#quickList").isHidden()) && (await p.page.getAttribute("#quickToggle", "aria-expanded")) === "false");
+  await p.restart();
+  check("Q7 (after restart)", (await p.page.locator("#quickList").isHidden()) && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+  for (const bad of ['"x"', "5", '{"items":[1,{"name":"","text":"a"},{"name":"Ок","text":"сделай"}]}']) {
+    p = await open({});
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.quick.v1", v), bad); await p.restart();
+    t = await chips(p);
+    check("Q8 broken saved tasks " + bad + " -> safe", (bad.indexOf("Ок") >= 0 ? t.join() === "Ок" : t.length === 4) && p.errors.length === 0, t.join());
+    await p.close();
+  }
+  p = await open({ hostDelayMs: 300 });
+  await p.page.evaluate(() => localStorage.setItem("sayframe.scripts.v1", JSON.stringify({ open: true, items: [{ id: "a", name: "X", codes: ["app.__ran('x');"] }] })));
+  await p.restart();
+  await p.page.click("#scriptsList .script-run");
+  t = await p.page.locator("#quickList .quick-chip").evaluateAll((l) => l.length === 4 && l.every((b) => b.disabled));
+  await p.idle();
+  check("Q9 while the panel is busy the buttons are off, and on again after", t && !(await p.page.locator("#quickList .quick-chip").first().isDisabled()));
   await p.close();
 
   console.log("\n=== reference by link ===");
@@ -840,6 +1012,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   // Cmd+V inside the panel: the image comes from the paste event itself.
   p = await open({ clip: "none", footage: IMG, imageSize: { width: 2, height: 2 } });
+  await p.tab("motion");
   await p.page.evaluate((b64) => {
     const bin = atob(b64); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     const dt = new DataTransfer(); dt.items.add(new File([bytes], "image.png", { type: "image/png" }));
@@ -879,12 +1052,34 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("P12 a clipboard that really has no picture is reported after three looks, within two seconds", /^В буфере обмена нет картинки/.test(await p.status()) && reads(p) === 3 && Date.now() - t < 2500 && p.tempLeft().length === 0 && !(await p.page.locator("#pasteBtn").isDisabled()), reads(p) + " " + (Date.now() - t));
   check("P12 the macOS helper also asks the system for any picture it can read, and stays plain ASCII", /initWithPasteboard/.test(p.sys.jxa) && /^[\x09\x0a\x20-\x7e]*$/.test(p.sys.jxa) && (() => { try { new Function(p.sys.jxa); return true; } catch (e) { return false; } })());
   await p.close();
-  p = await open({ clip: "png", footage: IMG });
+  p = await open({ clip: "png", footage: IMG, replies: [msg("Повторяю.\n```javascript\napp.__ran('ref');\n```")] });
   await p.page.focus("#prompt");
   await p.page.evaluate(() => { const dt = new DataTransfer(); document.getElementById("prompt").dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })); });
+  await p.idle();
+  for (let i = 0; i < 20 && p.tempLeft().length; i++) await p.page.waitForTimeout(50);
+  check("P13 Cmd+V on the AI tab with the cursor in the prompt: the screenshot becomes the reference", (await p.page.locator("#refText").innerText()) === "Снимок из буфера — картинка" && /^Картинка прикреплена/.test(await p.status()) && reads(p) === 1 && (await p.page.inputValue("#prompt")) === "" && (await p.page.locator("#modal").isHidden()), await p.status());
+  check("P13 nothing lands in the composition or the project, the temporary PNG is gone", p.ae.log.layerAdds.length === 0 && p.ae.log.bins.length === 0 && p.ae.log.imports.length === 1 && /sayframe_clip_\d+\.png$/.test(p.ae.log.imports[0]) && !fs.existsSync(p.ae.log.imports[0]) && p.tempLeft().length === 0 && !fs.existsSync(docs(p)));
+  await p.run("сделай так же");
+  c = p.net.requests[0].body.messages[0].content;
+  check("P13 the AI gets the screenshot with the task", Array.isArray(c) && c[0].type === "image" && /Снимок из буфера/.test(c[c.length - 1].text) && p.ae.log.ran.join() === "ref", c[c.length - 1].text.slice(0, 120));
+  await p.close();
+  p = await open({ clip: "none", footage: IMG });
+  await p.page.evaluate(() => { const dt = new DataTransfer(); document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })); });
+  await p.idle();
+  check("P14 Cmd+V on the AI tab with no picture -> a hint, no reference", /^В буфере обмена нет картинки/.test(await p.status()) && (await p.page.locator("#refChip").isHidden()) && p.ae.log.imports.length === 0 && p.tempLeft().length === 0, await p.status());
+  await p.close();
+  fs.writeFileSync(userFile, fakePng(3));
+  p = await open({ clip: { file: userFile }, footage: IMG });
+  await p.page.evaluate(() => { const dt = new DataTransfer(); document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })); });
+  await p.idle();
+  check("P14 a copied picture file becomes the reference under its own name and is left where it is", (await p.page.locator("#refText").innerText()) === path.basename(userFile) + " — картинка" && fs.existsSync(userFile) && p.ae.log.layerAdds.length === 0, await p.status());
+  await p.close();
+  p = await open({ clip: "png", footage: IMG });
+  await p.tab("motion");
+  await p.page.evaluate(() => { const dt = new DataTransfer(); document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })); });
   await p.page.waitForFunction(() => !document.getElementById("modal").hidden, null, { timeout: 15000 });
   await p.modalClick("Оставить как есть");
-  check("P13 Cmd+V with the cursor in the prompt and no text in the clipboard pastes the picture", /^Картинка вставлена слоем/.test(await p.status()) && reads(p) === 1 && (await p.page.inputValue("#prompt")) === "", await p.status());
+  check("P14 on the Tools tab Cmd+V still puts the picture into the composition", /^Картинка вставлена слоем/.test(await p.status()) && p.ae.log.layerAdds.length === 1 && (await p.page.locator("#refChip").isHidden()), await p.status());
   await p.close();
   p = await open({ clip: "none", footage: IMG, imageSize: { width: 2, height: 2 } });
   await p.page.evaluate((b64) => {
@@ -894,9 +1089,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     ev.clipboardData = { items: [], files: [file], getData() { return ""; } };
     document.getElementById("prompt").dispatchEvent(ev);
   }, REAL_PNG.toString("base64"));
-  await p.page.waitForFunction(() => !document.getElementById("modal").hidden, null, { timeout: 15000 });
-  await p.modalClick("Оставить как есть");
-  check("P13 a picture listed only under the event's files is taken from there, even inside a field", /^Картинка вставлена слоем/.test(await p.status()) && reads(p) === 0 && p.errors.length === 0, await p.status());
+  await p.idle();
+  for (let i = 0; i < 20 && p.tempLeft().length; i++) await p.page.waitForTimeout(50);
+  check("P13 a picture listed only under the event's files is taken from there, even inside a field", (await p.page.locator("#refText").innerText()) === "Снимок из буфера — картинка" && reads(p) === 0 && p.errors.length === 0 && p.tempLeft().length === 0, await p.status());
   await p.close();
 
   console.log("\n=== settings ===");
