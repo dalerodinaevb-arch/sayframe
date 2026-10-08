@@ -237,6 +237,31 @@ var sayframeHost = (function () {
         return SAYFRAME_CHECK_TIMES;
     }
 
+    // ---- FX Console helpers
+
+    function fxSelectedLayers() {
+        var comp = activeComp();
+        var layers = comp.selectedLayers;
+        if (!layers || !layers.length) { throw new Error("NO_LAYERS_SELECTED"); }
+        return layers;
+    }
+
+    function fxScanPresets(dir, user, out, depth) {
+        var list, i, name;
+        if (depth > 6 || out.length > 4000) { return; }
+        list = dir.getFiles();
+        for (i = 0; i < list.length; i++) {
+            if (list[i] instanceof Folder) {
+                fxScanPresets(list[i], user, out, depth + 1);
+            } else {
+                try { name = decodeURI(list[i].name); } catch (e0) { name = String(list[i].name); }
+                if (/\.ffx$/i.test(name)) {
+                    out.push({ n: name.replace(/\.ffx$/i, ""), p: list[i].fsName, g: decodeURI(dir.name), u: user });
+                }
+            }
+        }
+    }
+
     // ---- project organizer helpers
 
     var ORG_FOLDERS = {
@@ -1137,6 +1162,91 @@ var sayframeHost = (function () {
                     restoreActive(prevActive);
                 }
                 return { ref: ref };
+            });
+        },
+
+        // FX Console: every installed effect plus the animation presets (.ffx) After Effects ships with
+        // and the ones the user saved.
+        fxCatalog: function () {
+            return reply(function () {
+                var list = app.effects || [];
+                var effects = [], presets = [], seen = {}, roots = [], i, e, f;
+                for (i = 0; i < list.length; i++) {
+                    e = list[i];
+                    if (!e || !e.displayName || !e.matchName) { continue; }
+                    effects.push({ n: String(e.displayName), m: String(e.matchName), c: String(e.category || "") });
+                }
+                f = Folder.appPackage;
+                if (f) {
+                    roots.push({ dir: new Folder(f.fsName + "/Presets"), user: false });
+                    if (f.parent) { roots.push({ dir: new Folder(f.parent.fsName + "/Presets"), user: false }); }
+                }
+                f = new Folder(Folder.myDocuments.fsName + "/Adobe");
+                if (f.exists) {
+                    list = f.getFiles();
+                    for (i = 0; i < list.length; i++) {
+                        if (list[i] instanceof Folder && /^After Effects/.test(decodeURI(list[i].name))) {
+                            roots.push({ dir: new Folder(list[i].fsName + "/User Presets"), user: true });
+                        }
+                    }
+                }
+                for (i = 0; i < roots.length; i++) {
+                    if (roots[i].dir.exists && !seen[roots[i].dir.fsName]) {
+                        seen[roots[i].dir.fsName] = true;
+                        fxScanPresets(roots[i].dir, roots[i].user, presets, 0);
+                    }
+                }
+                return { effects: effects, presets: presets };
+            });
+        },
+
+        // Adds the effect to every selected layer that can take effects (not cameras or lights).
+        applyEffect: function (matchName, label) {
+            return reply(function () {
+                var layers = fxSelectedLayers();
+                var applied = 0, skipped = 0, i, fx;
+                app.beginUndoGroup("Sayframe: " + (label || "effect"));
+                try {
+                    for (i = 0; i < layers.length; i++) {
+                        fx = null;
+                        try { fx = layers[i].property("ADBE Effect Parade"); } catch (e0) {}
+                        if (fx && fx.canAddProperty(matchName)) { fx.addProperty(matchName); applied++; } else { skipped++; }
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { applied: applied, skipped: skipped };
+            });
+        },
+
+        applyPreset: function (path, label) {
+            return reply(function () {
+                var layers = fxSelectedLayers();
+                var file = new File(path);
+                var applied = 0, skipped = 0, i;
+                if (!file.exists) { throw new Error("PRESET_NOT_FOUND"); }
+                app.beginUndoGroup("Sayframe: " + (label || "preset"));
+                try {
+                    for (i = 0; i < layers.length; i++) {
+                        if (layers[i] instanceof CameraLayer || layers[i] instanceof LightLayer) { skipped++; continue; }
+                        try { layers[i].applyPreset(file); applied++; } catch (e1) { skipped++; }
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { applied: applied, skipped: skipped };
+            });
+        },
+
+        // Saves the frame at the time indicator of the open comp as a PNG in the given folder.
+        snapFrame: function (folder, stamp) {
+            return reply(function () {
+                var comp = activeComp();
+                var name = String(comp.name).replace(/[\\\/:\*\?"<>\|]/g, "_") + "_" + stamp + ".png";
+                var file = new File(folder + "/" + name);
+                comp.saveFrameToPng(comp.time, file);
+                if (!waitForFile(file.fsName, 20000)) { throw new Error("FRAME_NOT_SAVED"); }
+                return { snap: { path: file.fsName, comp: String(comp.name), time: comp.time } };
             });
         },
 
