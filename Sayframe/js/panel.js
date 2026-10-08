@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.11.0";
+    var VERSION = "1.12.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -655,6 +655,7 @@
         bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
         panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
+        organizeBtn: el("organizeBtn"), organizeOptsToggle: el("organizeOptsToggle"), organizeHint: el("organizeHint"),
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
         shiftOptsToggle: el("shiftOptsToggle"), shiftPick: el("shiftPick"), timePick: el("timePick"), staggerPick: el("staggerPick"),
         shiftWhat: el("shiftWhat"), shiftStep: el("shiftStep"), shiftBack: el("shiftBack"), shiftFwd: el("shiftFwd"),
@@ -902,6 +903,7 @@
         ui.refLinkAdd.disabled = on;
         ui.refLink.disabled = on;
         ui.pasteBtn.disabled = on;
+        ui.organizeBtn.disabled = on;
         setMotionDisabled(on);
         ui.settingsBtn.disabled = on;
         ui.refClear.disabled = on;
@@ -2570,13 +2572,13 @@
     // левый — входящая сторона ключа (in, как движение останавливается перед ключом),
     // правый — исходящая (out, как оно начинается после ключа). Длина ползунка — влияние в процентах.
 
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste", sizes: "", places: "", pasteOpts: true, anchorOpts: true, alignOpts: true,
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste,organize", sizes: "", places: "", pasteOpts: true, organizeOpts: true, anchorOpts: true, alignOpts: true,
         shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
     var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
     var STAGGER_ORDERS = ["asc", "desc", "selection", "random"];
     var MAX_STEP_FRAMES = 999;
-    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste"];
+    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste", "organize"];
 
     // ---- сетка раздела «Инструменты»: блоки стоят по клеткам, двигаются и растягиваются по ним.
     // Клетка квадратная: у крупных блоков 36 px и 8 px между клетками, у мелких 22 и 6 (кратно 2 и 4,
@@ -2741,6 +2743,7 @@
             { key: "anchorOpts", button: ui.anchorOptsToggle, part: ui.anchorSide, hide: "Скрыть настройку", show: "Показать настройку", select: ui.anchorKeys },
             { key: "alignOpts", button: ui.alignOptsToggle, part: ui.alignSide, more: [ui.distLabel], hide: "Скрыть подписи", show: "Показать подписи", select: ui.alignTo },
             { key: "pasteOpts", button: ui.pasteOptsToggle, part: ui.pasteHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
+            { key: "organizeOpts", button: ui.organizeOptsToggle, part: ui.organizeHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "shiftOpts", button: ui.shiftOptsToggle, part: ui.shiftPick, more: [ui.timePick, ui.staggerPick, ui.staggerOrder], hide: "Скрыть списки", show: "Показать списки",
                 selects: [ui.shiftWhat, ui.timeAlign, ui.staggerWhat, ui.staggerOrder] }
         ];
@@ -2910,6 +2913,42 @@
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
         cells = [ui.shiftWhat, ui.shiftStep, ui.shiftBack, ui.shiftFwd, ui.timeAlign, ui.timeAlignBtn, ui.staggerWhat, ui.staggerStep, ui.staggerOrder, ui.staggerBtn];
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
+    }
+
+    // ---- порядок в проекте: всё из окна Project — по папкам. Двигаются только сами элементы внутри проекта.
+
+    var ORGANIZE_LABELS = [
+        ["Compositions", "композиции"], ["Precomps", "прекомпозиции"], ["Videos", "видео"], ["Audio", "аудио"],
+        ["Images", "картинки"], ["Solids", "солиды"], ["Assets", "ресурсы"], ["Other", "прочее"]
+    ];
+
+    function organizeReport(o) {
+        var parts = [];
+        var i, n;
+        if (!o.total) { return "Project organized successfully\nВ проекте пока нечего раскладывать."; }
+        if (!o.moved) { return "Project organized successfully\nВсё уже лежало по своим папкам."; }
+        for (i = 0; i < ORGANIZE_LABELS.length; i++) {
+            n = o.counts[ORGANIZE_LABELS[i][0]];
+            if (n) { parts.push(ORGANIZE_LABELS[i][1] + " " + n); }
+        }
+        return "Project organized successfully\nПеремещено: " + parts.join(", ") + "." +
+            (o.created.length ? " Новые папки: " + o.created.join(", ") + "." : "") +
+            " Отменить — Cmd/Ctrl+Z.";
+    }
+
+    async function onOrganize() {
+        var res;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Навожу порядок в проекте…", "busy");
+        try {
+            res = await host("organizeProject", []);
+            setBusy(false);
+            setStatus(organizeReport(res.organized), "done");
+        } catch (e) {
+            setBusy(false);
+            setStatus("Не удалось навести порядок: " + humanError(e), "error");
+        }
     }
 
     // Замечания вроде «ничего не выделено» — подсказка, а не ошибка.
@@ -3923,6 +3962,7 @@
     });
     ui.refClear.addEventListener("click", onClearReference);
     ui.pasteBtn.addEventListener("click", function () { pasteImage(null); });
+    ui.organizeBtn.addEventListener("click", onOrganize);
     ui.settingsBtn.addEventListener("click", openSettings);
     ui.settingsClose.addEventListener("click", function () { closeSettings(false); });
     ui.saveSettings.addEventListener("click", function () { closeSettings(true); });
