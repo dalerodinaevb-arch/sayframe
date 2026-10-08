@@ -35,17 +35,18 @@
       </div>
     </section>
 
-    <!-- Вкладки и блоки раздела «Анимация» можно менять местами. Перетаскивание включается двойным щелчком
+    <!-- Вкладки и блоки раздела «Инструменты» можно менять местами. Перетаскивание включается двойным щелчком
          по вкладке или по блоку и выключается так же, кнопкой «Готово» или клавишей Esc.
          С клавиатуры вкладку двигает Alt + стрелка влево/вправо. -->
     <nav id="tabs" class="tabs" role="tablist" aria-label="Разделы панели">
       <button id="tabClaude" class="tab" role="tab" data-tab="claude" aria-selected="true" aria-controls="viewClaude" title="Двойной щелчок — поменять вкладки местами">Claude</button>
-      <button id="tabTools" class="tab" role="tab" data-tab="tools" aria-selected="false" aria-controls="viewTools" title="Двойной щелчок — поменять вкладки местами">Инструменты</button>
-      <button id="tabMotion" class="tab" role="tab" data-tab="motion" aria-selected="false" aria-controls="viewMotion" title="Двойной щелчок — поменять вкладки местами">Анимация</button>
+      <button id="tabTools" class="tab" role="tab" data-tab="tools" aria-selected="false" aria-controls="viewTools" title="Двойной щелчок — поменять вкладки местами">Анимация</button>
+      <button id="tabMotion" class="tab" role="tab" data-tab="motion" aria-selected="false" aria-controls="viewMotion" title="Двойной щелчок — поменять вкладки местами">Инструменты</button>
     </nav>
 
     <section id="arrangeBar" class="arrange-bar" hidden aria-live="polite">
-      <span>Перетащите вкладки или блоки, чтобы поменять их местами</span>
+      <span>Перетащите вкладки или блоки: блоки встают по клеткам сетки, за края растягиваются по клеткам</span>
+      <button id="arrangeReset" class="ghost" title="Вернуть блокам обычный размер и расстановку">Сбросить</button>
       <button id="arrangeDone" class="ghost">Готово</button>
     </section>
 
@@ -86,31 +87,20 @@
 
     </div>
 
-    <!-- Раздел «Инструменты»: всё, что работает без Claude -->
+    <!-- Раздел «Анимация» (внутреннее имя tools): пока пустой, сюда придут новые инструменты анимации -->
     <div id="viewTools" class="view" role="tabpanel" aria-labelledby="tabTools" hidden>
-    <section class="tools">
-      <button id="pasteBtn" class="tool">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="4" y="5" width="16" height="15" rx="3"/>
-          <path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/>
-          <path d="M7.5 16.5l3-3.2 2.4 2.2 2-1.9 1.6 2.9"/>
-          <circle cx="9.3" cy="10.3" r="1.1"/>
-        </svg>
-        <span>
-          <b>Вставить картинку из буфера</b>
-          <small>Или нажмите Cmd/Ctrl+V, когда курсор в этой панели</small>
-        </span>
-      </button>
-    </section>
+    <p class="empty-note">Здесь появятся новые инструменты анимации.</p>
     <div id="statusSlotTools" class="status-slot"></div>
     </div>
 
-    <!-- Раздел «Анимация»: плавность ключей, точка привязки и выравнивание слоёв -->
+    <!-- Раздел «Инструменты» (внутреннее имя motion): блоки на сетке — плавность, точка привязки, выравнивание,
+         сдвиг во времени и вставка картинки из буфера -->
     <div id="viewMotion" class="view" role="tabpanel" aria-labelledby="tabMotion" hidden>
     <!-- Блоки стоят рядом, пока хватает ширины; в узкой панели — друг под другом. Двойной щелчок по блоку включает перестановку.
          Ширину каждого блока меняют, потянув за его правый край: в широком блоке список встаёт рядом с кнопками, в узком — под ними.
          Минус в углу блока прячет его дополнительную часть (кривую или список) и становится плюсом. -->
     <div id="motionTools" class="motion-tools">
+    <div id="gridCells" class="grid-cells" aria-hidden="true"></div>
     <section class="card tool-card ease-card" data-tool="ease" aria-label="Плавность ключей" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Плавность ключей»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <div class="tool-head" title="Задаёт плавность выделенным ключевым кадрам">
@@ -284,6 +274,26 @@
       </div>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Сдвиг во времени»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
+    <section class="card tool-card paste-card" data-tool="paste" aria-label="Картинка из буфера" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Картинка из буфера»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="pasteOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="pasteHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
+      </button>
+      <div class="tool-head" title="Кладёт картинку из буфера обмена в проект и в отдельную композицию">
+        <b>Картинка из буфера</b>
+      </div>
+      <button id="pasteBtn" class="paste-do" title="Вставить картинку из буфера обмена">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="4" y="5" width="16" height="15" rx="3"/>
+          <path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/>
+          <path d="M7.5 16.5l3-3.2 2.4 2.2 2-1.9 1.6 2.9"/>
+          <circle cx="9.3" cy="10.3" r="1.1"/>
+        </svg>
+        <span>Вставить</span>
+      </button>
+      <small id="pasteHint" class="paste-hint">Или нажмите Cmd/Ctrl+V, когда курсор в этой панели</small>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Картинка из буфера»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
+    </section>
     </div>
     <div id="statusSlotMotion" class="status-slot"></div>
     </div>
@@ -332,11 +342,11 @@
           <input id="panelWidth" class="range" type="range" min="280" max="640" step="10" value="380">
           <output id="panelWidthVal" for="panelWidth">380 px</output>
         </div>
-        <p class="hint">Поля и кнопки в разделах Claude и «Инструменты» остаются такой ширины, даже если растянуть панель в After Effects. Вкладки и раздел «Анимация» занимают всю ширину панели.</p>
+        <p class="hint">Поля и кнопки в разделах Claude и «Анимация» остаются такой ширины, даже если растянуть панель в After Effects. Вкладки и раздел «Инструменты» занимают всю ширину панели.</p>
       </div>
 
       <div class="group">
-        <span class="label">Блоки в разделе «Анимация»</span>
+        <span class="label">Блоки в разделе «Инструменты»</span>
         <div id="toolSize" class="frames tool-size">
           <button data-value="large">Крупные</button>
           <button data-value="small">Мелкие</button>
