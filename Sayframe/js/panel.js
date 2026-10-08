@@ -5,13 +5,13 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.8.0";
+    var VERSION = "1.9.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
     var TAB_KEY = "sayframe.tab.v1";
     var TAB_ORDER_KEY = "sayframe.tabOrder.v1";
-    var MOTION_KEY = "sayframe.motion.v1";   // положения ползунков и выбор в разделе «Анимация»
+    var MOTION_KEY = "sayframe.motion.v1";   // положения ползунков и выбор в разделе «Инструменты»
     var TAB_DRAG_START_PX = 6;   // сдвиг мыши, после которого нажатие на вкладку считается перетаскиванием
     // Как часто открытая панель сама спрашивает сервер о новой версии. Ещё она спрашивает при запуске
     // и когда в неё возвращаются (щелчок по панели), но не чаще, чем раз в UPDATE_THROTTLE_MS.
@@ -47,8 +47,8 @@
         alwaysAsk: false,
         refFrames: 8,
         panelWidth: 380,    // ширина содержимого в пикселях; сама панель After Effects может быть шире
-        toolSize: "large",  // размер блоков раздела «Анимация»: "large" или "small"
-        toolTitles: true    // показывать ли названия блоков раздела «Анимация»
+        toolSize: "large",  // размер блоков раздела «Инструменты»: "large" или "small"
+        toolTitles: true    // показывать ли названия блоков раздела «Инструменты»
     };
     var PANEL_WIDTH_MIN = 280;
     var PANEL_WIDTH_MAX = 640;
@@ -496,6 +496,7 @@
         root.setProperty("--panel-w", clampPanelWidth(s.panelWidth) + "px");
         document.documentElement.setAttribute("data-tools", s.toolSize === "small" ? "small" : "large");
         document.documentElement.setAttribute("data-titles", s.toolTitles === false ? "off" : "on");
+        relayoutTools();
     }
 
     // ------------------------------------------------------------------ ui
@@ -512,6 +513,7 @@
         keyHint: el("keyHint"), models: el("models"), accentSwatches: el("accentSwatches"), accentHex: el("accentHex"),
         bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
         panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"),
+        pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
         shiftOptsToggle: el("shiftOptsToggle"), shiftPick: el("shiftPick"), timePick: el("timePick"), staggerPick: el("staggerPick"),
         shiftWhat: el("shiftWhat"), shiftStep: el("shiftStep"), shiftBack: el("shiftBack"), shiftFwd: el("shiftFwd"),
@@ -524,7 +526,7 @@
         updateStatus: el("updateStatus"), updateNow: el("updateNow"), updateLater: el("updateLater"),
         updateDownload: el("updateDownload"),
         versionText: el("versionText"), checkUpdate: el("checkUpdate"), updateHint: el("updateHint"),
-        arrangeBar: el("arrangeBar"), arrangeDone: el("arrangeDone"),
+        arrangeBar: el("arrangeBar"), arrangeDone: el("arrangeDone"), arrangeReset: el("arrangeReset"), gridCells: el("gridCells"),
         tabs: el("tabs"), tabClaude: el("tabClaude"), tabTools: el("tabTools"), viewClaude: el("viewClaude"), viewTools: el("viewTools"),
         statusSlotClaude: el("statusSlotClaude"), statusSlotTools: el("statusSlotTools"),
         tabMotion: el("tabMotion"), viewMotion: el("viewMotion"), statusSlotMotion: el("statusSlotMotion"),
@@ -545,7 +547,8 @@
     var busy = false;
     var KEY_HINT = ui.keyHint.textContent;
 
-    // Вкладки: «Claude» (задача, референс, запуск, ответ) и «Инструменты» (всё, что работает без Claude).
+    // Вкладки: «Claude» (задача, референс, запуск, ответ), «Анимация» (внутреннее имя tools, пока пустая)
+    // и «Инструменты» (внутреннее имя motion: блоки на сетке). Внутренние имена прежние, чтобы не сбить сохранённый порядок.
     // Строка состояния общая и переезжает в открытую вкладку.
     var TABS = {
         claude: { tab: ui.tabClaude, view: ui.viewClaude, slot: ui.statusSlotClaude },
@@ -563,6 +566,7 @@
             }
         }
         TABS[name].slot.appendChild(ui.statusBox);
+        if (name === "motion") { relayoutTools(); }
         try { window.localStorage.setItem(TAB_KEY, name); } catch (e) {}
     }
 
@@ -627,7 +631,7 @@
         return true;
     }
 
-    // ---- перестановка: вкладки и блоки раздела «Анимация» двигаются только в этом режиме.
+    // ---- перестановка: вкладки и блоки раздела «Инструменты» двигаются только в этом режиме.
     // Он включается двойным щелчком по вкладке или блоку, чтобы ничего не уезжало от случайного движения мыши.
     var arranging = false;
 
@@ -1556,42 +1560,94 @@
     // левый — входящая сторона ключа (in, как движение останавливается перед ключом),
     // правый — исходящая (out, как оно начинается после ключа). Длина ползунка — влияние в процентах.
 
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift", sizes: "", anchorOpts: true, alignOpts: true,
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste", sizes: "", places: "", pasteOpts: true, anchorOpts: true, alignOpts: true,
         shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
     var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
     var STAGGER_ORDERS = ["asc", "desc", "selection", "random"];
     var MAX_STEP_FRAMES = 999;
-    var TOOL_MIN_WIDTH = 152;    // уже блок не сжимается: в него перестают помещаться три кнопки в ряд
-    var TOOL_MIN_WIDTH_SMALL = 112;  // то же для мелких блоков
+    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste"];
 
-    function toolMinWidth() {
-        return document.documentElement.getAttribute("data-tools") === "small" ? TOOL_MIN_WIDTH_SMALL : TOOL_MIN_WIDTH;
+    // ---- сетка раздела «Инструменты»: блоки стоят по клеткам, двигаются и растягиваются по ним.
+    // Клетка квадратная: у крупных блоков 36 px и 8 px между клетками, у мелких 22 и 6 (кратно 2 и 4,
+    // как советуют сетки iOS и Android). Ширина и высота блока — в клетках.
+    var GRID_LARGE = { cell: 36, gap: 8 };
+    var GRID_SMALL = { cell: 22, gap: 6 };
+    var TOOL_MIN_COLS = 4;        // уже блок не делается: в него перестают помещаться три кнопки в ряд
+    var TOOL_DEFAULT_COLS = 4;
+    var TOOL_FULL = 99;           // «на всю ширину»: столько клеток, сколько есть в панели
+    var TOOL_MAX_ROWS = 40;
+
+    function gridModule() {
+        return document.documentElement.getAttribute("data-tools") === "small" ? GRID_SMALL : GRID_LARGE;
     }
-    var TOOL_FULL_SNAP_PX = 10;  // блок, дотянутый почти до края, занимает всю ширину
-    var TOOL_NAMES = ["ease", "anchor", "align", "shift"];
 
-    // Ширина блоков, заданная пользователем: строка вида "ease=full;anchor=320".
-    // Число — пиксели, full — вся ширина. Блока в строке нет — ширина обычная, по месту.
+    // Размеры блоков: "ease=6x0;anchor=99x9" — ширина и высота в клетках. Высота 0 — по содержимому,
+    // ширина 99 — на всю панель. Старые записи в пикселях ("anchor=320", "ease=full") переводятся в клетки.
     function parseSizes(text) {
         var out = {};
         var parts = String(text).split(";");
-        var i, pair, n;
+        var i, pair, m, w, h;
         for (i = 0; i < parts.length; i++) {
             pair = parts[i].split("=");
             if (pair.length !== 2 || TOOL_NAMES.indexOf(pair[0]) < 0) { continue; }
-            if (pair[1] === "full") { out[pair[0]] = "full"; continue; }
-            n = Math.round(Number(pair[1]));
-            if (/^\d{1,4}$/.test(pair[1]) && n >= TOOL_MIN_WIDTH_SMALL) { out[pair[0]] = n; }
+            m = /^(\d{1,2})x(\d{1,2})$/.exec(pair[1]);
+            if (m) {
+                w = Number(m[1]);
+                h = Number(m[2]);
+            } else if (pair[1] === "full") {
+                w = TOOL_FULL;
+                h = 0;
+            } else if (/^\d{1,4}$/.test(pair[1]) && Number(pair[1]) >= 100) {
+                w = Math.round((Number(pair[1]) + GRID_LARGE.gap) / (GRID_LARGE.cell + GRID_LARGE.gap));
+                h = 0;
+            } else {
+                continue;
+            }
+            if (w < TOOL_MIN_COLS) { w = TOOL_MIN_COLS; }
+            if (w > TOOL_FULL) { w = TOOL_FULL; }
+            if (h > TOOL_MAX_ROWS) { h = TOOL_MAX_ROWS; }
+            if (w === TOOL_DEFAULT_COLS && h === 0) { continue; }
+            out[pair[0]] = { w: w, h: h };
         }
         return out;
     }
 
     function sizesText(sizes) {
         var out = [];
-        var i;
+        var i, z;
         for (i = 0; i < TOOL_NAMES.length; i++) {
-            if (sizes.hasOwnProperty(TOOL_NAMES[i])) { out.push(TOOL_NAMES[i] + "=" + sizes[TOOL_NAMES[i]]); }
+            z = sizes[TOOL_NAMES[i]];
+            if (z && !(z.w === TOOL_DEFAULT_COLS && !z.h)) { out.push(TOOL_NAMES[i] + "=" + z.w + "x" + (z.h || 0)); }
+        }
+        return out.join(";");
+    }
+
+    function sizeOf(name) {
+        return parseSizes(motion.sizes)[name] || { w: TOOL_DEFAULT_COLS, h: 0 };
+    }
+
+    // Места блоков: "ease=0,0;anchor=4,0" — колонка и ряд левого верхнего угла. Пусто — блоки идут
+    // друг за другом по порядку и сами переносятся, когда панель сужают или растягивают.
+    function parsePlaces(text) {
+        var out = {};
+        var parts = String(text).split(";");
+        var i, pair, m;
+        for (i = 0; i < parts.length; i++) {
+            pair = parts[i].split("=");
+            if (pair.length !== 2 || TOOL_NAMES.indexOf(pair[0]) < 0) { continue; }
+            m = /^(\d{1,2}),(\d{1,3})$/.exec(pair[1]);
+            if (m) { out[pair[0]] = { x: Number(m[1]), y: Number(m[2]) }; }
+        }
+        return out;
+    }
+
+    function placesText(places) {
+        var out = [];
+        var i, q;
+        for (i = 0; i < TOOL_NAMES.length; i++) {
+            q = places[TOOL_NAMES[i]];
+            if (q) { out.push(TOOL_NAMES[i] + "=" + q.x + "," + q.y); }
         }
         return out.join(";");
     }
@@ -1634,6 +1690,7 @@
         m.staggerStep = clampStep(m.staggerStep);
         m.order = cleanToolOrder(m.order);
         m.sizes = sizesText(parseSizes(m.sizes));
+        m.places = placesText(parsePlaces(m.places));
         return m;
     }
 
@@ -1673,6 +1730,7 @@
             { key: "curve", button: ui.easeCurveToggle, part: ui.easeCurve, hide: "Скрыть кривую", show: "Показать кривую" },
             { key: "anchorOpts", button: ui.anchorOptsToggle, part: ui.anchorSide, hide: "Скрыть настройку", show: "Показать настройку", select: ui.anchorKeys },
             { key: "alignOpts", button: ui.alignOptsToggle, part: ui.alignSide, more: [ui.distLabel], hide: "Скрыть подписи", show: "Показать подписи", select: ui.alignTo },
+            { key: "pasteOpts", button: ui.pasteOptsToggle, part: ui.pasteHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "shiftOpts", button: ui.shiftOptsToggle, part: ui.shiftPick, more: [ui.timePick, ui.staggerPick, ui.staggerOrder], hide: "Скрыть списки", show: "Показать списки",
                 selects: [ui.shiftWhat, ui.timeAlign, ui.staggerWhat, ui.staggerOrder] }
         ];
@@ -1712,6 +1770,7 @@
             f.button.addEventListener("click", function () {
                 motion[f.key] = motion[f.key] === false;
                 showFoldParts();
+                relayoutTools();
                 storeMotion();
             });
         });
@@ -2013,7 +2072,7 @@
         }
     }
 
-    // ---- порядок блоков раздела: их можно менять местами, как вкладки
+    // ---- сетка блоков раздела «Инструменты»
 
     function toolCards() {
         return Array.prototype.slice.call(ui.motionTools.querySelectorAll(".tool-card"));
@@ -2027,6 +2086,10 @@
         return null;
     }
 
+    function cardByName(name) {
+        return ui.motionTools.querySelector('.tool-card[data-tool="' + name + '"]');
+    }
+
     // Ползунок, число, кнопка или список: двойной щелчок по ним — работа с ними, а не просьба о перестановке.
     function isToolControl(node, card) {
         while (node && node !== card) {
@@ -2036,39 +2099,255 @@
         return false;
     }
 
-    function applyToolOrder() {
+    function isResizeHandle(node) {
+        return !!(node && node.getAttribute && node.getAttribute("data-resize"));
+    }
+
+    // Сколько клеток помещается в ширину панели. 0 — раздел сейчас не виден.
+    function gridCols() {
+        var m = gridModule();
+        var width = ui.motionTools.clientWidth;
+        if (!width) { return 0; }
+        return Math.max(1, Math.floor((width + m.gap) / (m.cell + m.gap)));
+    }
+
+    var lastLayout = null;   // { cols, pos: { name: { x, y, w, h } } } — как блоки стоят сейчас
+
+    // Раскладывает блоки по сетке. places — места блоков (или null: по порядку, с переносом),
+    // first — блок, который при споре за клетку получает её (его тянут или растягивают).
+    function layoutTools(places, first) {
+        var m = gridModule();
+        var step = m.cell + m.gap;
+        var cols = gridCols();
         var names = motion.order.split(",");
-        var cards = toolCards();
-        var i, j;
-        for (i = 0; i < names.length; i++) {
-            for (j = 0; j < cards.length; j++) {
-                if (cards[j].getAttribute("data-tool") === names[i]) { ui.motionTools.appendChild(cards[j]); }
+        var cards = {};
+        var items = [];
+        var taken = [];
+        var pos = {};
+        var i, it, card, z, r, c, h, rows, sorted;
+
+        if (!cols) { return null; }
+        ui.motionTools.style.gridTemplateColumns = "repeat(" + cols + ", " + m.cell + "px)";
+        ui.motionTools.style.gridAutoRows = m.cell + "px";
+        ui.motionTools.style.gap = m.gap + "px";
+
+        function free(r0, c0, w, hh) {
+            var a, b;
+            for (a = r0; a < r0 + hh; a++) {
+                if (!taken[a]) { continue; }
+                for (b = c0; b < c0 + w; b++) { if (taken[a][b]) { return false; } }
             }
+            return true;
+        }
+        function take(name, r0, c0, w, hh) {
+            var a, b;
+            for (a = r0; a < r0 + hh; a++) {
+                if (!taken[a]) { taken[a] = []; }
+                for (b = c0; b < c0 + w; b++) { taken[a][b] = true; }
+            }
+            pos[name] = { x: c0, y: r0, w: w, h: hh };
+        }
+
+        // Ширина каждого блока, затем высота его содержимого при этой ширине: меньше неё блок не бывает.
+        for (i = 0; i < names.length; i++) {
+            card = cardByName(names[i]);
+            if (!card) { continue; }
+            cards[names[i]] = card;
+            z = sizeOf(names[i]);
+            it = { name: names[i], index: i, w: Math.min(Math.max(z.w, Math.min(TOOL_MIN_COLS, cols)), cols), h: z.h };
+            card.style.gridColumn = "1 / span " + it.w;
+            card.style.gridRow = "1 / span 1";
+            card.style.alignSelf = "start";
+            items.push(it);
+        }
+        for (i = 0; i < items.length; i++) {
+            rows = Math.max(1, Math.ceil((cards[items[i].name].offsetHeight + m.gap) / step));
+            items[i].need = rows;
+            items[i].h = Math.min(Math.max(items[i].h, rows), TOOL_MAX_ROWS);
+        }
+
+        if (!places) {
+            // По порядку, как текст: блок встаёт правее предыдущего, а если не влезает — в начало следующего ряда.
+            r = 0;
+            c = 0;
+            for (i = 0; i < items.length; i++) {
+                it = items[i];
+                for (;;) {
+                    if (c + it.w > cols) { r++; c = 0; }
+                    if (free(r, c, it.w, it.h)) { break; }
+                    c++;
+                }
+                take(it.name, r, c, it.w, it.h);
+                c += it.w;
+            }
+        } else {
+            // По местам: каждый блок стоит на своей клетке; если она занята блоком выше, он сдвигается вниз.
+            sorted = items.slice();
+            for (i = 0; i < sorted.length; i++) {
+                // Блок без места (например, новый в этой версии) встаёт в первую свободную клетку слева сверху.
+                z = places[sorted[i].name];
+                sorted[i].free = !z;
+                sorted[i].x = z ? Math.min(z.x, cols - sorted[i].w) : 0;
+                sorted[i].y = z ? z.y : 100000 + i;
+            }
+            sorted.sort(function (a, b) {
+                if (a.y !== b.y) { return a.y - b.y; }
+                if (a.name === first || b.name === first) { return a.name === first ? -1 : 1; }
+                return a.x !== b.x ? a.x - b.x : a.index - b.index;
+            });
+            for (i = 0; i < sorted.length; i++) {
+                it = sorted[i];
+                r = it.free ? 0 : Math.min(it.y, 999);
+                while (!free(r, it.x, it.w, it.h)) { r++; }
+                take(it.name, r, it.x, it.w, it.h);
+            }
+        }
+
+        // Блоки на свои клетки; в документе — в порядке чтения, чтобы Tab шёл по ним так же.
+        sorted = items.slice().sort(function (a, b) {
+            var p = pos[a.name], q = pos[b.name];
+            return p.y !== q.y ? p.y - q.y : p.x - q.x;
+        });
+        rows = 0;
+        for (i = 0; i < sorted.length; i++) {
+            it = pos[sorted[i].name];
+            card = cards[sorted[i].name];
+            card.style.gridColumn = (it.x + 1) + " / span " + it.w;
+            card.style.gridRow = (it.y + 1) + " / span " + it.h;
+            card.style.alignSelf = "";
+            card.setAttribute("data-cells", it.w + "x" + it.h);
+            if (it.y + it.h > rows) { rows = it.y + it.h; }
+        }
+        reorderCards(sorted, cards);
+        h = rows;
+        ui.gridCells.style.width = (cols * step - m.gap) + "px";
+        ui.gridCells.style.height = (h * step - m.gap) + "px";
+        ui.gridCells.style.backgroundSize = step + "px " + step + "px";
+        ui.gridCells.style.backgroundImage = 'url("data:image/svg+xml,' + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="' + step + '" height="' + step + '"><rect x="0.5" y="0.5" width="' + (m.cell - 1) +
+            '" height="' + (m.cell - 1) + '" rx="' + Math.round(m.cell / 5) + '" fill="rgba(255,255,255,0.035)" stroke="rgba(255,255,255,0.13)" stroke-dasharray="3 3"/></svg>') + '")';
+        lastLayout = { cols: cols, step: step, pos: pos, need: {} };
+        for (i = 0; i < items.length; i++) { lastLayout.need[items[i].name] = items[i].need; }
+        return lastLayout;
+    }
+
+    // Порядок блоков в документе меняется, только если он правда другой; фокус при этом не теряется.
+    function reorderCards(sorted, cards) {
+        var now = toolCards();
+        var same = now.length === sorted.length;
+        var active = document.activeElement;
+        var i;
+        for (i = 0; same && i < now.length; i++) { same = now[i] === cards[sorted[i].name]; }
+        if (same) { return; }
+        for (i = 0; i < sorted.length; i++) { ui.motionTools.appendChild(cards[sorted[i].name]); }
+        if (active && active !== document.body && ui.motionTools.contains(active) && document.activeElement !== active) {
+            try { active.focus(); } catch (e) {}
         }
     }
 
-    function storeToolOrder() {
+    function placesNow() {
+        return motion.places ? parsePlaces(motion.places) : null;
+    }
+
+    var toolGridReady = false;
+
+    function relayoutTools() {
+        if (toolGridReady) { layoutTools(placesNow(), null); }
+    }
+
+    // Запоминает, где блоки стоят сейчас: с этого момента они держат свои клетки.
+    function storeLayout(fixed) {
         var names = [];
         var cards = toolCards();
-        var i;
+        var places = {};
+        var i, q;
         for (i = 0; i < cards.length; i++) { names.push(cards[i].getAttribute("data-tool")); }
         motion.order = cleanToolOrder(names.join(","));
+        if (fixed && lastLayout) {
+            for (i = 0; i < TOOL_NAMES.length; i++) {
+                q = lastLayout.pos[TOOL_NAMES[i]];
+                if (q) { places[TOOL_NAMES[i]] = { x: q.x, y: q.y }; }
+            }
+            motion.places = placesText(places);
+        }
         storeMotion();
     }
 
-    // Сдвигает блок на одно место влево (-1) или вправо (+1). Возвращает true, если он сдвинулся.
-    function moveTool(card, dir) {
-        var cards = toolCards();
-        var to = cards.indexOf(card) + dir;
-        if (to < 0 || to >= cards.length) { return false; }
-        if (dir < 0) { ui.motionTools.insertBefore(card, cards[to]); } else { ui.motionTools.insertBefore(card, cards[to].nextSibling); }
-        storeToolOrder();
-        return true;
+    // Где блоки стоят сейчас, с размерами: { name: { x, y, w, h } }.
+    function currentPlaces() {
+        var out = {};
+        var i, q;
+        for (i = 0; i < TOOL_NAMES.length; i++) {
+            q = lastLayout && lastLayout.pos[TOOL_NAMES[i]];
+            if (q) { out[TOOL_NAMES[i]] = { x: q.x, y: q.y, w: q.w, h: q.h }; }
+        }
+        return out;
+    }
+
+    // Ставит блок на клетку (x, y) и раскладывает остальные. Блок, на чьё место он встал,
+    // переходит на освободившееся место — блоки меняются местами. Возвращает, где блок оказался.
+    function moveToolTo(name, x, y, base) {
+        var places = {};
+        var me = base[name];
+        var k, o;
+        x = Math.max(0, x);
+        y = Math.max(0, y);
+        for (k in base) {
+            if (!base.hasOwnProperty(k)) { continue; }
+            o = base[k];
+            places[k] = { x: o.x, y: o.y };
+            if (k !== name && me && x < o.x + o.w && o.x < x + me.w && y < o.y + o.h && o.y < y + me.h) {
+                places[k] = { x: me.x, y: me.y };
+            }
+        }
+        places[name] = { x: x, y: y };
+        motion.places = placesText(places);
+        return layoutTools(places, name).pos[name];
+    }
+
+    // Клавиатура: блок на клетку в любую сторону; если там другой блок — они меняются местами.
+    function nudgeTool(card, dx, dy) {
+        var name = card.getAttribute("data-tool");
+        var base, me, tx, ty, k, o, now;
+        if (!lastLayout) { return false; }
+        base = currentPlaces();
+        me = base[name];
+        tx = me.x + dx;
+        ty = me.y + dy;
+        if (tx < 0 || ty < 0 || tx + me.w > lastLayout.cols) { return false; }
+        for (k in base) {
+            if (!base.hasOwnProperty(k) || k === name) { continue; }
+            o = base[k];
+            if (tx < o.x + o.w && o.x < tx + me.w && ty < o.y + o.h && o.y < ty + me.h) {
+                if (dx < 0) { tx = o.x; }
+                if (dx > 0) { tx = Math.max(0, o.x + o.w - me.w); }
+                if (dy) { ty = o.y; }
+                break;
+            }
+        }
+        now = moveToolTo(name, tx, ty, base);
+        storeLayout(true);
+        return now.x !== me.x || now.y !== me.y;
+    }
+
+    // Размер блока в клетках. w: число клеток (TOOL_FULL — на всю ширину), h: 0 — по содержимому.
+    function setToolCells(card, w, h) {
+        var name = card.getAttribute("data-tool");
+        var sizes = parseSizes(motion.sizes);
+        var cols = lastLayout ? lastLayout.cols : TOOL_FULL;
+        var need = lastLayout && lastLayout.need[name] ? lastLayout.need[name] : 0;
+        if (w >= cols) { w = TOOL_FULL; }
+        if (w < TOOL_MIN_COLS) { w = TOOL_MIN_COLS; }
+        if (h <= need) { h = 0; }
+        if (h > TOOL_MAX_ROWS) { h = TOOL_MAX_ROWS; }
+        sizes[name] = { w: w, h: h };
+        motion.sizes = sizesText(sizes);
+        layoutTools(placesNow(), name);
     }
 
     function enableToolReordering() {
-        // Как и у вкладок — на обычных событиях мыши.
-        var drag = null;        // { card, x, y, moved }
+        // На обычных событиях мыши: события указателя (pointer events) в After Effects не срабатывали.
+        var drag = null;        // { card, name, offX, offY, x, y, moved, base }
         var dragEndedAt = 0;
 
         function finish() {
@@ -2076,7 +2355,7 @@
             if (drag.moved) {
                 drag.card.className = drag.card.className.replace(/\s*dragging/g, "");
                 ui.motionTools.className = ui.motionTools.className.replace(/\s*reordering/g, "");
-                storeToolOrder();
+                storeLayout(true);
                 dragEndedAt = Date.now();
             }
             drag = null;
@@ -2084,9 +2363,11 @@
 
         ui.motionTools.addEventListener("mousedown", function (e) {
             var card = toolOf(e.target);
+            var r;
             if (!arranging || !card || e.button !== 0 || isResizeHandle(e.target)) { return; }
             finish();
-            drag = { card: card, x: e.clientX, y: e.clientY, moved: false };
+            r = card.getBoundingClientRect();
+            drag = { card: card, name: card.getAttribute("data-tool"), x: e.clientX, y: e.clientY, offX: e.clientX - r.left, offY: e.clientY - r.top, moved: false, base: null, at: "" };
             e.preventDefault();
         });
         ui.motionTools.addEventListener("dragstart", function (e) { e.preventDefault(); });
@@ -2095,145 +2376,171 @@
         ui.motionTools.addEventListener("dblclick", function (e) {
             var card = toolOf(e.target);
             if (!card || Date.now() - dragEndedAt < 300) { return; }
-            // Двойной щелчок по краю блока возвращает ему обычную ширину и перестановку не трогает.
-            if (isResizeHandle(e.target)) { setToolSize(card, null); storeMotion(); return; }
+            // Двойной щелчок по краю блока возвращает ему обычный размер и перестановку не трогает.
+            if (isResizeHandle(e.target)) { setToolCells(card, TOOL_DEFAULT_COLS, 0); storeMotion(); return; }
             if (!arranging && isToolControl(e.target, card)) { return; }
             setArranging(!arranging);
         });
 
         document.addEventListener("mousemove", function (e) {
-            var cards, i, other, r, mine, me, sameRow, pos, mid;
-            if (!drag) { return; }
+            var grid, tx, ty, key;
+            if (!drag || !lastLayout) { return; }
             if (!drag.moved) {
                 if (Math.abs(e.clientX - drag.x) < TOOL_DRAG_START_PX && Math.abs(e.clientY - drag.y) < TOOL_DRAG_START_PX) { return; }
                 drag.moved = true;
+                drag.base = currentPlaces();
                 drag.card.className += " dragging";
                 ui.motionTools.className += " reordering";
             }
             e.preventDefault();
-            // Указатель прошёл середину соседнего блока — перетаскиваемый встаёт на его место.
-            // Блоки в одном ряду сравниваются по горизонтали, стоящие друг под другом — по вертикали.
-            cards = toolCards();
-            mine = cards.indexOf(drag.card);
-            me = drag.card.getBoundingClientRect();
-            for (i = 0; i < cards.length; i++) {
-                other = cards[i];
-                if (other === drag.card) { continue; }
-                r = other.getBoundingClientRect();
-                sameRow = r.top < me.bottom && r.bottom > me.top && (r.left >= me.right - 1 || r.right <= me.left + 1);
-                pos = sameRow ? e.clientX : e.clientY;
-                mid = sameRow ? r.left + r.width / 2 : r.top + r.height / 2;
-                if (mine < i && pos >= mid) {
-                    ui.motionTools.insertBefore(drag.card, other.nextSibling);
-                    break;
-                } else if (mine > i && pos <= mid) {
-                    ui.motionTools.insertBefore(drag.card, other);
-                    break;
-                }
-            }
+            // Левый верхний угол блока прилипает к ближайшей клетке; остальные блоки уступают место.
+            grid = ui.motionTools.getBoundingClientRect();
+            tx = Math.round((e.clientX - drag.offX - grid.left) / lastLayout.step);
+            ty = Math.round((e.clientY - drag.offY - grid.top) / lastLayout.step);
+            tx = Math.max(0, Math.min(tx, lastLayout.cols - lastLayout.pos[drag.name].w));
+            ty = Math.max(0, ty);
+            key = tx + "," + ty;
+            if (key === drag.at) { return; }
+            drag.at = key;
+            moveToolTo(drag.name, tx, ty, drag.base);
         });
 
         document.addEventListener("mouseup", function () { finish(); }, true);
         window.addEventListener("blur", function () { finish(); });
 
-        // С клавиатуры: фокус на полоске, стрелки двигают блок.
+        // С клавиатуры: фокус на полоске, стрелки двигают блок на клетку.
         ui.motionTools.addEventListener("keydown", function (e) {
             var grip = e.target;
-            var dir = e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : 0;
+            var dx = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
+            var dy = e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0;
             var card;
-            if (!dir || !grip.className || !/(^|\s)tool-grip(\s|$)/.test(String(grip.className)) || e.metaKey || e.ctrlKey || e.shiftKey) { return; }
+            if ((!dx && !dy) || !grip.className || !/(^|\s)tool-grip(\s|$)/.test(String(grip.className)) || e.metaKey || e.ctrlKey || e.shiftKey) { return; }
             card = toolOf(grip);
             if (!card) { return; }
             e.preventDefault();
-            if (moveTool(card, dir)) { grip.focus(); }
+            nudgeTool(card, dx, dy);
+            grip.focus();
         });
     }
 
-    // ---- ширина блоков: правый край блока тянут мышью
-
-    function isResizeHandle(node) {
-        return !!(node && node.className && /(^|\s)tool-resize(\s|$)/.test(String(node.className)));
-    }
-
-    function applyToolSizes() {
-        var sizes = parseSizes(motion.sizes);
-        var cards = toolCards();
-        var i, w;
-        for (i = 0; i < cards.length; i++) {
-            w = sizes[cards[i].getAttribute("data-tool")];
-            cards[i].style.flex = w === "full" ? "0 0 100%" : typeof w === "number" ? "0 0 " + w + "px" : "";
-        }
-    }
-
-    // width: число пикселей, "full" или null (обычная ширина). Возвращает то, что получилось после ограничений.
-    function setToolSize(card, width) {
-        var sizes = parseSizes(motion.sizes);
-        var name = card.getAttribute("data-tool");
-        var max = ui.motionTools.clientWidth;
-        if (typeof width === "number") {
-            width = Math.round(width);
-            if (width < toolMinWidth()) { width = toolMinWidth(); }
-            if (width >= max - TOOL_FULL_SNAP_PX) { width = "full"; }
-        }
-        if (width === null) { delete sizes[name]; } else { sizes[name] = width; }
-        motion.sizes = sizesText(sizes);
-        applyToolSizes();
-        return width;
-    }
+    // ---- размер блоков: за правый край — ширина, за нижний — высота, за угол — обе; по клеткам
 
     function enableToolResizing() {
-        var rs = null;          // { card, startX, startW }
+        var rs = null;          // { card, mode, left, top }
 
         function finish() {
             if (!rs) { return; }
             rs.card.className = rs.card.className.replace(/\s*resizing/g, "");
-            ui.motionTools.className = ui.motionTools.className.replace(/\s*resizing/g, "");
-            storeMotion();
+            ui.motionTools.className = ui.motionTools.className.replace(/\s*resizing(-\w+)?/g, "");
+            storeLayout(!!motion.places);
             rs = null;
         }
 
-        // На обычных событиях мыши, как и перестановка: события указателя в After Effects не срабатывали.
+        // Ручки снизу и в углу добавляются к каждому блоку здесь, правая уже есть в разметке.
+        toolCards().forEach(function (card) {
+            var title = card.getAttribute("aria-label");
+            var right = card.querySelector(".tool-resize");
+            var bottom = document.createElement("div");
+            var corner = document.createElement("div");
+            right.setAttribute("data-resize", "x");
+            bottom.className = "tool-resize-y";
+            bottom.setAttribute("data-resize", "y");
+            bottom.setAttribute("role", "separator");
+            bottom.setAttribute("aria-orientation", "horizontal");
+            bottom.setAttribute("tabindex", "0");
+            bottom.setAttribute("aria-label", "Высота блока «" + title + "»");
+            bottom.title = "Потяните, чтобы изменить высоту блока. Двойной щелчок — размер по умолчанию";
+            corner.className = "tool-resize-xy";
+            corner.setAttribute("data-resize", "xy");
+            corner.setAttribute("aria-hidden", "true");
+            corner.title = "Потяните, чтобы изменить ширину и высоту блока";
+            card.appendChild(bottom);
+            card.appendChild(corner);
+        });
+
+        function cellsAt(e) {
+            var step = lastLayout.step;
+            var gap = gridModule().gap;
+            var now = lastLayout.pos[rs.card.getAttribute("data-tool")];
+            var w = now.w, h = now.h;
+            if (rs.mode !== "y") { w = Math.round((e.clientX - rs.left + gap) / step); }
+            if (rs.mode !== "x") { h = Math.round((e.clientY - rs.top + gap) / step); }
+            return { w: Math.max(1, w), h: Math.max(1, h) };
+        }
+
         ui.motionTools.addEventListener("mousedown", function (e) {
-            var card;
+            var card, r, mode;
             if (e.button !== 0 || !isResizeHandle(e.target)) { return; }
             card = toolOf(e.target);
-            if (!card) { return; }
+            if (!card || !lastLayout) { return; }
             finish();
-            rs = { card: card, startX: e.clientX, startW: card.getBoundingClientRect().width };
+            r = card.getBoundingClientRect();
+            mode = e.target.getAttribute("data-resize");
+            rs = { card: card, mode: mode, left: r.left, top: r.top, at: "" };
             card.className += " resizing";
-            ui.motionTools.className += " resizing";
+            ui.motionTools.className += " resizing resizing-" + mode;
             e.preventDefault();
         });
 
         document.addEventListener("mousemove", function (e) {
-            if (!rs) { return; }
-            setToolSize(rs.card, rs.startW + (e.clientX - rs.startX));
+            var z, key;
+            if (!rs || !lastLayout) { return; }
             e.preventDefault();
+            z = cellsAt(e);
+            key = z.w + "x" + z.h;
+            if (key === rs.at) { return; }
+            rs.at = key;
+            setToolCells(rs.card, rs.mode === "y" ? sizeOf(rs.card.getAttribute("data-tool")).w : z.w, rs.mode === "x" ? sizeOf(rs.card.getAttribute("data-tool")).h : z.h);
         });
 
         document.addEventListener("mouseup", function () { finish(); }, true);
         window.addEventListener("blur", function () { finish(); });
 
-        // С клавиатуры: фокус на крае блока, стрелки меняют ширину, Home возвращает обычную, End — на всю ширину.
+        // С клавиатуры: на правом крае стрелки влево-вправо меняют ширину, на нижнем вверх-вниз — высоту.
+        // Home — обычный размер, End — на всю ширину.
         ui.motionTools.addEventListener("keydown", function (e) {
-            var card, now;
-            if (!isResizeHandle(e.target) || e.metaKey || e.ctrlKey || e.altKey) { return; }
+            var card, name, z, now;
+            if (!isResizeHandle(e.target) || e.metaKey || e.ctrlKey || e.altKey || !lastLayout) { return; }
             card = toolOf(e.target);
             if (!card) { return; }
-            now = card.getBoundingClientRect().width;
-            if (e.key === "ArrowLeft") { setToolSize(card, now - 10); }
-            else if (e.key === "ArrowRight") { setToolSize(card, now + 10); }
-            else if (e.key === "Home") { setToolSize(card, null); }
-            else if (e.key === "End") { setToolSize(card, "full"); }
+            name = card.getAttribute("data-tool");
+            z = sizeOf(name);
+            now = lastLayout.pos[name];
+            if (e.key === "ArrowLeft") { setToolCells(card, now.w - 1, z.h); }
+            else if (e.key === "ArrowRight") { setToolCells(card, now.w + 1, z.h); }
+            else if (e.key === "ArrowUp") { setToolCells(card, z.w, now.h - 1); }
+            else if (e.key === "ArrowDown") { setToolCells(card, z.w, now.h + 1); }
+            else if (e.key === "Home") { setToolCells(card, TOOL_DEFAULT_COLS, 0); }
+            else if (e.key === "End") { setToolCells(card, TOOL_FULL, z.h); }
             else { return; }
             e.preventDefault();
+            storeLayout(!!motion.places);
+        });
+    }
+
+    // Раздел пересчитывает сетку, когда меняется ширина панели или содержимое блоков.
+    function watchToolGrid() {
+        var lastWidth = -1;
+        toolGridReady = true;
+        function check() {
+            var w = ui.motionTools.clientWidth;
+            if (w !== lastWidth) { lastWidth = w; relayoutTools(); }
+        }
+        if (typeof window.ResizeObserver === "function") {
+            new window.ResizeObserver(check).observe(ui.motionTools);
+        }
+        window.addEventListener("resize", check);
+        if (document.fonts && document.fonts.ready) { document.fonts.ready.then(relayoutTools); }
+        ui.arrangeReset.addEventListener("click", function () {
+            motion.places = "";
+            motion.sizes = "";
+            motion.order = MOTION_DEFAULTS.order;
+            relayoutTools();
             storeMotion();
         });
     }
 
     function enableMotion() {
-        applyToolOrder();
-        applyToolSizes();
         enableToolReordering();
         enableToolResizing();
         ui.anchorKeys.value = motion.anchorKeys;
@@ -2260,6 +2567,8 @@
         ui.alignTo.value = motion.alignTo;
         enableShiftTool();
         showFoldParts();
+        watchToolGrid();
+        relayoutTools();
         ui.alignTo.addEventListener("change", function () {
             motion.alignTo = ui.alignTo.value === "selection" ? "selection" : "comp";
             storeMotion();
