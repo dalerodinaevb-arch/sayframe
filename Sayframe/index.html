@@ -14,12 +14,20 @@
         <span class="spark" aria-hidden="true"></span>
         <h1>Sayframe</h1>
       </div>
+      <div class="top-actions">
+      <button id="fxBtn" class="icon-btn" aria-label="Поиск эффектов (FX Console)" title="Поиск эффектов">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="10.5" cy="10.5" r="6"/>
+          <path d="M15 15l5 5"/>
+        </svg>
+      </button>
       <button id="settingsBtn" class="icon-btn" aria-label="Настройки" title="Настройки">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3.2"/>
           <path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l1.8-1.4-1.9-3.3-2.1.8a7.6 7.6 0 0 0-2.6-1.5L14.2 3h-3.8l-.4 2.1a7.6 7.6 0 0 0-2.6 1.5l-2.1-.8-1.9 3.3 1.8 1.4a7.6 7.6 0 0 0 0 3l-1.8 1.4 1.9 3.3 2.1-.8a7.6 7.6 0 0 0 2.6 1.5l.4 2.1h3.8l.4-2.1a7.6 7.6 0 0 0 2.6-1.5l2.1.8 1.9-3.3z"/>
         </svg>
       </button>
+      </div>
     </header>
 
     <section id="updateBar" class="card update" hidden aria-live="polite">
@@ -464,6 +472,14 @@
       </div>
 
       <div class="group">
+        <span class="label">Горячие клавиши</span>
+        <div id="hotkeys" class="hotkeys"></div>
+        <p id="hotkeyNote" class="hint bad" aria-live="polite"></p>
+        <button id="hotkeysReset" class="ghost">Вернуть стандартные</button>
+        <p class="hint">Нажмите на сочетание, чтобы задать новое: держите Cmd, Ctrl, Alt или Shift и нажмите клавишу (F1–F12 можно и без них). Backspace — убрать, Esc — отмена. Сочетания работают, когда активна панель Sayframe: щёлкните по ней перед нажатием.</p>
+      </div>
+
+      <div class="group">
         <span class="label">Кадров из видео-референса</span>
         <div id="frames" class="frames"></div>
       </div>
@@ -477,6 +493,22 @@
         </div>
         <p id="updateHint" class="hint" hidden></p>
       </div>
+    </div>
+  </div>
+
+  <!-- FX Console: поиск эффектов и пресетов, Enter добавляет выбранное на выделенные слои -->
+  <div id="fxConsole" class="fx-console" hidden>
+    <div class="card fx-card" role="dialog" aria-modal="true" aria-label="Поиск эффектов">
+      <div class="fx-row">
+        <svg class="fx-glass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>
+        <input id="fxSearch" class="fx-search" type="text" placeholder="Эффект или пресет…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="fxList" aria-autocomplete="list">
+        <button id="fxSnap" class="icon-btn" aria-label="Снимок кадра" title="Снимок кадра: PNG в «Sayframe Snapshots» и в буфер обмена">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5a2 2 0 0 1 2-2h2l1.5-2h5L16 6.5h2a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
+        </button>
+        <button id="fxClose" class="icon-btn" aria-label="Закрыть" title="Закрыть (Esc)">&times;</button>
+      </div>
+      <ul id="fxList" class="fx-list" role="listbox" aria-label="Эффекты и пресеты"></ul>
+      <p id="fxHint" class="fx-hint">↑↓ — выбрать · Enter — добавить на выделенные слои · ☆ — в избранное · Esc — закрыть</p>
     </div>
   </div>
 
