@@ -352,7 +352,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       async restart() { await page.waitForTimeout(400); await page.reload(); await h.ready(); },
       async tab(name) { await page.click(name === "tools" ? "#tabTools" : "#tabClaude"); },
       // the paste tool lives on the Tools tab
-      async paste() { if (await page.locator("#viewTools").isHidden()) await page.click("#tabTools"); await page.click("#pasteBtn"); },
+      async paste() { if (await page.locator("#viewMotion").isHidden()) await page.click("#tabMotion"); await page.click("#pasteBtn"); },
       async modalClick(label) { await page.locator("#modalButtons button", { hasText: label }).click(); await h.idle(); },
       tempLeft: () => fs.readdirSync(tmpDir).filter((f) => /sayframe_/.test(f)),
       async close() { await page.close(); server.close(); fs.rmSync(tmpDir, { recursive: true, force: true }); }
@@ -747,7 +747,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#tabMotion");
   t = await p.page.evaluate(() => { const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; }; return { tabs: r("#tabs"), top: r(".top"), status: r("#statusBox"), tools: r("#motionTools"), cards: Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width)]; }) }; });
   check("W2 Animation tab in a wide panel: tabs and blocks get the whole width, the status line stays in the column", t.tabs.join() === "14,986" && t.top.join() === "14,986" && t.status[1] <= 366 && t.tools.join() === "14,986" && (await overflow(p)) <= 0, JSON.stringify(t));
-  check("W2 the blocks are not stretched: 170px each, side by side in one row", t.cards.map((c) => c[2]).join() === "170,170,170,170" && t.cards.map((c) => c[0]).join() === "14,196,378,560" && t.cards.every((c) => c[1] === t.cards[0][1]) && (await box(p, "#easeIn")).split(",")[2] === (await box(p, "#easeOut")).split(",")[2], JSON.stringify(t.cards));
+  check("W2 the blocks are not stretched: 4 cells (168px) each, side by side in one row", t.cards.map((c) => c[2]).join() === "168,168,168,168,168" && t.cards.map((c) => c[0]).join() === "14,190,366,542,718" && t.cards.every((c) => c[1] === t.cards[0][1]) && (await box(p, "#easeIn")).split(",")[2] === (await box(p, "#easeOut")).split(",")[2], JSON.stringify(t.cards));
   await p.page.click("#tabClaude");
   await p.page.fill("#prompt", "сделай слой"); await p.page.click("#runBtn");
   await p.page.waitForSelector("#modal:not([hidden])");
@@ -795,15 +795,16 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   console.log("\n=== tabs ===");
   const vis = (p, sel) => p.page.locator(sel).isVisible();
   p = await open({ replies: [msg("Создаю слой.\n```javascript\napp.__ran('one');\n```")], clip: "png", footage: IMG });
-  check("T1 opens on the Claude tab", (await vis(p, "#prompt")) && (await vis(p, "#runBtn")) && (await vis(p, "#refBtn")) && (await vis(p, "#newBtn")) && !(await vis(p, "#pasteBtn")) && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "true");
+  check("T1 opens on the Claude tab", (await vis(p, "#prompt")) && (await vis(p, "#runBtn")) && (await vis(p, "#refBtn")) && (await vis(p, "#newBtn")) && !(await vis(p, "#viewTools .empty-note")) && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "true");
   check("T1 status line is inside the Claude tab", (await p.page.locator("#viewClaude #statusBox").count()) === 1 && (await vis(p, "#status")));
   await p.page.screenshot({ path: path.join(SHOTS, "16-tab-claude.png") });
   await p.tab("tools");
-  check("T2 Tools tab shows only the tools", (await vis(p, "#pasteBtn")) && !(await vis(p, "#prompt")) && !(await vis(p, "#runBtn")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#newBtn")) && !(await vis(p, "#fixBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "false");
+  check("T2 Tools tab shows only the tools", (await vis(p, "#viewTools .empty-note")) && !(await vis(p, "#prompt")) && !(await vis(p, "#runBtn")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#newBtn")) && !(await vis(p, "#fixBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "false");
   check("T2 status line moved to the Tools tab", (await p.page.locator("#viewTools #statusBox").count()) === 1 && (await p.page.locator("#statusBox").count()) === 1 && (await vis(p, "#status")));
   await p.page.screenshot({ path: path.join(SHOTS, "17-tab-tools.png") });
-  await p.page.click("#pasteBtn"); await p.idle(); await p.modalClick("Оставить как есть");
-  check("T3 a tool reports its result on the Tools tab", /^Картинка вставлена/.test(await p.status()) && (await vis(p, "#status")) && p.ae.log.imports.length === 1, await p.status());
+  check("T2 the Animation tab is empty for now and says so; the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#viewTools button").count()) === 0);
+  await p.paste(); await p.idle(); await p.modalClick("Оставить как есть");
+  check("T3 the paste block reports its result on its tab", /^Картинка вставлена/.test(await p.status()) && (await vis(p, "#status")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1 && p.ae.log.imports.length === 1, await p.status());
   t = await p.status();
   await p.tab("claude");
   check("T3 the same status is shown after switching back", (await p.status()) === t && (await vis(p, "#status")) && (await vis(p, "#prompt")));
@@ -812,7 +813,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.tab("tools");
   check("T4 the reply card stays on the Claude tab", !(await vis(p, "#replyCard")) && /^Готово: Создаю слой\./.test(await p.status()));
   await p.restart();
-  check("T5 the open tab is remembered", (await vis(p, "#pasteBtn")) && !(await vis(p, "#prompt")) && (await p.page.locator("#viewTools #statusBox").count()) === 1);
+  check("T5 the open tab is remembered", (await vis(p, "#viewTools .empty-note")) && !(await vis(p, "#prompt")) && (await p.page.locator("#viewTools #statusBox").count()) === 1);
   check("T5 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
   p = await open({ width: 300, height: 620 });
@@ -858,7 +859,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("O1 without a double click a drag moves nothing and marks nothing", (await order(p)) === "claude,tools,motion" && (await savedOrder(p)) === null && (await p.page.locator(".dragging, .reordering").count()) === 0);
   await p.page.waitForTimeout(350);
   await p.page.click("#tabTools");
-  check("O1 a single click only switches the tab", (await vis(p, "#pasteBtn")) && !(await arrangingNow(p)));
+  check("O1 a single click only switches the tab", (await vis(p, "#viewTools .empty-note")) && !(await arrangingNow(p)));
   await p.page.click("#tabClaude");
   await p.page.waitForTimeout(350);
   await p.page.dblclick("#tabClaude");
@@ -873,23 +874,24 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   } });
   check("O2 dragging Claude onto Tools swaps them", (await order(p)) === "tools,claude,motion", await order(p));
   check("O2 the new order is saved", (await savedOrder(p)) === '["tools","claude","motion"]', await savedOrder(p));
-  check("O2 dragging does not switch tabs or leave marks, rearranging stays on", (await vis(p, "#prompt")) && !(await vis(p, "#pasteBtn")) && (await p.page.locator(".dragging, .reordering").count()) === 0 && (await arrangingNow(p)));
+  check("O2 dragging does not switch tabs or leave marks, rearranging stays on", (await vis(p, "#prompt")) && !(await vis(p, "#viewTools .empty-note")) && (await p.page.locator(".dragging, .reordering").count()) === 0 && (await arrangingNow(p)));
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect().left; return r("tabTools") < r("tabClaude"); });
   check("O2 Tools is now drawn on the left", t === true);
   await p.page.screenshot({ path: path.join(SHOTS, "20-tabs-swapped.png") });
   await p.page.waitForTimeout(350);
   await p.tab("tools");
-  check("O3 clicking still switches tabs after a drag, also while rearranging", (await vis(p, "#pasteBtn")) && !(await vis(p, "#prompt")) && (await arrangingNow(p)));
+  check("O3 clicking still switches tabs after a drag, also while rearranging", (await vis(p, "#viewTools .empty-note")) && !(await vis(p, "#prompt")) && (await arrangingNow(p)));
   await p.page.click("#arrangeDone");
   check("O3 'Done' switches rearranging off", !(await arrangingNow(p)) && !(await vis(p, "#arrangeBar")) && (await order(p)) === "tools,claude,motion");
   await p.page.waitForTimeout(350);
   await dragTab(p, "#tabTools", "#tabClaude");
   check("O3 after 'Done' tabs do not move any more", (await order(p)) === "tools,claude,motion");
   await p.page.waitForTimeout(350);
-  await p.page.click("#pasteBtn"); await p.idle(); await p.modalClick("Оставить как есть");
+  await p.paste(); await p.idle(); await p.modalClick("Оставить как есть");
   check("O3 tools still work in the new order", /^Картинка вставлена/.test(await p.status()), await p.status());
+  await p.page.click("#tabTools");
   await p.restart();
-  check("O4 order and open tab survive a restart; rearranging does not", (await order(p)) === "tools,claude,motion" && (await vis(p, "#pasteBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && !(await arrangingNow(p)));
+  check("O4 order and open tab survive a restart; rearranging does not", (await order(p)) === "tools,claude,motion" && (await vis(p, "#viewTools .empty-note")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && !(await arrangingNow(p)));
   await arrange(p);
   await dragTab(p, "#tabTools", "#tabClaude");
   check("O5 dragging back restores the order", (await order(p)) === "claude,tools,motion" && (await savedOrder(p)) === '["claude","tools","motion"]');
@@ -946,7 +948,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await dragTab(p, "#tabTools", "#tabClaude");
   t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check("O10 reordering works in a 300px panel", (await order(p)) === "tools,claude,motion" && t <= 0);
-  check("O10 dragging a tab that is not open does not open it", (await vis(p, "#prompt")) && !(await vis(p, "#pasteBtn")) && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "true");
+  check("O10 dragging a tab that is not open does not open it", (await vis(p, "#prompt")) && !(await vis(p, "#viewTools .empty-note")) && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "true");
   await p.close();
 
   // ---------------------------------------------------------------- animation tab
@@ -965,7 +967,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({});
   check("M1 three tabs, Animation closed at first", (await order(p)) === "claude,tools,motion" && !(await vis(p, "#easeBothBtn")));
   await motionTab(p);
-  check("M1 Animation tab shows both tools and nothing from the other tabs", (await vis(p, "#easeBothBtn")) && (await vis(p, "#anchorGrid")) && (await p.page.locator("#anchorGrid button").count()) === 9 && !(await vis(p, "#prompt")) && !(await vis(p, "#pasteBtn")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1);
+  check("M1 Animation tab shows both tools and nothing from the other tabs", (await vis(p, "#easeBothBtn")) && (await vis(p, "#anchorGrid")) && (await p.page.locator("#anchorGrid button").count()) === 9 && !(await vis(p, "#prompt")) && !(await vis(p, "#viewTools .empty-note")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1);
   t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check("M1 no horizontal overflow at 380px", t <= 0, t);
   await p.page.screenshot({ path: path.join(SHOTS, "21-tab-motion.png") });
@@ -1054,24 +1056,35 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.mouse.up();
   }
   const middle = (r) => ({ x: (r.l + r.r) / 2, y: (r.t + r.b) / 2 });
+  const CELL = 44;   // one large cell with its gap
+  const by = (pt, dx, dy) => ({ x: pt.x + dx, y: pt.y + (dy || 0) });
+  const topOf = (r) => ({ x: (r.l + r.r) / 2, y: r.t + 20 });   // a point near the top: tall blocks may end below the window
+  // Where each block sits on the grid: "name:column,row,width,height" in cells.
+  const cellsNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const a = /^(\d+) \/ span (\d+)$/.exec(c.style.gridColumn), b = /^(\d+) \/ span (\d+)$/.exec(c.style.gridRow); return c.getAttribute("data-tool") + ":" + (a[1] - 1) + "," + (b[1] - 1) + "," + a[2] + "," + b[2]; }).join(" "));
+  const savedPlaces = (p) => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").places || "");
+  const resizeTo = async (p, w) => { await p.page.setViewportSize({ width: w, height: 760 }); await p.page.waitForTimeout(80); };
 
   p = await open({});
   await motionTab(p);
   t = await toolRects(p);
-  check("R1 at 380px easing and anchor stand side by side, align goes to the row below at the same size", (await toolOrder(p)) === "ease,anchor,align,shift" && t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && t.ease.w === 170 && t.anchor.w === 170 && t.align.w === 170 && t.ease.l === 14 && t.anchor.r === 366 && t.align.t >= Math.max(t.ease.b, t.anchor.b) && t.align.l === 14, JSON.stringify(t));
+  check("R1 at 380px easing and anchor stand side by side, align goes to the row below at the same size", (await toolOrder(p)) === "ease,anchor,align,shift,paste" && t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && t.ease.w === 168 && t.anchor.w === 168 && t.align.w === 168 && t.ease.l === 14 && t.anchor.r === 358 && t.align.t >= t.ease.b && t.align.l === 14, JSON.stringify(t));
+  t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.display, cs.gridAutoRows, cs.rowGap, cs.columnGap, g.style.gridTemplateColumns].join("|"); });
+  check("R1 the blocks stand on a grid of 36px cells with 8px gaps, 8 cells across at 380px", t === "grid|36px|8px|8px|repeat(8, 36px)", t);
+  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const r = c.getBoundingClientRect(), g = document.getElementById("motionTools").getBoundingClientRect(); return (r.left - g.left) % 44 === 0 && (r.top - g.top) % 44 === 0 && (r.width + 8) % 44 === 0 && (r.height + 8) % 44 === 0; }));
+  check("R1 every block starts on a cell and is a whole number of cells wide and tall", t);
   t = await p.page.evaluate(() => { const inside = (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button, select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5); }); }; return Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), inside).join(); });
-  check("R1 nothing sticks out of any block", t === "true,true,true,true" && (await overflow(p)) <= 0, t);
+  check("R1 nothing sticks out of any block", t === "true,true,true,true,true" && (await overflow(p)) <= 0, t);
   t = await p.page.evaluate(() => [document.getElementById("easeIn").getBoundingClientRect().width, document.getElementById("easeOut").getBoundingClientRect().width, document.getElementById("anchorGrid").getBoundingClientRect().width].map(Math.round));
   check("R1 sliders stay usable and the arrow grid keeps its size", t[0] === t[1] && t[0] >= 40 && t[2] >= 118, t.join());
   await p.page.screenshot({ path: path.join(SHOTS, "21d-tools-side-by-side.png") });
 
   // Without the double click nothing can be dragged.
   t = await toolRects(p);
-  await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: middle(t.anchor).x + 10, y: t.ease.b - 5 });
-  check("R2 without a double click a block cannot be dragged", (await toolOrder(p)) === "ease,anchor,align,shift" && (await savedTools(p)) !== "anchor,ease,align,shift" && (await p.page.locator("#motionTools .dragging").count()) === 0);
+  await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: t.ease.l + 6 + 4 * CELL, y: t.ease.b - 5 });
+  check("R2 without a double click a block cannot be dragged", (await toolOrder(p)) === "ease,anchor,align,shift,paste" && (await savedTools(p)) !== "anchor,ease,align,shift,paste" && (await p.page.locator("#motionTools .dragging").count()) === 0);
   c = await center(p, "#easeOut");
   await dragFrom(p, c, { x: middle(t.anchor).x + 20, y: c.y });
-  check("R2 the sliders work as usual", (await toolOrder(p)) === "ease,anchor,align,shift" && (await p.page.inputValue("#easeOut")) === "100", await p.page.inputValue("#easeOut"));
+  check("R2 the sliders work as usual", (await toolOrder(p)) === "ease,anchor,align,shift,paste" && (await p.page.inputValue("#easeOut")) === "100", await p.page.inputValue("#easeOut"));
   await setSlider(p, "easeOut", 60);
   await p.page.dblclick("#easeInVal");
   check("R2 a double click on a number does not start rearranging", !(await arrangingNow(p)));
@@ -1087,9 +1100,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.screenshot({ path: path.join(SHOTS, "21h-tools-arranging.png") });
   t = await toolRects(p);
   c = await center(p, "#easeOut");
-  await dragFrom(p, c, { x: middle(t.anchor).x + 10, y: c.y + 4 });
+  await dragFrom(p, c, by(c, 4 * CELL + 3, 4));
   t = await toolRects(p);
-  check("R3 now the block is dragged by any place, even over a slider, and swaps past the middle of the other", (await toolOrder(p)) === "anchor,ease,align,shift" && t.anchor.r < t.ease.l && t.anchor.l === 14 && (await savedTools(p)) === "anchor,ease,align,shift" && (await p.page.inputValue("#easeOut")) === "60", await toolOrder(p) + " " + await p.page.inputValue("#easeOut"));
+  check("R3 now the block is dragged by any place, even over a slider; dropped on the other block's cells, they swap", (await toolOrder(p)).indexOf("anchor,ease,") === 0 && t.anchor.r < t.ease.l && t.anchor.l === 14 && t.ease.l === 190 && /ease=4,0/.test(await savedPlaces(p)) && /anchor=0,0/.test(await savedPlaces(p)) && (await savedTools(p)).indexOf("anchor,ease,") === 0 && (await p.page.inputValue("#easeOut")) === "60", await toolOrder(p) + " " + await p.page.inputValue("#easeOut"));
   check("R3 no leftovers after the drop, rearranging stays on", (await p.page.locator("#motionTools .dragging").count()) === 0 && !(await p.page.locator("#motionTools").evaluate((el) => /reordering/.test(el.className))) && (await arrangingNow(p)));
   await p.page.screenshot({ path: path.join(SHOTS, "21e-tools-swapped.png") });
   await p.page.waitForTimeout(350);
@@ -1100,19 +1113,28 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R3 while rearranging the buttons inside the blocks do nothing", (await p.status()) === before[0] && p.ae.log.undo.length === before[1], await p.status());
   t = await toolRects(p);
   c = middle(t.ease);
-  await dragFrom(p, c, { x: c.x - 30, y: c.y });
-  check("R3 a short drag that does not reach the middle changes nothing", (await toolOrder(p)) === "anchor,ease,align,shift");
+  await dragFrom(p, c, { x: c.x - 15, y: c.y + 10 });
+  check("R3 a drag shorter than half a cell changes nothing", (await toolOrder(p)).indexOf("anchor,ease,") === 0 && (await toolRects(p)).ease.l === 190);
+  c = await cellsNow(p);
+  await p.page.mouse.move(middle(t.ease).x, middle(t.ease).y); await p.page.mouse.down();
+  await p.page.mouse.move(middle(t.ease).x - CELL - 5, middle(t.ease).y, { steps: 6 });
+  t = [await cellsNow(p), await p.page.locator("#motionTools .dragging").count()];
+  await p.page.mouse.move(middle((await toolRects(p)).ease).x + CELL + 20, middle((await toolRects(p)).ease).y, { steps: 6 });
+  await p.page.mouse.up();
+  check("R3 while dragged the block jumps from cell to cell, the others make room at once", /ease:3,0,4,6/.test(t[0]) && t[1] === 1 && t[0] !== c, t[0]);
+  check("R3 back on its cells the layout is as before", (await cellsNow(p)) === c, await cellsNow(p));
+  t = await toolRects(p);
   await p.page.waitForTimeout(350);
   await p.page.mouse.dblclick(middle(t.ease).x, middle(t.ease).y);
-  check("R3 a double click on a block switches rearranging off", !(await arrangingNow(p)) && (await toolOrder(p)) === "anchor,ease,align,shift");
+  check("R3 a double click on a block switches rearranging off", !(await arrangingNow(p)) && (await toolOrder(p)).indexOf("anchor,ease,") === 0);
   await p.page.click("#easeBothBtn"); await p.idle();
   check("R3 the tools work again, in the new order", (await p.status()) === "Выделите ключевые кадры на таймлайне и нажмите ещё раз.");
   await p.restart();
-  check("R3 the order survives a restart", (await toolOrder(p)) === "anchor,ease,align,shift" && (await vis(p, "#easeBothBtn")) && !(await arrangingNow(p)));
+  check("R3 the order survives a restart", (await toolOrder(p)).indexOf("anchor,ease,") === 0 && (await vis(p, "#easeBothBtn")) && !(await arrangingNow(p)));
   await arrange(p);
   t = await toolRects(p);
-  await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: middle(t.anchor).x - 10, y: t.ease.b - 5 });
-  check("R3 dragging back restores the order", (await toolOrder(p)) === "ease,anchor,align,shift" && (await savedTools(p)) === "ease,anchor,align,shift", await toolOrder(p));
+  await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: t.ease.l + 6 - 4 * CELL, y: t.ease.b - 5 });
+  check("R3 dragging back restores the order", (await toolOrder(p)) === "ease,anchor,align,shift,paste" && (await savedTools(p)) === "ease,anchor,align,shift,paste", await toolOrder(p));
   await p.page.waitForTimeout(350);
   await dragTab(p, "#tabMotion", "#tabClaude");
   check("R3 the same mode moves the tabs", (await order(p)) === "motion,claude,tools");
@@ -1121,49 +1143,60 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R3 Esc ends it", !(await arrangingNow(p)));
 
   await p.page.focus(grip("anchor")); await p.page.keyboard.press("ArrowLeft");
-  check("R4 keyboard: arrow on the block's handle moves it and keeps focus (no double click needed)", !(await arrangingNow(p)) && (await toolOrder(p)) === "anchor,ease,align,shift" && (await p.page.evaluate(() => document.activeElement.className)) === "tool-grip" && (await savedTools(p)) === "anchor,ease,align,shift");
+  check("R4 keyboard: arrow on the block's handle moves it and keeps focus (no double click needed)", !(await arrangingNow(p)) && (await toolOrder(p)) === "anchor,ease,align,shift,paste" && (await p.page.evaluate(() => document.activeElement.className)) === "tool-grip" && (await savedTools(p)) === "anchor,ease,align,shift,paste");
   await p.page.keyboard.press("ArrowLeft");
-  check("R4 at the edge nothing happens", (await toolOrder(p)) === "anchor,ease,align,shift");
+  check("R4 at the edge nothing happens", (await toolOrder(p)) === "anchor,ease,align,shift,paste");
   await p.page.keyboard.press("ArrowRight");
-  check("R4 and back", (await toolOrder(p)) === "ease,anchor,align,shift" && p.errors.length === 0, p.errors.join(" | "));
+  check("R4 and back", (await toolOrder(p)) === "ease,anchor,align,shift,paste" && p.errors.length === 0, p.errors.join(" | "));
+  await p.page.focus(grip("ease")); await p.page.keyboard.press("ArrowDown");
+  check("R4 down moves it a cell down", /ease:0,1,/.test(await cellsNow(p)), await cellsNow(p));
+  await p.page.keyboard.press("ArrowUp");
+  check("R4 up brings it back", (await toolOrder(p)) === "ease,anchor,align,shift,paste" && /ease:0,0/.test(await cellsNow(p)), await cellsNow(p));
+  await arrange(p); await p.page.click("#arrangeReset"); await p.page.waitForTimeout(350); await p.page.keyboard.press("Escape");
+  await p.page.focus(grip("ease")); await p.page.keyboard.press("ArrowDown");
+  check("R4 with a block right underneath, down swaps them", (await toolOrder(p)).split(",").slice(0, 2).join() === "align,anchor" && /ease:0,6/.test(await cellsNow(p)) && /align:0,0/.test(await cellsNow(p)), await cellsNow(p));
+  await p.page.keyboard.press("ArrowUp");
+  check("R4 and up swaps them back", /ease:0,0/.test(await cellsNow(p)) && /align:0,6/.test(await cellsNow(p)), await cellsNow(p));
+  await p.page.focus(grip("anchor")); await p.page.keyboard.press("ArrowRight");
+  check("R4 a block at the panel's right edge does not move further right", /anchor:4,0/.test(await cellsNow(p)), await cellsNow(p));
   await p.close();
 
   p = await open({ width: 300 });
   await motionTab(p);
   t = await toolRects(p);
-  check("R5 in a narrow panel the blocks stack and keep their size", t.ease.b <= t.anchor.t && t.anchor.b <= t.align.t && t.ease.l === 14 && t.ease.w === 170 && t.anchor.w === 170 && t.align.w === 170 && (await overflow(p)) <= 0, JSON.stringify(t));
+  check("R5 in a narrow panel the blocks stack and keep their size", t.ease.b <= t.anchor.t && t.anchor.b <= t.align.t && t.ease.l === 14 && t.ease.w === 168 && t.anchor.w === 168 && t.align.w === 168 && (await overflow(p)) <= 0, JSON.stringify(t));
   await arrange(p);
   t = await toolRects(p);
   c = middle(t.anchor);
-  await dragFrom(p, c, { x: c.x + 3, y: middle(t.ease).y - 10 });
+  await dragFrom(p, c, { x: c.x + 3, y: c.y - (t.anchor.t - t.ease.t) });
   t = await toolRects(p);
-  check("R5 stacked blocks swap by dragging up or down", (await toolOrder(p)) === "anchor,ease,align,shift" && t.anchor.b <= t.ease.t, await toolOrder(p));
+  check("R5 stacked blocks swap by dragging up or down", (await toolOrder(p)) === "anchor,ease,align,shift,paste" && t.anchor.b <= t.ease.t, await toolOrder(p));
   await p.page.screenshot({ path: path.join(SHOTS, "21f-tools-stacked.png") });
   await p.close();
 
   p = await open({ width: 900 });
   await motionTab(p);
   t = await toolRects(p);
-  check("R6 in a wide panel all three blocks fit one row, still 170px each", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.ease.l === 14 && t.anchor.l === 196 && t.align.l === 378 && t.ease.w === 170 && t.anchor.w === 170 && t.align.w === 170, JSON.stringify(t));
+  check("R6 in a wide panel all four blocks fit one row, still 168px each", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.align.t === t.shift.t && t.ease.l === 14 && t.anchor.l === 190 && t.align.l === 366 && t.shift.l === 542 && [t.ease, t.anchor, t.align, t.shift].every((x) => x.w === 168), JSON.stringify(t));
   await p.page.screenshot({ path: path.join(SHOTS, "21g-tools-wide.png") });
   await p.close();
-  for (const [bad, want] of [['"anchor"', "anchor,ease,align,shift"], ['"ease,ease"', "ease,anchor,align,shift"], ["7", "ease,anchor,align,shift"], ["null", "ease,anchor,align,shift"], ['["anchor","ease"]', "ease,anchor,align,shift"],
-    ['"anchor,ease"', "anchor,ease,align,shift"] /* an order saved before the Align block existed */, ['"align,ghost,ease"', "align,ease,anchor,shift"]]) {
+  for (const [bad, want] of [['"anchor"', "anchor,ease,align,shift,paste"], ['"ease,ease"', "ease,anchor,align,shift,paste"], ["7", "ease,anchor,align,shift,paste"], ["null", "ease,anchor,align,shift,paste"], ['["anchor","ease"]', "ease,anchor,align,shift,paste"],
+    ['"anchor,ease"', "anchor,ease,align,shift,paste"] /* an order saved before the Align block existed */, ['"align,ghost,ease"', "align,ease,anchor,shift,paste"]]) {
     p = await open({});
     await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", '{"order":' + v + "}"), bad); await p.restart(); await motionTab(p);
-    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card").count()) === 4 && p.errors.length === 0, await toolOrder(p));
+    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card").count()) === 5 && p.errors.length === 0, await toolOrder(p));
     await p.close();
   }
   p = await open({});
   await motionTab(p); await arrange(p);
   t = await toolRects(p);
-  await dragFrom(p, middle(t.align), { x: middle(t.ease).x - 20, y: middle(t.ease).y - 10 });
-  check("R8 the block from the second row can be dragged up to the front", (await toolOrder(p)) === "align,ease,anchor,shift" && (await savedTools(p)) === "align,ease,anchor,shift", await toolOrder(p));
+  await dragFrom(p, middle(t.align), by(middle(t.align), 0, t.ease.t - t.align.t));
+  check("R8 the block from the second row can be dragged up into the corner; the easing block takes its place", (await toolOrder(p)) === "align,anchor,ease,shift,paste" && (await savedTools(p)) === "align,anchor,ease,shift,paste" && /align:0,0/.test(await cellsNow(p)), await toolOrder(p) + " " + await cellsNow(p));
   await p.page.waitForTimeout(350);
   t = await toolRects(p);
-  check("R8 then align and easing share the first row", t.align.t === t.ease.t && t.align.r < t.ease.l && t.anchor.t >= t.align.b, JSON.stringify(t));
-  await dragFrom(p, middle(t.align), { x: middle(t.anchor).x, y: middle(t.anchor).y + 10 });
-  check("R8 and down to the end again", (await toolOrder(p)) === "ease,anchor,align,shift", await toolOrder(p));
+  check("R8 then align and anchor share the first row", t.align.t === t.anchor.t && t.align.r < t.anchor.l && t.ease.t >= t.align.b, JSON.stringify(t));
+  await dragFrom(p, middle(t.align), by(middle(t.align), 0, t.ease.t - t.align.t));
+  check("R8 and down again", (await toolOrder(p)) === "ease,anchor,align,shift,paste", await toolOrder(p));
   await p.close();
 
   function easeScene() {
@@ -1390,106 +1423,167 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // ---------------------------------------------------------------- animation: a free panel, fixed blocks
   // Stretching the After Effects panel never resizes a block; it only changes how many stand in a row.
   console.log("\n=== animation: blocks reflow, sizes stay ===");
-  const sizesNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.getBoundingClientRect(); return Math.round(b.width) + "x" + Math.round(b.height); }).join());
-  const rowsNow = (p) => p.page.evaluate(() => { const tops = Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), (c) => Math.round(c.getBoundingClientRect().top)); const rows = {}; tops.forEach((t) => { rows[t] = (rows[t] || 0) + 1; }); return Object.keys(rows).sort((a, b) => a - b).map((k) => rows[k]).join("+"); });
+  const allInside = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button:not(.tool-grip), select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5); }); }));
+  const sizesNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.getBoundingClientRect(); return Math.round(b.width) + "x" + Math.round(b.height); }).sort().join());
+  // How many blocks stand in the first row, and is everything stacked in one column?
+  const firstRow = (p) => p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll("#motionTools .tool-card"), (c) => /^1 \//.test(c.style.gridRow)).length);
+  const oneColumn = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => /^1 \//.test(c.style.gridColumn)));
   p = await open({ width: 380 });
   await motionTab(p);
   c = await sizesNow(p);
-  check("E1 at 380px: two blocks in a row, two below", (await rowsNow(p)) === "2+2", await rowsNow(p));
-  await p.page.setViewportSize({ width: 600, height: 760 });
-  check("E1 stretched to 600px: three in a row, every block exactly the same size as before", (await rowsNow(p)) === "3+1" && (await sizesNow(p)) === c, (await rowsNow(p)) + " " + (await sizesNow(p)));
-  await p.page.setViewportSize({ width: 800, height: 760 });
-  check("E1 stretched to 800px: all four in a row, same sizes", (await rowsNow(p)) === "4" && (await sizesNow(p)) === c, (await rowsNow(p)) + " " + (await sizesNow(p)) + " vs " + c);
-  await p.page.setViewportSize({ width: 1400, height: 760 });
+  check("E1 at 380px (8 cells): two blocks in the first row, the rest below", (await firstRow(p)) === 2 && (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:0,6,4,6 shift:4,7,4,11 paste:0,12,4,5", await cellsNow(p));
+  check("E1 (scene) block sizes", c === "168x212,168x256,168x256,168x300,168x476", c);
+  await resizeTo(p, 600);
+  check("E1 stretched to 600px: three in the first row, every block exactly the same size as before", (await firstRow(p)) === 3 && (await sizesNow(p)) === c, (await firstRow(p)) + " " + (await sizesNow(p)));
+  await resizeTo(p, 800);
+  check("E1 stretched to 800px: four in a row, same sizes", (await firstRow(p)) === 4 && (await sizesNow(p)) === c, (await firstRow(p)) + " " + (await sizesNow(p)));
+  await resizeTo(p, 1400);
   t = await toolRects(p);
-  check("E1 stretched to 1400px: still the same sizes, the blocks stay on the left", (await rowsNow(p)) === "4" && (await sizesNow(p)) === c && t.ease.l === 14 && t.align.r === 548 && t.shift.r === 730 && (await overflow(p)) <= 0, JSON.stringify(t));
-  await p.page.setViewportSize({ width: 300, height: 760 });
-  check("E1 squeezed to 300px: one under another, same sizes again", (await rowsNow(p)) === "1+1+1+1" && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await rowsNow(p)) + " " + (await sizesNow(p)));
-  await p.page.setViewportSize({ width: 380, height: 760 });
-  check("E1 and back to 380px: the first layout returns", (await rowsNow(p)) === "2+2" && (await sizesNow(p)) === c);
+  check("E1 stretched to 1400px: all five in a row, still the same sizes, the blocks stay on the left", (await firstRow(p)) === 5 && (await sizesNow(p)) === c && t.ease.l === 14 && t.paste.r === 886 && (await overflow(p)) <= 0, JSON.stringify(t));
+  await resizeTo(p, 300);
+  check("E1 squeezed to 300px: one under another, same sizes again", (await oneColumn(p)) && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await cellsNow(p)) + " " + (await sizesNow(p)));
+  await resizeTo(p, 380);
+  check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:0,6,4,6 shift:4,7,4,11 paste:0,12,4,5" && (await sizesNow(p)) === c);
   await p.page.click("#settingsBtn"); await setWidth(p, 640); await p.page.click("#saveSettings");
-  check("E2 the width setting is for fields and buttons: it changes neither the blocks nor the tab bar", (await box(p, "#tabs")).split(",")[2] === "352" && (await sizesNow(p)) === c && (await rowsNow(p)) === "2+2");
-  await p.page.setViewportSize({ width: 1000, height: 760 });
+  check("E2 the width setting is for fields and buttons: it changes neither the blocks nor the tab bar", (await box(p, "#tabs")).split(",")[2] === "352" && (await sizesNow(p)) === c && (await firstRow(p)) === 2);
+  await resizeTo(p, 1000);
   await p.page.click("#settingsBtn"); await p.page.click('#toolSize button[data-value="small"]'); await p.page.click("#saveSettings");
   c = await sizesNow(p);
-  check("E3 small blocks behave the same: 112px wide, in a row", (await rowsNow(p)) === "4" && c.split(",").every((x) => x.indexOf("112x") === 0), c);
-  await p.page.setViewportSize({ width: 270, height: 760 });
-  check("E3 and wrap without changing size when the panel is narrow", (await rowsNow(p)) === "2+2" && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await rowsNow(p)) + " " + (await sizesNow(p)));
+  t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.gridAutoRows, cs.columnGap].join("|"); });
+  check("E3 small blocks: a finer grid (22px cells, 6px gaps), blocks 4 cells = 106px wide, all in a row", t === "22px|6px" && (await firstRow(p)) === 5 && c.split(",").every((x) => x.indexOf("106x") === 0), t + " " + c);
+  await resizeTo(p, 270);
+  check("E3 and wrap without changing size when the panel is narrow", (await firstRow(p)) === 2 && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await cellsNow(p)) + " " + (await sizesNow(p)));
   check("E3 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
-  // ---------------------------------------------------------------- animation: block width
-  console.log("\n=== animation: block width ===");
-  const edge = (tool) => '#motionTools [data-tool="' + tool + '"] .tool-resize';
+  // ---------------------------------------------------------------- animation: block size, in cells
+  console.log("\n=== animation: block size ===");
+  const edge = (tool, which) => '#motionTools [data-tool="' + tool + '"] ' + (which === "y" ? ".tool-resize-y" : which === "xy" ? ".tool-resize-xy" : ".tool-resize");
   const savedSizes = (p) => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").sizes);
   // Is the list beside the buttons (a wide, horizontal block) or under them (a narrow, vertical one)?
   const shape = (p, tool) => p.page.evaluate((tool) => { const card = document.querySelector('#motionTools [data-tool="' + tool + '"]'); const g = card.querySelector(tool === "align" ? ".align-to label" : ".anchor-grid").getBoundingClientRect(), s = card.querySelector(tool === "align" ? ".align-to select" : ".anchor-side").getBoundingClientRect(); return s.left >= g.right ? "horizontal" : s.top >= g.bottom ? "vertical" : "overlap"; }, tool);
-  const dragEdge = async (p, tool, dx) => { const c = await center(p, edge(tool)); await dragFrom(p, c, { x: c.x + dx, y: c.y + 3 }); };
+  const dragEdge = async (p, tool, dx, dy, which) => { const c = await center(p, edge(tool, which)); await dragFrom(p, c, { x: c.x + dx, y: c.y + 3 + (dy || 0) }); };
+  const onCells = (w, h) => (w + 8) % 44 === 0 && (h === undefined || (h + 8) % 44 === 0);
 
-  p = await open({ width: 700, settings: { panelWidth: 640 } });   // content column: 612px
+  p = await open({ width: 700, height: 1100, settings: { panelWidth: 640 } });   // blocks area: 672px = 15 cells
   await motionTab(p);
   t = await toolRects(p);
-  check("S1 every block has an edge to pull, on its right side", (await p.page.locator("#motionTools .tool-resize").count()) === 4 && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const h = c.querySelector(".tool-resize").getBoundingClientRect(), r = c.getBoundingClientRect(); return h.width >= 8 && h.left < r.right && h.right > r.right && h.height > 30 && getComputedStyle(c.querySelector(".tool-resize")).cursor === "ew-resize"; }))));
+  check("S1 every block has three handles: right edge (width), bottom edge (height), corner (both)", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const r = c.getBoundingClientRect(); const x = c.querySelector(".tool-resize").getBoundingClientRect(), y = c.querySelector(".tool-resize-y").getBoundingClientRect(), xy = c.querySelector(".tool-resize-xy").getBoundingClientRect(); return x.left < r.right && x.right > r.right && x.height > 30 && getComputedStyle(c.querySelector(".tool-resize")).cursor === "ew-resize" && y.top < r.bottom && y.bottom > r.bottom && y.width > 30 && getComputedStyle(c.querySelector(".tool-resize-y")).cursor === "ns-resize" && xy.right > r.right && xy.bottom > r.bottom && getComputedStyle(c.querySelector(".tool-resize-xy")).cursor === "nwse-resize"; }))));
   check("S1 (scene) three blocks in one row, lists under the buttons", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await shape(p, "anchor")) === "vertical" && (await shape(p, "align")) === "vertical", JSON.stringify(t));
-  await dragEdge(p, "anchor", 150);
+  await p.page.mouse.move((await center(p, edge("anchor"))).x, (await center(p, edge("anchor"))).y); await p.page.mouse.down();
+  c = await center(p, edge("anchor"));
+  await p.page.mouse.move(c.x + 60, c.y, { steps: 5 });
+  t = [await p.page.locator(".grid-cells").evaluate((el) => getComputedStyle(el).opacity), (await toolRects(p)).anchor.w];
+  await p.page.mouse.move(c.x + 140, c.y, { steps: 5 });
+  t.push((await toolRects(p)).anchor.w);
+  await p.page.mouse.up();
+  check("S2 while the edge is pulled the grid shows and the width jumps by whole cells", Number(t[0]) > 0.3 && t[1] === 212 && t[2] === 300, t.join());
   t = await toolRects(p);
-  check("S2 pulling the edge right makes the block wider by that much", Math.abs(t.anchor.w - (170 + 150)) <= 2 && (await savedSizes(p)) === "anchor=" + t.anchor.w, t.anchor.w + " " + await savedSizes(p));
+  check("S2 pulled right by about three cells: 7 cells wide, remembered in cells", t.anchor.w === 300 && (await savedSizes(p)) === "anchor=7x0", t.anchor.w + " " + await savedSizes(p));
   check("S2 a wide block turns horizontal: the list stands beside the buttons", (await shape(p, "anchor")) === "horizontal", await shape(p, "anchor"));
-  check("S2 nothing is left marked and nothing overflows", (await p.page.locator(".resizing").count()) === 0 && (await overflow(p)) <= 0 && (await box(p, "#motionTools")).split(",")[0] === "14" && (await box(p, "#motionTools")).split(",")[2] === "672", await box(p, "#motionTools"));
+  await p.page.waitForTimeout(250);
+  check("S2 nothing is left marked, the grid hides again, nothing overflows", (await p.page.locator(".resizing, .resizing-x").count()) === 0 && (await p.page.locator(".grid-cells").evaluate((el) => getComputedStyle(el).opacity)) === "0" && (await overflow(p)) <= 0, await box(p, "#motionTools"));
   await p.page.screenshot({ path: path.join(SHOTS, "24-block-wide.png") });
-  await dragEdge(p, "anchor", -150);
-  check("S2 pulling it back makes it narrow and vertical again", (await shape(p, "anchor")) === "vertical" && Math.abs((await toolRects(p)).anchor.w - 170) <= 2);
+  await dragEdge(p, "anchor", -132);
+  check("S2 pulling it back makes it narrow and vertical again", (await shape(p, "anchor")) === "vertical" && (await toolRects(p)).anchor.w === 168 && (await savedSizes(p)) === "");
   await dragEdge(p, "anchor", -400);
   t = await toolRects(p);
-  check("S3 a block cannot be squeezed below the width of its three buttons", t.anchor.w === 152 && (await savedSizes(p)) === "anchor=152" && (await p.page.evaluate(() => { const c = document.querySelector('[data-tool="anchor"]').getBoundingClientRect(), g = document.getElementById("anchorGrid").getBoundingClientRect(); return g.left >= c.left && g.right <= c.right; })), JSON.stringify(t.anchor));
+  check("S3 a block cannot be narrower than 4 cells: its three buttons must fit", t.anchor.w === 168 && (await savedSizes(p)) === "" && (await p.page.evaluate(() => { const c = document.querySelector('[data-tool="anchor"]').getBoundingClientRect(), g = document.getElementById("anchorGrid").getBoundingClientRect(); return g.left >= c.left && g.right <= c.right; })), JSON.stringify(t.anchor));
   await dragEdge(p, "ease", 600);
   t = await toolRects(p);
-  check("S4 the easing block pulled to the edge takes the whole width", t.ease.l === 14 && t.ease.r === 686 && (await savedSizes(p)) === "ease=full;anchor=152", JSON.stringify(t.ease) + " " + await savedSizes(p));
+  check("S4 the easing block pulled to the edge takes every cell of the row", t.ease.l === 14 && t.ease.w === 652 && (await savedSizes(p)) === "ease=99x0", JSON.stringify(t.ease) + " " + await savedSizes(p));
   t = await p.page.evaluate(() => [document.getElementById("easeIn").getBoundingClientRect().width, document.getElementById("easeOut").getBoundingClientRect().width, document.getElementById("easeCurve").getBoundingClientRect().width].map(Math.round));
   check("S4 then its sliders and curve stretch with it", t[0] === t[1] && t[0] > 240 && t[2] > 560, t.join());
   await p.page.screenshot({ path: path.join(SHOTS, "25-ease-full-width.png") });
+
+  // height
+  c = (await toolRects(p)).anchor;
+  await dragEdge(p, "anchor", 0, 2 * CELL + 10, "y");
+  t = await toolRects(p);
+  check("S5 the bottom edge makes the block taller by whole cells", t.anchor.b - t.anchor.t === (c.b - c.t) + 2 * CELL && onCells(t.anchor.w, t.anchor.b - t.anchor.t) && (await savedSizes(p)) === "ease=99x0;anchor=4x9", (t.anchor.b - t.anchor.t) + " " + await savedSizes(p));
+  check("S5 the content stays on top, the extra space is below", (await p.page.evaluate(() => { const c = document.querySelector('[data-tool="anchor"]').getBoundingClientRect(), s = document.getElementById("anchorKeys").getBoundingClientRect(); return c.bottom - s.bottom > 80; })));
+  await dragEdge(p, "anchor", 0, -4 * CELL, "y");
+  check("S5 but never shorter than its content", (await toolRects(p)).anchor.b - (await toolRects(p)).anchor.t === c.b - c.t && (await savedSizes(p)) === "ease=99x0" && (await allInside(p)), String((await toolRects(p)).anchor.b - (await toolRects(p)).anchor.t));
+  await dragEdge(p, "align", 2 * CELL, CELL, "xy");
+  t = await toolRects(p);
+  check("S5 the corner changes both at once", t.align.w === 256 && onCells(t.align.w, t.align.b - t.align.t) && /align=6x7/.test(await savedSizes(p)), JSON.stringify(t.align) + " " + await savedSizes(p));
+  check("S5 the others keep their size", t.anchor.w === 168 && t.shift.w === 168 && t.ease.w === 652);
   await p.restart();
   t = await toolRects(p);
-  check("S5 widths survive a restart", t.ease.r - t.ease.l === 672 && t.anchor.w === 152, JSON.stringify(t));
-  await p.page.setViewportSize({ width: 420, height: 760 });
+  check("S6 sizes survive a restart", t.ease.w === 652 && t.align.w === 256 && /align=6x7/.test(await savedSizes(p)), JSON.stringify(t));
+  await resizeTo(p, 420);
   t = await toolRects(p);
-  check("S5 in a narrower panel a full-width block follows the panel, a fixed one keeps its width", t.ease.l === 14 && t.ease.r === 406 && t.anchor.w === 152 && (await overflow(p)) <= 0, JSON.stringify(t));
-  await p.page.setViewportSize({ width: 700, height: 760 });
+  check("S6 in a narrower panel a full-width block follows the panel, the others keep their size", t.ease.l === 14 && t.ease.w === 388 && t.anchor.w === 168 && t.align.w === 256 && (await overflow(p)) <= 0, JSON.stringify(t));
+  await resizeTo(p, 700);
   await p.page.dblclick(edge("ease"));
   t = await toolRects(p);
-  check("S6 a double click on the edge returns the usual width and does not start rearranging", (await savedSizes(p)) === "anchor=152" && t.ease.w < 400 && !(await arrangingNow(p)), JSON.stringify(t.ease) + " " + await savedSizes(p));
+  check("S7 a double click on an edge returns the usual size and does not start rearranging", !/ease=/.test(await savedSizes(p)) && t.ease.w === 168 && !(await arrangingNow(p)), JSON.stringify(t.ease) + " " + await savedSizes(p));
+  await p.page.dblclick(edge("align", "y"));
+  check("S7 the bottom edge too", (await savedSizes(p)) === "" && (await toolRects(p)).align.w === 168, await savedSizes(p));
   await p.page.focus(edge("align")); await p.page.keyboard.press("ArrowRight");
-  c = (await toolRects(p)).align.w;
   await p.page.keyboard.press("ArrowRight"); await p.page.keyboard.press("ArrowLeft"); await p.page.keyboard.press("ArrowRight");
-  check("S6 keyboard: arrows on the edge change the width in steps of 10", (await toolRects(p)).align.w === c + 10 && (await savedSizes(p)) === "anchor=152;align=" + (c + 10), (await toolRects(p)).align.w + " vs " + c);
+  check("S7 keyboard: arrows on the right edge change the width a cell at a time", (await toolRects(p)).align.w === 256 && (await savedSizes(p)) === "align=6x0", (await toolRects(p)).align.w + " " + await savedSizes(p));
   await p.page.keyboard.press("End");
-  check("S6 End takes the whole width, Home returns the usual one", (await savedSizes(p)) === "anchor=152;align=full" && (await toolRects(p)).align.w === 672);
+  check("S7 End takes the whole row, Home returns the usual size", (await savedSizes(p)) === "align=99x0" && (await toolRects(p)).align.w === 652);
   await p.page.keyboard.press("Home");
-  check("S6 Home", (await savedSizes(p)) === "anchor=152");
+  check("S7 Home", (await savedSizes(p)) === "");
+  await p.page.focus(edge("anchor", "y")); c = (await toolRects(p)).anchor; await p.page.keyboard.press("ArrowDown"); await p.page.keyboard.press("ArrowDown");
+  check("S7 arrows on the bottom edge change the height a cell at a time", (await toolRects(p)).anchor.b - (await toolRects(p)).anchor.t === c.b - c.t + 2 * CELL && (await savedSizes(p)) === "anchor=4x9", await savedSizes(p));
+  await p.page.keyboard.press("Home");
   await arrange(p);
   c = await toolOrder(p);
   await dragEdge(p, "anchor", 200);
   t = await toolRects(p);
-  check("S7 while rearranging, the edge still changes the width and does not move the block", t.anchor.w === 352 && (await toolOrder(p)) === c && (await arrangingNow(p)) && (await p.page.locator(".dragging, .reordering, .resizing").count()) === 0, JSON.stringify(t.anchor));
+  check("S8 while rearranging, the edge still changes the width and does not move the block", t.anchor.w === 388 && (await toolOrder(p)) === c && (await arrangingNow(p)) && (await p.page.locator(".dragging, .reordering, .resizing").count()) === 0, JSON.stringify(t.anchor));
   await p.page.waitForTimeout(350);
   await p.page.keyboard.press("Escape");
   await p.page.click('#anchorGrid button:nth-child(5)'); await p.idle();
-  check("S7 the tools keep working at any width", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && p.errors.length === 0, await p.status());
+  check("S8 the tools keep working at any size", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && p.errors.length === 0, await p.status());
   await p.close();
   p = await open({ width: 700, settings: { panelWidth: 640 } });
   await p.page.evaluate(() => { ["pointerdown", "pointermove", "pointerup", "pointercancel"].forEach((n) => window.addEventListener(n, (e) => e.stopImmediatePropagation(), true)); });
   await motionTab(p);
-  await dragEdge(p, "align", 150);
-  check("S8 resizing works with pointer events swallowed, as inside After Effects", Math.abs((await toolRects(p)).align.w - (170 + 150)) <= 2 && (await shape(p, "align")) === "horizontal", JSON.stringify((await toolRects(p)).align));
+  await dragEdge(p, "align", 140);
+  check("S9 resizing works with pointer events swallowed, as inside After Effects", (await toolRects(p)).align.w === 300 && (await shape(p, "align")) === "horizontal", JSON.stringify((await toolRects(p)).align));
   await p.close();
-  for (const [bad, want] of [['"ease=9999;anchor=10;ghost=300;align=full"', "ease=9999;align=full"], ['"anchor=abc;ease"', ""], ["42", ""], ['"anchor=300.5;align=-200"', ""], ['"align=200;ease=200"', "ease=200;align=200"]]) {
+  for (const [bad, want] of [['"ease=9999;anchor=10;ghost=300;align=full"', "ease=99x0;align=99x0"] /* widths in pixels from 1.8.0 */, ['"anchor=abc;ease"', ""], ["42", ""], ['"anchor=300.5;align=-200"', ""], ['"align=200;ease=200"', "ease=5x0;align=5x0"], ['"ease=2x0;anchor=6x77;align=4x0"', "anchor=6x40"]]) {
     p = await open({});
     await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", '{"sizes":' + v + "}"), bad); await p.restart(); await motionTab(p);
     t = await toolRects(p);
     await setSlider(p, "easeIn", 61);
-    check("S9 saved widths " + bad + " -> " + JSON.stringify(want), (await savedSizes(p)) === want && Object.keys(t).every((k) => t[k].r <= 366 && t[k].l >= 14) && (await overflow(p)) <= 0 && p.errors.length === 0, (await savedSizes(p)) + " " + JSON.stringify(t));
+    check("S10 saved sizes " + bad + " -> " + JSON.stringify(want), (await savedSizes(p)) === want && Object.keys(t).every((k) => t[k].r <= 358 && t[k].l >= 14) && (await overflow(p)) <= 0 && p.errors.length === 0, (await savedSizes(p)) + " " + JSON.stringify(t));
     await p.close();
   }
+  for (const [bad, want] of [['"ease=0,0;anchor=4,0;align=0,6;shift=4,7"', "ease=0,0;anchor=4,0;align=0,6;shift=4,7"], ['"ease=0,0"', "ease=0,0"] /* blocks without a place go to the first free cells */, ['"ease=a,b;anchor=1"', ""], ["5", ""]]) {
+    p = await open({});
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", '{"places":' + v + "}"), bad); await p.restart(); await motionTab(p);
+    await setSlider(p, "easeIn", 61);
+    check("S10 saved places " + bad + " -> " + JSON.stringify(want), (await savedPlaces(p)) === want && (await overflow(p)) <= 0 && p.errors.length === 0, await savedPlaces(p));
+    await p.close();
+  }
+
+  // placing blocks freely on the grid
+  p = await open({ width: 900 });   // 872px = 20 cells
+  await motionTab(p); await arrange(p);
+  t = await toolRects(p);
+  c = topOf(t.shift);
+  await dragFrom(p, c, by(c, 2 * CELL + 4, 0));
+  check("G1 a block dropped on empty cells stays there, leaving a gap", /shift:14,0,4,/.test(await cellsNow(p)) && /shift=14,0/.test(await savedPlaces(p)), await cellsNow(p));
+  await dragFrom(p, topOf((await toolRects(p)).shift), by(topOf((await toolRects(p)).shift), -14 * CELL, 8 * CELL));
+  check("G1 dropped low in another column, it stays on that cell, empty cells above it", /shift:0,8,4,/.test(await cellsNow(p)) && /shift=0,8/.test(await savedPlaces(p)), await cellsNow(p));
+  await dragFrom(p, topOf((await toolRects(p)).shift), by(topOf((await toolRects(p)).shift), 12 * CELL, -8 * CELL));
+  check("G1 dropped onto another block, the two swap places", /shift:12,0,4,/.test(await cellsNow(p)) && /align:8,0/.test(await cellsNow(p)) && /ease:0,0/.test(await cellsNow(p)) && /anchor:4,0/.test(await cellsNow(p)), await cellsNow(p));
+  await dragFrom(p, topOf((await toolRects(p)).ease), by(topOf((await toolRects(p)).ease), 12 * CELL, 0));
+  check("G1 the block that was dropped on takes the other's old place", /ease:12,0/.test(await cellsNow(p)) && /shift:0,0/.test(await cellsNow(p)), await cellsNow(p));
+  await resizeTo(p, 380);
+  t = await toolRects(p);
+  check("G2 in a narrow panel blocks placed further right than it reaches move in and stack", Object.keys(t).every((k) => t[k].r <= 358) && (await overflow(p)) <= 0 && (await allInside(p)), await cellsNow(p));
+  await resizeTo(p, 900);
+  check("G2 widened again, they go back to their cells", /shift:0,0,4,/.test(await cellsNow(p)) && /ease:12,0/.test(await cellsNow(p)), await cellsNow(p));
+  await p.page.click("#arrangeReset");
+  check("G3 'Reset' returns the usual sizes and order, blocks follow each other again", (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:8,0,4,6 shift:12,0,4,11 paste:16,0,4,5" && (await savedPlaces(p)) === "" && (await savedSizes(p)) === "", await cellsNow(p));
+  check("G3 no page errors", p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
 
   // ---------------------------------------------------------------- animation: large or small blocks
   console.log("\n=== animation: block size setting ===");
@@ -1497,7 +1591,6 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const gridBox = (p, id) => p.page.evaluate((id) => { const g = document.getElementById(id).getBoundingClientRect(), c = document.querySelector("#" + id + " button").getBoundingClientRect(); return [Math.round(g.width), Math.round(g.height), Math.round(c.width), Math.round(c.height)].join(); }, id);
   const rowShape = (p, id) => p.page.evaluate((id) => { const tops = Array.prototype.map.call(document.querySelectorAll("#" + id + " button"), (b) => Math.round(b.getBoundingClientRect().top)); const first = tops.filter((t) => t === tops[0]).length; const b = document.querySelector("#" + id + " button").getBoundingClientRect(), g = document.querySelector("#" + id + " svg").getBoundingClientRect(); return (first === 6 ? "6" : first + "+" + (6 - first)) + " " + Math.round(b.height) + " " + Math.round(g.width); }, id);
   const pressedSize = (p) => p.page.locator('#toolSize button[aria-pressed="true"]').getAttribute("data-value");
-  const allInside = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button:not(.tool-grip), select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5); }); }));
 
   p = await open({});
   await motionTab(p);
@@ -1511,7 +1604,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsBtn"); await p.page.click('#toolSize button[data-value="small"]'); await p.page.click("#saveSettings");
   check("Z3 saved: the buttons are small now", (await toolsAttr(p)) === "small" && (await gridBox(p, "anchorGrid")) === "82,82,26,26" && (await rowShape(p, "alignGrid")) === "3+3 24 14" && (await rowShape(p, "distGrid")) === "3+3 24 14" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).toolSize)) === "small", await gridBox(p, "anchorGrid") + " " + await rowShape(p, "alignGrid"));
   t = await toolRects(p);
-  check("Z3 at 380px all three small blocks stand in one row", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.ease.l === 14 && t.align.r === 366 && Math.abs(t.ease.w - t.anchor.w) <= 1, JSON.stringify(t));
+  check("Z3 at 380px three small blocks stand in one row", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.ease.l === 14 && t.align.r === 344 && Math.abs(t.ease.w - t.anchor.w) <= 1, JSON.stringify(t));
   check("Z3 nothing sticks out of a small block or the panel", (await allInside(p)) && (await overflow(p)) <= 0);
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); return [r("easeIn").width, r("easeOut").width, r("easeBothBtn").width, r("anchorKeys").height, document.querySelector("#motionTools .ease-card").getBoundingClientRect().height].map(Math.round); });
   check("Z3 the easing block shrinks too and keeps equal sliders", t[0] === t[1] && t[0] >= 20 && t[2] === 26 && t[3] === 28, t.join());
@@ -1527,14 +1620,16 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("Z4 every tool still works at the small size", c === "Выделите ключевые кадры на таймлайне и нажмите ещё раз." && t === "Выделите слой в композиции и нажмите ещё раз." && (await p.status()) === "Выделите слой в композиции и нажмите ещё раз.", c + " | " + t);
   await dragEdge(p, "anchor", -300);
   t = await toolRects(p);
-  check("Z5 a small block can be squeezed to 112px, not further", t.anchor.w === 112 && (await savedSizes(p)) === "anchor=112" && (await allInside(p)), JSON.stringify(t.anchor));
+  check("Z5 a small block is at least 4 small cells (106px) wide", t.anchor.w === 106 && (await savedSizes(p)) === "" && (await allInside(p)), JSON.stringify(t.anchor));
+  await dragEdge(p, "anchor", 3 * 28 + 4);
+  check("Z5 and grows by small cells", (await toolRects(p)).anchor.w === 190 && (await savedSizes(p)) === "anchor=7x0", (await toolRects(p)).anchor.w + " " + await savedSizes(p));
   await p.restart();
-  check("Z5 the size and the widths survive a restart", (await toolsAttr(p)) === "small" && (await toolRects(p)).anchor.w === 112 && (await gridBox(p, "anchorGrid")) === "82,82,26,26");
+  check("Z5 the size and the widths survive a restart", (await toolsAttr(p)) === "small" && (await toolRects(p)).anchor.w === 190 && (await gridBox(p, "anchorGrid")) === "82,82,26,26");
   await p.page.click("#settingsBtn");
   check("Z5 settings show the saved size", (await pressedSize(p)) === "small");
   await p.page.click('#toolSize button[data-value="large"]'); await p.page.click("#saveSettings");
   t = await toolRects(p);
-  check("Z6 back to large: big buttons again, and a block saved narrower widens to fit them", (await toolsAttr(p)) === "large" && (await gridBox(p, "anchorGrid")) === "122,122,38,38" && t.anchor.w === 152 && (await allInside(p)) && (await overflow(p)) <= 0, JSON.stringify(t.anchor));
+  check("Z6 back to large: big buttons again, the same 7 cells are now large cells", (await toolsAttr(p)) === "large" && (await gridBox(p, "anchorGrid")) === "122,122,38,38" && t.anchor.w === 300 && (await allInside(p)) && (await overflow(p)) <= 0, JSON.stringify(t.anchor));
   check("Z6 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
   p = await open({ width: 280, settings: { toolSize: "small", panelWidth: 280 } });
@@ -1543,8 +1638,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("Z7 in the narrowest panel two small blocks share a row", t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && t.align.t >= t.ease.b && (await allInside(p)) && (await overflow(p)) <= 0, JSON.stringify(t));
   await arrange(p);
   t = await toolRects(p);
-  await dragFrom(p, middle(t.align), { x: middle(t.ease).x - 10, y: middle(t.ease).y - 5 });
-  check("Z7 small blocks can still be rearranged", (await toolOrder(p)) === "align,ease,anchor,shift", await toolOrder(p));
+  await dragFrom(p, middle(t.align), by(middle(t.align), 0, t.ease.t - t.align.t));
+  check("Z7 small blocks can still be rearranged", (await toolOrder(p)).indexOf("align,anchor,") === 0 && /align:0,0/.test(await cellsNow(p)), await toolOrder(p) + " " + await cellsNow(p));
   await p.close();
   for (const bad of ["tiny", 5, null, "SMALL"]) {
     p = await open({ settings: { toolSize: bad } });
@@ -1559,11 +1654,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const savedMotion = (p, k) => p.page.evaluate((k) => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}")[k], k);
   const titlesAttr = (p) => p.page.evaluate(() => document.documentElement.getAttribute("data-titles"));
   // Does the corner button overlap anything else in its block?
-  const togglesClear = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-toggle"), (b) => { const r = b.querySelector("svg").getBoundingClientRect(); return Array.prototype.every.call(b.parentNode.querySelectorAll(".tool-head b, .anchor-grid button, .ease-bar > *, .ease-curve, select, .anchor-side label, .align-btn, .align-to label, .align-label, .shift-pick label, .tool-info, .shift-arrow, .shift-do"), (el) => { const q = el.getBoundingClientRect(); if (q.width === 0) return true; const tw = el.nodeName === "B" ? (() => { const g = document.createRange(); g.selectNodeContents(el); return g.getBoundingClientRect(); })() : q; return tw.right <= r.left || tw.left >= r.right || tw.bottom <= r.top || tw.top >= r.bottom; }); }));
+  const togglesClear = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-toggle"), (b) => { const r = b.querySelector("svg").getBoundingClientRect(); return Array.prototype.every.call(b.parentNode.querySelectorAll(".tool-head b, .anchor-grid button, .ease-bar > *, .ease-curve, select, .anchor-side label, .align-btn, .align-to label, .align-label, .shift-pick label, .tool-info, .shift-arrow, .shift-do"), (el) => { const q = el.getBoundingClientRect(); if (q.width === 0) return true; const tw = el.nodeName === "B" ? (() => { const g = document.createRange(); g.selectNodeContents(el); const t = g.getBoundingClientRect(); return { left: Math.max(t.left, q.left), right: Math.min(t.right, q.right), top: t.top, bottom: t.bottom }; })() : q; return tw.right <= r.left || tw.left >= r.right || tw.bottom <= r.top || tw.top >= r.bottom; }); }));
 
   p = await open({});
   await motionTab(p);
-  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-toggle").count()) === 4 && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
+  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-toggle").count()) === 5 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
   check("F1 the corner buttons do not cover titles or controls", await togglesClear(p));
   c = await cardH(p, "anchor");
   await p.page.click("#anchorOptsToggle");
@@ -1596,7 +1691,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("F5 titles are shown unless switched off", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность ключей,Точка привязки,Выравнивание,Сдвиг во времени");
+  check("F5 titles are shown unless switched off", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность ключей,Точка привязки,Выравнивание,Сдвиг во времени,Картинка из буфера");
   c = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
   await p.page.click("#settingsBtn");
   check("F5 settings have the switch, on", await p.page.isChecked("#toolTitles"));
@@ -1615,7 +1710,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("F6 easing still runs", (await p.status()) === "Выделите ключевые кадры на таймлайне и нажмите ещё раз.");
   await p.page.click("#settingsBtn"); await p.page.click('#toolSize button[data-value="small"]'); await p.page.click("#saveSettings");
   t = await toolRects(p);
-  check("F7 small, no titles, folded: three blocks in a row, nothing overlaps", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0 && (await cardH(p, "anchor")) < 125, JSON.stringify(t) + " h=" + await cardH(p, "anchor"));
+  check("F7 small, no titles, folded: three blocks in a row, nothing overlaps", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0 && (await cardH(p, "anchor")) <= 134, JSON.stringify(t) + " h=" + await cardH(p, "anchor"));
   await p.page.screenshot({ path: path.join(SHOTS, "29-tools-small-bare.png") });
   await p.page.click("#anchorOptsToggle"); await p.page.click("#alignOptsToggle"); await p.page.click("#easeCurveToggle");
   await p.page.click("#settingsBtn"); await p.page.locator("#toolTitles").evaluate((el) => el.click()); await p.page.click("#saveSettings");
@@ -1642,8 +1737,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.waitForTimeout(350);
   await p.page.click("#tabMotion");
   t = await toolRects(p);
-  await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: middle(t.anchor).x + 10, y: t.ease.b - 5 });
-  check("X1 blocks too", (await toolOrder(p)) === "anchor,ease,align,shift" && (await savedTools(p)) === "anchor,ease,align,shift", await toolOrder(p));
+  await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: t.ease.l + 6 + 4 * CELL, y: t.ease.b - 5 });
+  check("X1 blocks too", (await toolOrder(p)).indexOf("anchor,ease,") === 0 && (await savedTools(p)).indexOf("anchor,ease,") === 0, await toolOrder(p));
   check("X1 the press is cancelled, so the browser starts no drag or text selection of its own", (await p.page.evaluate(() => window.__nativeDrags)) === 0 && (await p.page.evaluate(() => String(window.getSelection()))) === "" && (await p.page.locator(".dragging, .reordering").count()) === 0);
   t = await p.page.evaluate(() => { const hit = []; ["tabs", "motionTools"].forEach((id) => { const ev = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, clientX: 5, clientY: 5 }); document.querySelector("#" + id + (id === "tabs" ? " .tab" : " .tool-card")).dispatchEvent(ev); hit.push(ev.defaultPrevented); document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true })); }); return hit.join(); });
   check("X1 while rearranging, a press on a tab or block is cancelled", t === "true,true", t);
@@ -2053,10 +2148,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#shiftOptsToggle");
   check("T8 the plus brings the lists back", (await vis(p, "#shiftPick")) && (await vis(p, "#staggerOrder")) && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-");
   t = await toolRects(p);
-  check("T8 at 780px all four blocks share a row", t.ease.t === t.shift.t && t.align.r < t.shift.l && t.shift.w === 170 && (await overflow(p)) <= 0, JSON.stringify(t.shift));
+  check("T8 at 780px all four blocks share a row", t.ease.t === t.shift.t && t.align.r < t.shift.l && t.shift.w === 168 && (await overflow(p)) <= 0, JSON.stringify(t.shift));
   await dragEdge(p, "shift", 150);
   t = await toolRects(p);
-  check("T8 the block can be widened; then caption, list and 'i' stand in one line", t.shift.w === 320 && (await p.page.evaluate(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); const a = r("#shiftPick label"), b = r("#shiftWhat"), i = r("#shiftPick .tool-info"); return a.right <= i.left && i.right <= b.left && Math.abs((a.top + a.bottom) - (b.top + b.bottom)) < 6; })), JSON.stringify(t.shift));
+  check("T8 the block can be widened; then caption, list and 'i' stand in one line", t.shift.w === 300 && (await p.page.evaluate(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); const a = r("#shiftPick label"), b = r("#shiftWhat"), i = r("#shiftPick .tool-info"); return a.right <= i.left && i.right <= b.left && Math.abs((a.top + a.bottom) - (b.top + b.bottom)) < 6; })), JSON.stringify(t.shift));
   await arrange(p, '#motionTools [data-tool="shift"] .tool-head b');
   t = await toolRects(p);
   await dragFrom(p, middle(t.shift), { x: t.ease.l + 20, y: middle(t.ease).y });
@@ -2143,7 +2238,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.evaluate(() => { document.documentElement.style.setProperty("--accent", "#ff7ac3"); document.documentElement.style.setProperty("--accent-rgb", "255, 122, 195"); });
   t = await p.page.evaluate(() => getComputedStyle(document.getElementById("updateBar")).borderTopColor.match(/\d+/g).slice(0, 3).join());
   check("U6 banner stays green with another accent colour", t === "70,214,132", t);
-  check("U6 banner stays visible on the Tools tab", (await barVisible(p)) && (await p.page.locator("#pasteBtn").isVisible()));
+  check("U6 banner stays visible on the Tools tab", (await barVisible(p)) && (await p.page.locator("#viewTools .empty-note").isVisible()));
   await p.tab("claude");
   t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check("U6 banner does not overflow", t <= 0, t);
