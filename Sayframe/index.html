@@ -352,6 +352,25 @@
       <small id="pasteHint" class="paste-hint">Или нажмите Cmd/Ctrl+V, когда курсор в этой панели</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Картинка из буфера»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
+    <section class="card tool-card organize-card" data-tool="organize" aria-label="Порядок в проекте" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Порядок в проекте»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="organizeOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="organizeHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
+      </button>
+      <div class="tool-head" title="Раскладывает всё в окне Project по папкам: композиции, видео, аудио, картинки, солиды">
+        <b>Порядок в проекте</b>
+      </div>
+      <button id="organizeBtn" class="paste-do" title="Разложить элементы проекта по папкам">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2.2h7.4a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>
+          <path d="M8 12.5h8"/>
+          <path d="M8 15.5h5"/>
+        </svg>
+        <span>Organize After Effects Project</span>
+      </button>
+      <small id="organizeHint" class="paste-hint">Композиции, прекомпозиции, видео, аудио, картинки и солиды — по своим папкам. Файлы и связи не меняются. Отменить — Cmd/Ctrl+Z</small>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Порядок в проекте»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
+    </section>
     </div>
     <div id="statusSlotMotion" class="status-slot"></div>
     </div>
