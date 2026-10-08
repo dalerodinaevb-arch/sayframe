@@ -26,6 +26,23 @@ const REAL_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFk
 // ------------------------------------------------------------ mocked After Effects
 function CompItem() {} function TextLayer() {} function ShapeLayer() {} function CameraLayer() {} function LightLayer() {} function SolidSource() {}
 function FootageItem() {} function FileSource() {} function PlaceholderSource() {}
+const FX_EFFECTS = [
+  { displayName: "Gaussian Blur", matchName: "ADBE Gaussian Blur 2", category: "Blur & Sharpen" },
+  { displayName: "Fast Box Blur", matchName: "ADBE Box Blur2", category: "Blur & Sharpen" },
+  { displayName: "Directional Blur", matchName: "ADBE Motion Blur", category: "Blur & Sharpen" },
+  { displayName: "Glow", matchName: "ADBE Glo2", category: "Stylize" },
+  { displayName: "Curves", matchName: "ADBE CurvesCustom", category: "Color Correction" },
+  { displayName: "Fill", matchName: "ADBE Fill", category: "Generate" },
+  { displayName: "Drop Shadow", matchName: "ADBE Drop Shadow", category: "Perspective" },
+  { displayName: "", matchName: "ADBE Hidden", category: "" }
+];
+// A layer for FX Console: remembers the effects and presets put on it; cameras take no effects.
+function mkFxLayer(name, kind) {
+  const L = Object.assign(kind === "camera" ? new CameraLayer() : {}, { name, effects: [], presets: [] });
+  L.property = (n) => (n === "ADBE Effect Parade" && kind !== "camera" ? { canAddProperty: (m) => m !== "ADBE Nope", addProperty: (m) => { L.effects.push(m); return {}; } } : null);
+  L.applyPreset = (f) => { if (kind === "camera") throw new Error("cannot"); L.presets.push(f.fsName); };
+  return L;
+}
 
 // --- keyframes and transform properties, for the Animation tab
 const KIT = { LINEAR: 6612, BEZIER: 6613, HOLD: 6614 };
@@ -249,10 +266,24 @@ function makeAE(opts, tmpDir) {
           remove() { log.removed.push("comp"); } });
         log.refComps.push(c); return c;
       } } };
-  const app = { version: "26.0", project,
+  // A small After Effects install on disk for FX Console: shipped presets beside the app, user presets in Documents.
+  function Folder(p) { this.fsName = p; this.name = encodeURI(path.basename(p)); }
+  Object.defineProperty(Folder.prototype, "exists", { get() { return fs.existsSync(this.fsName) && fs.statSync(this.fsName).isDirectory(); } });
+  Object.defineProperty(Folder.prototype, "parent", { get() { return new Folder(path.dirname(this.fsName)); } });
+  Folder.prototype.getFiles = function () { return fs.readdirSync(this.fsName).sort().map((n) => { const f = path.join(this.fsName, n); return fs.statSync(f).isDirectory() ? new Folder(f) : new File(f); }); };
+  const aeRoot = path.join(tmpDir, "Applications", "Adobe After Effects 2026");
+  const write = (base, files) => Object.keys(files || {}).forEach((rel) => { const f = path.join(base, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, files[rel]); });
+  fs.mkdirSync(path.join(aeRoot, "Adobe After Effects 2026.app"), { recursive: true });
+  write(path.join(aeRoot, "Presets"), opts.presets);
+  write(path.join(tmpDir, "Documents", "Adobe", "After Effects 2026", "User Presets"), opts.userPresets);
+  Folder.appPackage = new Folder(path.join(aeRoot, "Adobe After Effects 2026.app"));
+  Folder.myDocuments = new Folder(path.join(tmpDir, "Documents"));
+  log.snaps = [];
+  comp.saveFrameToPng = function (t, file) { log.snaps.push({ t, path: file.fsName }); if (!opts.snapFails) fs.writeFileSync(file.fsName, fakePng(0)); };
+  const app = { version: "26.0", project, effects: opts.effects || FX_EFFECTS,
     preferences: { getPrefAsLong: () => (opts.fileAccessOff ? 0 : 1) },
     beginUndoGroup: (n) => log.undo.push("begin:" + n), endUndoGroup: () => log.undo.push("end"), __ran: (x) => log.ran.push(x) };
-  const ctx = vm.createContext({ app, File, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
+  const ctx = vm.createContext({ app, File, Folder, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
   log.scripts = [];
@@ -344,6 +375,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         case "exec": {
           sys.exec.push({ file: args[0], args: args[1] });
           if (args[0] !== "osascript") return { code: 1, stdout: "", stderr: "unknown command" };
+          if (args[1][0] === "-e") { sys.copied = (sys.copied || []).concat([args[1][1]]); return opts.copyFails ? { code: 1, stdout: "", stderr: "no" } : { code: 0, stdout: "", stderr: "" }; }
           const [, , js, png, res] = args[1];
           sys.jxa = fs.readFileSync(js, "utf8");
           // opts.clipEmptyReads: the system says "nothing there" this many times before it hands the picture over.
@@ -377,7 +409,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       window.name = "sayframe-test-seeded";
       if (firstOpen) { if (stored) localStorage.setItem("sayframe.settings.v1", JSON.stringify(stored)); else localStorage.removeItem("sayframe.settings.v1"); }
       if (updateState && firstOpen) localStorage.setItem("sayframe.update.v1", JSON.stringify(updateState));
+      window.__keyInterest = [];
       window.__adobe_cep__ = { evalScript(script, cb) { window.__hostEval(script).then(cb); },
+        registerKeyEventsInterest(json) { window.__keyInterest.push(json); },
         getSystemPath() { return withSystemPath ? "file://" + hostPath : ""; } };
       const call = (name) => function () { return window.__plat(name, Array.prototype.slice.call(arguments)); };
       window.__SAYFRAME_TEST_PLATFORM__ = {
@@ -1165,6 +1199,139 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p.ae.projItems.splice(0, 1);
   await organize(p);
   check("J9 a project with nothing to sort: the same short message, nothing created", (await p.status()) === "Project organized successfully\nВ проекте пока нечего раскладывать." && p.ae.log.bins.length === 0 && p.ae.log.undo.length === 0, await p.status());
+  await p.close();
+
+  console.log("\n=== FX Console ===");
+  const PRESETS = { "Blurs/Soft Blur.ffx": "x", "Transitions - Movement/Slide In.ffx": "x", "readme.txt": "x" };
+  const fxNames = (p) => p.page.locator("#fxList .fx-item .fx-name").allInnerTexts();
+  const fxType = async (p, text) => { await p.page.fill("#fxSearch", text); await p.page.waitForTimeout(30); };
+  const fxReady = (p) => p.page.waitForFunction(() => !document.querySelector("#fxList .fx-note") || !/Загружаю/.test(document.querySelector("#fxList .fx-note").textContent));
+  let FL1 = mkFxLayer("Фон"), FL2 = mkFxLayer("Текст"), FLc = mkFxLayer("Камера", "camera");
+  p = await open({ presets: PRESETS, userPresets: { "Мой свет.ffx": "x" }, selectedLayers: [FL1, FL2, FLc] });
+  check("FX1 a magnifier next to the gear opens the search, the cursor is in the field", (await p.page.locator(".top-actions #fxBtn + #settingsBtn").count()) === 1 && (await p.page.locator("#fxConsole").isHidden()));
+  await p.page.click("#fxBtn"); await fxReady(p);
+  check("FX1 the console is open and focused, an empty search explains what to type", (await p.page.locator("#fxConsole").isVisible()) && (await p.page.evaluate(() => document.activeElement.id)) === "fxSearch" && /Начните печатать/.test(await p.page.locator("#fxList").innerText()));
+  await p.page.screenshot({ path: path.join(SHOTS, "23-fx-console-empty.png") });
+  await fxType(p, "blur");
+  t = await fxNames(p);
+  check("FX2 'blur' finds the blur effects first, then the preset with that name; nameless effects and non-preset files are left out", t.join() === "Fast Box Blur,Gaussian Blur,Directional Blur,Soft Blur", t.join());
+  check("FX2 every row shows the kind and the category", (await p.page.locator("#fxList .fx-item").first().locator(".fx-badge").innerText()).toLowerCase() === "fx" && (await p.page.locator("#fxList .fx-item").first().locator(".fx-cat").innerText()) === "Blur & Sharpen" && (await p.page.locator("#fxList .fx-item").last().locator(".fx-badge").innerText()).toLowerCase() === "пресет");
+  await p.page.screenshot({ path: path.join(SHOTS, "24-fx-console-blur.png") });
+  await fxType(p, "gaus");
+  await p.page.keyboard.press("Enter"); await p.idle();
+  check("FX3 Enter puts the effect on the selected layers, cameras are skipped; one undo step; the console closes", FL1.effects.join() === "ADBE Gaussian Blur 2" && FL2.effects.join() === "ADBE Gaussian Blur 2" && FLc.effects.length === 0 && p.ae.log.undo.join("|") === "begin:Sayframe: Gaussian Blur|end" && (await p.page.locator("#fxConsole").isHidden()));
+  check("FX3 the status says what was added and where", (await p.status()) === "Эффект «Gaussian Blur» добавлен на 2 слоя. Пропущено: 1 слой (камера или свет). Отменить — Cmd/Ctrl+Z." && (await p.statusKind()) === "done", await p.status());
+  await p.page.click("#fxBtn"); await fxReady(p);
+  check("FX4 opened again with an empty field: the last used effect is under 'Recent'", (await p.page.locator("#fxList .fx-head").allTextContents()).join() === "Недавние" && (await fxNames(p)).join() === "Gaussian Blur");
+  await fxType(p, "glow");
+  await p.page.locator("#fxList .fx-item .fx-star").first().click();
+  check("FX4 the star marks a favourite and keeps the cursor in the search", (await p.page.locator("#fxList .fx-star.on").count()) === 1 && (await p.page.evaluate(() => document.activeElement.id)) === "fxSearch");
+  await fxType(p, "");
+  check("FX4 favourites come first, then recent ones", (await p.page.locator("#fxList .fx-head").allTextContents()).join() === "Избранное,Недавние" && (await fxNames(p)).join() === "Glow,Gaussian Blur");
+  await fxType(p, "c");
+  t = await fxNames(p);
+  await p.page.keyboard.press("ArrowDown"); await p.page.keyboard.press("ArrowDown"); await p.page.keyboard.press("ArrowUp");
+  check("FX5 arrows move the highlight", (await p.page.locator("#fxList .fx-item.active .fx-name").innerText()) === t[1], t.join());
+  await p.page.keyboard.press("Escape");
+  check("FX5 Esc closes without adding anything", (await p.page.locator("#fxConsole").isHidden()) && FL1.effects.length === 1);
+  await p.page.click("#fxBtn"); await fxReady(p);
+  await fxType(p, "slide");
+  await p.page.locator("#fxList .fx-item").first().click(); await p.idle();
+  check("FX6 a preset is applied from its file to every layer that can take it", FL1.presets.length === 1 && /Presets\/Transitions - Movement\/Slide In\.ffx$/.test(FL1.presets[0]) && FL2.presets.length === 1 && (await p.status()) === "Пресет «Slide In» добавлен на 2 слоя. Пропущено: 1 слой (камера или свет). Отменить — Cmd/Ctrl+Z.", await p.status());
+  await p.page.click("#fxBtn"); await fxReady(p);
+  await fxType(p, "мой");
+  check("FX6 user presets are found too, marked as 'My presets'", (await fxNames(p)).join() === "Мой свет" && (await p.page.locator("#fxList .fx-cat").innerText()) === "Мои пресеты");
+  await fxType(p, "zzzz");
+  check("FX6 nothing found -> a hint", /Ничего не нашлось/.test(await p.page.locator("#fxList").innerText()));
+  await p.page.keyboard.press("Escape");
+  await p.restart();
+  await p.page.click("#fxBtn"); await fxReady(p);
+  check("FX7 favourites and recent ones survive a restart", (await fxNames(p)).join() === "Glow,Slide In,Gaussian Blur", (await fxNames(p)).join());
+  await p.page.click("#fxClose");
+  check("FX7 the cross closes it", await p.page.locator("#fxConsole").isHidden());
+  await p.close();
+
+  p = await open({ selectedLayers: [] });
+  await p.page.click("#fxBtn"); await fxReady(p); await fxType(p, "glow"); await p.page.keyboard.press("Enter"); await p.idle();
+  check("FX8 no layer selected -> a hint, nothing added", /^Выделите слой/.test(await p.status()) && (await p.statusKind()) === "" && p.ae.log.undo.length === 0, await p.status());
+  await p.close();
+  p = await open({ selectedLayers: [mkFxLayer("A")], noActiveComp: true });
+  await p.page.click("#fxBtn"); await fxReady(p); await fxType(p, "glow"); await p.page.keyboard.press("Enter"); await p.idle();
+  check("FX8 no comp open -> a hint", /^Откройте композицию/.test(await p.status()), await p.status());
+  await p.close();
+
+  // Snapshot: PNG of the frame under the time indicator, saved and copied to the clipboard.
+  p = await open({ compTime: 2.5 });
+  await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
+  t = fs.existsSync(path.join(p.home, "Documents", "Sayframe Snapshots")) ? fs.readdirSync(path.join(p.home, "Documents", "Sayframe Snapshots")) : [];
+  check("FX9 'snapshot' saves the current frame as a PNG named after the comp", t.length === 1 && /^Тест_\d{4}-\d{2}-\d{2}_\d{6}\.png$/.test(t[0]) && p.ae.log.snaps[0].t === 2.5, t.join());
+  check("FX9 and copies it to the clipboard", (p.sys.copied || []).length === 1 && p.sys.copied[0].indexOf("«class PNGf»") > 0 && p.sys.copied[0].indexOf(t[0]) > 0, JSON.stringify(p.sys.copied));
+  check("FX9 the status says where it is", (await p.status()) === "Кадр сохранён: Документы › Sayframe Snapshots › " + t[0] + ". Он же в буфере обмена — можно сразу вставить." && (await p.page.locator("#fxConsole").isHidden()), await p.status());
+  await p.close();
+  p = await open({ copyFails: true });
+  await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
+  check("FX9 if the clipboard refuses, the file is still saved and the status says so", /В буфер обмена скопировать не получилось\.$/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+  await p.close();
+  p = await open({ noActiveComp: true });
+  await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
+  check("FX9 no comp -> a hint", /^Откройте композицию/.test(await p.status()), await p.status());
+  await p.close();
+
+  console.log("\n=== hotkeys ===");
+  p = await open({ selectedLayers: [mkFxLayer("A")] });
+  t = await p.page.evaluate(() => window.__keyInterest.map((x) => JSON.parse(x)));
+  check("H1 the panel asks After Effects to pass it the shortcut keys (Ctrl+Space on a Mac = key 49)", t.length === 1 && JSON.stringify(t[0]) === JSON.stringify([{ keyCode: 49, ctrlKey: true, altKey: false, shiftKey: false, metaKey: false }]), JSON.stringify(t));
+  check("H1 the magnifier's tooltip names the shortcut", (await p.page.getAttribute("#fxBtn", "title")) === "Поиск эффектов (⌃Space)");
+  await p.page.click("#prompt");
+  await p.page.keyboard.press("Control+Space");
+  check("H2 Ctrl+Space opens the console, even from the prompt field", (await p.page.locator("#fxConsole").isVisible()) && (await p.page.evaluate(() => document.activeElement.id)) === "fxSearch");
+  await p.page.keyboard.press("Control+Space");
+  check("H2 and closes it again", await p.page.locator("#fxConsole").isHidden());
+  await p.page.click("#settingsBtn");
+  t = await p.page.locator("#hotkeys .hotkey-row span").allInnerTexts();
+  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Organize After Effects Project,Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—", t.join());
+  await p.page.locator("#hotkeys").scrollIntoViewIfNeeded();
+  await p.page.screenshot({ path: path.join(SHOTS, "25-hotkeys-settings.png") });
+  await p.page.click('#hotkeys [data-action="console"]');
+  check("H4 a click waits for the new shortcut", (await p.page.locator('#hotkeys [data-action="console"]').innerText()) === "Нажмите сочетание…");
+  await p.page.keyboard.press("KeyK");
+  check("H4 a plain letter is refused with a hint", /Нужно сочетание/.test(await p.page.locator("#hotkeyNote").innerText()) && (await p.page.locator('#hotkeys [data-action="console"]').innerText()) === "Нажмите сочетание…");
+  await p.page.keyboard.press("Meta+KeyC");
+  check("H4 Cmd+C is kept for copying", /занято/.test(await p.page.locator("#hotkeyNote").innerText()));
+  await p.page.keyboard.press("Alt+KeyF");
+  check("H4 Alt+F is taken, the layout does not matter (key position)", (await p.page.locator('#hotkeys [data-action="console"]').innerText()) === "⌥F" && (await p.page.locator("#hotkeyNote").innerText()) === "");
+  await p.page.click('#hotkeys [data-action="tabTools"]'); await p.page.keyboard.press("Alt+Digit3");
+  await p.page.click('#hotkeys [data-action="organize"]'); await p.page.keyboard.press("F6");
+  await p.page.click('#hotkeys [data-action="snapshot"]'); await p.page.keyboard.press("Alt+KeyF");
+  check("H5 giving the same shortcut to another action takes it from the first one, with a note", (await p.page.locator('#hotkeys [data-action="snapshot"]').innerText()) === "⌥F" && (await p.page.locator('#hotkeys [data-action="console"]').innerText()) === "—" && /было у «Поиск эффектов/.test(await p.page.locator("#hotkeyNote").innerText()));
+  await p.page.click('#hotkeys [data-action="snapshot"]'); await p.page.keyboard.press("Backspace");
+  await p.page.click('#hotkeys [data-action="console"]'); await p.page.keyboard.press("Control+Shift+KeyE");
+  await p.page.click('#hotkeys [data-action="paste"]'); await p.page.keyboard.press("Escape");
+  check("H5 Backspace clears, Esc cancels and leaves the settings open", (await p.page.locator('#hotkeys [data-action="snapshot"]').innerText()) === "—" && (await p.page.locator('#hotkeys [data-action="paste"]').innerText()) === "—" && (await p.page.locator("#settingsSheet").isVisible()));
+  await p.page.click("#saveSettings");
+  t = await p.page.evaluate(() => JSON.parse(window.__keyInterest[window.__keyInterest.length - 1]));
+  check("H6 saved; After Effects is told about the new keys", JSON.stringify(t.map((x) => x.keyCode).sort((a, b) => a - b)) === JSON.stringify([14, 20, 97]) && (await p.page.getAttribute("#fxBtn", "title")) === "Поиск эффектов (⌃⇧E)", JSON.stringify(t));
+  await p.page.keyboard.press("Control+Space");
+  check("H6 the old shortcut does nothing now", await p.page.locator("#fxConsole").isHidden());
+  await p.page.keyboard.press("Control+Shift+KeyE");
+  check("H6 the new one opens the console", await p.page.locator("#fxConsole").isVisible());
+  await p.page.keyboard.press("Escape");
+  await p.page.keyboard.press("Alt+Digit3");
+  check("H7 a tab shortcut switches tabs", (await p.page.locator("#tabMotion").getAttribute("aria-selected")) === "true");
+  await p.page.keyboard.press("F6"); await p.idle();
+  check("H7 an action shortcut runs it (F6 -> Organize)", /^Project organized successfully/.test(await p.status()), await p.status());
+  await p.restart();
+  await p.page.keyboard.press("Control+Shift+KeyE");
+  check("H8 shortcuts survive a restart", await p.page.locator("#fxConsole").isVisible());
+  await p.page.keyboard.press("Escape");
+  await p.page.click("#settingsBtn");
+  await p.page.click('#hotkeys [data-action="console"]'); await p.page.keyboard.press("Alt+KeyQ");
+  await p.page.click("#settingsClose");
+  await p.page.keyboard.press("Alt+KeyQ");
+  check("H8 closing settings without saving drops the change", await p.page.locator("#fxConsole").isHidden());
+  await p.page.click("#settingsBtn"); await p.page.click("#hotkeysReset"); await p.page.click("#saveSettings");
+  await p.page.keyboard.press("Control+Space");
+  check("H8 'Reset' brings back Ctrl+Space and clears the rest", (await p.page.locator("#fxConsole").isVisible()) && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
   console.log("\n=== settings ===");
