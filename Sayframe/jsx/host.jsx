@@ -881,6 +881,105 @@ var sayframeHost = (function () {
         return out;
     }
 
+    // ---- expressions: put one on the selected properties, or find the broken ones and fix them
+
+    var EXPR_SCAN_MAX = 60;
+
+    // Where a property is: the layer index and the property indices from the layer down.
+    function propAddress(p) {
+        var path = [];
+        var q = p;
+        var guard = 0;
+        while (q && q.propertyDepth > 0 && guard < 50) {
+            path.unshift(q.propertyIndex);
+            q = q.parentProperty;
+            guard++;
+        }
+        return { layer: q ? q.index : 0, path: path };
+    }
+
+    // "Transform > Position" - the names from the layer down, for people (and for the AI).
+    function propTrail(p) {
+        var names = [];
+        var q = p;
+        var guard = 0;
+        while (q && q.propertyDepth > 0 && guard < 50) {
+            names.unshift(q.name);
+            q = q.parentProperty;
+            guard++;
+        }
+        return names.join(" > ");
+    }
+
+    function propAt(comp, address) {
+        var obj = comp.layer(address.layer);
+        var i;
+        for (i = 0; i < address.path.length; i++) {
+            if (!obj) { return null; }
+            obj = obj.property(address.path[i]);
+        }
+        return obj;
+    }
+
+    function valueText(v) {
+        var out = [];
+        var i;
+        if (typeof v === "number") { return String(Math.round(v * 1000) / 1000); }
+        if (v && typeof v.length === "number" && typeof v !== "string") {
+            for (i = 0; i < v.length && i < 4; i++) { out.push(typeof v[i] === "number" ? String(Math.round(v[i] * 1000) / 1000) : "?"); }
+            return "[" + out.join(", ") + "]";
+        }
+        return null;   // text, shapes, markers: the value itself is not shown
+    }
+
+    function describeProp(p, comp) {
+        var a = propAddress(p);
+        var layer = comp.layer(a.layer);
+        var d = { layer: a.layer, path: a.path, layerName: layer ? layer.name : "", trail: propTrail(p),
+            matchName: p.matchName, value: null, keys: 0, expression: "", error: "" };
+        try { d.value = valueText(p.value); } catch (e) {}
+        try { d.keys = p.numKeys; } catch (e2) {}
+        try { d.expression = p.expression || ""; } catch (e3) {}
+        try { d.error = p.expressionError || ""; } catch (e4) {}
+        return d;
+    }
+
+    function selectedExprProps(comp) {
+        var props = comp.selectedProperties;
+        var out = [];
+        var i, p;
+        for (i = 0; i < props.length; i++) {
+            p = props[i];
+            try {
+                if (p.propertyType === PropertyType.PROPERTY && p.canSetExpression) { out.push(describeProp(p, comp)); }
+            } catch (e) {}
+        }
+        return out;
+    }
+
+    // Every property of the open composition whose expression is switched on but does not work.
+    function brokenExpressions(comp) {
+        var out = [];
+        var i;
+        function walk(group, depth) {
+            var n, k, p;
+            try { n = group.numProperties; } catch (e) { return; }
+            for (k = 1; k <= n && out.length < EXPR_SCAN_MAX; k++) {
+                try {
+                    p = group.property(k);
+                    if (!p) { continue; }
+                    if (p.propertyType === PropertyType.PROPERTY) {
+                        if (p.canSetExpression && p.expressionEnabled && p.expression && p.expressionError) { out.push(describeProp(p, comp)); }
+                    } else if (depth < 40) {
+                        walk(p, depth + 1);
+                    }
+                } catch (e2) {}
+            }
+        }
+        for (i = 1; i <= comp.numLayers && out.length < EXPR_SCAN_MAX; i++) { walk(comp.layer(i), 0); }
+        return out;
+    }
+
     return {
 
         // Current project state for the next request.
@@ -1131,6 +1230,54 @@ var sayframeHost = (function () {
                     app.endUndoGroup();
                 }
                 return res;
+            });
+        },
+
+        // The selected properties that can take an expression, described for the AI.
+        exprTargets: function () {
+            return reply(function () {
+                var comp = activeComp();
+                return { compName: comp.name, props: selectedExprProps(comp) };
+            });
+        },
+
+        // Expressions in the open composition that are switched on but give an error.
+        exprBroken: function () {
+            return reply(function () {
+                var comp = activeComp();
+                return { compName: comp.name, props: brokenExpressions(comp), limit: EXPR_SCAN_MAX };
+            });
+        },
+
+        // items: [{ layer, path: [indices], expression }]. Sets each expression and reports
+        // which ones After Effects accepted and which give an error (with the error text).
+        exprApply: function (items) {
+            return reply(function () {
+                var comp = activeComp();
+                var out = { results: [] };
+                var i, it, p, r;
+                app.beginUndoGroup("Sayframe: expression");
+                try {
+                    for (i = 0; i < items.length; i++) {
+                        it = items[i];
+                        r = { index: i, ok: false, error: "", trail: "" };
+                        try {
+                            p = propAt(comp, it);
+                            if (!p || p.propertyType !== PropertyType.PROPERTY || !p.canSetExpression) { throw new Error("PROPERTY_GONE"); }
+                            r.trail = propTrail(p);
+                            p.expression = String(it.expression);
+                            try { p.expressionEnabled = true; } catch (e1) {}
+                            r.error = p.expressionError || "";
+                            r.ok = r.error === "";
+                        } catch (e) {
+                            r.error = (e && e.message) ? e.message : String(e);
+                        }
+                        out.results.push(r);
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return out;
             });
         },
 
