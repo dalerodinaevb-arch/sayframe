@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.12.0";
+    var VERSION = "1.13.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -102,7 +102,8 @@
         refFrames: 8,
         panelWidth: 380,    // ширина содержимого в пикселях; сама панель After Effects может быть шире
         toolSize: "large",  // размер блоков раздела «Инструменты»: "large" или "small"
-        toolTitles: true    // показывать ли названия блоков раздела «Инструменты»
+        toolTitles: true,   // показывать ли названия блоков раздела «Инструменты»
+        hotkeys: ""         // горячие клавиши: "console=Ctrl+Space;snapshot=;…"; пусто — стандартные
     };
     var PANEL_WIDTH_MIN = 280;
     var PANEL_WIDTH_MAX = 640;
@@ -655,6 +656,8 @@
         bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
         panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
+        fxBtn: el("fxBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
+        hotkeys: el("hotkeys"), hotkeysReset: el("hotkeysReset"), hotkeyNote: el("hotkeyNote"),
         organizeBtn: el("organizeBtn"), organizeOptsToggle: el("organizeOptsToggle"), organizeHint: el("organizeHint"),
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
         shiftOptsToggle: el("shiftOptsToggle"), shiftPick: el("shiftPick"), timePick: el("timePick"), staggerPick: el("staggerPick"),
@@ -904,6 +907,7 @@
         ui.refLink.disabled = on;
         ui.pasteBtn.disabled = on;
         ui.organizeBtn.disabled = on;
+        ui.fxBtn.disabled = on;
         setMotionDisabled(on);
         ui.settingsBtn.disabled = on;
         ui.refClear.disabled = on;
@@ -2523,6 +2527,10 @@
         pressGroup(ui.frames, draft.refFrames);
         pressGroup(ui.toolSize, draft.toolSize);
         ui.toolTitles.checked = draft.toolTitles;
+        closeFxConsole();
+        hotkeyCapture = null;
+        ui.hotkeyNote.textContent = "";
+        renderHotkeys();
         ui.sheet.hidden = false;
         ui.sheet.scrollTop = 0;
     }
@@ -2535,9 +2543,12 @@
             draft.toolTitles = ui.toolTitles.checked;
             settings = draft;
             storeSettings(settings);
+            registerHotkeys();
+            hotkeyHint();
             setStatus(aiKey() ? "Настройки сохранены." : "Ключ API не задан.", aiKey() ? "done" : "");
         }
         draft = null;
+        hotkeyCapture = null;
         applyTheme(settings);
         ui.sheet.hidden = true;
     }
@@ -2913,6 +2924,501 @@
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
         cells = [ui.shiftWhat, ui.shiftStep, ui.shiftBack, ui.shiftFwd, ui.timeAlign, ui.timeAlignBtn, ui.staggerWhat, ui.staggerStep, ui.staggerOrder, ui.staggerBtn];
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
+    }
+
+    // ---- FX Console: поиск эффектов и пресетов, как в одноимённом плагине Video Copilot.
+    // Открывается горячей клавишей (по умолчанию Ctrl+Space) или лупой в шапке; Enter добавляет
+    // найденное на выделенные слои. Там же — снимок кадра в PNG и в буфер обмена.
+
+    var FX_KEY = "sayframe.fx.v1";           // { fav: [id], recent: [id] }
+    var FX_MAX_SHOWN = 40;
+    var FX_RECENT_MAX = 8;
+    var fxCatalog = null;                    // { items: [{ id, kind, name, cat, m | p }] }
+    var fxShown = [];                        // что сейчас в списке
+    var fxActive = 0;
+    var fxLoading = null;
+
+    function loadFxState() {
+        var s;
+        try { s = JSON.parse(window.localStorage.getItem(FX_KEY) || "{}"); } catch (e) { s = {}; }
+        if (!s || typeof s !== "object") { s = {}; }
+        return {
+            fav: Array.isArray(s.fav) ? s.fav.filter(function (x) { return typeof x === "string"; }) : [],
+            recent: Array.isArray(s.recent) ? s.recent.filter(function (x) { return typeof x === "string"; }).slice(0, FX_RECENT_MAX) : []
+        };
+    }
+    var fxState = loadFxState();
+    function storeFxState() { try { window.localStorage.setItem(FX_KEY, JSON.stringify(fxState)); } catch (e) {} }
+
+    function fxLower(t) { return String(t).toLowerCase().replace(/ё/g, "е"); }
+
+    async function ensureFxCatalog() {
+        var res, items = [];
+        if (fxCatalog) { return fxCatalog; }
+        if (!fxLoading) {
+            fxLoading = host("fxCatalog", []).then(function (r) {
+                r.effects.forEach(function (e) {
+                    items.push({ id: "e:" + e.m, kind: "effect", name: e.n, cat: e.c, m: e.m, key: fxLower(e.n), catKey: fxLower(e.c) });
+                });
+                r.presets.forEach(function (p) {
+                    items.push({ id: "p:" + p.p, kind: "preset", name: p.n, cat: p.u ? "Мои пресеты" : p.g, p: p.p, key: fxLower(p.n), catKey: fxLower(p.g) });
+                });
+                fxCatalog = { items: items, byId: {} };
+                items.forEach(function (it) { fxCatalog.byId[it.id] = it; });
+                return fxCatalog;
+            });
+            fxLoading.catch(function () { fxLoading = null; });
+        }
+        res = await fxLoading;
+        return res;
+    }
+
+    // Чем меньше число, тем выше в списке: начало названия, начало слова, просто вхождение, категория.
+    function fxScore(it, words, whole) {
+        var score = 0, i, w, at;
+        for (i = 0; i < words.length; i++) {
+            w = words[i];
+            at = it.key.indexOf(w);
+            if (at === 0) { score += 0; }
+            else if (at > 0 && /[\s\-_(]/.test(it.key.charAt(at - 1))) { score += 1; }
+            else if (at > 0) { score += 3; }
+            else if (it.catKey.indexOf(w) >= 0) { score += 6; }
+            else { return null; }
+        }
+        if (it.key === whole) { score -= 5; }
+        if (fxState.fav.indexOf(it.id) >= 0) { score -= 2; }
+        if (it.kind === "preset") { score += 1; }
+        return score;
+    }
+
+    function fxSearch(query) {
+        var whole = fxLower(query).replace(/^\s+|\s+$/g, "");
+        var words = whole.split(/\s+/).filter(Boolean);
+        var found = [];
+        var pick = function (ids) { return ids.map(function (id) { return fxCatalog.byId[id]; }).filter(Boolean); };
+        if (!words.length) {
+            return { fav: pick(fxState.fav), recent: pick(fxState.recent.filter(function (id) { return fxState.fav.indexOf(id) < 0; })) };
+        }
+        fxCatalog.items.forEach(function (it) {
+            var sc = fxScore(it, words, whole);
+            if (sc !== null) { found.push({ it: it, sc: sc }); }
+        });
+        found.sort(function (a, b) { return a.sc - b.sc || a.it.name.length - b.it.name.length || (a.it.name < b.it.name ? -1 : 1); });
+        return { found: found.slice(0, FX_MAX_SHOWN).map(function (f) { return f.it; }), total: found.length };
+    }
+
+    function fxRow(it, index) {
+        var li = document.createElement("li");
+        var badge = document.createElement("span");
+        var name = document.createElement("span");
+        var cat = document.createElement("small");
+        var star = document.createElement("button");
+        var fav = fxState.fav.indexOf(it.id) >= 0;
+        li.className = "fx-item" + (index === fxActive ? " active" : "");
+        li.setAttribute("role", "option");
+        li.setAttribute("aria-selected", index === fxActive ? "true" : "false");
+        li.setAttribute("data-index", String(index));
+        badge.className = "fx-badge " + it.kind;
+        badge.textContent = it.kind === "effect" ? "fx" : "пресет";
+        name.className = "fx-name";
+        name.textContent = it.name;
+        cat.className = "fx-cat";
+        cat.textContent = it.cat || "";
+        star.className = "fx-star" + (fav ? " on" : "");
+        star.textContent = fav ? "★" : "☆";
+        star.title = fav ? "Убрать из избранного" : "В избранное";
+        star.setAttribute("aria-label", star.title);
+        star.addEventListener("mousedown", function (e) { e.preventDefault(); });
+        star.addEventListener("click", function (e) {
+            e.stopPropagation();
+            toggleFxFavorite(it);
+        });
+        li.addEventListener("mousedown", function (e) { e.preventDefault(); });
+        li.addEventListener("click", function () { applyFx(it); });
+        li.appendChild(badge);
+        li.appendChild(name);
+        li.appendChild(cat);
+        li.appendChild(star);
+        return li;
+    }
+
+    function fxHead(text) {
+        var li = document.createElement("li");
+        li.className = "fx-head";
+        li.setAttribute("role", "presentation");
+        li.textContent = text;
+        return li;
+    }
+
+    function fxNote(text) {
+        var li = document.createElement("li");
+        li.className = "fx-note";
+        li.setAttribute("role", "presentation");
+        li.textContent = text;
+        return li;
+    }
+
+    function renderFx() {
+        var list = ui.fxList;
+        var r, all = [];
+        list.innerHTML = "";
+        if (!fxCatalog) { list.appendChild(fxNote("Загружаю список эффектов…")); return; }
+        r = fxSearch(ui.fxSearch.value);
+        if (r.found) {
+            all = r.found;
+            if (!all.length) { list.appendChild(fxNote("Ничего не нашлось. Попробуйте другое слово — по-английски, как эффект называется в After Effects.")); }
+        } else {
+            all = r.fav.concat(r.recent);
+            if (!all.length) {
+                list.appendChild(fxNote("Начните печатать название: blur, glow, curves, wiggle… Найденное добавится на выделенные слои."));
+            }
+        }
+        if (fxActive >= all.length) { fxActive = Math.max(0, all.length - 1); }
+        fxShown = all;
+        all.forEach(function (it, i) {
+            if (!r.found && i === 0 && r.fav.length) { list.appendChild(fxHead("Избранное")); }
+            if (!r.found && i === r.fav.length && r.recent.length) { list.appendChild(fxHead("Недавние")); }
+            list.appendChild(fxRow(it, i));
+        });
+        if (r.found && r.total > r.found.length) { list.appendChild(fxNote("И ещё " + (r.total - r.found.length) + " — уточните запрос.")); }
+        markFxActive();
+    }
+
+    function markFxActive() {
+        var rows = ui.fxList.querySelectorAll(".fx-item");
+        var i;
+        for (i = 0; i < rows.length; i++) {
+            rows[i].className = "fx-item" + (i === fxActive ? " active" : "");
+            rows[i].setAttribute("aria-selected", i === fxActive ? "true" : "false");
+            if (i === fxActive && rows[i].scrollIntoView) { rows[i].scrollIntoView({ block: "nearest" }); }
+        }
+    }
+
+    function toggleFxFavorite(it) {
+        var at = fxState.fav.indexOf(it.id);
+        if (at >= 0) { fxState.fav.splice(at, 1); } else { fxState.fav.push(it.id); }
+        storeFxState();
+        renderFx();
+        ui.fxSearch.focus();
+    }
+
+    function fxOpen() { return !ui.fxConsole.hidden; }
+
+    async function openFxConsole() {
+        if (busy || !ui.sheet.hidden || !ui.modal.hidden) { return; }
+        ui.fxConsole.hidden = false;
+        ui.fxSearch.value = "";
+        fxActive = 0;
+        renderFx();
+        ui.fxSearch.focus();
+        try {
+            await ensureFxCatalog();
+            if (fxOpen()) { renderFx(); }
+        } catch (e) {
+            if (!fxOpen()) { return; }
+            ui.fxList.innerHTML = "";
+            ui.fxList.appendChild(fxNote("Не удалось получить список эффектов: " + humanError(e)));
+        }
+    }
+
+    function closeFxConsole() {
+        if (!fxOpen()) { return; }
+        ui.fxConsole.hidden = true;
+        ui.fxSearch.blur();
+    }
+
+    function fxApplied(n) { return plural(n, "слой", "слоя", "слоёв"); }
+
+    async function applyFx(it) {
+        var res, what;
+        if (busy) { return; }
+        closeFxConsole();
+        setBusy(true);
+        setStatus("Добавляю «" + it.name + "»…", "busy");
+        try {
+            res = it.kind === "effect" ? await host("applyEffect", [it.m, it.name]) : await host("applyPreset", [it.p, it.name]);
+            fxState.recent = [it.id].concat(fxState.recent.filter(function (x) { return x !== it.id; })).slice(0, FX_RECENT_MAX);
+            storeFxState();
+            setBusy(false);
+            what = it.kind === "effect" ? "Эффект" : "Пресет";
+            if (!res.applied) {
+                setStatus(what + " «" + it.name + "» нельзя добавить на выделенные слои: камерам и свету эффекты не ставятся.", "");
+            } else {
+                setStatus(what + " «" + it.name + "» добавлен на " + fxApplied(res.applied) + "." +
+                    (res.skipped ? " Пропущено: " + fxApplied(res.skipped) + " (камера или свет)." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
+            }
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function onFxKey(e) {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            if (!fxShown.length) { return; }
+            fxActive = (fxActive + (e.key === "ArrowDown" ? 1 : -1) + fxShown.length) % fxShown.length;
+            markFxActive();
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (fxShown[fxActive]) { applyFx(fxShown[fxActive]); }
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            closeFxConsole();
+        }
+    }
+
+    // Снимок кадра: PNG кадра под указателем времени — в «Документы/Sayframe Snapshots» и в буфер обмена.
+    async function onSnapshot() {
+        var folder, res, copied;
+        if (busy) { return; }
+        closeFxConsole();
+        setBusy(true);
+        setStatus("Снимаю кадр…", "busy");
+        try {
+            if (!(await host("info", [])).fileAccess) { throw new Error(FILE_ACCESS_HINT); }
+            folder = platform.join(platform.homedir(), "Documents", "Sayframe Snapshots");
+            await platform.mkdirp(folder);
+            res = await host("snapFrame", [folder, dateStamp()]);
+            copied = await copyPngToClipboard(res.snap.path);
+            setBusy(false);
+            setStatus("Кадр сохранён: Документы › Sayframe Snapshots › " + platform.basename(res.snap.path) +
+                (copied ? ". Он же в буфере обмена — можно сразу вставить." : ". В буфер обмена скопировать не получилось."), "done");
+        } catch (e) {
+            if (e && e.message === "NO_ACTIVE_COMP") { toolFailed(e); return; }
+            setBusy(false);
+            setStatus("Не удалось снять кадр: " + humanError(e), "error");
+        }
+    }
+
+    async function copyPngToClipboard(path) {
+        var r;
+        try {
+            if (platform.isWindows()) {
+                r = await platform.exec("powershell", ["-NoProfile", "-STA", "-Command",
+                    "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; " +
+                    "$i = [System.Drawing.Image]::FromFile('" + path.replace(/'/g, "''") + "'); " +
+                    "[System.Windows.Forms.Clipboard]::SetImage($i); $i.Dispose()"], 20000);
+            } else {
+                r = await platform.exec("osascript", ["-e",
+                    "set the clipboard to (read (POSIX file \"" + path.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\") as «class PNGf»)"], 20000);
+            }
+            return r.code === 0;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // ---- горячие клавиши. Хранятся строкой в настройках: "console=Ctrl+Space;snapshot=;…".
+
+    var HOTKEY_ACTIONS = [
+        { id: "console", label: "Поиск эффектов (FX Console)", def: "Ctrl+Space" },
+        { id: "snapshot", label: "Снимок кадра", def: "" },
+        { id: "organize", label: "Organize After Effects Project", def: "" },
+        { id: "paste", label: "Вставить картинку из буфера", def: "" },
+        { id: "tabAI", label: "Вкладка AI", def: "" },
+        { id: "tabAnim", label: "Вкладка «Анимация»", def: "" },
+        { id: "tabTools", label: "Вкладка «Инструменты»", def: "" }
+    ];
+    var HOTKEY_RESERVED = { C: 1, V: 1, X: 1, A: 1, Z: 1 };
+    var hotkeyCapture = null;    // { id, button } — ждём нажатия нового сочетания
+
+    function isMac() { return !platform.isWindows(); }
+
+    function parseHotkeys(text) {
+        var out = {}, parts = String(text || "").split(";"), i, pair;
+        HOTKEY_ACTIONS.forEach(function (a) { out[a.id] = a.def; });
+        if (!text) { return out; }
+        for (i = 0; i < parts.length; i++) {
+            pair = parts[i].split("=");
+            if (pair.length === 2 && out.hasOwnProperty(pair[0]) && (pair[1] === "" || normalCombo(pair[1]) === pair[1])) { out[pair[0]] = pair[1]; }
+        }
+        return out;
+    }
+
+    function hotkeysText(map) {
+        return HOTKEY_ACTIONS.map(function (a) { return a.id + "=" + (map[a.id] || ""); }).join(";");
+    }
+
+    var KEY_NAMES = { Space: "Space", Enter: "Enter", Backquote: "`", Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]",
+        Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/", Backslash: "\\", ArrowUp: "Up", ArrowDown: "Down",
+        ArrowLeft: "Left", ArrowRight: "Right", Home: "Home", End: "End", PageUp: "PageUp", PageDown: "PageDown" };
+
+    // Клавиша берётся по её месту на клавиатуре (e.code), поэтому сочетание не зависит от раскладки.
+    function keyOf(e) {
+        var c = e.code || "", m;
+        if ((m = /^Key([A-Z])$/.exec(c))) { return m[1]; }
+        if ((m = /^Digit(\d)$/.exec(c))) { return m[1]; }
+        if (/^F([1-9]|1[0-2])$/.test(c)) { return c; }
+        return KEY_NAMES[c] || "";
+    }
+
+    function comboOf(e) {
+        var key = keyOf(e), parts = [];
+        if (!key) { return ""; }
+        if (e.ctrlKey) { parts.push("Ctrl"); }
+        if (e.altKey) { parts.push("Alt"); }
+        if (e.shiftKey) { parts.push("Shift"); }
+        if (e.metaKey) { parts.push(isMac() ? "Cmd" : "Win"); }
+        parts.push(key);
+        return parts.join("+");
+    }
+
+    // Сочетание, которое можно назначить: с Cmd/Ctrl/Alt (или Shift с F-клавишей) либо одна F-клавиша.
+    function normalCombo(text) {
+        var parts = String(text).split("+"), key = parts.pop(), mods = {}, order = ["Ctrl", "Alt", "Shift", "Cmd"], out = [], i;
+        if (!key) { return ""; }
+        for (i = 0; i < parts.length; i++) {
+            if (order.indexOf(parts[i]) < 0 || mods[parts[i]]) { return ""; }
+            mods[parts[i]] = true;
+        }
+        if (!/^(F([1-9]|1[0-2])|[A-Z0-9]|Space|Enter|Up|Down|Left|Right|Home|End|PageUp|PageDown|[`\-=\[\];',.\/\\])$/.test(key)) { return ""; }
+        if (!/^F/.test(key) || key.length === 1) {
+            if (!mods.Ctrl && !mods.Alt && !mods.Cmd) { return ""; }
+        }
+        for (i = 0; i < order.length; i++) { if (mods[order[i]]) { out.push(order[i]); } }
+        out.push(key);
+        return out.join("+");
+    }
+
+    var MAC_MODS = { Ctrl: "⌃", Alt: "⌥", Shift: "⇧", Cmd: "⌘" };
+
+    function comboLabel(combo) {
+        var parts;
+        if (!combo) { return "—"; }
+        if (!isMac()) { return combo; }
+        parts = combo.split("+");
+        return parts.slice(0, -1).map(function (m) { return MAC_MODS[m] || m; }).join("") + parts[parts.length - 1];
+    }
+
+    function hotkeyAction(combo) {
+        var map = parseHotkeys(settings.hotkeys), k;
+        for (k in map) { if (map.hasOwnProperty(k) && map[k] && map[k] === combo) { return k; } }
+        return null;
+    }
+
+    function runHotkey(id) {
+        if (id === "console") { if (fxOpen()) { closeFxConsole(); } else { openFxConsole(); } return; }
+        if (busy) { return; }
+        if (id === "snapshot") { onSnapshot(); return; }
+        closeFxConsole();
+        if (id === "organize") { onOrganize(); }
+        else if (id === "paste") { pasteImage(null); }
+        else if (id === "tabAI") { showTab("claude"); }
+        else if (id === "tabAnim") { showTab("tools"); }
+        else if (id === "tabTools") { showTab("motion"); }
+    }
+
+    function onHotkeyDown(e) {
+        var combo, id;
+        if (hotkeyCapture) { captureHotkey(e); return; }
+        if (!ui.sheet.hidden || !ui.modal.hidden) { return; }
+        combo = comboOf(e);
+        id = combo ? hotkeyAction(combo) : null;
+        if (id) {
+            e.preventDefault();
+            e.stopPropagation();
+            runHotkey(id);
+        }
+    }
+
+    // В настройках: строка на каждое действие, кнопка показывает сочетание; щелчок — записать новое.
+    function renderHotkeys() {
+        var map = parseHotkeys(draft ? draft.hotkeys : settings.hotkeys);
+        ui.hotkeys.innerHTML = "";
+        HOTKEY_ACTIONS.forEach(function (a) {
+            var row = document.createElement("div");
+            var label = document.createElement("span");
+            var btn = document.createElement("button");
+            row.className = "hotkey-row";
+            label.textContent = a.label;
+            btn.className = "hotkey-btn" + (map[a.id] ? "" : " empty");
+            btn.setAttribute("data-action", a.id);
+            btn.textContent = hotkeyCapture && hotkeyCapture.id === a.id ? "Нажмите сочетание…" : comboLabel(map[a.id]);
+            if (hotkeyCapture && hotkeyCapture.id === a.id) { btn.className += " recording"; }
+            btn.title = "Нажмите, чтобы задать сочетание";
+            btn.addEventListener("click", function () {
+                hotkeyCapture = { id: a.id };
+                ui.hotkeyNote.textContent = "";
+                renderHotkeys();
+                ui.hotkeys.querySelector('[data-action="' + a.id + '"]').focus();
+            });
+            row.appendChild(label);
+            row.appendChild(btn);
+            ui.hotkeys.appendChild(row);
+        });
+    }
+
+    function captureHotkey(e) {
+        var id = hotkeyCapture.id, map, combo, k, taken = null;
+        if (/^(Control|Alt|Shift|Meta|OS)/.test(e.key)) { return; }   // ждём саму клавишу
+        e.preventDefault();
+        e.stopPropagation();
+        map = parseHotkeys(draft.hotkeys);
+        if (e.key === "Escape" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+            hotkeyCapture = null;
+            renderHotkeys();
+            return;
+        }
+        if ((e.key === "Backspace" || e.key === "Delete") && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+            map[id] = "";
+            draft.hotkeys = hotkeysText(map);
+            hotkeyCapture = null;
+            renderHotkeys();
+            return;
+        }
+        combo = normalCombo(comboOf(e));
+        if (!combo) {
+            ui.hotkeyNote.textContent = "Нужно сочетание с Cmd, Ctrl или Alt (F1–F12 — можно без них).";
+            return;
+        }
+        if (/^(Ctrl|Cmd)\+[A-Z]$/.test(combo) && HOTKEY_RESERVED[combo.slice(-1)]) {
+            ui.hotkeyNote.textContent = comboLabel(combo) + " занято: копирование, вставка и отмена должны работать как обычно.";
+            return;
+        }
+        for (k in map) {
+            if (map.hasOwnProperty(k) && k !== id && map[k] === combo) { map[k] = ""; taken = k; }
+        }
+        map[id] = combo;
+        draft.hotkeys = hotkeysText(map);
+        hotkeyCapture = null;
+        ui.hotkeyNote.textContent = taken ? comboLabel(combo) + " было у «" + HOTKEY_ACTIONS.filter(function (a) { return a.id === taken; })[0].label + "» — там теперь пусто." : "";
+        renderHotkeys();
+    }
+
+    // Mac: After Effects сам обрабатывает сочетания из своего меню, даже когда активна панель.
+    // Здесь панель говорит программе, какие сочетания отдавать ей.
+    var MAC_KEYCODES = { A: 0, S: 1, D: 2, F: 3, H: 4, G: 5, Z: 6, X: 7, C: 8, V: 9, B: 11, Q: 12, W: 13, E: 14, R: 15, Y: 16, T: 17,
+        1: 18, 2: 19, 3: 20, 4: 21, 6: 22, 5: 23, "=": 24, 9: 25, 7: 26, "-": 27, 8: 28, 0: 29, "]": 30, O: 31, U: 32, "[": 33, I: 34, P: 35,
+        Enter: 36, L: 37, J: 38, "'": 39, K: 40, ";": 41, "\\": 42, ",": 43, "/": 44, N: 45, M: 46, ".": 47, Space: 49, "`": 50,
+        F1: 122, F2: 120, F3: 99, F4: 118, F5: 96, F6: 97, F7: 98, F8: 100, F9: 101, F10: 109, F11: 103, F12: 111,
+        Left: 123, Right: 124, Down: 125, Up: 126, Home: 115, End: 119, PageUp: 116, PageDown: 121 };
+    var WIN_KEYCODES = { Space: 32, Enter: 13, Left: 37, Up: 38, Right: 39, Down: 40, Home: 36, End: 35, PageUp: 33, PageDown: 34,
+        ";": 186, "=": 187, ",": 188, "-": 189, ".": 190, "/": 191, "`": 192, "[": 219, "\\": 220, "]": 221, "'": 222 };
+
+    function keyCodeOf(key) {
+        if (isMac()) { return MAC_KEYCODES.hasOwnProperty(key) ? MAC_KEYCODES[key] : null; }
+        if (/^[A-Z0-9]$/.test(key)) { return key.charCodeAt(0); }
+        if (/^F\d+$/.test(key)) { return 111 + Number(key.slice(1)); }
+        return WIN_KEYCODES.hasOwnProperty(key) ? WIN_KEYCODES[key] : null;
+    }
+
+    function registerHotkeys() {
+        var cep = window.__adobe_cep__, map = parseHotkeys(settings.hotkeys), list = [], k, parts, code;
+        if (!cep || typeof cep.registerKeyEventsInterest !== "function") { return; }
+        for (k in map) {
+            if (!map.hasOwnProperty(k) || !map[k]) { continue; }
+            parts = map[k].split("+");
+            code = keyCodeOf(parts[parts.length - 1]);
+            if (code === null) { continue; }
+            list.push({ keyCode: code, ctrlKey: parts.indexOf("Ctrl") >= 0, altKey: parts.indexOf("Alt") >= 0,
+                shiftKey: parts.indexOf("Shift") >= 0, metaKey: parts.indexOf("Cmd") >= 0 });
+        }
+        try { cep.registerKeyEventsInterest(JSON.stringify(list)); } catch (e) {}
+    }
+
+    function hotkeyHint() {
+        var combo = parseHotkeys(settings.hotkeys).console;
+        ui.fxBtn.title = "Поиск эффектов" + (combo ? " (" + comboLabel(combo) + ")" : "");
     }
 
     // ---- порядок в проекте: всё из окна Project — по папкам. Двигаются только сами элементы внутри проекта.
@@ -3963,6 +4469,21 @@
     ui.refClear.addEventListener("click", onClearReference);
     ui.pasteBtn.addEventListener("click", function () { pasteImage(null); });
     ui.organizeBtn.addEventListener("click", onOrganize);
+    ui.fxBtn.addEventListener("click", openFxConsole);
+    ui.fxClose.addEventListener("click", closeFxConsole);
+    ui.fxSnap.addEventListener("click", onSnapshot);
+    ui.fxSearch.addEventListener("input", function () { fxActive = 0; renderFx(); });
+    ui.fxSearch.addEventListener("keydown", onFxKey);
+    ui.fxConsole.addEventListener("mousedown", function (e) { if (e.target === ui.fxConsole) { closeFxConsole(); } });
+    ui.hotkeysReset.addEventListener("click", function () {
+        hotkeyCapture = null;
+        draft.hotkeys = "";
+        ui.hotkeyNote.textContent = "";
+        renderHotkeys();
+    });
+    document.addEventListener("keydown", onHotkeyDown, true);
+    registerHotkeys();
+    hotkeyHint();
     ui.settingsBtn.addEventListener("click", openSettings);
     ui.settingsClose.addEventListener("click", function () { closeSettings(false); });
     ui.saveSettings.addEventListener("click", function () { closeSettings(true); });
