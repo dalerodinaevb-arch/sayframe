@@ -155,7 +155,33 @@
 
     <!-- Раздел «Анимация» (внутреннее имя tools): пока пустой, сюда придут новые инструменты анимации -->
     <div id="viewTools" class="view" role="tabpanel" aria-labelledby="tabTools" hidden>
-    <p class="empty-note">Здесь появятся новые инструменты анимации.</p>
+    <!-- Библиотека пресетов: переходы, текст, анимация, графика, звуки -->
+    <section class="card ac" aria-label="Библиотека анимаций">
+      <nav id="acTabs" class="ac-tabs" role="tablist" aria-label="Разделы библиотеки"></nav>
+      <div class="ac-bar">
+        <input id="acSearch" class="field ac-search" type="search" placeholder="Поиск по всем разделам…" autocomplete="off" spellcheck="false" aria-label="Поиск пресетов">
+        <button id="acFavOnly" class="icon-btn ac-fav" aria-pressed="false" title="Только избранное" aria-label="Только избранное">★</button>
+      </div>
+      <div class="ac-opts">
+        <div id="acModeRow" class="ac-row">
+          <div id="acMode" class="frames ac-mode" role="group" aria-label="Когда двигаться">
+            <button data-value="in">Появление</button>
+            <button data-value="out">Исчезновение</button>
+            <button data-value="both">Оба</button>
+          </div>
+        </div>
+        <label id="acDurRow" class="ac-row ac-slider">Длительность
+          <input id="acDur" class="range" type="range" min="0.2" max="3" step="0.1">
+          <output id="acDurVal" for="acDur"></output>
+        </label>
+        <label id="acColorRow" class="ac-row ac-color">Цвет графики <input id="acColor" type="color" value="#ffffff"></label>
+      </div>
+      <div id="acGrid" class="ac-grid"></div>
+      <div id="acFoot" class="ac-foot">
+        <p id="acHint" class="ac-hint"></p>
+        <label class="ac-size" title="Размер карточек"><span aria-hidden="true">▫</span><input id="acSize" class="range" type="range" min="80" max="200" step="10" aria-label="Размер карточек"><span aria-hidden="true">◻</span></label>
+      </div>
+    </section>
     <div id="statusSlotTools" class="status-slot"></div>
     </div>
 
