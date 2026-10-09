@@ -543,10 +543,16 @@ var sayframeHost = (function () {
         try { layer.comment = c; } catch (e1) {}
     }
 
+    // Returns "" when every direction went on, otherwise the first error (shown to the user as is).
+    var acLastError = "";
+
     function acApplyAll(l, comp, id, dirs, dur) {
         var list = acLoad(l), ok = true, j;
         for (j = 0; j < dirs.length; j++) {
-            try { list.push(acApplyOne(l, comp, id, dirs[j], { dur: dur, half: dirs.length > 1 })); } catch (e0) { ok = false; }
+            try { list.push(acApplyOne(l, comp, id, dirs[j], { dur: dur, half: dirs.length > 1 })); } catch (e0) {
+                ok = false;
+                if (!acLastError) { acLastError = String(e0 && e0.message ? e0.message : e0) + (e0 && e0.line ? " (line " + e0.line + ")" : ""); }
+            }
         }
         acSave(l, list);
         return ok;
@@ -1794,6 +1800,7 @@ var sayframeHost = (function () {
                 var i, j, l, w, ok;
                 if (!preset) { throw new Error("UNKNOWN_PRESET"); }
                 if (!layers || !layers.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                acLastError = "";
                 app.beginUndoGroup("Sayframe: " + id);
                 try {
                     for (i = 0; i < layers.length; i++) {
@@ -1805,6 +1812,7 @@ var sayframeHost = (function () {
                 } finally {
                     app.endUndoGroup();
                 }
+                if (acLastError) { out.error = acLastError; }
                 return out;
             });
         },
@@ -1818,6 +1826,7 @@ var sayframeHost = (function () {
                 var layers = [], out = { applied: 0, skipped: 0, failed: 0, created: false };
                 var i, j, l, w, ok;
                 if (!preset) { throw new Error("UNKNOWN_PRESET"); }
+                acLastError = "";
                 app.beginUndoGroup("Sayframe: " + id);
                 try {
                     for (i = 0; i < sel.length; i++) {
@@ -1837,6 +1846,7 @@ var sayframeHost = (function () {
                 } finally {
                     app.endUndoGroup();
                 }
+                if (acLastError) { out.error = acLastError; }
                 return out;
             });
         },
