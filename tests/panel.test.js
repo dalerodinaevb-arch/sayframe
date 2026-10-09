@@ -1731,7 +1731,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("M1 no horizontal overflow at 380px", t <= 0, t);
   await p.page.screenshot({ path: path.join(SHOTS, "21-tab-motion.png") });
   check("M2 sliders start linked at 60", (await p.page.inputValue("#easeIn")) === "60" && (await p.page.inputValue("#easeOut")) === "60" && (await p.page.isChecked("#easeLink")) && (await p.page.inputValue("#easeInVal")) === "60" && (await p.page.inputValue("#easeOutVal")) === "60");
-  check("M2 the easing block: a title, the apply button, the curve toggle and the keyboard handle, no slider labels", (await p.page.locator("#viewMotion .ease-card button").count()) === 3 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link)").count()) === 0 && (await p.page.locator(".ease-card .tool-head b").innerText()) === "Плавность ключей" && (await p.page.locator("#showCurve").count()) === 0);
+  check("M2 the easing block: a title, the apply button, the curve toggle and the keyboard handle, no slider labels", (await p.page.locator("#viewMotion .ease-card button").count()) === 4 && (await p.page.locator("#viewMotion .ease-card .tool-pin").count()) === 1 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link)").count()) === 0 && (await p.page.locator(".ease-card .tool-head b").innerText()) === "Плавность ключей" && (await p.page.locator("#showCurve").count()) === 0);
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); const a = r("easeIn"), b = r("easeBothBtn"), c = r("easeOut"), n1 = r("easeInVal"), l = document.querySelector(".ease-link").getBoundingClientRect(), n2 = r("easeOutVal"); return { row: a.right <= b.left && b.right <= c.left && Math.abs((a.top + a.bottom) - (c.top + c.bottom)) < 2, equal: Math.abs(a.width - c.width) < 2, nums: n1.right <= l.left && l.right <= n2.left && n1.top >= b.bottom - 1, centered: Math.abs((l.left + l.right) / 2 - (b.left + b.right) / 2) < 2, rtl: getComputedStyle(document.getElementById("easeIn")).direction }; });
   check("M2 layout: slider, button, slider in one row; numbers and link centred under the button", t.row && t.equal && t.nums && t.centered, JSON.stringify(t));
   check("M2 the left slider grows away from the button", t.rtl === "rtl" && (await fillOf(p, "easeIn")) === "0.6" && (await fillOf(p, "easeOut")) === "0.6", t.rtl);
@@ -2342,6 +2342,37 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#arrangeReset");
   check("G3 'Reset' returns the usual sizes and order, blocks follow each other again", (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:8,0,4,6 shift:12,0,4,11 paste:16,0,4,5 organize:16,5,4,7" && (await savedPlaces(p)) === "" && (await savedSizes(p)) === "", await cellsNow(p));
   check("G3 no page errors", p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  console.log("\n=== pinned blocks ===");
+  const pinLine = (p) => p.page.evaluate(() => { const l = document.getElementById("pinLine"); return l.hidden ? null : Math.round(l.getBoundingClientRect().top); });
+  const pinOf = (p, name) => p.page.locator('.tool-card[data-tool="' + name + '"] .tool-pin');
+  p = await open({});
+  await motionTab(p);
+  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const pin = c.querySelector(".tool-pin"), tg = c.querySelector(".tool-toggle"); if (!pin || !tg) return false; const a = pin.getBoundingClientRect(), b = tg.getBoundingClientRect(), r = c.getBoundingClientRect(); return Math.abs(a.top - b.top) < 2 && a.right <= b.left + 1 && a.left > r.left && pin.getAttribute("aria-pressed") === "false"; }));
+  check("PN1 the pin does not cut the titles short", await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-head b"), (b) => b.scrollWidth <= b.clientWidth + 1)), await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-head b"), (b) => b.textContent + ":" + b.scrollWidth + "/" + b.clientWidth).join(" ")));
+  check("PN1 every block has a pin right next to its minus; nothing is pinned at first, no line", t && (await pinLine(p)) === null && (await pinOf(p, "ease").getAttribute("title")) === "Закрепить наверху");
+  c = await cellsNow(p);
+  await pinOf(p, "paste").click();
+  t = await toolRects(p);
+  check("PN2 a pinned block goes to the very top", (await toolOrder(p)).split(",")[0] === "paste" && /paste:0,0,/.test(await cellsNow(p)) && (await pinOf(p, "paste").getAttribute("aria-pressed")) === "true" && (await pinOf(p, "paste").getAttribute("title")) === "Открепить", await cellsNow(p));
+  const lineY = await pinLine(p);
+  check("PN2 a thin line separates it from the other blocks below", lineY !== null && lineY > t.paste.b && ["ease", "anchor", "align", "shift", "organize"].every((k) => t[k].t > lineY), lineY + " " + JSON.stringify(t));
+  await p.page.screenshot({ path: path.join(SHOTS, "27-pinned-block.png") });
+  await pinOf(p, "organize").click();
+  t = await toolRects(p);
+  check("PN3 a second pinned block joins the top row, the line moves under both", (await toolOrder(p)).split(",").slice(0, 2).join() === "paste,organize" && t.paste.t === t.organize.t && (await pinLine(p)) > Math.max(t.paste.b, t.organize.b) && ["ease", "anchor", "align", "shift"].every((k) => t[k].t > (t.paste.b)), await cellsNow(p));
+  await p.restart(); await motionTab(p);
+  check("PN4 pins survive a restart", (await toolOrder(p)).split(",").slice(0, 2).join() === "paste,organize" && (await pinLine(p)) !== null && (await pinOf(p, "organize").getAttribute("aria-pressed")) === "true");
+  await pinOf(p, "paste").click();
+  check("PN5 unpinned, the block goes back among the others", (await toolOrder(p)).split(",")[0] === "organize" && (await pinOf(p, "paste").getAttribute("aria-pressed")) === "false" && !/paste:\d+,0,/.test(await cellsNow(p)), await cellsNow(p));
+  await pinOf(p, "organize").click();
+  check("PN6 nothing pinned: no line, the usual layout is back", (await pinLine(p)) === null && (await cellsNow(p)) === c, await cellsNow(p));
+  await pinOf(p, "shift").click();
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="small"]'); await p.page.click("#saveSettings");
+  await motionTab(p);
+  t = await p.page.evaluate(() => { const c = document.querySelector('.tool-card[data-tool="shift"]'), a = c.querySelector(".tool-pin").getBoundingClientRect(), r = c.getBoundingClientRect(); return a.left > r.left && a.right < r.right && a.top >= r.top; });
+  check("PN7 small blocks: the pin fits too, the pinned block stays on top", t && (await toolOrder(p)).split(",")[0] === "shift" && (await pinLine(p)) !== null && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
   // ---------------------------------------------------------------- animation: large or small blocks
