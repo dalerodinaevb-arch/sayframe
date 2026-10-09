@@ -249,6 +249,612 @@ var sayframeHost = (function () {
         } catch (e) {}
     }
 
+    // ---- Animation library (the "Animation" tab): presets built from keyframes, effects, text animators
+    // and shape layers. Everything is generated here; nothing is copied from other products.
+
+    // Walks a property path from a layer: names, match names or indices. Fresh lookup every time,
+    // because adding a property in After Effects can invalidate older references.
+    function acP(root, path) {
+        var p = root, i;
+        for (i = 0; i < path.length; i++) {
+            if (!p) { return null; }
+            p = p.property(path[i]);
+        }
+        return p;
+    }
+
+    function acAdd(root, path, matchName) {
+        var g = acP(root, path);
+        var p = g.addProperty(matchName);
+        return p.propertyIndex;
+    }
+
+    function acDims(prop) {
+        var v = prop.value;
+        if (typeof PropertyValueType !== "undefined" &&
+                (prop.propertyValueType === PropertyValueType.TwoD_SPATIAL || prop.propertyValueType === PropertyValueType.ThreeD_SPATIAL)) { return 1; }
+        return (v && typeof v === "object" && v.length !== undefined) ? v.length : 1;
+    }
+
+    // Puts keys at the given times and eases them: "ease" stops softly at every key.
+    // While a preset is applied, acRec collects what it added (keys, effects, text animators),
+    // so the Edit view can take exactly that back out later.
+    var acRec = null;
+
+    function acPathOf(prop) {
+        var path = [], p = prop, guard = 0;
+        while (p && p.propertyDepth > 0 && guard < 20) {
+            if (p.matchName === "ADBE Effect Parade" || p.matchName === "ADBE Text Animators") { return null; }
+            path.unshift(p.matchName);
+            p = p.parentProperty;
+            guard++;
+        }
+        return path.length ? path : null;
+    }
+
+    function acRecordKeys(prop, times) {
+        var path;
+        if (!acRec) { return; }
+        path = acPathOf(prop);
+        if (path) { acRec.keys.push({ p: path, t: times.slice(0) }); }
+    }
+
+    function acKeys(prop, times, values, influence) {
+        var i, idx, n, e;
+        acRecordKeys(prop, times);
+        for (i = 0; i < times.length; i++) {
+            idx = prop.addKey(times[i]);
+            prop.setValueAtKey(idx, values[i]);
+        }
+        n = acDims(prop);
+        for (i = 0; i < times.length; i++) {
+            try {
+                idx = prop.nearestKeyIndex(times[i]);
+                prop.setInterpolationTypeAtKey(idx, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+                e = easeList(n, influence || 75);
+                prop.setTemporalEaseAtKey(idx, e, easeList(n, influence || 75));
+            } catch (e1) {}
+        }
+    }
+
+    function acMix(a, b, m) {
+        var out, i;
+        if (a && typeof a === "object" && a.length !== undefined) {
+            out = [];
+            for (i = 0; i < a.length; i++) { out.push(a[i] + (b[i] - a[i]) * m); }
+            return out;
+        }
+        return a + (b - a) * m;
+    }
+
+    // Animates prop between "hidden" (m = 1 of the offset) and its resting value (m = 0).
+    // frames: [[f, m], ...] with f from 0 (start of the move) to 1 (end); for "out" time runs backwards.
+    function acMove(w, prop, offsetOf, frames) {
+        var tRest = w.dir === "in" ? w.t1 : w.t0;
+        var rest = prop.valueAtTime(tRest, false);
+        var k = (w.strength === undefined || w.noStrength) ? 1 : w.strength;
+        var times = [], values = [], i, f, t, v;
+        for (i = 0; i < frames.length; i++) {
+            f = frames[i][0];
+            t = w.dir === "in" ? w.t0 + f * (w.t1 - w.t0) : w.t1 - f * (w.t1 - w.t0);
+            times.push(t);
+            v = offsetOf(rest, frames[i][1]);
+            values.push(k === 1 ? v : acMix(rest, v, k));
+        }
+        acKeys(prop, times, values, w.influence);
+    }
+
+    function acTransform(layer, name) { return acP(layer, ["ADBE Transform Group", name]); }
+
+    function acFade(w) {
+        var keep = w.noStrength;
+        w.noStrength = true;
+        acMove(w, acTransform(w.layer, "ADBE Opacity"), function (r, m) { return r * (1 - m); }, [[0, 1], [1, 0]]);
+        w.noStrength = keep;
+    }
+
+    function acScaleBy(w, frames) {
+        acMove(w, acTransform(w.layer, "ADBE Scale"), function (r, m) {
+            var out = [], i;
+            for (i = 0; i < r.length; i++) { out.push(r[i] * m); }
+            return out;
+        }, frames);
+        acNoNegativeScale(w.layer);
+    }
+
+    // A strong setting must not flip the layer inside out.
+    function acNoNegativeScale(layer) {
+        var p = acTransform(layer, "ADBE Scale"), i, j, v, bad;
+        for (i = 1; i <= p.numKeys; i++) {
+            v = p.keyValue(i);
+            bad = false;
+            for (j = 0; j < v.length; j++) { if (v[j] < 0) { v[j] = 0; bad = true; } }
+            if (bad) { p.setValueAtKey(i, v); }
+        }
+    }
+
+    function acScaleXY(w, sx, sy) {
+        acMove(w, acTransform(w.layer, "ADBE Scale"), function (r, m) {
+            var out = r.slice(0);
+            out[0] = r[0] * (1 + (sx - 1) * m);
+            out[1] = r[1] * (1 + (sy - 1) * m);
+            return out;
+        }, [[0, 1], [1, 0]]);
+    }
+
+    function acRotate(w, deg, frames) {
+        acMove(w, acTransform(w.layer, "ADBE Rotate Z"), function (r, m) { return r + deg * m; }, frames || [[0, 1], [1, 0]]);
+    }
+
+    // Moves the layer by (dx, dy) * m; works with separated X/Y position too.
+    function acSlide(w, dx, dy, frames) {
+        var pos = acTransform(w.layer, "ADBE Position");
+        frames = frames || [[0, 1], [1, 0]];
+        if (pos.dimensionsSeparated) {
+            if (dx) { acMove(w, acTransform(w.layer, "ADBE Position_0"), function (r, m) { return r + dx * m; }, frames); }
+            if (dy) { acMove(w, acTransform(w.layer, "ADBE Position_1"), function (r, m) { return r + dy * m; }, frames); }
+            return;
+        }
+        acMove(w, pos, function (r, m) {
+            var out = r.slice(0);
+            out[0] = r[0] + dx * m;
+            out[1] = r[1] + dy * m;
+            return out;
+        }, frames);
+    }
+
+    // Adds an effect and returns a getter for one of its parameters (by match name, then by index).
+    var acUid = 0;
+
+    function acTag(prop, kind) {
+        var name = "Sayframe " + kind + " " + (new Date().getTime() % 100000) + "-" + (++acUid);
+        try { prop.name = name; } catch (e0) { name = prop.name; }
+        return name;
+    }
+
+    function acEffect(layer, matchName) {
+        var idx = acAdd(layer, ["ADBE Effect Parade"], matchName);
+        var tag = acTag(acP(layer, ["ADBE Effect Parade", idx]), "fx");
+        if (acRec) { acRec.fx.push(tag); }
+        return function (paramMatch, paramIndex) {
+            var fx = acP(layer, ["ADBE Effect Parade", idx]);
+            var p = null;
+            try { p = fx.property(paramMatch); } catch (e0) {}
+            if (!p) { p = fx.property(paramIndex); }
+            return p;
+        };
+    }
+
+    function acEffectMove(w, matchName, paramMatch, paramIndex, hidden, shown) {
+        var param = acEffect(w.layer, matchName)(paramMatch, paramIndex);
+        if (shown !== undefined) { param.setValue(shown); }
+        acMove(w, param, function (r, m) { return r + (hidden - r) * m; }, [[0, 1], [1, 0]]);
+    }
+
+    var AC_MOTION = {
+        // ---- animation
+        "fade": function (w) { acFade(w); },
+        "scale-up": function (w) { acScaleBy(w, [[0, 0], [1, 1]]); },
+        "pop": function (w) { acSoft(w, 50); acScaleBy(w, [[0, 0], [0.6, 1.12], [0.82, 0.96], [1, 1]]); acFade(w); },
+        "slide-left": function (w) { acSlide(w, -w.comp.width * 0.3, 0); acFade(w); },
+        "slide-right": function (w) { acSlide(w, w.comp.width * 0.3, 0); acFade(w); },
+        "slide-up": function (w) { acSlide(w, 0, w.comp.height * 0.3); acFade(w); },
+        "slide-down": function (w) { acSlide(w, 0, -w.comp.height * 0.3); acFade(w); },
+        "rotate-in": function (w) { acRotate(w, -90); acFade(w); },
+        "spin-scale": function (w) { acRotate(w, -180); acScaleBy(w, [[0, 0], [1, 1]]); },
+        "blur-in": function (w) { acEffectMove(w, "ADBE Gaussian Blur 2", "ADBE Gaussian Blur 2-0001", 1, 60); acFade(w); },
+        "drop-bounce": function (w) {
+            acSoft(w, 40);
+            acSlide(w, 0, -w.comp.height * 0.5, [[0, 1], [0.55, 0], [0.72, 0.12], [0.86, 0], [0.94, 0.03], [1, 0]]);
+        },
+        "swing": function (w) { acSoft(w, 50); acRotate(w, 35, [[0, 1], [0.45, -0.45], [0.75, 0.2], [1, 0]]); acFade(w); },
+        "squash": function (w) { acSoft(w, 50); acScaleXY(w, 1.6, 0.4); acFade(w); },
+        // ---- transitions
+        "zoom-blur": function (w) { acScaleBy(w, [[0, 3], [1, 1]]); acEffectMove(w, "ADBE Gaussian Blur 2", "ADBE Gaussian Blur 2-0001", 1, 80); acFade(w); },
+        "spin-zoom": function (w) { acRotate(w, 360); acScaleBy(w, [[0, 0], [1, 1]]); acFade(w); },
+        "push-left": function (w) { acPush(w, w.comp.width, 0); },
+        "push-right": function (w) { acPush(w, -w.comp.width, 0); },
+        "push-up": function (w) { acPush(w, 0, w.comp.height); },
+        "wipe": function (w) {
+            var get = acEffect(w.layer, "ADBE Linear Wipe");
+            try { get("ADBE Linear Wipe-0003", 3).setValue(Math.round(w.comp.width * 0.08)); } catch (e0) {}
+            acMove(w, get("ADBE Linear Wipe-0001", 1), function (r, m) { return r + (100 - r) * m; }, [[0, 1], [1, 0]]);
+        },
+        "clock-wipe": function (w) {
+            var get = acEffect(w.layer, "ADBE Radial Wipe");
+            acMove(w, get("ADBE Radial Wipe-0001", 1), function (r, m) { return r + (100 - r) * m; }, [[0, 1], [1, 0]]);
+        },
+        "flash": function (w) {
+            acEffectMove(w, "ADBE Brightness & Contrast 2", "ADBE Brightness & Contrast 2-0001", 1, 150);
+            acFade(w);
+        },
+        "glitch": function (w) { acGlitch(w); },
+        "stretch": function (w) { acScaleXY(w, 4, 0.15); acFade(w); },
+        "blur": function (w) { acEffectMove(w, "ADBE Gaussian Blur 2", "ADBE Gaussian Blur 2-0001", 1, 120); }
+    };
+
+    function acSoft(w, influence) { if (!w.userEase) { w.influence = influence; } }
+
+    function acPush(w, dx, dy) {
+        try { w.layer.motionBlur = true; w.comp.motionBlur = true; } catch (e0) {}
+        acSoft(w, 85);
+        acSlide(w, dx, dy);
+    }
+
+    // Short jumps sideways and blinking, frame by frame; held keys make it look digital.
+    function acGlitch(w) {
+        var pos = acTransform(w.layer, "ADBE Position");
+        var op = acTransform(w.layer, "ADBE Opacity");
+        var fd = w.comp.frameDuration || (1 / 30);
+        var steps = Math.max(4, Math.round((w.t1 - w.t0) / fd));
+        var restPos = pos.valueAtTime(w.dir === "in" ? w.t1 : w.t0, false);
+        var restOp = op.valueAtTime(w.dir === "in" ? w.t1 : w.t0, false);
+        var seed = 7, i, t, p, k, rnd;
+        rnd = function () { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+        for (i = 0; i <= steps; i++) {
+            t = w.t0 + i * (w.t1 - w.t0) / steps;
+            k = w.dir === "in" ? 1 - i / steps : i / steps;   // strength: strong at the hidden end
+            if (!pos.dimensionsSeparated) {
+                p = restPos.slice(0);
+                p[0] += (rnd() - 0.5) * w.comp.width * 0.12 * k;
+                p[1] += (rnd() - 0.5) * w.comp.height * 0.03 * k;
+                pos.setValueAtTime(t, i === (w.dir === "in" ? steps : 0) ? restPos : p);
+            }
+            op.setValueAtTime(t, i === (w.dir === "in" ? steps : 0) ? restOp : (rnd() < 0.35 * k ? 0 : restOp));
+        }
+        var all = [];
+        for (i = 0; i <= steps; i++) { all.push(w.t0 + i * (w.t1 - w.t0) / steps); }
+        acRecordKeys(op, all);
+        if (!pos.dimensionsSeparated) { acRecordKeys(pos, all); }
+        try {
+            for (i = 1; i <= op.numKeys; i++) { op.setInterpolationTypeAtKey(i, KeyframeInterpolationType.HOLD, KeyframeInterpolationType.HOLD); }
+            for (i = 1; i <= pos.numKeys; i++) { pos.setInterpolationTypeAtKey(i, KeyframeInterpolationType.HOLD, KeyframeInterpolationType.HOLD); }
+        } catch (e1) {}
+    }
+
+    // Time window of the move on one layer: right after it appears ("in") or right before it ends ("out").
+    function acWindow(layer, comp, dir, dur, both, delay) {
+        var len = layer.outPoint - layer.inPoint;
+        var room, d;
+        delay = Math.max(0, Math.min(delay || 0, len * (both ? 0.5 : 1) - (comp.frameDuration || 0.01)));
+        room = (both ? len / 2 : len) - delay;
+        d = Math.max(Math.min(dur, room), comp.frameDuration || 0.01);
+        return dir === "in" ? { t0: layer.inPoint + delay, t1: layer.inPoint + delay + d } : { t0: layer.outPoint - delay - d, t1: layer.outPoint - delay };
+    }
+
+    // ---- what Sayframe put on a layer is remembered in the layer's comment, after the user's own text.
+    var AC_MARK = "[Sayframe presets] ";
+
+    function acLoad(layer) {
+        var c = "", at, list;
+        try { c = String(layer.comment || ""); } catch (e0) {}
+        at = c.indexOf(AC_MARK);
+        if (at < 0) { return []; }
+        try { list = eval("(" + c.substring(at + AC_MARK.length) + ")"); } catch (e1) { list = []; }
+        return (list instanceof Array) ? list : [];
+    }
+
+    function acSave(layer, list) {
+        var c = "", at;
+        try { c = String(layer.comment || ""); } catch (e0) {}
+        at = c.indexOf(AC_MARK);
+        if (at >= 0) { c = c.substring(0, at).replace(/\s+$/, ""); }
+        if (list.length) { c = (c ? c + "\n" : "") + AC_MARK + toJSON(list); }
+        try { layer.comment = c; } catch (e1) {}
+    }
+
+    function acApplyAll(l, comp, id, dirs, dur) {
+        var list = acLoad(l), ok = true, j;
+        for (j = 0; j < dirs.length; j++) {
+            try { list.push(acApplyOne(l, comp, id, dirs[j], { dur: dur, half: dirs.length > 1 })); } catch (e0) { ok = false; }
+        }
+        acSave(l, list);
+        return ok;
+    }
+
+    function acSectionOf(id) { return AC_TEXT[id] ? "text" : (AC_MOTION[id] ? "motion" : ""); }
+
+    // Applies one preset in one direction and returns the record of what it added.
+    function acApplyOne(layer, comp, id, dir, prm) {
+        var w = acWindow(layer, comp, dir, prm.dur, !!prm.half, prm.delay);
+        var rec = { id: id, dir: dir, dur: prm.dur, delay: prm.delay || 0, strength: prm.strength === undefined ? 1 : prm.strength,
+            ease: prm.ease || 0, half: !!prm.half, keys: [], fx: [], an: [] };
+        w.layer = layer; w.comp = comp; w.dir = dir;
+        w.influence = rec.ease || (AC_TEXT[id] ? 60 : 75);
+        w.userEase = !!rec.ease;
+        w.strength = rec.strength;
+        acRec = rec;
+        try {
+            if (AC_TEXT[id]) { AC_TEXT[id](layer, w); } else { AC_MOTION[id](w); }
+        } finally {
+            acRec = null;
+        }
+        // A preset that sets its own softness (springs, bounces) keeps it unless the user picked one.
+        return rec;
+    }
+
+    // Takes back exactly what a record added: its keys (at their times), effects and text animators.
+    function acTakeOut(layer, rec) {
+        var i, j, k, prop, idx, parade, anims;
+        for (i = 0; i < rec.keys.length; i++) {
+            prop = acP(layer, rec.keys[i].p);
+            if (!prop) { continue; }
+            for (j = rec.keys[i].t.length - 1; j >= 0; j--) {
+                for (k = prop.numKeys; k >= 1; k--) {
+                    if (Math.abs(prop.keyTime(k) - rec.keys[i].t[j]) < 0.0005) { prop.removeKey(k); break; }
+                }
+            }
+        }
+        parade = acP(layer, ["ADBE Effect Parade"]);
+        for (i = 0; parade && i < rec.fx.length; i++) {
+            for (k = parade.numProperties; k >= 1; k--) {
+                if (parade.property(k).name === rec.fx[i]) { parade.property(k).remove(); break; }
+            }
+        }
+        anims = null;
+        try { anims = acP(layer, ["ADBE Text Properties", "ADBE Text Animators"]); } catch (e0) {}
+        for (i = 0; anims && i < rec.an.length; i++) {
+            for (k = anims.numProperties; k >= 1; k--) {
+                if (anims.property(k).name === rec.an[i]) { anims.property(k).remove(); break; }
+            }
+        }
+    }
+
+    function acEditLayer() {
+        var comp = activeComp();
+        var layers = comp.selectedLayers;
+        if (!layers || !layers.length) { throw new Error("NO_LAYERS_SELECTED"); }
+        return { comp: comp, layer: layers[0] };
+    }
+
+    function acPublic(list) {
+        var out = [], i;
+        for (i = 0; i < list.length; i++) {
+            out.push({ id: list[i].id, dir: list[i].dir, dur: list[i].dur, delay: list[i].delay, strength: list[i].strength, ease: list[i].ease });
+        }
+        return out;
+    }
+
+    // ---- text presets: text animators with a range selector
+
+    function acTextAnim(layer, props, w, opts) {
+        var root = ["ADBE Text Properties", "ADBE Text Animators"];
+        var ai = acAdd(layer, root, "ADBE Text Animator");
+        var a = root.concat([ai]);
+        var i, pi, si, sel, startP, endP, tag = acTag(acP(layer, a), "text");
+        if (acRec) { acRec.an.push(tag); }
+        for (i = 0; i < props.length; i++) {
+            pi = acAdd(layer, a.concat(["ADBE Text Animator Properties"]), props[i][0]);
+            acP(layer, a.concat(["ADBE Text Animator Properties", pi])).setValue(props[i][1]);
+        }
+        si = acAdd(layer, a.concat(["ADBE Text Selectors"]), "ADBE Text Selector");
+        sel = a.concat(["ADBE Text Selectors", si]);
+        opts = opts || {};
+        try { if (opts.basedOn) { acP(layer, sel.concat(["ADBE Text Range Advanced", "ADBE Text Range Type2"])).setValue(opts.basedOn); } } catch (e0) {}
+        try { if (opts.random) { acP(layer, sel.concat(["ADBE Text Range Advanced", "ADBE Text Randomize Order"])).setValue(1); } } catch (e1) {}
+        try { if (opts.smooth !== undefined) { acP(layer, sel.concat(["ADBE Text Range Advanced", "ADBE Text Selector Smoothness"])).setValue(opts.smooth); } } catch (e2) {}
+        startP = acP(layer, sel.concat(["ADBE Text Percent Start"]));
+        endP = acP(layer, sel.concat(["ADBE Text Percent End"]));
+        if (w.dir === "in") {
+            acKeys(startP, [w.t0, w.t1], [0, 100], w.userEase ? w.influence : 40);
+        } else {
+            startP.setValue(0);
+            acKeys(endP, [w.t0, w.t1], [0, 100], w.userEase ? w.influence : 40);
+        }
+    }
+
+    var AC_TEXT = {
+        "typewriter": function (l, w) { acTextAnim(l, [["ADBE Text Opacity", 0]], w, { smooth: 0 }); },
+        "fade-letters": function (l, w) { acTextAnim(l, [["ADBE Text Opacity", 0]], w, { smooth: 100 }); },
+        "slide-letters": function (l, w) { acTextAnim(l, [["ADBE Text Position 3D", [0, 80, 0]], ["ADBE Text Opacity", 0]], w, { smooth: 100 }); },
+        "pop-letters": function (l, w) { acTextAnim(l, [["ADBE Text Scale 3D", [0, 0, 100]], ["ADBE Text Opacity", 0]], w, { smooth: 100 }); },
+        "blur-letters": function (l, w) { acTextAnim(l, [["ADBE Text Blur", [30, 30]], ["ADBE Text Opacity", 0]], w, { smooth: 100 }); },
+        "rotate-letters": function (l, w) { acTextAnim(l, [["ADBE Text Rotation", 90], ["ADBE Text Opacity", 0]], w, { smooth: 100 }); },
+        "words": function (l, w) { acTextAnim(l, [["ADBE Text Position 3D", [0, 40, 0]], ["ADBE Text Opacity", 0]], w, { basedOn: 3, smooth: 100 }); },
+        "random": function (l, w) { acTextAnim(l, [["ADBE Text Opacity", 0]], w, { random: true, smooth: 0 }); },
+        "tracking": function (l, w) {
+            var root = ["ADBE Text Properties", "ADBE Text Animators"];
+            var ai = acAdd(l, root, "ADBE Text Animator");
+            var tag = acTag(acP(l, root.concat([ai])), "text");
+            var pi = acAdd(l, root.concat([ai, "ADBE Text Animator Properties"]), "ADBE Text Tracking Amount");
+            if (acRec) { acRec.an.push(tag); }
+            var tr = acP(l, root.concat([ai, "ADBE Text Animator Properties", pi]));
+            acMove(w, tr, function (r, m) { return r + 60 * m; }, [[0, 1], [1, 0]]);
+            acFade(w);
+        }
+    };
+
+    // ---- graphics: new shape and text layers built at the time indicator
+
+    function acShapeLayer(comp, name, total) {
+        var l = comp.layers.addShape();
+        l.name = name;
+        acPlace(l, comp, total);
+        return l;
+    }
+
+    function acPlace(l, comp, total) {
+        var t = comp.time;
+        try {
+            l.startTime = t;
+            l.inPoint = t;
+            l.outPoint = Math.min(comp.duration, t + total);
+        } catch (e0) {}
+    }
+
+    function acGroup(l) {
+        return acAdd(l, ["ADBE Root Vectors Group"], "ADBE Vector Group");
+    }
+
+    function acIn(l, gi, matchName) {
+        return acAdd(l, ["ADBE Root Vectors Group", gi, "ADBE Vectors Group"], matchName);
+    }
+
+    function acGP(l, gi, path) { return acP(l, ["ADBE Root Vectors Group", gi].concat(path)); }
+
+    function acColor(c) { return [c[0], c[1], c[2], 1]; }
+
+    function acStroke(l, gi, color, width) {
+        var si = acIn(l, gi, "ADBE Vector Graphic - Stroke");
+        acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Color"]).setValue(acColor(color));
+        acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Width"]).setValue(width);
+        try { acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Line Cap"]).setValue(2); } catch (e0) {}
+        return si;
+    }
+
+    function acFill(l, gi, color) {
+        var fi = acIn(l, gi, "ADBE Vector Graphic - Fill");
+        acGP(l, gi, ["ADBE Vectors Group", fi, "ADBE Vector Fill Color"]).setValue(acColor(color));
+        return fi;
+    }
+
+    function acPath(l, gi, points, closed) {
+        var pi = acIn(l, gi, "ADBE Vector Shape - Group");
+        var s = new Shape();
+        s.vertices = points;
+        s.closed = !!closed;
+        acGP(l, gi, ["ADBE Vectors Group", pi, "ADBE Vector Shape"]).setValue(s);
+        return pi;
+    }
+
+    function acTrimOn(l, gi, w, tail) {
+        var ti = acIn(l, gi, "ADBE Vector Filter - Trim");
+        acKeys(acGP(l, gi, ["ADBE Vectors Group", ti, "ADBE Vector Trim End"]), [w.t0, w.t0 + w.d], [0, 100], 80);
+        if (tail) { acKeys(acGP(l, gi, ["ADBE Vectors Group", ti, "ADBE Vector Trim Start"]), [w.end - w.d, w.end], [0, 100], 80); }
+    }
+
+    function acGroupKeys(l, gi, name, times, values, infl) {
+        acKeys(acGP(l, gi, ["ADBE Vector Transform Group", name]), times, values, infl);
+    }
+
+    function acTextLayer(comp, text, name, total, color) {
+        var l = comp.layers.addText(text);
+        var p, doc;
+        l.name = name;
+        acPlace(l, comp, total);
+        try {
+            p = acP(l, ["ADBE Text Properties", "ADBE Text Document"]);
+            doc = p.value;
+            doc.fontSize = Math.round(comp.height / 8);
+            doc.fillColor = [color[0], color[1], color[2]];
+            doc.justification = ParagraphJustification.CENTER_JUSTIFY;
+            p.setValue(doc);
+        } catch (e0) {}
+        return l;
+    }
+
+    var AC_GRAPHIC = {
+        "ring": function (comp, w, c) {
+            var l = acShapeLayer(comp, "Ring", w.total), gi = acGroup(l);
+            acIn(l, gi, "ADBE Vector Shape - Ellipse");
+            acGP(l, gi, ["ADBE Vectors Group", 1, "ADBE Vector Ellipse Size"]).setValue([comp.height * 0.4, comp.height * 0.4]);
+            var si = acStroke(l, gi, c, 16);
+            acGroupKeys(l, gi, "ADBE Vector Scale", [w.t0, w.t0 + w.d * 1.5], [[0, 0], [100, 100]], 80);
+            acKeys(acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Width"]), [w.t0, w.t0 + w.d * 1.5], [30, 0], 60);
+            return l;
+        },
+        "burst": function (comp, w, c) {
+            var l = acShapeLayer(comp, "Burst", w.total), gi = acGroup(l), ri, rp;
+            ri = acIn(l, gi, "ADBE Vector Shape - Rect");
+            acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Size"]).setValue([10, comp.height * 0.08]);
+            acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Roundness"]).setValue(5);
+            acFill(l, gi, c);
+            rp = acIn(l, gi, "ADBE Vector Filter - Repeater");
+            acGP(l, gi, ["ADBE Vectors Group", rp, "ADBE Vector Repeater Copies"]).setValue(8);
+            acGP(l, gi, ["ADBE Vectors Group", rp, "ADBE Vector Repeater Transform", "ADBE Vector Repeater Position"]).setValue([0, 0]);
+            acGP(l, gi, ["ADBE Vectors Group", rp, "ADBE Vector Repeater Transform", "ADBE Vector Repeater Rotation"]).setValue(45);
+            acKeys(acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Position"]), [w.t0, w.t0 + w.d * 1.5], [[0, -comp.height * 0.06], [0, -comp.height * 0.22]], 80);
+            acGroupKeys(l, gi, "ADBE Vector Group Opacity", [w.t0 + w.d * 0.6, w.t0 + w.d * 1.5], [100, 0], 60);
+            return l;
+        },
+        "underline": function (comp, w, c) {
+            var l = acShapeLayer(comp, "Underline", w.total), gi = acGroup(l), half = comp.width * 0.2;
+            acPath(l, gi, [[-half, 0], [half, 0]], false);
+            acStroke(l, gi, c, Math.max(4, Math.round(comp.height / 90)));
+            acTrimOn(l, gi, w, true);
+            return l;
+        },
+        "lower-third": function (comp, w, c) {
+            var l = acShapeLayer(comp, "Lower Third", w.total), gi = acGroup(l), ri, bw = comp.width * 0.36, bh = comp.height * 0.1;
+            ri = acIn(l, gi, "ADBE Vector Shape - Rect");
+            acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Size"]).setValue([bw, bh]);
+            acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Roundness"]).setValue(bh * 0.18);
+            acFill(l, gi, c);
+            acGP(l, gi, ["ADBE Vector Transform Group", "ADBE Vector Anchor"]).setValue([-bw / 2, 0]);
+            acGP(l, gi, ["ADBE Vector Transform Group", "ADBE Vector Position"]).setValue([-bw / 2, 0]);
+            try { acTransform(l, "ADBE Position").setValue([comp.width * 0.3, comp.height * 0.82]); } catch (e0) {}
+            acGroupKeys(l, gi, "ADBE Vector Scale", [w.t0, w.t0 + w.d, w.end - w.d, w.end], [[0, 100], [100, 100], [100, 100], [0, 100]], 85);
+            return l;
+        },
+        "arrow": function (comp, w, c) {
+            var l = acShapeLayer(comp, "Arrow", w.total), gi = acGroup(l), s = comp.height * 0.15;
+            acPath(l, gi, [[-s * 1.6, 0], [s * 1.6, 0]], false);
+            acPath(l, gi, [[s * 1.1, -s * 0.5], [s * 1.6, 0], [s * 1.1, s * 0.5]], false);
+            acStroke(l, gi, c, Math.max(6, Math.round(comp.height / 70)));
+            acTrimOn(l, gi, w, false);
+            return l;
+        },
+        "progress": function (comp, w, c) {
+            var l = acShapeLayer(comp, "Progress Bar", w.total), bw = comp.width * 0.4, bh = Math.max(8, comp.height * 0.025), g1, g2, ri;
+            g1 = acGroup(l);
+            ri = acIn(l, g1, "ADBE Vector Shape - Rect");
+            acGP(l, g1, ["ADBE Vectors Group", ri, "ADBE Vector Rect Size"]).setValue([bw, bh]);
+            acGP(l, g1, ["ADBE Vectors Group", ri, "ADBE Vector Rect Roundness"]).setValue(bh / 2);
+            acFill(l, g1, c);
+            acGP(l, g1, ["ADBE Vector Transform Group", "ADBE Vector Group Opacity"]).setValue(25);
+            g2 = acGroup(l);
+            ri = acIn(l, g2, "ADBE Vector Shape - Rect");
+            acGP(l, g2, ["ADBE Vectors Group", ri, "ADBE Vector Rect Size"]).setValue([bw, bh]);
+            acGP(l, g2, ["ADBE Vectors Group", ri, "ADBE Vector Rect Roundness"]).setValue(bh / 2);
+            acFill(l, g2, c);
+            acGP(l, g2, ["ADBE Vector Transform Group", "ADBE Vector Anchor"]).setValue([-bw / 2, 0]);
+            acGP(l, g2, ["ADBE Vector Transform Group", "ADBE Vector Position"]).setValue([-bw / 2, 0]);
+            acGroupKeys(l, g2, "ADBE Vector Scale", [w.t0, w.end - w.d], [[0, 100], [100, 100]], 40);
+            return l;
+        },
+        "ripples": function (comp, w, c) {
+            var l = acShapeLayer(comp, "Ripples", w.total), gi = acGroup(l), rp;
+            acIn(l, gi, "ADBE Vector Shape - Ellipse");
+            acGP(l, gi, ["ADBE Vectors Group", 1, "ADBE Vector Ellipse Size"]).setValue([comp.height * 0.5, comp.height * 0.5]);
+            acStroke(l, gi, c, 6);
+            rp = acIn(l, gi, "ADBE Vector Filter - Repeater");
+            acGP(l, gi, ["ADBE Vectors Group", rp, "ADBE Vector Repeater Copies"]).setValue(3);
+            acGP(l, gi, ["ADBE Vectors Group", rp, "ADBE Vector Repeater Transform", "ADBE Vector Repeater Position"]).setValue([0, 0]);
+            acGP(l, gi, ["ADBE Vectors Group", rp, "ADBE Vector Repeater Transform", "ADBE Vector Repeater Scale"]).setValue([70, 70]);
+            acGroupKeys(l, gi, "ADBE Vector Scale", [w.t0, w.end], [[0, 0], [130, 130]], 50);
+            acGroupKeys(l, gi, "ADBE Vector Group Opacity", [w.end - w.d, w.end], [100, 0], 50);
+            return l;
+        },
+        "star": function (comp, w, c) {
+            var l = acShapeLayer(comp, "Star", w.total), gi = acGroup(l), si, r = comp.height * 0.16;
+            si = acIn(l, gi, "ADBE Vector Shape - Star");
+            try {
+                acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Star Type"]).setValue(1);
+                acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Star Points"]).setValue(5);
+                acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Star Outer Radius"]).setValue(r);
+                acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Star Inner Radius"]).setValue(r * 0.45);
+                acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Star Outer Roundess"]).setValue(10);
+            } catch (e0) {}
+            acFill(l, gi, c);
+            acGroupKeys(l, gi, "ADBE Vector Scale", [w.t0, w.t0 + w.d * 0.6, w.t0 + w.d], [[0, 0], [115, 115], [100, 100]], 50);
+            acGroupKeys(l, gi, "ADBE Vector Rotation", [w.t0, w.t0 + w.d], [-90, 0], 70);
+            return l;
+        },
+        "counter": function (comp, w, c) {
+            var l = acTextLayer(comp, "0%", "Counter", w.total, c);
+            acP(l, ["ADBE Text Properties", "ADBE Text Document"]).expression =
+                "Math.round(linear(time, inPoint, inPoint + " + Math.max(0.5, w.total - w.d).toFixed(2) + ", 0, 100)) + \"%\"";
+            return l;
+        },
+        "timer": function (comp, w, c) {
+            var l = acTextLayer(comp, "00:10", "Timer", Math.max(w.total, 10), c);
+            acP(l, ["ADBE Text Properties", "ADBE Text Document"]).expression =
+                "var s = Math.max(0, Math.ceil(10 - (time - inPoint)));\nvar m = Math.floor(s / 60), r = s % 60;\n" +
+                "(m < 10 ? \"0\" : \"\") + m + \":\" + (r < 10 ? \"0\" : \"\") + r";
+            return l;
+        }
+    };
+
     // ---- FX Console helpers
 
     function fxSelectedLayers() {
@@ -1174,6 +1780,164 @@ var sayframeHost = (function () {
                     restoreActive(prevActive);
                 }
                 return { ref: ref };
+            });
+        },
+
+        // ---- Animation tab: presets for the selected layers, new graphics and sounds.
+        acAnimate: function (id, mode, dur) {
+            return reply(function () {
+                var comp = activeComp();
+                var layers = comp.selectedLayers;
+                var preset = AC_MOTION[id];
+                var dirs = mode === "both" ? ["in", "out"] : [mode === "out" ? "out" : "in"];
+                var out = { applied: 0, skipped: 0, failed: 0 };
+                var i, j, l, w, ok;
+                if (!preset) { throw new Error("UNKNOWN_PRESET"); }
+                if (!layers || !layers.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                app.beginUndoGroup("Sayframe: " + id);
+                try {
+                    for (i = 0; i < layers.length; i++) {
+                        l = layers[i];
+                        if (l instanceof CameraLayer || l instanceof LightLayer) { out.skipped++; continue; }
+                        ok = acApplyAll(l, comp, id, dirs, dur);
+                        if (ok) { out.applied++; } else { out.failed++; }
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return out;
+            });
+        },
+
+        acText: function (id, mode, dur, text) {
+            return reply(function () {
+                var comp = activeComp();
+                var preset = AC_TEXT[id];
+                var dirs = mode === "both" ? ["in", "out"] : [mode === "out" ? "out" : "in"];
+                var sel = comp.selectedLayers || [];
+                var layers = [], out = { applied: 0, skipped: 0, failed: 0, created: false };
+                var i, j, l, w, ok;
+                if (!preset) { throw new Error("UNKNOWN_PRESET"); }
+                app.beginUndoGroup("Sayframe: " + id);
+                try {
+                    for (i = 0; i < sel.length; i++) {
+                        if (sel[i] instanceof TextLayer) { layers.push(sel[i]); } else { out.skipped++; }
+                    }
+                    if (!layers.length) {
+                        l = acTextLayer(comp, text || "Text", text || "Text", Math.max(3, dur * 2 + 1.5), [1, 1, 1]);
+                        layers.push(l);
+                        out.created = true;
+                        out.skipped = 0;
+                    }
+                    for (i = 0; i < layers.length; i++) {
+                        l = layers[i];
+                        ok = acApplyAll(l, comp, id, dirs, dur);
+                        if (ok) { out.applied++; } else { out.failed++; }
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return out;
+            });
+        },
+
+        acGraphic: function (id, dur, color) {
+            return reply(function () {
+                var comp = activeComp();
+                var make = AC_GRAPHIC[id];
+                var d = Math.max(0.1, dur), total = Math.max(2, d * 4), l, sel, i;
+                if (!make) { throw new Error("UNKNOWN_PRESET"); }
+                app.beginUndoGroup("Sayframe: " + id);
+                try {
+                    sel = comp.selectedLayers || [];
+                    for (i = 0; i < sel.length; i++) { try { sel[i].selected = false; } catch (e0) {} }
+                    l = make(comp, { t0: comp.time, d: d, total: total, end: comp.time + total, influence: 75 }, color || [1, 1, 1]);
+                    try { l.selected = true; } catch (e1) {}
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { name: String(l.name) };
+            });
+        },
+
+        // ---- Edit view: presets Sayframe put on the first selected layer, changed or taken off.
+        acList: function () {
+            return reply(function () {
+                var e = acEditLayer();
+                return { layer: String(e.layer.name), items: acPublic(acLoad(e.layer)) };
+            });
+        },
+
+        acEdit: function (index, prm) {
+            return reply(function () {
+                var e = acEditLayer();
+                var list = acLoad(e.layer);
+                var old = list[index], id, rec;
+                if (!old) { throw new Error("PRESET_GONE"); }
+                id = prm.id && acSectionOf(prm.id) === acSectionOf(old.id) ? prm.id : old.id;
+                app.beginUndoGroup("Sayframe: edit " + id);
+                try {
+                    acTakeOut(e.layer, old);
+                    rec = acApplyOne(e.layer, e.comp, id, old.dir, {
+                        dur: prm.dur === undefined ? old.dur : Math.max(0.05, prm.dur),
+                        delay: prm.delay === undefined ? old.delay : Math.max(0, prm.delay),
+                        strength: prm.strength === undefined ? old.strength : Math.max(0.1, prm.strength),
+                        ease: prm.ease === undefined ? old.ease : prm.ease,
+                        half: old.half
+                    });
+                    list[index] = rec;
+                    acSave(e.layer, list);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { layer: String(e.layer.name), items: acPublic(list) };
+            });
+        },
+
+        acRemove: function (index) {
+            return reply(function () {
+                var e = acEditLayer();
+                var list = acLoad(e.layer);
+                if (!list[index]) { throw new Error("PRESET_GONE"); }
+                app.beginUndoGroup("Sayframe: remove " + list[index].id);
+                try {
+                    acTakeOut(e.layer, list[index]);
+                    list.splice(index, 1);
+                    acSave(e.layer, list);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { layer: String(e.layer.name), items: acPublic(list) };
+            });
+        },
+
+        // Imports a sound once (reused if it is already in the project) and puts it at the time indicator.
+        acSound: function (path, binName) {
+            return reply(function () {
+                var comp = activeComp();
+                var proj = app.project;
+                var file = new File(path);
+                var item = null, i, it, l;
+                if (!file.exists) { throw new Error("SOUND_NOT_FOUND"); }
+                for (i = 1; i <= proj.numItems; i++) {
+                    it = proj.item(i);
+                    try {
+                        if (it.mainSource && it.mainSource.file && it.mainSource.file.fsName === file.fsName) { item = it; break; }
+                    } catch (e0) {}
+                }
+                var reused = !!item;
+                app.beginUndoGroup("Sayframe: sound");
+                try {
+                    if (!item) {
+                        item = proj.importFile(new ImportOptions(file));
+                        try { item.parentFolder = projectBin(binName); } catch (e1) {}
+                    }
+                    l = comp.layers.add(item);
+                    l.startTime = comp.time;
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { name: String(item.name), reused: reused };
             });
         },
 
