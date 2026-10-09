@@ -237,6 +237,18 @@ var sayframeHost = (function () {
         return SAYFRAME_CHECK_TIMES;
     }
 
+    // Sends an event to the panel (CSXSEvent needs the PlugPlug library).
+    function sayframeDispatch(type, data) {
+        var ev;
+        try {
+            if (!$.global.__sayframePlugPlug) { $.global.__sayframePlugPlug = new ExternalObject("lib:PlugPlugExternalObject"); }
+            ev = new CSXSEvent();
+            ev.type = type;
+            ev.data = String(data);
+            ev.dispatch();
+        } catch (e) {}
+    }
+
     // ---- FX Console helpers
 
     function fxSelectedLayers() {
@@ -1239,15 +1251,59 @@ var sayframeHost = (function () {
         },
 
         // Saves the frame at the time indicator of the open comp as a PNG in the given folder.
-        snapFrame: function (folder, stamp) {
+        // Saves the frame at the time indicator of the open comp as a PNG. A save dialog opens in the
+        // project's folder (or fallbackFolder for an unsaved project); returns snap: null on Cancel.
+        snapFrame: function (fallbackFolder, stamp, prompt) {
             return reply(function () {
                 var comp = activeComp();
+                var proj = app.project;
+                var folder = proj.file && proj.file.parent ? proj.file.parent.fsName : fallbackFolder;
                 var name = String(comp.name).replace(/[\\\/:\*\?"<>\|]/g, "_") + "_" + stamp + ".png";
                 var file = new File(folder + "/" + name);
+                if (prompt) {
+                    file = file.saveDlg(prompt);
+                    if (!file) { return { snap: null, folder: folder }; }
+                    if (!/\.png$/i.test(file.fsName)) { file = new File(file.fsName + ".png"); }
+                }
                 comp.saveFrameToPng(comp.time, file);
                 if (!waitForFile(file.fsName, 20000)) { throw new Error("FRAME_NOT_SAVED"); }
-                return { snap: { path: file.fsName, comp: String(comp.name), time: comp.time } };
+                return { snap: { path: file.fsName, comp: String(comp.name), time: comp.time }, folder: folder };
             });
+        },
+
+        // Shortcuts that work anywhere in After Effects, not only in the panel. A CEP panel only hears
+        // keys while it has focus, so After Effects is polled for the keyboard state a few times a
+        // second; when a shortcut is held, the panel gets a "com.sayframe.hotkey" event with its id.
+        setHotkeys: function (list) {
+            return reply(function () {
+                var g = $.global;
+                if (g.__sayframeKeyTask) {
+                    try { app.cancelTask(g.__sayframeKeyTask); } catch (e0) {}
+                    g.__sayframeKeyTask = 0;
+                }
+                g.__sayframeKeys = list || [];
+                g.__sayframeKeyDown = "";
+                if (g.__sayframeKeys.length && typeof app.scheduleTask === "function") {
+                    g.__sayframeKeyTask = app.scheduleTask("sayframeHost.pollKeys()", 60, true);
+                }
+                return { polling: !!g.__sayframeKeyTask };
+            });
+        },
+
+        pollKeys: function () {
+            var g = $.global, keys = g.__sayframeKeys || [], st, name, i, k, hit = "";
+            try { st = ScriptUI.environment.keyboardState; } catch (e0) { return; }
+            if (!st) { return; }
+            name = String(st.keyName || "");
+            if (name) {
+                for (i = 0; i < keys.length; i++) {
+                    k = keys[i];
+                    if (name.toUpperCase() === String(k.key).toUpperCase() && !!st.ctrlKey === !!k.ctrl && !!st.altKey === !!k.alt &&
+                            !!st.shiftKey === !!k.shift && !!st.metaKey === !!k.cmd) { hit = k.id; break; }
+                }
+            }
+            if (hit && hit !== g.__sayframeKeyDown) { sayframeDispatch("com.sayframe.hotkey", hit); }
+            g.__sayframeKeyDown = hit;
         },
 
         // Sorts the Project panel into category folders. Only parentFolder changes:
