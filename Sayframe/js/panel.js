@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.14.0";
+    var VERSION = "1.15.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -3193,12 +3193,19 @@
         setStatus("Снимаю кадр…", "busy");
         try {
             if (!(await host("info", [])).fileAccess) { throw new Error(FILE_ACCESS_HINT); }
+            // Окно «Сохранить» открывается в папке проекта; у несохранённого проекта — в «Документы › Sayframe Snapshots».
             folder = platform.join(platform.homedir(), "Documents", "Sayframe Snapshots");
             await platform.mkdirp(folder);
-            res = await host("snapFrame", [folder, dateStamp()]);
+            setStatus("Выберите, куда сохранить кадр…", "busy");
+            res = await host("snapFrame", [folder, dateStamp(), "Сохранить кадр (PNG)"]);
+            if (!res.snap) {
+                setBusy(false);
+                setStatus("Снимок отменён.", "");
+                return;
+            }
             copied = await copyPngToClipboard(res.snap.path);
             setBusy(false);
-            setStatus("Кадр сохранён: Документы › Sayframe Snapshots › " + platform.basename(res.snap.path) +
+            setStatus("Кадр сохранён: " + platform.basename(platform.dirname(res.snap.path)) + " › " + platform.basename(res.snap.path) +
                 (copied ? ". Он же в буфере обмена — можно сразу вставить." : ". В буфер обмена скопировать не получилось."), "done");
         } catch (e) {
             if (e && e.message === "NO_ACTIVE_COMP") { toolFailed(e); return; }
@@ -3333,6 +3340,7 @@
         if (id) {
             e.preventDefault();
             e.stopPropagation();
+            lastPanelHotkey = { id: id, at: Date.now() };
             runHotkey(id);
         }
     }
@@ -3530,6 +3538,7 @@
 
     function registerHotkeys() {
         var cep = window.__adobe_cep__, map = parseHotkeys(settings.hotkeys), list = [], k, parts, code;
+        watchHostHotkeys(map);
         if (!cep || typeof cep.registerKeyEventsInterest !== "function") { return; }
         for (k in map) {
             if (!map.hasOwnProperty(k) || !map[k]) { continue; }
@@ -3540,6 +3549,40 @@
                 shiftKey: parts.indexOf("Shift") >= 0, metaKey: parts.indexOf("Cmd") >= 0 });
         }
         try { cep.registerKeyEventsInterest(JSON.stringify(list)); } catch (e) {}
+    }
+
+    // Сочетания вне панели: After Effects отдаёт клавиши только той панели, на которой фокус, поэтому
+    // хост несколько раз в секунду смотрит, какие клавиши зажаты, и присылает панели событие.
+    // Как и в FX Console, сочетание нужно чуть подержать.
+    var HOST_KEY_EVENT = "com.sayframe.hotkey";
+    var lastPanelHotkey = { id: "", at: 0 };
+
+    function watchHostHotkeys(map) {
+        var list = [], k, parts;
+        for (k in map) {
+            if (!map.hasOwnProperty(k) || !map[k]) { continue; }
+            parts = map[k].split("+");
+            list.push({ id: k, key: parts[parts.length - 1], ctrl: parts.indexOf("Ctrl") >= 0, alt: parts.indexOf("Alt") >= 0,
+                shift: parts.indexOf("Shift") >= 0, cmd: parts.indexOf("Cmd") >= 0 });
+        }
+        host("setHotkeys", [list]).catch(function () {});
+    }
+
+    function onHostHotkey(ev) {
+        var id = ev && ev.data !== undefined ? String(ev.data) : "";
+        if (!id || !HOTKEY_ACTIONS.some(function (a) { return a.id === id; })) { return; }
+        if (!ui.sheet.hidden || !ui.modal.hidden) { return; }
+        // Панель уже сама поймала это нажатие.
+        if (lastPanelHotkey.id === id && Date.now() - lastPanelHotkey.at < 800) { return; }
+        try { window.focus(); } catch (e) {}
+        runHotkey(id);
+    }
+
+    function listenHostHotkeys() {
+        var cep = window.__adobe_cep__;
+        if (cep && typeof cep.addEventListener === "function") {
+            try { cep.addEventListener(HOST_KEY_EVENT, onHostHotkey); } catch (e) {}
+        }
     }
 
     function hotkeyHint() {
@@ -4628,6 +4671,7 @@
     ui.setTabAI.addEventListener("click", function () { showSetPane("ai"); });
     ui.setTabOther.addEventListener("click", function () { showSetPane("other"); });
     document.addEventListener("keydown", onHotkeyDown, true);
+    listenHostHotkeys();
     registerHotkeys();
     hotkeyHint();
     ui.settingsBtn.addEventListener("click", openSettings);
