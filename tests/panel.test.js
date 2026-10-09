@@ -36,6 +36,44 @@ const FX_EFFECTS = [
   { displayName: "Drop Shadow", matchName: "ADBE Drop Shadow", category: "Perspective" },
   { displayName: "", matchName: "ADBE Hidden", category: "" }
 ];
+// A generic After Effects property for the Animation library: any child it is asked for exists,
+// keys and eases are recorded. acDefault gives transform values a realistic start.
+const AC_DEF = { "ADBE Opacity": 100, "ADBE Scale": [100, 100, 100], "ADBE Position": [960, 540, 0], "ADBE Rotate Z": 0,
+  "ADBE Text Percent Start": 0, "ADBE Text Percent End": 100, "ADBE Text Tracking Amount": 0 };
+const acDefault = (mn) => (AC_DEF[mn] !== undefined ? JSON.parse(JSON.stringify(AC_DEF[mn])) : 0);
+function acInit(p, name, value, log) {
+  Object.assign(p, { name, matchName: name, value, keys: [], interp: [], eases: 0, expression: "", dimensionsSeparated: false, children: [], propertyValueType: 0 });
+  const adopt = (c) => { c.parentProperty = p; c.propertyDepth = (p.propertyDepth || 0) + 1; p.children.push(c); c.propertyIndex = p.children.length; return c; };
+  p.property = (k) => {
+    if (typeof k === "number") return p.children[k - 1] || null;
+    let c = p.children.find((x) => x.matchName === k || x.name === k);
+    if (!c) c = adopt(acInit({}, k, acDefault(k), log));
+    return c;
+  };
+  p.addProperty = (mn) => { const c = adopt(acInit({}, mn, acDefault(mn), log)); if (log) log.acAdds.push(mn); return c; };
+  Object.defineProperty(p, "numProperties", { configurable: true, get: () => p.children.length });
+  p.remove = () => { const par = p.parentProperty; par.children.splice(par.children.indexOf(p), 1); par.children.forEach((c, i) => { c.propertyIndex = i + 1; }); if (log) log.acRemoved.push(p.name); };
+  p.keyTime = (i) => p.keys[i - 1].t;
+  p.keyValue = (i) => JSON.parse(JSON.stringify(p.keys[i - 1].v));
+  p.removeKey = (i) => { p.keys.splice(i - 1, 1); };
+  p.setValue = (v) => { p.value = v; };
+  p.addKey = (t) => { let i = p.keys.findIndex((k) => Math.abs(k.t - t) < 1e-9); if (i < 0) { p.keys.push({ t, v: p.value }); p.keys.sort((a, b) => a.t - b.t); i = p.keys.findIndex((k) => Math.abs(k.t - t) < 1e-9); } return i + 1; };
+  p.setValueAtKey = (i, v) => { p.keys[i - 1].v = v; };
+  p.setValueAtTime = (t, v) => { p.setValueAtKey(p.addKey(t), v); };
+  p.nearestKeyIndex = (t) => { let b = 1; p.keys.forEach((k, i) => { if (Math.abs(k.t - t) < Math.abs(p.keys[b - 1].t - t)) b = i + 1; }); return b; };
+  Object.defineProperty(p, "numKeys", { configurable: true, get: () => p.keys.length });
+  p.valueAtTime = () => p.value;
+  p.setInterpolationTypeAtKey = (i, a, b) => { p.interp.push([i, a, b]); };
+  p.setTemporalEaseAtKey = (i, a, b) => { if (!Array.isArray(a) || !Array.isArray(b)) throw new Error("ease must be arrays"); p.eases++; };
+  return p;
+}
+// Finds a child by match names along a path (for checks).
+const acAt = (p, ...path) => path.reduce((n, k) => n && (typeof k === "number" ? n.children[k - 1] : n.children.find((x) => x.matchName === k)), p);
+function mkAcLayer(name, kind, log) {
+  const L = acInit(kind === "text" ? new TextLayer() : kind === "camera" ? new CameraLayer() : {}, name, null, log);
+  Object.assign(L, { name, inPoint: 0, outPoint: 5, startTime: 0, selected: true, propertyDepth: 0, comment: "" });
+  return L;
+}
 // A layer for FX Console: remembers the effects and presets put on it; cameras take no effects.
 function mkFxLayer(name, kind) {
   const L = Object.assign(kind === "camera" ? new CameraLayer() : {}, { name, effects: [], presets: [] });
@@ -223,6 +261,8 @@ function makeAE(opts, tmpDir) {
         log.nullsAdded++; log.nulls.push(nul);
         return nul;
       },
+      addShape() { const l = mkAcLayer("Shape Layer", "shape", log); log.acLayers.push(l); return l; },
+      addText(t) { const l = mkAcLayer(String(t), "text", log); acInit(l.property("ADBE Text Properties").property("ADBE Text Document"), "ADBE Text Document", { text: t, fontSize: 40 }, log); log.acLayers.push(l); return l; },
       precompose(idx, name, moveAll) { log.precomposes.push({ idx: Array.prototype.slice.call(idx), name, moveAll }); return Object.assign(new CompItem(), { name }); } },
     layer(i) { if (opts.exprLayers) return opts.exprLayers[i - 1] || null; const l = i === 1 ? new TextLayer() : {}; return Object.assign(l, { name: i === 1 ? "Заголовок" : "Фон", selected: i === 1, enabled: true, threeDLayer: false, parent: null, inPoint: 0, outPoint: 10, index: i, source: i === 2 ? { mainSource: new SolidSource() } : null }); } });
   const projItems = [comp];
@@ -278,6 +318,7 @@ function makeAE(opts, tmpDir) {
   write(path.join(tmpDir, "Documents", "Adobe", "After Effects 2026", "User Presets"), opts.userPresets);
   Folder.appPackage = new Folder(path.join(aeRoot, "Adobe After Effects 2026.app"));
   Folder.myDocuments = new Folder(path.join(tmpDir, "Documents"));
+  log.acAdds = []; log.acLayers = []; log.acRemoved = [];
   log.snaps = []; log.saveDlg = []; log.events = []; log.tasks = [];
   File.prototype.saveDlg = function (prompt) { log.saveDlg.push({ path: this.fsName, prompt }); return opts.saveAs === null ? null : new File(opts.saveAs || this.fsName); };
   Object.defineProperty(File.prototype, "parent", { configurable: true, get() { return new Folder(path.dirname(this.fsName)); } });
@@ -289,7 +330,7 @@ function makeAE(opts, tmpDir) {
     scheduleTask: (code, ms, repeat) => { log.tasks.push({ code, ms, repeat }); return log.tasks.length; }, cancelTask: (id) => { log.tasks[id - 1].cancelled = true; },
     preferences: { getPrefAsLong: () => (opts.fileAccessOff ? 0 : 1) },
     beginUndoGroup: (n) => log.undo.push("begin:" + n), endUndoGroup: () => log.undo.push("end"), __ran: (x) => log.ran.push(x) };
-  const ctx = vm.createContext({ app, File, Folder, CSXSEvent, ExternalObject, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
+  const ctx = vm.createContext({ app, File, Folder, Shape: function Shape() {}, CSXSEvent, ExternalObject, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   ctx.$.global = ctx;
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
@@ -1424,6 +1465,196 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("K5 a tab shortcut from outside switches tabs", (await p.page.locator("#tabMotion").getAttribute("aria-selected")) === "true" && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
+  console.log("\n=== animation library ===");
+  const acCards = (p) => p.page.locator("#acGrid .ac-card .ac-name").allInnerTexts();
+  const acClick = async (p, name) => { await p.page.locator("#acGrid .ac-card", { has: p.page.locator(".ac-name", { hasText: name }) }).first().click(); await p.idle(); };
+  const acSec = async (p, label) => { await p.page.locator("#acTabs button", { hasText: label }).click(); };
+  const r4 = (v) => (Array.isArray(v) ? v.map(r4) : typeof v === "number" ? Math.round(v * 1e4) / 1e4 : v);
+  const keysOf = (prop) => prop.keys.map((k) => [Math.round(k.t * 1000) / 1000, r4(k.v)]);
+  let AL = mkAcLayer("Логотип", "av"), ACam = mkAcLayer("Камера", "camera");
+  p = await open({ selectedLayers: [AL, ACam] });
+  await p.tab("tools");
+  check("AC1 the Animation tab: five sections, 'Transitions' open, search, timing and a card grid", (await p.page.locator('#acTabs button[aria-selected="true"]').innerText()) === "Переходы" && (await acCards(p)).length === 11 && (await p.page.locator("#acSearch").isVisible()) && (await p.page.locator("#acMode button").allInnerTexts()).join() === "Появление,Исчезновение,Оба" && (await p.page.locator("#acDurVal").innerText()) === "0,6 с" && (await p.page.locator("#acColorRow").isHidden()));
+  await p.page.locator("#acGrid .ac-card").first().hover();
+  await p.page.waitForTimeout(400);
+  await p.page.screenshot({ path: path.join(SHOTS, "28-animation-library.png") });
+  t = await p.page.evaluate(() => getComputedStyle(document.querySelector("#acGrid .ac-card .ac-obj")).animationName);
+  check("AC1 hovering a card plays its preview", t === "pv-trans-zoom-blur", t);
+  await acSec(p, "Анимация");
+  check("AC2 'Animation' section: 13 motion presets", (await acCards(p)).length === 13 && (await acCards(p))[2] === "Пружинка");
+  await acClick(p, "Пружинка");
+  let tg = acAt(AL, "ADBE Transform Group");
+  t = keysOf(acAt(tg, "ADBE Scale"));
+  check("AC3 'Pop' on appearance: scale overshoots and settles within 0.6 s from the layer's start", JSON.stringify(t) === JSON.stringify([[0, [0, 0, 0]], [0.36, [112, 112, 112]], [0.492, [96, 96, 96]], [0.6, [100, 100, 100]]]) && JSON.stringify(keysOf(acAt(tg, "ADBE Opacity"))) === JSON.stringify([[0, 0], [0.6, 100]]) && acAt(tg, "ADBE Scale").eases === 4, JSON.stringify(t));
+  check("AC3 one undo step; the camera is skipped; the status says so", p.ae.log.undo.join("|") === "begin:Sayframe: pop|end" && (await p.status()) === "«Пружинка» — появление, 1 слой. Пропущено: 1 слой. Отменить — Cmd/Ctrl+Z." && (await p.statusKind()) === "done", await p.status());
+  await p.page.click('#acMode button[data-value="out"]');
+  AL = mkAcLayer("B"); p.ae.comp.selectedLayers = [AL];
+  await acClick(p, "Слева");
+  tg = acAt(AL, "ADBE Transform Group");
+  check("AC4 'From the left' on disappearance: leaves to the left during the last 0.6 s and fades", JSON.stringify(keysOf(acAt(tg, "ADBE Position"))) === JSON.stringify([[4.4, [960, 540, 0]], [5, [384, 540, 0]]]) && JSON.stringify(keysOf(acAt(tg, "ADBE Opacity"))) === JSON.stringify([[4.4, 100], [5, 0]]), JSON.stringify(keysOf(acAt(tg, "ADBE Position"))));
+  await p.page.click('#acMode button[data-value="both"]');
+  await p.page.evaluate(() => { const r = document.getElementById("acDur"); r.value = "1"; r.dispatchEvent(new Event("input", { bubbles: true })); });
+  AL = mkAcLayer("C"); p.ae.comp.selectedLayers = [AL];
+  await acClick(p, "Прозрачность");
+  check("AC5 'Both' with 1 s: in at the start and out at the end; the duration label follows the slider", JSON.stringify(keysOf(acAt(AL, "ADBE Transform Group", "ADBE Opacity"))) === JSON.stringify([[0, 0], [1, 100], [4, 100], [5, 0]]) && (await p.page.locator("#acDurVal").innerText()) === "1,0 с" && /появление и исчезновение/.test(await p.status()));
+  await acSec(p, "Переходы");
+  await p.page.click('#acMode button[data-value="in"]');
+  AL = mkAcLayer("D"); p.ae.comp.selectedLayers = [AL];
+  await acClick(p, "Шторка");
+  t = acAt(AL, "ADBE Effect Parade", "ADBE Linear Wipe");
+  check("AC6 'Wipe' adds Linear Wipe and opens it from 100% to 0%", !!t && JSON.stringify(keysOf(acAt(t, "ADBE Linear Wipe-0001"))) === JSON.stringify([[0, 100], [1, 0]]), JSON.stringify(t && keysOf(acAt(t, "ADBE Linear Wipe-0001"))));
+  AL = mkAcLayer("E"); p.ae.comp.selectedLayers = [AL];
+  await acClick(p, "Глитч");
+  t = acAt(AL, "ADBE Transform Group", "ADBE Opacity");
+  check("AC7 'Glitch' jumps frame by frame with held keys", t.keys.length >= 10 && t.interp.every((x) => x[1] === 6614) && t.keys[t.keys.length - 1].v === 100);
+  // Every preset of every section runs through After Effects without an error.
+  t = [];
+  for (const id of ["zoom-blur", "spin-zoom", "push-left", "push-right", "push-up", "wipe", "clock-wipe", "flash", "glitch", "stretch", "blur", "fade", "scale-up", "pop", "slide-left", "slide-right", "slide-up", "slide-down", "rotate-in", "spin-scale", "blur-in", "drop-bounce", "swing", "squash"]) {
+    p.ae.comp.selectedLayers = [mkAcLayer(id)];
+    const r = JSON.parse(vm.runInContext('sayframeHost.acAnimate("' + id + '", "both", 0.5)', p.ae.ctx));
+    if (!r.ok || r.applied !== 1 || r.failed) t.push(id + ":" + JSON.stringify(r));
+  }
+  for (const id of ["typewriter", "fade-letters", "slide-letters", "pop-letters", "blur-letters", "rotate-letters", "words", "random", "tracking"]) {
+    p.ae.comp.selectedLayers = [mkAcLayer(id, "text")];
+    const r = JSON.parse(vm.runInContext('sayframeHost.acText("' + id + '", "both", 0.5, "x")', p.ae.ctx));
+    if (!r.ok || r.applied !== 1 || r.failed) t.push(id + ":" + JSON.stringify(r));
+  }
+  for (const id of ["ring", "burst", "underline", "lower-third", "arrow", "progress", "ripples", "star", "counter", "timer"]) {
+    const r = JSON.parse(vm.runInContext('sayframeHost.acGraphic("' + id + '", 0.6, [1, 1, 1])', p.ae.ctx));
+    if (!r.ok) t.push(id + ":" + JSON.stringify(r));
+  }
+  check("AC8 all 43 presets build in After Effects without errors (24 motion and transition, 9 text, 10 graphics)", t.length === 0, t.join(" | "));
+  check("AC8 the panel lists exactly these presets", await p.page.evaluate(() => true) && (await (async () => { let n = 0; for (const l of ["Переходы", "Текст", "Анимация", "Графика", "Звуки"]) { await acSec(p, l); n += (await acCards(p)).length; } return n; })()) === 55);
+  await p.close();
+
+  // Text: on a selected text layer, or a new one when there is none.
+  p = await open({ selectedLayers: [mkAcLayer("Фон")] });
+  await p.tab("tools"); await acSec(p, "Текст");
+  await acClick(p, "Печатная машинка");
+  t = p.ae.log.acLayers[0];
+  const anim1 = t && acAt(t, "ADBE Text Properties", "ADBE Text Animators", 1);
+  check("AC9 no text layer selected: a new text layer 'Ваш текст' is made and typed in letter by letter", !!t && t.name === "Ваш текст" && JSON.stringify(keysOf(acAt(anim1, "ADBE Text Selectors", 1, "ADBE Text Percent Start"))) === JSON.stringify([[0, 0], [0.6, 100]]) && acAt(anim1, "ADBE Text Animator Properties", 1).matchName === "ADBE Text Opacity" && /создан новый «Ваш текст»/.test(await p.status()), await p.status());
+  const TL = mkAcLayer("Заголовок", "text");
+  p.ae.comp.selectedLayers = [TL];
+  await p.page.click('#acMode button[data-value="out"]');
+  await acClick(p, "По словам");
+  const anim2 = acAt(TL, "ADBE Text Properties", "ADBE Text Animators", 1);
+  check("AC10 'By words' on a selected text layer: words, and on disappearance the End of the range moves", acAt(anim2, "ADBE Text Selectors", 1, "ADBE Text Range Advanced", "ADBE Text Range Type2").value === 3 && JSON.stringify(keysOf(acAt(anim2, "ADBE Text Selectors", 1, "ADBE Text Percent End"))) === JSON.stringify([[4.4, 0], [5, 100]]) && p.ae.log.acLayers.length === 1);
+  await p.close();
+
+  // Graphics: new layers at the time indicator, in the chosen colour.
+  p = await open({ compTime: 2, selectedLayers: [mkAcLayer("Фон")] });
+  await p.tab("tools"); await acSec(p, "Графика");
+  check("AC11 'Graphics' shows the colour picker, not the timing buttons", (await p.page.locator("#acColorRow").isVisible()) && (await p.page.locator("#acModeRow").isHidden()));
+  await p.page.evaluate(() => { const c = document.getElementById("acColor"); c.value = "#ff0000"; c.dispatchEvent(new Event("input", { bubbles: true })); });
+  await acClick(p, "Кольцо");
+  t = p.ae.log.acLayers[0];
+  const agrp = t && acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group");
+  check("AC11 'Ring' becomes a new shape layer at the time indicator, red, growing from zero, and is selected", !!t && t.name === "Ring" && t.startTime === 2 && t.selected === true && agrp.children[0].matchName === "ADBE Vector Shape - Ellipse" && JSON.stringify(acAt(agrp, "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Color").value) === "[1,0,0,1]" && /Кольцо.*новый слой «Ring»/.test(await p.status()), await p.status());
+  await acClick(p, "Счётчик");
+  t = p.ae.log.acLayers[1];
+  check("AC12 'Counter' is a text layer counting with an expression", t.name === "Counter" && /linear\(time, inPoint/.test(acAt(t, "ADBE Text Properties", "ADBE Text Document").expression));
+  await p.close();
+
+  // Sounds: our own synthesized files, copied next to the project and placed at the time indicator.
+  p = await open({ compTime: 1.5 });
+  await p.tab("tools"); await acSec(p, "Звуки");
+  check("AC13 'Sounds': 12 sounds, each with a play button, no timing options", (await acCards(p)).length === 12 && (await p.page.locator("#acGrid .ac-play").count()) === 12 && (await p.page.locator("#acDurRow").isHidden()));
+  await acClick(p, "Вжух");
+  t = path.join(p.home, "Documents", "Sayframe SFX", "whoosh.wav");
+  check("AC13 clicking a sound copies it to 'Sayframe SFX' and puts it into the comp", fs.existsSync(t) && fs.readFileSync(t).equals(fs.readFileSync(path.join(EXT, "sfx", "whoosh.wav"))) && p.ae.log.imports.join() === t && p.ae.log.layerAdds.length === 1 && /^Звук «Вжух» добавлен/.test(await p.status()), await p.status());
+  t = fs.readdirSync(path.join(EXT, "sfx")).filter((n) => /\.wav$/.test(n));
+  check("AC13 all 12 sounds are real WAV files", t.length === 12 && t.every((n) => fs.readFileSync(path.join(EXT, "sfx", n)).subarray(0, 4).toString() === "RIFF" && fs.readFileSync(path.join(EXT, "sfx", n)).subarray(8, 12).toString() === "WAVE"), t.join());
+  await p.close();
+
+  // Favourites, search across sections, card size, nothing selected.
+  p = await open({ selectedLayers: [] });
+  await p.tab("tools"); await acSec(p, "Анимация");
+  await p.page.locator("#acGrid .ac-card", { has: p.page.locator(".ac-name", { hasText: "Качание" }) }).locator(".ac-star").click();
+  await acSec(p, "Звуки");
+  await p.page.locator("#acGrid .ac-card", { has: p.page.locator(".ac-name", { hasText: "Удар" }) }).locator(".ac-star").click();
+  await p.page.click("#acFavOnly");
+  check("AC14 ★ shows the favourites from every section", (await acCards(p)).join() === "Качание,Удар" && (await p.page.locator("#acFavOnly").getAttribute("aria-pressed")) === "true");
+  await p.page.click("#acFavOnly");
+  await p.page.fill("#acSearch", "букв");
+  check("AC15 search looks through all sections", (await acCards(p)).join() === "Проявление по буквам,Буквы снизу,Буквы с масштабом,Буквы из размытия,Буквы с поворотом,Случайные буквы,Разлёт букв" && (await p.page.locator('#acTabs button[aria-selected="true"]').count()) === 0, (await acCards(p)).join());
+  await p.page.fill("#acSearch", "");
+  await p.page.evaluate(() => { const r = document.getElementById("acSize"); r.value = "180"; r.dispatchEvent(new Event("input", { bubbles: true })); });
+  t = await p.page.evaluate(() => Math.round(document.querySelector("#acGrid .ac-card").getBoundingClientRect().width));
+  check("AC16 the size slider makes the cards bigger", t >= 170, t);
+  await acSec(p, "Анимация");
+  await acClick(p, "Масштаб");
+  check("AC17 nothing selected -> a hint", /^Выделите слой/.test(await p.status()) && (await p.statusKind()) === "", await p.status());
+  await p.restart(); await p.tab("tools");
+  check("AC18 section, favourites and card size survive a restart", (await p.page.locator('#acTabs button[aria-selected="true"]').innerText()) === "Анимация" && (await p.page.locator("#acGrid .ac-star.on").count()) === 1 && (await p.page.inputValue("#acSize")) === "180" && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  console.log("\n=== animation library: edit ===");
+  const edSlide = async (p, index, label, value) => {
+    await p.page.evaluate(([i, l, v]) => {
+      const box = document.querySelector('.ac-edit-item[data-index="' + i + '"]');
+      const input = box.querySelector('input[aria-label="' + l + '"]');
+      input.value = String(v); input.dispatchEvent(new Event("input", { bubbles: true })); input.dispatchEvent(new Event("change", { bubbles: true }));
+    }, [index, label, value]);
+    await p.idle(); await p.page.waitForTimeout(50);
+  };
+  let EL = mkAcLayer("Логотип");
+  EL.comment = "моя заметка";
+  p = await open({ selectedLayers: [EL] });
+  await p.tab("tools"); await acSec(p, "Анимация");
+  // a key of the user's own on Position, which must survive every edit
+  EL.property("ADBE Transform Group").property("ADBE Position").setValueAtTime(3, [100, 100, 0]);
+  await acClick(p, "Слева");
+  check("ED1 the layer remembers the preset in its comment, after the user's own note", /^моя заметка\n\[Sayframe presets\] \[\{"id":"slide-left","dir":"in"/.test(EL.comment), EL.comment.slice(0, 80));
+  await p.page.click("#acTabs .ac-tab-edit");
+  await p.page.waitForSelector(".ac-edit-item");
+  check("ED1 'Edit' lists it with its settings; the library options are hidden", (await p.page.locator(".ac-edit-head").innerText()).indexOf("Слой «Логотип»") === 0 && (await p.page.locator(".ac-edit-top b").innerText()) === "Слева — появление" && (await p.page.locator(".ac-edit-item .ac-edit-row output").allInnerTexts()).join() === "0,6 с,0,0 с,100%,как в пресете" && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acFoot").isHidden()));
+  await p.page.screenshot({ path: path.join(SHOTS, "29-animation-edit.png") });
+  const posKeys = () => keysOf(acAt(EL, "ADBE Transform Group", "ADBE Position")).map((k) => k[0] + ":" + k[1][0]).join(" ");
+  await edSlide(p, 0, "Длительность", 1.2);
+  check("ED2 a longer duration moves the preset's keys; the user's own key stays", posKeys() === "0:384 1.2:960 3:100" && JSON.stringify(keysOf(acAt(EL, "ADBE Transform Group", "ADBE Opacity"))) === JSON.stringify([[0, 0], [1.2, 100]]) && p.ae.log.undo.slice(-2).join("|") === "begin:Sayframe: edit slide-left|end" && /обновлён/.test(await p.status()), posKeys());
+  await edSlide(p, 0, "Задержка", 0.5);
+  check("ED3 a delay starts the move later", posKeys() === "0.5:384 1.7:960 3:100", posKeys());
+  await edSlide(p, 0, "Сила", 200);
+  check("ED4 strength 200% doubles the distance; the fade still goes to zero", posKeys() === "0.5:-192 1.7:960 3:100" && JSON.stringify(keysOf(acAt(EL, "ADBE Transform Group", "ADBE Opacity"))) === JSON.stringify([[0.5, 0], [1.7, 100]]), posKeys());
+  await p.page.selectOption(".ac-edit-item .ac-swap", "slide-right");
+  await p.idle(); await p.page.waitForTimeout(50);
+  check("ED5 another preset of the same kind replaces it, with the same settings", posKeys() === "0.5:2112 1.7:960 3:100" && (await p.page.locator(".ac-edit-top b").innerText()) === "Справа — появление" && (await p.page.locator(".ac-edit-item .ac-edit-row output").allInnerTexts()).join() === "1,2 с,0,5 с,200%,как в пресете", posKeys());
+  await edSlide(p, 0, "Плавность", 30);
+  check("ED6 softness is stored and shown", (await p.page.locator(".ac-edit-item .ac-edit-row output").last().innerText()) === "30%");
+  await p.page.locator(".ac-edit-item button", { hasText: "Убрать" }).click(); await p.idle();
+  check("ED7 'Remove' takes out exactly its keys; the user's key and note stay, the record is gone", posKeys() === "3:100" && acAt(EL, "ADBE Transform Group", "ADBE Opacity").keys.length === 0 && EL.comment === "моя заметка" && /На этом слое нет пресетов/.test(await p.page.locator("#acGrid").innerText()));
+  await p.close();
+
+  // Effects and text animators come out whole; a preset applied in both directions gives two entries.
+  EL = mkAcLayer("Фото");
+  p = await open({ selectedLayers: [EL] });
+  await p.tab("tools"); await acSec(p, "Анимация");
+  await p.page.click('#acMode button[data-value="both"]');
+  await acClick(p, "Из размытия");
+  t = acAt(EL, "ADBE Effect Parade").children.map((c) => c.name);
+  check("ED8 effects added by a preset get their own names", t.length === 2 && t.every((n) => /^Sayframe fx /.test(n)), t.join());
+  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".ac-edit-item");
+  check("ED8 'both' shows two entries: appearance and disappearance", (await p.page.locator(".ac-edit-top b").allInnerTexts()).join() === "Из размытия — появление,Из размытия — исчезновение");
+  const fxBefore = acAt(EL, "ADBE Effect Parade").children.map((c) => c.name);
+  await edSlide(p, 1, "Длительность", 1);
+  t = acAt(EL, "ADBE Effect Parade").children.map((c) => c.name);
+  check("ED8 editing one entry swaps only its own effect", t.length === 2 && t[0] === fxBefore[0] && t[1] !== fxBefore[1] && fxBefore.indexOf(t[1]) < 0, JSON.stringify(fxBefore) + " -> " + JSON.stringify(t));
+  await p.page.locator('.ac-edit-item[data-index="0"] button', { hasText: "Убрать" }).click(); await p.idle();
+  check("ED8 removing one entry leaves the other", acAt(EL, "ADBE Effect Parade").children.length === 1 && (await p.page.locator(".ac-edit-top b").allInnerTexts()).join() === "Из размытия — исчезновение");
+  const ET = mkAcLayer("Заголовок", "text");
+  p.ae.comp.selectedLayers = [ET];
+  await acSec(p, "Текст"); await p.page.click('#acMode button[data-value="in"]');
+  await acClick(p, "Буквы снизу");
+  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".ac-edit-item");
+  await p.page.selectOption(".ac-edit-item .ac-swap", "blur-letters"); await p.idle(); await p.page.waitForTimeout(50);
+  t = acAt(ET, "ADBE Text Properties", "ADBE Text Animators").children;
+  check("ED9 a text preset swaps its text animator for the new one (text presets offer only text presets)", t.length === 1 && /^Sayframe text /.test(t[0].name) && acAt(t[0], "ADBE Text Animator Properties", 1).matchName === "ADBE Text Blur" && (await p.page.locator(".ac-edit-item .ac-swap option").count()) === 9);
+  p.ae.comp.selectedLayers = [];
+  await p.page.click("#acEditRefresh"); await p.page.waitForTimeout(150);
+  check("ED10 nothing selected -> the Edit view says what to do", /Выделите слой, на котором стоит пресет/.test(await p.page.locator("#acGrid").innerText()) && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
   console.log("\n=== settings ===");
   p = await open({ settings: null });
   await p.page.click("#settingsBtn");
@@ -1502,7 +1733,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.setViewportSize({ width: 1000, height: 760 });
   await p.page.screenshot({ path: path.join(SHOTS, "09b-wide-panel.png") });
   await p.page.click("#tabTools");
-  check("W2 Tools tab stays in the column", within(await spans(p), 14, 366), JSON.stringify(await spans(p)));
+  check("W2 the Animation library uses the whole width, the status line stays in the column", (await box(p, "#viewTools .ac")).split(",")[0] === "14" && Number((await box(p, "#viewTools .ac")).split(",")[2]) > 900 && (await overflow(p)) <= 0, await box(p, "#viewTools .ac"));
   await p.page.click("#tabMotion");
   t = await p.page.evaluate(() => { const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; }; return { tabs: r("#tabs"), top: r(".top"), status: r("#statusBox"), tools: r("#motionTools"), cards: Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width)]; }) }; });
   check("W2 Animation tab in a wide panel: tabs and blocks get the whole width, the status line stays in the column", t.tabs.join() === "14,986" && t.top.join() === "14,986" && t.status[1] <= 366 && t.tools.join() === "14,986" && (await overflow(p)) <= 0, JSON.stringify(t));
@@ -1554,14 +1785,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   console.log("\n=== tabs ===");
   const vis = (p, sel) => p.page.locator(sel).isVisible();
   p = await open({ replies: [msg("Создаю слой.\n```javascript\napp.__ran('one');\n```")], clip: "png", footage: IMG });
-  check("T1 opens on the Claude tab", (await vis(p, "#prompt")) && (await vis(p, "#runBtn")) && (await vis(p, "#refBtn")) && (await vis(p, "#newBtn")) && !(await vis(p, "#viewTools .empty-note")) && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "true");
+  check("T1 opens on the Claude tab", (await vis(p, "#prompt")) && (await vis(p, "#runBtn")) && (await vis(p, "#refBtn")) && (await vis(p, "#newBtn")) && !(await vis(p, "#viewTools #acGrid")) && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "true");
   check("T1 status line is inside the Claude tab", (await p.page.locator("#viewClaude #statusBox").count()) === 1 && (await vis(p, "#status")));
   await p.page.screenshot({ path: path.join(SHOTS, "16-tab-claude.png") });
   await p.tab("tools");
-  check("T2 Tools tab shows only the tools", (await vis(p, "#viewTools .empty-note")) && !(await vis(p, "#prompt")) && !(await vis(p, "#runBtn")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#newBtn")) && !(await vis(p, "#fixBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "false");
+  check("T2 Tools tab shows only the tools", (await vis(p, "#viewTools #acGrid")) && !(await vis(p, "#prompt")) && !(await vis(p, "#runBtn")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#newBtn")) && !(await vis(p, "#fixBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "false");
   check("T2 status line moved to the Tools tab", (await p.page.locator("#viewTools #statusBox").count()) === 1 && (await p.page.locator("#statusBox").count()) === 1 && (await vis(p, "#status")));
   await p.page.screenshot({ path: path.join(SHOTS, "17-tab-tools.png") });
-  check("T2 the Animation tab is empty for now and says so; the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#viewTools button").count()) === 0);
+  check("T2 the Animation tab holds the preset library with five sections; the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Анимация,Графика,Звуки,✎ Изменить");
   await p.paste(); await p.idle(); await p.modalClick("Оставить как есть");
   check("T3 the paste block reports its result on its tab", /^Картинка вставлена/.test(await p.status()) && (await vis(p, "#status")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1 && p.ae.log.imports.length === 1, await p.status());
   t = await p.status();
@@ -1572,7 +1803,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.tab("tools");
   check("T4 the reply card stays on the Claude tab", !(await vis(p, "#replyCard")) && /^Готово: Создаю слой\./.test(await p.status()));
   await p.restart();
-  check("T5 the open tab is remembered", (await vis(p, "#viewTools .empty-note")) && !(await vis(p, "#prompt")) && (await p.page.locator("#viewTools #statusBox").count()) === 1);
+  check("T5 the open tab is remembered", (await vis(p, "#viewTools #acGrid")) && !(await vis(p, "#prompt")) && (await p.page.locator("#viewTools #statusBox").count()) === 1);
   check("T5 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
   p = await open({ width: 300, height: 620 });
@@ -1618,7 +1849,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("O1 without a double click a drag moves nothing and marks nothing", (await order(p)) === "claude,tools,motion" && (await savedOrder(p)) === null && (await p.page.locator(".dragging, .reordering").count()) === 0);
   await p.page.waitForTimeout(350);
   await p.page.click("#tabTools");
-  check("O1 a single click only switches the tab", (await vis(p, "#viewTools .empty-note")) && !(await arrangingNow(p)));
+  check("O1 a single click only switches the tab", (await vis(p, "#viewTools #acGrid")) && !(await arrangingNow(p)));
   await p.page.click("#tabClaude");
   await p.page.waitForTimeout(350);
   await p.page.dblclick("#tabClaude");
@@ -1633,13 +1864,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   } });
   check("O2 dragging Claude onto Tools swaps them", (await order(p)) === "tools,claude,motion", await order(p));
   check("O2 the new order is saved", (await savedOrder(p)) === '["tools","claude","motion"]', await savedOrder(p));
-  check("O2 dragging does not switch tabs or leave marks, rearranging stays on", (await vis(p, "#prompt")) && !(await vis(p, "#viewTools .empty-note")) && (await p.page.locator(".dragging, .reordering").count()) === 0 && (await arrangingNow(p)));
+  check("O2 dragging does not switch tabs or leave marks, rearranging stays on", (await vis(p, "#prompt")) && !(await vis(p, "#viewTools #acGrid")) && (await p.page.locator(".dragging, .reordering").count()) === 0 && (await arrangingNow(p)));
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect().left; return r("tabTools") < r("tabClaude"); });
   check("O2 Tools is now drawn on the left", t === true);
   await p.page.screenshot({ path: path.join(SHOTS, "20-tabs-swapped.png") });
   await p.page.waitForTimeout(350);
   await p.tab("tools");
-  check("O3 clicking still switches tabs after a drag, also while rearranging", (await vis(p, "#viewTools .empty-note")) && !(await vis(p, "#prompt")) && (await arrangingNow(p)));
+  check("O3 clicking still switches tabs after a drag, also while rearranging", (await vis(p, "#viewTools #acGrid")) && !(await vis(p, "#prompt")) && (await arrangingNow(p)));
   await p.page.click("#arrangeDone");
   check("O3 'Done' switches rearranging off", !(await arrangingNow(p)) && !(await vis(p, "#arrangeBar")) && (await order(p)) === "tools,claude,motion");
   await p.page.waitForTimeout(350);
@@ -1650,7 +1881,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("O3 tools still work in the new order", /^Картинка вставлена/.test(await p.status()), await p.status());
   await p.page.click("#tabTools");
   await p.restart();
-  check("O4 order and open tab survive a restart; rearranging does not", (await order(p)) === "tools,claude,motion" && (await vis(p, "#viewTools .empty-note")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && !(await arrangingNow(p)));
+  check("O4 order and open tab survive a restart; rearranging does not", (await order(p)) === "tools,claude,motion" && (await vis(p, "#viewTools #acGrid")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && !(await arrangingNow(p)));
   await arrange(p);
   await dragTab(p, "#tabTools", "#tabClaude");
   check("O5 dragging back restores the order", (await order(p)) === "claude,tools,motion" && (await savedOrder(p)) === '["claude","tools","motion"]');
@@ -1707,7 +1938,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await dragTab(p, "#tabTools", "#tabClaude");
   t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check("O10 reordering works in a 300px panel", (await order(p)) === "tools,claude,motion" && t <= 0);
-  check("O10 dragging a tab that is not open does not open it", (await vis(p, "#prompt")) && !(await vis(p, "#viewTools .empty-note")) && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "true");
+  check("O10 dragging a tab that is not open does not open it", (await vis(p, "#prompt")) && !(await vis(p, "#viewTools #acGrid")) && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "true");
   await p.close();
 
   // ---------------------------------------------------------------- animation tab
@@ -1726,7 +1957,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({});
   check("M1 three tabs, Animation closed at first", (await order(p)) === "claude,tools,motion" && !(await vis(p, "#easeBothBtn")));
   await motionTab(p);
-  check("M1 Animation tab shows both tools and nothing from the other tabs", (await vis(p, "#easeBothBtn")) && (await vis(p, "#anchorGrid")) && (await p.page.locator("#anchorGrid button").count()) === 9 && !(await vis(p, "#prompt")) && !(await vis(p, "#viewTools .empty-note")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1);
+  check("M1 Animation tab shows both tools and nothing from the other tabs", (await vis(p, "#easeBothBtn")) && (await vis(p, "#anchorGrid")) && (await p.page.locator("#anchorGrid button").count()) === 9 && !(await vis(p, "#prompt")) && !(await vis(p, "#viewTools #acGrid")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1);
   t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check("M1 no horizontal overflow at 380px", t <= 0, t);
   await p.page.screenshot({ path: path.join(SHOTS, "21-tab-motion.png") });
@@ -3028,7 +3259,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.evaluate(() => { document.documentElement.style.setProperty("--accent", "#ff7ac3"); document.documentElement.style.setProperty("--accent-rgb", "255, 122, 195"); });
   t = await p.page.evaluate(() => getComputedStyle(document.getElementById("updateBar")).borderTopColor.match(/\d+/g).slice(0, 3).join());
   check("U6 banner stays green with another accent colour", t === "70,214,132", t);
-  check("U6 banner stays visible on the Tools tab", (await barVisible(p)) && (await p.page.locator("#viewTools .empty-note").isVisible()));
+  check("U6 banner stays visible on the Tools tab", (await barVisible(p)) && (await p.page.locator("#viewTools #acGrid").isVisible()));
   await p.tab("claude");
   t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check("U6 banner does not overflow", t <= 0, t);
