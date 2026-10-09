@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.15.0";
+    var VERSION = "1.16.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -650,7 +650,7 @@
         refLinkBtn: el("refLinkBtn"), refLinkRow: el("refLinkRow"), refLink: el("refLink"), refLinkAdd: el("refLinkAdd"), refLinkCancel: el("refLinkCancel"),
         statusBox: el("statusBox"), status: el("status"),
         replyCard: el("replyCard"), replyText: el("replyText"), replyCode: el("replyCode"), codeBox: el("codeBox"),
-        pasteBtn: el("pasteBtn"), settingsBtn: el("settingsBtn"),
+        pinLine: el("pinLine"), pasteBtn: el("pasteBtn"), settingsBtn: el("settingsBtn"),
         sheet: el("settingsSheet"), settingsClose: el("settingsClose"), apiKey: el("apiKey"), testKey: el("testKey"),
         keyHint: el("keyHint"), models: el("models"), provider: el("provider"), apiKeyLabel: el("apiKeyLabel"), accentSwatches: el("accentSwatches"), accentHex: el("accentHex"),
         bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
@@ -2600,7 +2600,7 @@
     // левый — входящая сторона ключа (in, как движение останавливается перед ключом),
     // правый — исходящая (out, как оно начинается после ключа). Длина ползунка — влияние в процентах.
 
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste,organize", sizes: "", places: "", pasteOpts: true, organizeOpts: true, anchorOpts: true, alignOpts: true,
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste,organize", sizes: "", places: "", pins: "", pasteOpts: true, organizeOpts: true, anchorOpts: true, alignOpts: true,
         shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
     var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
@@ -2731,6 +2731,7 @@
         m.order = cleanToolOrder(m.order);
         m.sizes = sizesText(parseSizes(m.sizes));
         m.places = placesText(parsePlaces(m.places));
+        m.pins = cleanPins(m.pins);
         return m;
     }
 
@@ -2804,6 +2805,62 @@
             f.button.setAttribute("aria-label", label);
             f.button.title = label;
         }
+    }
+
+    // ---- булавка: закреплённый блок встаёт наверх, под закреплёнными — тонкая линия, ниже остальные.
+
+    function cleanPins(text) {
+        var out = [];
+        String(text || "").split(",").forEach(function (n) {
+            if (TOOL_NAMES.indexOf(n) >= 0 && out.indexOf(n) < 0) { out.push(n); }
+        });
+        return out.join(",");
+    }
+
+    function pinList() { return motion && motion.pins ? motion.pins.split(",") : []; }
+
+    var PIN_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path class="pin-body" d="M6 2.2h4l-.6 4 2.4 2.3v1H4.2v-1L6.6 6.2z"/><path d="M8 9.5V14"/></svg>';
+
+    function showPins() {
+        var pins = pinList();
+        toolCards().forEach(function (card) {
+            var name = card.getAttribute("data-tool");
+            var b = card.querySelector(".tool-pin");
+            var on = pins.indexOf(name) >= 0;
+            var label = card.getAttribute("aria-label") || "";
+            if (!b) { return; }
+            b.setAttribute("aria-pressed", on ? "true" : "false");
+            b.title = on ? "Открепить" : "Закрепить наверху";
+            b.setAttribute("aria-label", (on ? "Открепить блок «" : "Закрепить наверху блок «") + label + "»");
+            card.classList.toggle("pinned", on);
+        });
+    }
+
+    function togglePin(name) {
+        var pins = pinList(), at = pins.indexOf(name), places = parsePlaces(motion.places);
+        if (at >= 0) { pins.splice(at, 1); } else { pins.push(name); }
+        // Сохранённое место блока больше не подходит: он переезжает в другую часть.
+        delete places[name];
+        motion.places = placesText(places);
+        motion.pins = cleanPins(pins.join(","));
+        storeMotion();
+        showPins();
+        relayoutTools();
+    }
+
+    function enablePins() {
+        toolCards().forEach(function (card) {
+            var name = card.getAttribute("data-tool");
+            var toggle = card.querySelector(".tool-toggle");
+            var b = document.createElement("button");
+            b.className = "tool-pin";
+            b.setAttribute("data-pin", name);
+            b.innerHTML = PIN_ICON;
+            b.addEventListener("click", function (e) { e.stopPropagation(); togglePin(name); });
+            card.insertBefore(b, toggle || card.firstChild);
+        });
+        showPins();
     }
 
     function enableFolding() {
@@ -3859,7 +3916,8 @@
         var items = [];
         var taken = [];
         var pos = {};
-        var i, it, card, z, r, c, h, rows, sorted;
+        var pins = pinList();
+        var i, it, card, z, h, rows, sorted, pinned, rest, base;
 
         if (!cols) { return null; }
         ui.motionTools.style.gridTemplateColumns = "repeat(" + cols + ", " + m.cell + "px)";
@@ -3882,6 +3940,51 @@
             }
             pos[name] = { x: c0, y: r0, w: w, h: hh };
         }
+        // Раскладывает группу блоков не выше ряда top; возвращает ряд под самым нижним из них.
+        function placeGroup(group, top) {
+            var r, c, j, g, q, list, bottom = top;
+            if (!places) {
+                // По порядку, как текст: блок встаёт правее предыдущего, а если не влезает — в начало следующего ряда.
+                r = top;
+                c = 0;
+                for (j = 0; j < group.length; j++) {
+                    g = group[j];
+                    for (;;) {
+                        if (c + g.w > cols) { r++; c = 0; }
+                        if (free(r, c, g.w, g.h)) { break; }
+                        c++;
+                    }
+                    take(g.name, r, c, g.w, g.h);
+                    c += g.w;
+                }
+            } else {
+                // По местам: каждый блок стоит на своей клетке; если она занята блоком выше, он сдвигается вниз.
+                list = group.slice();
+                for (j = 0; j < list.length; j++) {
+                    // Блок без места (например, новый в этой версии) встаёт в первую свободную клетку слева сверху.
+                    q = places[list[j].name];
+                    list[j].free = !q;
+                    list[j].x = q ? Math.min(q.x, cols - list[j].w) : 0;
+                    list[j].y = q ? q.y : 100000 + j;
+                }
+                list.sort(function (a, b) {
+                    if (a.y !== b.y) { return a.y - b.y; }
+                    if (a.name === first || b.name === first) { return a.name === first ? -1 : 1; }
+                    return a.x !== b.x ? a.x - b.x : a.index - b.index;
+                });
+                for (j = 0; j < list.length; j++) {
+                    g = list[j];
+                    r = Math.max(top, g.free ? 0 : Math.min(g.y, 999));
+                    while (!free(r, g.x, g.w, g.h)) { r++; }
+                    take(g.name, r, g.x, g.w, g.h);
+                }
+            }
+            for (j = 0; j < group.length; j++) {
+                q = pos[group[j].name];
+                if (q.y + q.h > bottom) { bottom = q.y + q.h; }
+            }
+            return bottom;
+        }
 
         // Ширина каждого блока, затем высота его содержимого при этой ширине: меньше неё блок не бывает.
         for (i = 0; i < names.length; i++) {
@@ -3901,42 +4004,12 @@
             items[i].h = Math.min(Math.max(items[i].h, rows), TOOL_MAX_ROWS);
         }
 
-        if (!places) {
-            // По порядку, как текст: блок встаёт правее предыдущего, а если не влезает — в начало следующего ряда.
-            r = 0;
-            c = 0;
-            for (i = 0; i < items.length; i++) {
-                it = items[i];
-                for (;;) {
-                    if (c + it.w > cols) { r++; c = 0; }
-                    if (free(r, c, it.w, it.h)) { break; }
-                    c++;
-                }
-                take(it.name, r, c, it.w, it.h);
-                c += it.w;
-            }
-        } else {
-            // По местам: каждый блок стоит на своей клетке; если она занята блоком выше, он сдвигается вниз.
-            sorted = items.slice();
-            for (i = 0; i < sorted.length; i++) {
-                // Блок без места (например, новый в этой версии) встаёт в первую свободную клетку слева сверху.
-                z = places[sorted[i].name];
-                sorted[i].free = !z;
-                sorted[i].x = z ? Math.min(z.x, cols - sorted[i].w) : 0;
-                sorted[i].y = z ? z.y : 100000 + i;
-            }
-            sorted.sort(function (a, b) {
-                if (a.y !== b.y) { return a.y - b.y; }
-                if (a.name === first || b.name === first) { return a.name === first ? -1 : 1; }
-                return a.x !== b.x ? a.x - b.x : a.index - b.index;
-            });
-            for (i = 0; i < sorted.length; i++) {
-                it = sorted[i];
-                r = it.free ? 0 : Math.min(it.y, 999);
-                while (!free(r, it.x, it.w, it.h)) { r++; }
-                take(it.name, r, it.x, it.w, it.h);
-            }
-        }
+        // Закреплённые блоки (булавка) стоят сверху, остальные — под ними, ниже тонкой линии.
+        pinned = items.filter(function (x) { return pins.indexOf(x.name) >= 0; });
+        rest = items.filter(function (x) { return pins.indexOf(x.name) < 0; });
+        base = placeGroup(pinned, 0);
+        if (!pinned.length) { base = 0; }
+        placeGroup(rest, base);
 
         // Блоки на свои клетки; в документе — в порядке чтения, чтобы Tab шёл по ним так же.
         sorted = items.slice().sort(function (a, b) {
@@ -3961,7 +4034,14 @@
         ui.gridCells.style.backgroundImage = 'url("data:image/svg+xml,' + encodeURIComponent(
             '<svg xmlns="http://www.w3.org/2000/svg" width="' + step + '" height="' + step + '"><rect x="0.5" y="0.5" width="' + (m.cell - 1) +
             '" height="' + (m.cell - 1) + '" rx="' + Math.round(m.cell / 5) + '" fill="rgba(255,255,255,0.035)" stroke="rgba(255,255,255,0.13)" stroke-dasharray="3 3"/></svg>') + '")';
-        lastLayout = { cols: cols, step: step, pos: pos, need: {} };
+        if (pinned.length && rest.length) {
+            ui.pinLine.hidden = false;
+            ui.pinLine.style.top = Math.round(base * step - m.gap / 2) + "px";
+            ui.pinLine.style.width = (cols * step - m.gap) + "px";
+        } else {
+            ui.pinLine.hidden = true;
+        }
+        lastLayout = { cols: cols, step: step, pos: pos, need: {}, pinRows: pinned.length ? base : 0 };
         for (i = 0; i < items.length; i++) { lastLayout.need[items[i].name] = items[i].need; }
         return lastLayout;
     }
@@ -4293,6 +4373,7 @@
         });
         ui.easeLink.addEventListener("change", onEaseLink);
         enableFolding();
+        enablePins();
         ui.easeBothBtn.addEventListener("click", function () { onEase("both"); });
         ui.anchorKeys.addEventListener("change", function () {
             var v = ui.anchorKeys.value;
