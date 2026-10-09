@@ -1,8 +1,11 @@
 {
-  "version": "1.16.0",
+  "version": "1.17.0",
   "date": "2026-10-09",
   "notes": [
-    "Блоки можно закреплять: булавка рядом с минусом в углу блока — закреплённый блок встаёт в самый верх, под закреплёнными тонкая линия, ниже остальные блоки"
+    "Вкладка «Анимация» — библиотека пресетов, как в Animation Composer: разделы «Переходы», «Текст», «Анимация», «Графика» и «Звуки», всего 55 пресетов",
+    "Превью при наведении, избранное (☆), поиск по всем разделам, длительность и выбор «появление / исчезновение / оба», размер карточек",
+    "Графика создаётся новым слоем у указателя времени в выбранном цвете; звуки — свои, синтезированные, кладутся в папку «Sayframe SFX» рядом с проектом",
+    "«✎ Изменить» во вкладке «Анимация»: пресеты на выделенном слое можно настроить уже после установки — длительность, задержка, сила, плавность, замена на другой пресет или «Убрать» (ваши собственные ключи не трогаются)"
   ],
   "download": "https://github.com/dalerodinaevb-arch/sayframe#readme",
   "moved": "",
@@ -10,28 +13,88 @@
   "files": [
     {
       "path": "CSXS/manifest.xml",
-      "sha256": "2d028d31a6a2b6002198ebff11ad76cc3ab65192227d28340b2049082d1f4595",
+      "sha256": "e9295f875583c2251feded64779fc738237c3377e7e23db42a9ef1a8e2ac77cd",
       "size": 1644
     },
     {
       "path": "css/panel.css",
-      "sha256": "b04d2ad91c3f835855c9282106c6f0e9226a5ed4531af0994b3f8a349b6545c0",
-      "size": 53462
+      "sha256": "1a5cd125e7788159b58a4a94157a2ee0dc4c68414fa6036f0e650ec431ce05bd",
+      "size": 71571
     },
     {
       "path": "index.html",
-      "sha256": "89624b90bcd604976d4b383d93351d4b73dcacbd7c396ff2d6fed5c50508fcf7",
-      "size": 51456
+      "sha256": "f880bd78eae4db7ac0537f6e673ed0b6e9d70ea22e265dc0c4ff86ea71590f58",
+      "size": 53293
     },
     {
       "path": "js/panel.js",
-      "sha256": "bbf18772f4d87d0c8a0147d8329693b1dfdd33997145b635ed8b15685674bd02",
-      "size": 253529
+      "sha256": "6bac565184c49bc1dfa04f2944cae0ed73e26c29f38b8f133455350c17fd0ebe",
+      "size": 277690
     },
     {
       "path": "jsx/host.jsx",
-      "sha256": "ac3b26f5891e6aa0a57ba59b54c44bb7786e542e1cfbb7e21e7e948bd9e57939",
-      "size": 71835
+      "sha256": "28a5ff8fc433d72f8a9d5f62a622570685a2cb782663a8f2b9c7711eab0a7f1d",
+      "size": 109606
+    },
+    {
+      "path": "sfx/bubble.wav",
+      "sha256": "94cb5a9afbef14e42c4873ac329d8704aa19be2da7dabfd77c30f7c0ffaf6858",
+      "size": 22094
+    },
+    {
+      "path": "sfx/click.wav",
+      "sha256": "0528dcd2a4c74b27938689087f4a6696e8821bf7561add7a997e275618eab2d3",
+      "size": 5336
+    },
+    {
+      "path": "sfx/ding.wav",
+      "sha256": "cf5282080fe7a068029a63c318b64afec611c5bc4ceee51d3bcfa0ddba897c64",
+      "size": 123522
+    },
+    {
+      "path": "sfx/glitch.wav",
+      "sha256": "0989ca0be8cbf1d7e51bd4e3efa02eead01a176670e8cd081e9b10adf07185d1",
+      "size": 61782
+    },
+    {
+      "path": "sfx/impact.wav",
+      "sha256": "6fd8583a8bfc77cc123213ece203c7803d58b215bcaacb714fe5d65e95c3994b",
+      "size": 141164
+    },
+    {
+      "path": "sfx/notify.wav",
+      "sha256": "204bd41eab51942229182a0aaff729d088297eb941da766efffa317453156911",
+      "size": 41496
+    },
+    {
+      "path": "sfx/pop.wav",
+      "sha256": "8a866e417b0491085df7682918380978bb617096d6494e381a0aa5415f1c9312",
+      "size": 15920
+    },
+    {
+      "path": "sfx/riser.wav",
+      "sha256": "a07d3029631e505e4f6cad85427d60e42184ce004087c6e23e12272fe79372df",
+      "size": 176444
+    },
+    {
+      "path": "sfx/swipe-up.wav",
+      "sha256": "832759acc94eb6da0ba185e95bc564d739c63821c11849f42ec1413c79fbfacc",
+      "size": 44144
+    },
+    {
+      "path": "sfx/swish.wav",
+      "sha256": "71162a92ef4a2824376476c162c662c4af140bee420418ed0b021592281887fa",
+      "size": 30912
+    },
+    {
+      "path": "sfx/typing.wav",
+      "sha256": "d4b014d65f2c98e23a2a87fa38098a418e18b4f505be2c3923f8b8ce1e634c5b",
+      "size": 105884
+    },
+    {
+      "path": "sfx/whoosh.wav",
+      "sha256": "eab86cf4baf0403bdb6d82208fc9f128df94bd0f2ddaac3618c32ce5dea605b5",
+      "size": 79424
     }
   ]
 }
