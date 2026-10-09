@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.17.1";
+    var VERSION = "1.18.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -3020,7 +3020,7 @@
     var AC_SECTIONS = [
         { id: "trans", label: "Переходы" },
         { id: "text", label: "Текст" },
-        { id: "anim", label: "Анимация" },
+        { id: "anim", label: "Движения" },
         { id: "graphic", label: "Графика" },
         { id: "sfx", label: "Звуки" }
     ];
@@ -3031,16 +3031,58 @@
         text: [["typewriter", "Печатная машинка"], ["fade-letters", "Проявление по буквам"], ["slide-letters", "Буквы снизу"],
             ["pop-letters", "Буквы с масштабом"], ["blur-letters", "Буквы из размытия"], ["rotate-letters", "Буквы с поворотом"],
             ["words", "По словам"], ["random", "Случайные буквы"], ["tracking", "Разлёт букв"]],
-        anim: [["fade", "Прозрачность"], ["scale-up", "Масштаб"], ["pop", "Пружинка"], ["slide-left", "Слева"], ["slide-right", "Справа"],
-            ["slide-up", "Снизу"], ["slide-down", "Сверху"], ["rotate-in", "Поворот"], ["spin-scale", "Вихрь"], ["blur-in", "Из размытия"],
-            ["drop-bounce", "Падение с отскоком"], ["swing", "Качание"], ["squash", "Сплющивание"]],
+        anim: [],
         graphic: [["ring", "Кольцо"], ["burst", "Лучи"], ["underline", "Подчёркивание"], ["lower-third", "Плашка для титра"], ["arrow", "Стрелка"],
             ["progress", "Полоса загрузки"], ["ripples", "Круги"], ["star", "Звезда"], ["counter", "Счётчик 0–100%"], ["timer", "Таймер 10 с"]],
         sfx: [["whoosh", "Вжух"], ["swish", "Свист"], ["swipe-up", "Взмах"], ["pop", "Поп"], ["click", "Клик"], ["bubble", "Пузырь"],
             ["ding", "Дзынь"], ["notify", "Уведомление"], ["riser", "Нарастание"], ["impact", "Удар"], ["glitch", "Глитч"], ["typing", "Клавиатура"]]
     };
+    // Пресеты, поставленные прошлыми версиями ключами (до 1.18): нужны только для названий во «✎ Изменить».
+    var AC_LEGACY_ANIM = [["fade", "Прозрачность"], ["scale-up", "Масштаб"], ["pop", "Пружинка"], ["slide-left", "Слева"], ["slide-right", "Справа"],
+        ["slide-up", "Снизу"], ["slide-down", "Сверху"], ["rotate-in", "Поворот"], ["spin-scale", "Вихрь"], ["blur-in", "Из размытия"],
+        ["drop-bounce", "Падение с отскоком"], ["swing", "Качание"], ["squash", "Сплющивание"]];
+
+    // ---- «Движения» — как Motion Presets в Animation Composer. Пресет не запекает ключи: на слой ставятся
+    // маркер IN/OUT (его длина — длительность), эффекты-настройки и выражения поверх своих ключей слоя.
+    // Каждое движение есть в нескольких кривых; формы движений те же, что в host.jsx (SF_MOTIONS).
+    var SF_FOLDERS = [
+        { id: "all", label: "Все" }, { id: "fade", label: "Прозрачность" }, { id: "move", label: "Сдвиг" }, { id: "scale", label: "Масштаб" },
+        { id: "rotate", label: "Поворот" }, { id: "blur", label: "Размытие" }, { id: "combo", label: "Комбо" }
+    ];
+    var SF_CURVE_NAMES = { ease: "плавно", linear: "ровно", over: "с перелётом", bounce: "с отскоком", elastic: "пружина" };
+    var SF_LIST = [
+        ["fade", "fade", "Прозрачность", ["ease", "linear"], { op: 0 }],
+        ["move", "from-bottom", "Снизу", ["ease", "over", "bounce"], { op: 0, dy: 1 }],
+        ["move", "from-top", "Сверху", ["ease", "over", "bounce"], { op: 0, dy: -1 }],
+        ["move", "from-left", "Слева", ["ease", "over", "bounce"], { op: 0, dx: -1 }],
+        ["move", "from-right", "Справа", ["ease", "over", "bounce"], { op: 0, dx: 1 }],
+        ["scale", "scale-up", "Из точки", ["ease", "over", "bounce", "elastic"], { op: 0, sc: 0 }],
+        ["scale", "scale-down", "Из крупного", ["ease", "over"], { op: 0, sc: 200 }],
+        ["rotate", "rotate", "Поворот", ["ease", "over", "elastic"], { op: 0, rot: -90 }],
+        ["rotate", "spin", "Вихрь", ["ease", "over"], { op: 0, rot: -360, sc: 0 }],
+        ["blur", "blur", "Из размытия", ["ease"], { op: 0, blur: 40 }],
+        ["blur", "blur-scale", "Размытие с зумом", ["ease"], { op: 0, blur: 30, sc: 130 }],
+        ["combo", "rise-rotate", "Снизу с поворотом", ["ease", "over"], { op: 0, dy: 1, rot: -20 }],
+        ["combo", "rise-scale", "Снизу с масштабом", ["ease", "over"], { op: 0, dy: 1, sc: 60 }],
+        ["combo", "stretch", "Растяжение", ["over", "elastic"], { op: 0, scx: 300, scy: 20 }],
+        ["combo", "drop", "Падение", ["bounce", "over"], { dy: -1, far: true }]
+    ];
+    var SF_PARAM_LABELS = { dist: "Дистанция", sc: "Масштаб", scx: "Ширина", scy: "Высота", rot: "Угол", op: "Прозрачность", blur: "Размытие" };
+    var SF_PARAM_UNIT = { dist: " px", sc: "%", scx: "%", scy: "%", rot: "°", op: "%", blur: "" };
+    var SF_PARAM_RANGE = { dist: [0, 2000, 10], sc: [0, 400, 5], scx: [0, 600, 5], scy: [0, 600, 5], rot: [-720, 720, 5], op: [0, 100, 5], blur: [0, 200, 1] };
+    var SF_BY_MOTION = {};
+    var SF_BY_ID = {};
+    SF_LIST.forEach(function (m) {
+        SF_BY_MOTION[m[1]] = { folder: m[0], motion: m[1], title: m[2], curves: m[3], shape: m[4] };
+        m[3].forEach(function (c) {
+            var id = m[1] + "." + c;
+            SF_BY_ID[id] = { folder: m[0], motion: m[1], curve: c, title: m[2], shape: m[4] };
+            AC_PRESETS.anim.push([id, m[2] + " · " + SF_CURVE_NAMES[c]]);
+        });
+    });
+
     var AC_GLYPH = { arrow: "➜", star: "★", counter: "42%", timer: "00:10" };
-    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false };
+    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false, folder: "all" };
     var acState = loadAcState();
     var acAudio = null;
 
@@ -3056,6 +3098,7 @@
         out.dur = Math.min(3, Math.max(0.2, Math.round(Number(out.dur) * 10) / 10 || 0.6));
         out.size = Math.min(200, Math.max(80, Number(out.size) || 112));
         if (!/^#[0-9a-f]{6}$/i.test(out.color)) { out.color = "#ffffff"; }
+        if (!SF_FOLDERS.some(function (f) { return f.id === out.folder; })) { out.folder = "all"; }
         out.fav = Array.isArray(s.fav) ? s.fav.filter(function (x) { return typeof x === "string"; }) : [];
         return out;
     }
@@ -3065,7 +3108,11 @@
     function acAll() {
         var out = [];
         AC_SECTIONS.forEach(function (s) {
-            AC_PRESETS[s.id].forEach(function (p) { out.push({ sec: s.id, id: p[0], name: p[1], key: s.id + ":" + p[0] }); });
+            AC_PRESETS[s.id].forEach(function (p) {
+                var item = { sec: s.id, id: p[0], name: p[1], key: s.id + ":" + p[0] }, sf = s.id === "anim" ? SF_BY_ID[p[0]] : null;
+                if (sf) { item.folder = sf.folder; item.motion = sf.motion; item.curve = sf.curve; item.title = sf.title; item.shape = sf.shape; }
+                out.push(item);
+            });
         });
         return out;
     }
@@ -3081,7 +3128,8 @@
         return acAll().filter(function (p) {
             if (acState.favOnly && acState.fav.indexOf(p.key) < 0) { return false; }
             if (q) { return fxLower(p.name).indexOf(q) >= 0 || fxLower(p.id).indexOf(q) >= 0; }
-            return acState.favOnly || p.sec === acState.sec;
+            if (acState.favOnly) { return true; }
+            return p.sec === acState.sec && (p.sec !== "anim" || acState.folder === "all" || p.folder === acState.folder);
         });
     }
 
@@ -3092,6 +3140,7 @@
         thumb.className = "ac-thumb";
         obj.className = "ac-obj ac-" + p.sec + " pv-" + p.sec + "-" + p.id;
         if (p.sec === "text") { obj.textContent = "Текст"; }
+        if (p.sec === "anim") { obj.className = "ac-obj ac-anim"; obj.textContent = "✦"; }
         if (p.sec === "graphic" && AC_GLYPH[p.id]) { obj.textContent = AC_GLYPH[p.id]; }
         if (p.sec === "graphic" && p.id === "progress") { obj.appendChild(document.createElement("i")); }
         if (p.sec === "sfx") {
@@ -3117,6 +3166,7 @@
         ui.acColorRow.hidden = editing || !(searching || sec === "graphic");
         ui.acDurRow.hidden = editing || (!searching && sec === "sfx");
         ui.acFoot.hidden = editing;
+        renderSfFolders(!searching && !editing && sec === "anim");
         pressGroup(ui.acMode, acState.mode);
         ui.acDur.value = String(acState.dur);
         ui.acDurVal.textContent = acState.dur.toFixed(1).replace(".", ",") + " с";
@@ -3129,12 +3179,124 @@
             return;
         }
         list.forEach(function (p) { ui.acGrid.appendChild(acCard(p, searching)); });
+        markSfCards();
+    }
+
+    function renderSfFolders(show) {
+        var box = ui.acFolders;
+        if (!box) { return; }
+        box.hidden = !show;
+        if (!show) { return; }
+        box.innerHTML = "";
+        SF_FOLDERS.forEach(function (f) {
+            var b = document.createElement("button");
+            b.className = "ac-folder";
+            b.setAttribute("data-folder", f.id);
+            b.setAttribute("aria-pressed", acState.folder === f.id ? "true" : "false");
+            b.textContent = f.label;
+            b.addEventListener("click", function () { acState.folder = f.id; storeAcState(); renderAc(); });
+            box.appendChild(b);
+        });
+    }
+
+    // ---- какие «Движения» уже стоят на выделенном слое: значок IN / OUT на карточке.
+    // Панель спрашивает After Effects раз в полторы секунды, пока открыт раздел «Движения».
+    var sfState = [];
+    var sfPollTimer = null;
+
+    function sfSetState(list) {
+        var next = Array.isArray(list) ? list.slice(0).sort() : [];
+        if (next.join("|") === sfState.join("|")) { return; }
+        sfState = next;
+        markSfCards();
+    }
+
+    function markSfCards() {
+        Array.prototype.forEach.call(ui.acGrid.querySelectorAll(".ac-card[data-motion]"), function (card) {
+            var m = card.getAttribute("data-motion"), c = card.getAttribute("data-curve");
+            var on = ["in", "out"].filter(function (d) { return sfState.indexOf(m + ":" + d + ":" + c) >= 0; });
+            var badge = card.querySelector(".ac-badge");
+            card.classList.toggle("applied", on.length > 0);
+            badge.hidden = !on.length;
+            badge.textContent = on.map(function (d) { return d.toUpperCase(); }).join(" + ");
+            badge.title = on.length ? "Стоит на выделенном слое. Щёлкните ещё раз, чтобы снять." : "";
+        });
+    }
+
+    async function pollSfState() {
+        var res;
+        if (busy || ui.viewTools.hidden || acState.sec !== "anim" || document.hidden) { return; }
+        try {
+            res = await host("sfState", []);
+            sfSetState(res.state);
+        } catch (e) {}
+    }
+
+    // Превью карточки: та же форма движения и та же кривая, что в выражении на слое.
+    function sfCurve(p, c) {
+        var s, q, n, d;
+        p = Math.min(1, Math.max(0, p));
+        if (c === "linear") { return p; }
+        if (c === "over") { s = 1.70158; q = p - 1; return 1 + (s + 1) * q * q * q + s * q * q; }
+        if (c === "bounce") {
+            n = 7.5625; d = 2.75;
+            if (p < 1 / d) { return n * p * p; }
+            if (p < 2 / d) { p -= 1.5 / d; return n * p * p + 0.75; }
+            if (p < 2.5 / d) { p -= 2.25 / d; return n * p * p + 0.9375; }
+            p -= 2.625 / d; return n * p * p + 0.984375;
+        }
+        if (c === "elastic") { if (p <= 0 || p >= 1) { return p; } return Math.pow(2, -10 * p) * Math.sin((p * 10 - 0.75) * 2 * Math.PI / 3) + 1; }
+        return 1 - Math.pow(1 - p, 3);
+    }
+
+    function sfFrame(m, k, ks, room) {
+        var dist = room * (m.far ? 0.75 : 0.3);
+        var sx = 1, sy = 1, f, op = 1;
+        if (m.sc !== undefined) { f = 1 + k * (m.sc / 100 - 1); sx *= f; sy *= f; }
+        if (m.scx !== undefined) { sx *= 1 + k * (m.scx / 100 - 1); sy *= 1 + k * (m.scy / 100 - 1); }
+        if (m.op !== undefined) { op = 1 - ks * (1 - m.op / 100); }
+        return {
+            transform: "translate(" + ((m.dx || 0) * dist * k).toFixed(2) + "px," + ((m.dy || 0) * dist * k).toFixed(2) + "px) rotate(" +
+                ((m.rot || 0) * k).toFixed(2) + "deg) scale(" + Math.max(0, sx).toFixed(3) + "," + Math.max(0, sy).toFixed(3) + ")",
+            opacity: Math.max(0, Math.min(1, op)),
+            filter: "blur(" + ((m.blur || 0) * ks * room / 600).toFixed(2) + "px)"
+        };
+    }
+
+    function sfPreview(obj, p) {
+        var m = p.shape, c = p.curve, soft = c === "linear" ? "linear" : "ease";
+        var room = obj.parentNode.clientHeight || 100, n = 30, frames = [], i, t, fr;
+        var inMs = 750, hold = 650, outMs = 750, rest = 450, total = inMs + hold + outMs + rest;
+        if (!obj.animate) { return; }
+        for (i = 0; i <= n; i++) {
+            t = i / n;
+            fr = sfFrame(m, 1 - sfCurve(t, c), 1 - sfCurve(t, soft), room); fr.offset = t * inMs / total; frames.push(fr);
+        }
+        for (i = 0; i <= n; i++) {
+            t = i / n;
+            fr = sfFrame(m, 1 - sfCurve(1 - t, c), 1 - sfCurve(1 - t, soft), room); fr.offset = (inMs + hold + t * outMs) / total; frames.push(fr);
+        }
+        fr = sfFrame(m, 1, 1, room); fr.offset = 1; frames.push(fr);
+        stopSfPreview(obj);
+        obj.sfAnim = obj.animate(frames, { duration: total, iterations: Infinity });
+    }
+
+    function stopSfPreview(obj) { if (obj.sfAnim) { obj.sfAnim.cancel(); obj.sfAnim = null; } }
+
+    function sfLabels(p) {
+        var out = { title: p.title, curve: SF_CURVE_NAMES[p.curve] }, k;
+        for (k in SF_PARAM_LABELS) { if (SF_PARAM_LABELS.hasOwnProperty(k)) { out[k] = SF_PARAM_LABELS[k]; } }
+        return out;
     }
 
     function acHintText(sec) {
         if (sec === "graphic") { return "Щелчок по карточке добавляет графику новым слоем у указателя времени."; }
         if (sec === "sfx") { return "▶ — послушать. Щелчок по карточке кладёт звук в композицию у указателя времени."; }
         if (sec === "text") { return "Выделите текстовый слой и щёлкните по карточке. Если текстового слоя нет, панель создаст новый."; }
+        if (sec === "anim") {
+            return "Выделите слои и щёлкните по карточке; щелчок по отмеченной снимает пресет. Ключи не запекаются: длительность — " +
+                "длина маркера IN/OUT на слое, настройки — в Effect Controls, ваши ключи и выражения остаются.";
+        }
         return "Выделите слои и щёлкните по карточке. Наведите курсор, чтобы увидеть движение.";
     }
 
@@ -3143,7 +3305,7 @@
         var name = document.createElement("span");
         var star = document.createElement("button");
         var fav = acState.fav.indexOf(p.key) >= 0;
-        var play;
+        var play, badge;
         card.className = "ac-card";
         card.setAttribute("role", "button");
         card.setAttribute("tabindex", "0");
@@ -3174,6 +3336,18 @@
             play.addEventListener("click", function (e) { e.stopPropagation(); acPreviewSound(p); });
             card.appendChild(play);
         }
+        if (p.sec === "anim") {
+            badge = document.createElement("span");
+            badge.className = "ac-badge";
+            badge.hidden = true;
+            card.appendChild(badge);
+            card.setAttribute("data-motion", p.motion);
+            card.setAttribute("data-curve", p.curve);
+            card.addEventListener("mouseenter", function () { sfPreview(card.querySelector(".ac-obj"), p); });
+            card.addEventListener("focus", function () { sfPreview(card.querySelector(".ac-obj"), p); });
+            card.addEventListener("mouseleave", function () { stopSfPreview(card.querySelector(".ac-obj")); });
+            card.addEventListener("blur", function () { stopSfPreview(card.querySelector(".ac-obj")); });
+        }
         card.addEventListener("click", function () { applyAc(p); });
         card.addEventListener("keydown", function (e) {
             if (e.target === card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); applyAc(p); }
@@ -3184,13 +3358,13 @@
     // ---- «Изменить»: пресеты Sayframe на выделенном слое — длительность, задержка, сила, плавность,
     // замена на другой пресет того же рода и «Убрать». Меняется сразу, как отпустили ползунок.
 
-    var acEdit = { layer: "", items: null, error: "" };
+    var acEdit = { layer: "", items: null, groups: [], error: "" };
 
     function acPresetName(id) {
-        var secs = ["anim", "trans", "text"], i, j;
-        for (i = 0; i < secs.length; i++) {
-            for (j = 0; j < AC_PRESETS[secs[i]].length; j++) {
-                if (AC_PRESETS[secs[i]][j][0] === id) { return AC_PRESETS[secs[i]][j][1]; }
+        var lists = [AC_LEGACY_ANIM, AC_PRESETS.trans, AC_PRESETS.text], i, j;
+        for (i = 0; i < lists.length; i++) {
+            for (j = 0; j < lists[i].length; j++) {
+                if (lists[i][j][0] === id) { return lists[i][j][1]; }
             }
         }
         return id;
@@ -3198,13 +3372,16 @@
 
     function acSameKind(id) {
         var isText = AC_PRESETS.text.some(function (p) { return p[0] === id; });
-        return isText ? AC_PRESETS.text : AC_PRESETS.anim.concat(AC_PRESETS.trans);
+        var isLegacy = AC_LEGACY_ANIM.some(function (p) { return p[0] === id; });
+        return isText ? AC_PRESETS.text : (isLegacy ? AC_LEGACY_ANIM.concat(AC_PRESETS.trans) : AC_PRESETS.trans);
     }
 
     async function loadAcEdit() {
         var res;
         acEdit.error = "";
         try {
+            res = await host("sfList", []);
+            acEdit.groups = res.groups;
             res = await host("acList", []);
             acEdit.layer = res.layer;
             acEdit.items = res.items;
@@ -3251,10 +3428,11 @@
             grid.appendChild(fxNote(acEdit.error || "Читаю пресеты на выделенном слое…"));
             return;
         }
-        if (!acEdit.items.length) {
-            grid.appendChild(fxNote("На этом слое нет пресетов Sayframe. Поставьте пресет из разделов «Переходы», «Текст» или «Анимация» — и его можно будет настроить здесь."));
+        if (!acEdit.items.length && !acEdit.groups.length) {
+            grid.appendChild(fxNote("На этом слое нет пресетов Sayframe. Поставьте пресет из разделов «Движения», «Переходы» или «Текст» — и его можно будет настроить здесь."));
             return;
         }
+        acEdit.groups.forEach(function (g) { grid.appendChild(sfEditGroup(g)); });
         acEdit.items.forEach(function (it, index) { grid.appendChild(acEditItem(it, index)); });
     }
 
@@ -3297,6 +3475,100 @@
         box.appendChild(acSlider("Плавность", 0, 100, 5, it.ease || 0, function (v) { return v ? v + "%" : "как в пресете"; },
             function (v) { acEditSet(index, { ease: v }); }));
         return box;
+    }
+
+    // «Движения» на слое: общая длительность и задержка направления (это маркер IN или OUT),
+    // у каждого пресета — кривая, его настройки из Effect Controls и «Убрать».
+    function sfEditGroup(g) {
+        var box = document.createElement("div");
+        var head = document.createElement("div");
+        var name = document.createElement("b");
+        var dirName = g.dir === "in" ? "Появление (маркер IN)" : "Исчезновение (маркер OUT)";
+        box.className = "ac-edit-item sf-group";
+        box.setAttribute("data-dir", g.dir);
+        head.className = "ac-edit-top";
+        name.textContent = dirName;
+        head.appendChild(name);
+        box.appendChild(head);
+        box.appendChild(acSlider("Длительность", 0.1, 3, 0.1, Math.round(g.dur * 10) / 10, secText, function (v) {
+            sfEditCall("sfTiming", [g.dir, v, null], "Длительность изменена.");
+        }));
+        box.appendChild(acSlider("Задержка", 0, 2, 0.1, Math.round(g.delay * 10) / 10, secText, function (v) {
+            sfEditCall("sfTiming", [g.dir, null, v], "Задержка изменена.");
+        }));
+        g.presets.forEach(function (p) { box.appendChild(sfEditPreset(g, p)); });
+        return box;
+    }
+
+    function sfEditPreset(g, p) {
+        var info = SF_BY_MOTION[p.motion] || { title: p.motion, curves: [p.curve] };
+        var box = document.createElement("div");
+        var head = document.createElement("div");
+        var name = document.createElement("b");
+        var remove = document.createElement("button");
+        var row = document.createElement("label");
+        var span = document.createElement("span");
+        var sel = document.createElement("select");
+        box.className = "sf-preset";
+        box.setAttribute("data-motion", p.motion);
+        head.className = "ac-edit-top";
+        name.textContent = info.title;
+        remove.className = "ghost warn";
+        remove.textContent = "Убрать";
+        remove.addEventListener("click", function () { sfEditCall("sfRemove", [g.dir, p.motion], "«" + info.title + "» убран со слоя."); });
+        head.appendChild(name);
+        head.appendChild(remove);
+        box.appendChild(head);
+        row.className = "ac-edit-row";
+        span.textContent = "Кривая";
+        sel.className = "sf-curve";
+        info.curves.forEach(function (c) {
+            var o = document.createElement("option");
+            o.value = c;
+            o.textContent = SF_CURVE_NAMES[c] || c;
+            sel.appendChild(o);
+        });
+        sel.value = p.curve;
+        sel.addEventListener("change", function () {
+            sfEditCall("sfCurve", [g.dir, p.motion, sel.value, SF_CURVE_NAMES[sel.value] || sel.value], "Кривая «" + info.title + "» изменена.");
+        });
+        row.appendChild(span);
+        row.appendChild(sel);
+        box.appendChild(row);
+        p.params.forEach(function (prm) {
+            var r = SF_PARAM_RANGE[prm.key] || [0, 100, 1];
+            var label = SF_PARAM_LABELS[prm.key] || prm.key;
+            var v = Math.round(Number(prm.value) * 100) / 100;
+            box.appendChild(acSlider(label, Math.min(r[0], v), Math.max(r[1], v), r[2], v, function (x) {
+                return String(x).replace(".", ",") + (SF_PARAM_UNIT[prm.key] || "");
+            }, function (x) {
+                sfEditCall("sfParam", [prm.name, x], "«" + info.title + "»: " + label.toLowerCase() + " изменена.");
+            }));
+        });
+        return box;
+    }
+
+    async function sfEditCall(fn, args, done) {
+        var res;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Меняю пресет…", "busy");
+        try {
+            res = await host(fn, args);
+            acEdit.layer = res.layer;
+            acEdit.groups = res.groups;
+            setBusy(false);
+            setStatus(done + " Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            setBusy(false);
+            if (e && e.message === "PRESET_GONE") {
+                setStatus("Этого пресета на слое уже нет — список обновлён.", "");
+                loadAcEdit();
+                return;
+            }
+            toolFailed(e);
+        }
+        renderAc();
     }
 
     function acEditSet(index, prm) {
@@ -3350,7 +3622,12 @@
         setBusy(true);
         setStatus("Добавляю «" + p.name + "»…", "busy");
         try {
-            if (p.sec === "anim" || p.sec === "trans") {
+            if (p.sec === "anim") {
+                res = await host("sfApply", [p.motion, p.curve, acState.mode, acState.dur, sfLabels(p)]);
+                setBusy(false);
+                sfSetState(res.state);
+                sfReport(p, res);
+            } else if (p.sec === "trans") {
                 res = await host("acAnimate", [p.id, acState.mode, acState.dur]);
                 setBusy(false);
                 acReport(p, res, "");
@@ -3379,6 +3656,18 @@
         } catch (e) {
             toolFailed(e);
         }
+    }
+
+    function sfReport(p, res) {
+        var skipped = res.skipped && res.skipped.length ?
+            " Свойства со своими выражениями не тронуты: " + res.skipped.filter(function (x, i, a) { return a.indexOf(x) === i; }).join(", ") + "." : "";
+        if (res.removed && !res.applied) {
+            setStatus("«" + p.name + "» снят: " + plural(res.removed, "слой", "слоя", "слоёв") + ". Отменить — Cmd/Ctrl+Z.", "done");
+            return;
+        }
+        setStatus("«" + p.name + "» — " + AC_MODE_TEXT[acState.mode] + ", " + plural(res.applied, "слой", "слоя", "слоёв") + "." +
+            " Длительность — длина маркера " + (acState.mode === "out" ? "OUT" : acState.mode === "in" ? "IN" : "IN/OUT") +
+            ", настройки — в Effect Controls." + skipped + " Отменить — Cmd/Ctrl+Z.", skipped ? "error" : "done");
     }
 
     function acReport(p, res, extra) {
@@ -3434,6 +3723,12 @@
             });
             ui.acTabs.appendChild(b);
         })();
+        ui.acFolders = document.createElement("div");
+        ui.acFolders.id = "acFolders";
+        ui.acFolders.className = "ac-folders";
+        ui.acFolders.hidden = true;
+        ui.acGrid.parentNode.insertBefore(ui.acFolders, ui.acGrid);
+        if (!sfPollTimer) { sfPollTimer = setInterval(pollSfState, 1500); }
         ui.acSearch.addEventListener("input", renderAc);
         ui.acSearch.addEventListener("keydown", function (e) { if (e.key === "Escape") { ui.acSearch.value = ""; renderAc(); } });
         ui.acFavOnly.addEventListener("click", function () { acState.favOnly = !acState.favOnly; storeAcState(); renderAc(); });
