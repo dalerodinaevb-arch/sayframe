@@ -1255,13 +1255,28 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 
 /* Миниатюры: в покое — конечное состояние, при наведении движение повторяется по кругу. */
 .ac-obj { --c: var(--accent-hi); display: grid; place-items: center; }
-.ac-trans { width: 30%; aspect-ratio: 1; border-radius: 22%; background: linear-gradient(135deg, var(--accent-hi), var(--accent)); box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.45); }
+.ac-trans-old { width: 30%; aspect-ratio: 1; border-radius: 22%; background: linear-gradient(135deg, var(--accent-hi), var(--accent)); box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.45); }
 /* «Движения»: знак Sayframe в круге; движение в превью считает панель по той же формуле, что и выражение на слое. */
 .ac-anim {
   width: 34%; aspect-ratio: 1; border-radius: 50%; color: #fff; font: 800 clamp(14px, calc(var(--ac-size, 112px) / 5.2), 30px)/1 var(--round);
   background: radial-gradient(circle at 32% 28%, var(--accent-hi), var(--accent) 70%); box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.45);
   will-change: transform, opacity, filter;
 }
+/* «Переходы»: два клипа (A до склейки, B после) и слой поверх — засветка, затемнение или шейп. */
+.ac-trv { position: absolute; inset: 0; display: block; }
+.ac-trv i {
+  position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255, 255, 255, 0.92);
+  font: 800 clamp(16px, calc(var(--ac-size, 112px) / 4), 40px)/1 var(--round); font-style: normal;
+}
+.trv-a { background: radial-gradient(circle at 30% 30%, #8a7dff, #3b2d8f 70%); }
+.trv-b { background: radial-gradient(circle at 70% 60%, #4fd8c4, #135a63 70%); opacity: 0; }
+.trv-ov { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+.trv-leak-warm { background: radial-gradient(circle at 30% 40%, #ffb347, transparent 60%), radial-gradient(circle at 75% 60%, #ff4d6d, transparent 55%); mix-blend-mode: screen; }
+.trv-leak-cool { background: radial-gradient(circle at 30% 40%, #4da3ff, transparent 60%), radial-gradient(circle at 75% 60%, #9b5cff, transparent 55%); mix-blend-mode: screen; }
+.trv-flash, .trv-fade-white { background: #fff; }
+.trv-fade-black { background: #000; }
+.trv-wipe-left, .trv-wipe-up { background: #f4f1ff; }
+.trv-circle { background: #f4f1ff; border-radius: 50%; inset: auto; left: 50%; top: 50%; width: 130%; aspect-ratio: 1; margin: -65% 0 0 -65%; transform: scale(0); }
 .ac-badge {
   position: absolute; left: 10px; top: 10px; padding: 2px 6px; border-radius: 6px; background: rgba(var(--accent-rgb), 0.95);
   color: #fff; font: 800 10px/1.2 var(--round); letter-spacing: 0.04em; pointer-events: none;
@@ -1293,28 +1308,6 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .pv-graphic-progress { width: 64%; height: 9px; border-radius: 5px; background: rgba(255, 255, 255, 0.22); display: block; overflow: hidden; }
 .pv-graphic-progress i { display: block; height: 100%; width: 100%; border-radius: 5px; background: #fff; transform-origin: left center; }
 .pv-graphic-ripples { width: 14%; aspect-ratio: 1; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 7px transparent, 0 0 0 8px rgba(255, 255, 255, 0.6), 0 0 0 17px transparent, 0 0 0 18px rgba(255, 255, 255, 0.3); }
-@keyframes pv-trans-zoom-blur{0%{transform:scale(3);filter:blur(8px);opacity:0}55%,100%{transform:none;filter:none;opacity:1}}
-.ac-card:hover .pv-trans-zoom-blur,.ac-card:focus-visible .pv-trans-zoom-blur{animation:pv-trans-zoom-blur 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-trans-spin-zoom{0%{transform:rotate(-360deg) scale(0);opacity:0}55%,100%{transform:none;opacity:1}}
-.ac-card:hover .pv-trans-spin-zoom,.ac-card:focus-visible .pv-trans-spin-zoom{animation:pv-trans-spin-zoom 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-trans-push-left{0%{transform:translateX(110px)}50%,100%{transform:none}}
-.ac-card:hover .pv-trans-push-left,.ac-card:focus-visible .pv-trans-push-left{animation:pv-trans-push-left 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-trans-push-right{0%{transform:translateX(-110px)}50%,100%{transform:none}}
-.ac-card:hover .pv-trans-push-right,.ac-card:focus-visible .pv-trans-push-right{animation:pv-trans-push-right 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-trans-push-up{0%{transform:translateY(80px)}50%,100%{transform:none}}
-.ac-card:hover .pv-trans-push-up,.ac-card:focus-visible .pv-trans-push-up{animation:pv-trans-push-up 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-trans-wipe{0%{clip-path:inset(0 100% 0 0)}55%,100%{clip-path:inset(0 0 0 0)}}
-.ac-card:hover .pv-trans-wipe,.ac-card:focus-visible .pv-trans-wipe{animation:pv-trans-wipe 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-trans-clock-wipe{0%{clip-path:circle(0% at 50% 50%)}55%,100%{clip-path:circle(75% at 50% 50%)}}
-.ac-card:hover .pv-trans-clock-wipe,.ac-card:focus-visible .pv-trans-clock-wipe{animation:pv-trans-clock-wipe 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-trans-flash{0%{filter:brightness(4);opacity:0}15%{opacity:1}55%,100%{filter:none}}
-.ac-card:hover .pv-trans-flash,.ac-card:focus-visible .pv-trans-flash{animation:pv-trans-flash 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-trans-glitch{0%{transform:translateX(-14px);opacity:0}8%{transform:translateX(10px);opacity:1}16%{transform:translateX(-6px);opacity:.2}24%{transform:translateX(5px);opacity:1}32%{transform:translateX(-2px)}40%,100%{transform:none;opacity:1}}
-.ac-card:hover .pv-trans-glitch,.ac-card:focus-visible .pv-trans-glitch{animation:pv-trans-glitch 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-trans-stretch{0%{transform:scale(4,.15);opacity:0}55%,100%{transform:none;opacity:1}}
-.ac-card:hover .pv-trans-stretch,.ac-card:focus-visible .pv-trans-stretch{animation:pv-trans-stretch 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-trans-blur{0%{filter:blur(14px)}55%,100%{filter:none}}
-.ac-card:hover .pv-trans-blur,.ac-card:focus-visible .pv-trans-blur{animation:pv-trans-blur 1.6s cubic-bezier(.3,.7,.3,1) infinite}
 @keyframes pv-text-typewriter{0%{clip-path:inset(0 100% 0 0)}55%,100%{clip-path:inset(0 0 0 0)}}
 .ac-card:hover .pv-text-typewriter,.ac-card:focus-visible .pv-text-typewriter{animation:pv-text-typewriter 1.6s cubic-bezier(.3,.7,.3,1) infinite}
 @keyframes pv-text-fade-letters{0%{-webkit-mask-position:100% 0;opacity:.0}10%{opacity:1}55%,100%{-webkit-mask-position:0 0}}
