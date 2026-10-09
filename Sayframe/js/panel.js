@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.17.0";
+    var VERSION = "1.17.1";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -498,25 +498,32 @@
         return dir.replace(/^file:\/\//, "");
     }
 
-    var hostReady = null;
+    var hostReady = {};
 
-    // host.jsx обычно загружает сам After Effects (ScriptPath в манифесте); если нет — загружаем вручную.
-    function ensureHost() {
-        if (!hostReady) {
-            hostReady = evalScript("typeof sayframeHost").then(function (t) {
-                if (t === "object") { return true; }
-                return evalScript("$.evalFile(" + asciiJSON(extensionDir() + "/jsx/host.jsx") + "); typeof sayframeHost").then(function (t2) {
-                    if (t2 !== "object") { throw new Error("HOST_NOT_LOADED"); }
+    // Проверка: загружен ли host.jsx и есть ли в нём нужная функция. Если панель обновили, а After Effects
+    // не перезапускали, в нём может сидеть старый host.jsx без новых функций — тогда перечитываем файл.
+    function hostProbe(fn) {
+        return "(typeof sayframeHost === 'object' && sayframeHost !== null" +
+            (fn ? " && typeof sayframeHost." + fn + " === 'function'" : "") + ") ? 'yes' : 'no'";
+    }
+
+    function ensureHost(fn) {
+        var key = fn || "";
+        if (!hostReady[key]) {
+            hostReady[key] = evalScript(hostProbe(fn)).then(function (t) {
+                if (t === "yes") { return true; }
+                return evalScript("$.evalFile(" + asciiJSON(extensionDir() + "/jsx/host.jsx") + "); " + hostProbe(fn)).then(function (t2) {
+                    if (t2 !== "yes") { throw new Error("HOST_NOT_LOADED"); }
                     return true;
                 });
             });
-            hostReady.catch(function () { hostReady = null; });
+            hostReady[key].catch(function () { delete hostReady[key]; });
         }
-        return hostReady;
+        return hostReady[key];
     }
 
     function host(fn, args) {
-        return ensureHost().then(function () {
+        return ensureHost(fn).then(function () {
             var list = [];
             var i;
             for (i = 0; i < args.length; i++) { list.push(asciiJSON(args[i])); }
@@ -3377,12 +3384,13 @@
     function acReport(p, res, extra) {
         var what = plural(res.applied, "слой", "слоя", "слоёв");
         if (!res.applied) {
-            setStatus("«" + p.name + "» не удалось добавить ни на один выделенный слой" + (res.skipped ? " (камеры и свет пропущены)" : "") + ".", res.failed ? "error" : "");
+            setStatus("«" + p.name + "» не удалось добавить ни на один выделенный слой" + (res.skipped ? " (камеры и свет пропущены)" : "") + "." +
+                (res.error ? " After Effects ответил: " + res.error : ""), res.failed ? "error" : "");
             return;
         }
         setStatus("«" + p.name + "» — " + AC_MODE_TEXT[acState.mode] + ", " + what + "." +
             (res.skipped ? " Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + "." : "") +
-            (res.failed ? " Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + "." : "") +
+            (res.failed ? " Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + "." + (res.error ? " After Effects ответил: " + res.error : "") : "") +
             extra + " Отменить — Cmd/Ctrl+Z.", res.failed ? "error" : "done");
     }
 
@@ -5072,6 +5080,7 @@
             return placing.catch(function () { throw new Error("UPDATE_INSTALL_FAILED"); });
         }).then(function () {
             // Новая версия host.jsx должна заменить загруженную в After Effects.
+            hostReady = {};
             return evalScript("$.evalFile(" + asciiJSON(ext + "/jsx/host.jsx") + "); 1").catch(function () {});
         });
         return chain.then(function () { cleanup(); }, function (e) { cleanup(); throw e; });
