@@ -1,9 +1,8 @@
 {
-  "version": "1.15.0",
+  "version": "1.16.0",
   "date": "2026-10-09",
   "notes": [
-    "Горячие клавиши работают во всём After Effects, а не только когда активна панель: сочетание нужно чуть подержать, как в FX Console",
-    "Снимок кадра: открывается окно «Сохранить» в папке проекта — можно выбрать место и имя файла"
+    "Блоки можно закреплять: булавка рядом с минусом в углу блока — закреплённый блок встаёт в самый верх, под закреплёнными тонкая линия, ниже остальные блоки"
   ],
   "download": "https://github.com/dalerodinaevb-arch/sayframe#readme",
   "moved": "",
@@ -11,23 +10,23 @@
   "files": [
     {
       "path": "CSXS/manifest.xml",
-      "sha256": "190a0cc8fe37154d2bed84d4474e55daea0a310522ac44ef932e31ae12a8e411",
+      "sha256": "2d028d31a6a2b6002198ebff11ad76cc3ab65192227d28340b2049082d1f4595",
       "size": 1644
     },
     {
       "path": "css/panel.css",
-      "sha256": "17ce646941290ab824dc9cb31c1bd4e735ec9d44fe600d805c322b032d938d09",
-      "size": 51930
+      "sha256": "b04d2ad91c3f835855c9282106c6f0e9226a5ed4531af0994b3f8a349b6545c0",
+      "size": 53462
     },
     {
       "path": "index.html",
-      "sha256": "630e05029e35a02e0a84abc4311ee6526eb73b041f39bacf38fa0b90b6ba97e1",
-      "size": 51384
+      "sha256": "89624b90bcd604976d4b383d93351d4b73dcacbd7c396ff2d6fed5c50508fcf7",
+      "size": 51456
     },
     {
       "path": "js/panel.js",
-      "sha256": "6491e8180bd3f652d81824ce67c316093cdcf0936959bade28f33e94df78400a",
-      "size": 249432
+      "sha256": "bbf18772f4d87d0c8a0147d8329693b1dfdd33997145b635ed8b15685674bd02",
+      "size": 253529
     },
     {
       "path": "jsx/host.jsx",
