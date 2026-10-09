@@ -861,6 +861,312 @@ var sayframeHost = (function () {
         }
     };
 
+    // ---- Motion presets, built the way Animation Composer works: nothing is baked into keys.
+    // A preset puts three things on the layer:
+    //   - one layer marker per direction ("IN" at the start of the layer, "OUT" at its end). Its length
+    //     is the duration, and its comment carries the presets' tags, e.g. {sf:from-bottom:in:over};
+    //   - Slider / Angle Control effects with the preset's settings (and a Gaussian Blur for blur presets);
+    //   - expressions on the layer's own Position, Scale, Rotation and Opacity that read both.
+    // So the motion lies on top of the layer's own keys, travels with the layer, stretching the marker
+    // changes the duration, and taking a preset off leaves the layer exactly as it was.
+
+    var SF_MOTIONS = {
+        "fade": { op: 0 },
+        "from-bottom": { op: 0, dy: 1 },
+        "from-top": { op: 0, dy: -1 },
+        "from-left": { op: 0, dx: -1 },
+        "from-right": { op: 0, dx: 1 },
+        "scale-up": { op: 0, sc: 0 },
+        "scale-down": { op: 0, sc: 200 },
+        "rotate": { op: 0, rot: -90 },
+        "spin": { op: 0, rot: -360, sc: 0 },
+        "blur": { op: 0, blur: 40 },
+        "blur-scale": { op: 0, blur: 30, sc: 130 },
+        "rise-rotate": { op: 0, dy: 1, rot: -20 },
+        "rise-scale": { op: 0, dy: 1, sc: 60 },
+        "stretch": { op: 0, scx: 300, scy: 20 },
+        "drop": { dy: -1, far: true }
+    };
+    var SF_CURVES = { "ease": true, "linear": true, "over": true, "bounce": true, "elastic": true };
+    var SF_KEYS = ["dist", "sc", "scx", "scy", "rot", "op"];
+
+    var SF_HEAD = [
+        "// Sayframe: written by the Sayframe panel. It reads the IN/OUT layer markers and the preset controls in Effect Controls.",
+        "function sfM(t){var m=thisLayer.marker,i;for(i=1;i<=m.numKeys;i++){if(m.key(i).comment.indexOf(t)>=0)return m.key(i);}return null;}",
+        "function sfF(p,c){p=Math.min(1,Math.max(0,p));if(c==\"linear\")return p;" +
+            "if(c==\"over\"){var s=1.70158,q=p-1;return 1+(s+1)*q*q*q+s*q*q;}" +
+            "if(c==\"bounce\"){var n=7.5625,d=2.75;if(p<1/d)return n*p*p;if(p<2/d){p-=1.5/d;return n*p*p+0.75;}" +
+            "if(p<2.5/d){p-=2.25/d;return n*p*p+0.9375;}p-=2.625/d;return n*p*p+0.984375;}" +
+            "if(c==\"elastic\"){if(p<=0||p>=1)return p;return Math.pow(2,-10*p)*Math.sin((p*10-0.75)*2*Math.PI/3)+1;}" +
+            "return 1-Math.pow(1-p,3);}",
+        "function sfK(t,d,c){var k=sfM(t);if(!k)return 0;var u=Math.max(k.duration,thisComp.frameDuration),p=(time-k.time)/u;" +
+            "return d==\"in\"?1-sfF(p,c):1-sfF(1-p,c);}",
+        "function sfS(n,v){try{return effect(n)(1);}catch(e){return v;}}"
+    ].join("\n");
+
+    function sfParamKeys(m) {
+        var out = [], i;
+        for (i = 0; i < SF_KEYS.length; i++) {
+            if (SF_KEYS[i] === "dist" ? (m.dx || m.dy) : m[SF_KEYS[i]] !== undefined) { out.push(SF_KEYS[i]); }
+        }
+        return out;
+    }
+
+    function sfDefault(m, key, comp) {
+        if (key === "dist") { return Math.round(comp.height * (m.far ? 0.6 : 0.2)); }
+        return m[key];
+    }
+
+    function sfMarkerProp(layer) { return layer.property("ADBE Marker"); }
+
+    // The Sayframe marker of one direction: {index, time, dur, presets: [{motion, curve}], names}.
+    function sfReadMarker(layer, dir) {
+        var mk = sfMarkerProp(layer), i, mv, re, m, out, params;
+        if (!mk) { return null; }
+        for (i = 1; i <= mk.numKeys; i++) {
+            mv = mk.keyValue(i);
+            out = { index: i, time: mk.keyTime(i), dur: mv.duration, presets: [], names: {} };
+            re = /\{sf:([a-z0-9\-]+):(in|out):([a-z]+)\}/g;
+            while ((m = re.exec(String(mv.comment))) !== null) {
+                if (m[2] === dir) { out.presets.push({ motion: m[1], curve: m[3] }); }
+            }
+            if (!out.presets.length) { continue; }
+            try {
+                params = mv.getParameters();
+                out.names = params && params.sf ? eval("(" + params.sf + ")") : {};
+            } catch (e0) { out.names = {}; }
+            if (!out.names || typeof out.names !== "object") { out.names = {}; }
+            return out;
+        }
+        return null;
+    }
+
+    // Writes (or removes, when no presets are left) the marker of one direction.
+    function sfWriteMarker(layer, dir, data, fd) {
+        var mk = sfMarkerProp(layer), old = sfReadMarker(layer, dir), mv, i, p, n, parts = [], tags = [], keep = {}, t, k;
+        if (old) { mk.removeKey(old.index); }
+        if (!data.presets.length) { return; }
+        for (i = 0; i < data.presets.length; i++) {
+            p = data.presets[i];
+            n = data.names[p.motion] || {};
+            parts.push((n.title || p.motion) + (n.curveLabel ? " (" + n.curveLabel + ")" : ""));
+            tags.push("{sf:" + p.motion + ":" + dir + ":" + p.curve + "}");
+            keep[p.motion] = n;
+        }
+        mv = new MarkerValue((dir === "in" ? "IN: " : "OUT: ") + parts.join(" + ") + " " + tags.join(""));
+        mv.duration = Math.max(data.dur, fd || 0.01);
+        try { mv.setParameters({ sf: toJSON(keep) }); } catch (e0) {}
+        // Two markers cannot share a time: a marker of the user's own there keeps its place.
+        t = data.time;
+        for (k = 1; k <= mk.numKeys; k++) {
+            if (Math.abs(mk.keyTime(k) - t) < 0.0001) { t += fd || 0.01; k = 0; }
+        }
+        mk.setValueAtTime(t, mv);
+    }
+
+    function sfAllPresets(layer) {
+        var out = [], dirs = ["in", "out"], d, mk, j;
+        for (d = 0; d < dirs.length; d++) {
+            mk = sfReadMarker(layer, dirs[d]);
+            if (!mk) { continue; }
+            for (j = 0; j < mk.presets.length; j++) {
+                out.push({ motion: mk.presets[j].motion, curve: mk.presets[j].curve, dir: dirs[d], names: mk.names[mk.presets[j].motion] || {} });
+            }
+        }
+        return out;
+    }
+
+    function sfFx(layer, name) {
+        var parade = layer.property("ADBE Effect Parade"), i;
+        if (!parade || !name) { return null; }
+        for (i = 1; i <= parade.numProperties; i++) {
+            if (parade.property(i).name === name) { return parade.property(i); }
+        }
+        return null;
+    }
+
+    function sfRemoveFx(layer, name) {
+        var fx = sfFx(layer, name);
+        while (fx) { fx.remove(); fx = sfFx(layer, name); }
+    }
+
+    function sfOurs(prop) { return String(prop.expression || "").indexOf("// Sayframe:") === 0; }
+
+    // An expression of the user's own is never overwritten: that property is left out and reported.
+    function sfSetExpr(prop, body, skipped) {
+        if (!prop) { return; }
+        if (prop.expression && !sfOurs(prop)) {
+            if (body) { skipped.push(prop.name); }
+            return;
+        }
+        if (!body) {
+            if (prop.expression) { prop.expression = ""; }
+            return;
+        }
+        prop.expression = SF_HEAD + "\n" + body;
+    }
+
+    // Writes every Sayframe expression of the layer from its markers; returns the properties it had to skip.
+    function sfRebuild(layer) {
+        var list = sfAllPresets(layer), tr = layer.property("ADBE Transform Group");
+        var pos = [], sc = [], rot = [], op = [], skipped = [], i, it, m, fx, tag, a, soft, posProp, bx, by, bp, j, blurFx;
+        var q = jsonString;
+        for (i = 0; i < list.length; i++) {
+            it = list[i];
+            m = SF_MOTIONS[it.motion];
+            if (!m) { continue; }
+            fx = it.names.fx || {};
+            tag = q("{sf:" + it.motion + ":" + it.dir + ":");
+            a = "sfK(" + tag + "," + q(it.dir) + "," + q(it.curve) + ")";
+            soft = "sfK(" + tag + "," + q(it.dir) + "," + q(it.curve === "linear" ? "linear" : "ease") + ")";
+            if (m.dx || m.dy) { pos.push({ a: a, s: "sfS(" + q(fx.dist || "") + ",0)", dx: m.dx || 0, dy: m.dy || 0 }); }
+            if (m.sc !== undefined) {
+                sc.push("f=1+" + a + "*(sfS(" + q(fx.sc || "") + "," + m.sc + ")/100-1);v[0]*=f;v[1]*=f;if(v.length>2)v[2]*=f;");
+            }
+            if (m.scx !== undefined) {
+                sc.push("v[0]*=1+" + a + "*(sfS(" + q(fx.scx || "") + "," + m.scx + ")/100-1);" +
+                    "v[1]*=1+" + a + "*(sfS(" + q(fx.scy || "") + "," + m.scy + ")/100-1);");
+            }
+            if (m.rot !== undefined) { rot.push("v+=sfS(" + q(fx.rot || "") + "," + m.rot + ")*" + a + ";"); }
+            if (m.op !== undefined) { op.push("v*=1-" + soft + "*(1-sfS(" + q(fx.op || "") + "," + m.op + ")/100);"); }
+            if (m.blur !== undefined) {
+                blurFx = sfFx(layer, fx.blur);
+                if (blurFx) { sfSetExpr(blurFx.property(1), "value*" + soft, skipped); }
+            }
+        }
+        posProp = tr.property("ADBE Position");
+        if (posProp.dimensionsSeparated) {
+            bx = []; by = [];
+            for (j = 0; j < pos.length; j++) {
+                if (pos[j].dx) { bx.push("v+=" + pos[j].dx + "*" + pos[j].s + "*" + pos[j].a + ";"); }
+                if (pos[j].dy) { by.push("v+=" + pos[j].dy + "*" + pos[j].s + "*" + pos[j].a + ";"); }
+            }
+            sfSetExpr(tr.property("ADBE Position_0"), bx.length ? "var v=value;\n" + bx.join("\n") + "\nv" : "", skipped);
+            sfSetExpr(tr.property("ADBE Position_1"), by.length ? "var v=value;\n" + by.join("\n") + "\nv" : "", skipped);
+        } else {
+            bp = [];
+            for (j = 0; j < pos.length; j++) {
+                bp.push((pos[j].dx ? "v[0]+=" + pos[j].dx + "*" + pos[j].s + "*" + pos[j].a + ";" : "") +
+                    (pos[j].dy ? "v[1]+=" + pos[j].dy + "*" + pos[j].s + "*" + pos[j].a + ";" : ""));
+            }
+            sfSetExpr(posProp, bp.length ? "var v=value.slice(0);\n" + bp.join("\n") + "\nv" : "", skipped);
+        }
+        sfSetExpr(tr.property("ADBE Scale"), sc.length ? "var v=value.slice(0),f;\n" + sc.join("\n") + "\nv" : "", skipped);
+        sfSetExpr(tr.property("ADBE Rotate Z"), rot.length ? "var v=value;\n" + rot.join("\n") + "\nv" : "", skipped);
+        sfSetExpr(tr.property("ADBE Opacity"), op.length ? "var v=value;\n" + op.join("\n") + "\nv" : "", skipped);
+        return skipped;
+    }
+
+    function sfAddControl(layer, key, name, value) {
+        var idx = acAdd(layer, ["ADBE Effect Parade"], key === "rot" ? "ADBE Angle Control" : "ADBE Slider Control");
+        acP(layer, ["ADBE Effect Parade", idx]).name = name;
+        acP(layer, ["ADBE Effect Parade", idx, 1]).setValue(value);
+    }
+
+    function sfAddBlur(layer, name, value) {
+        var idx = acAdd(layer, ["ADBE Effect Parade"], "ADBE Gaussian Blur 2");
+        acP(layer, ["ADBE Effect Parade", idx]).name = name;
+        acP(layer, ["ADBE Effect Parade", idx, 1]).setValue(value);
+        try { acP(layer, ["ADBE Effect Parade", idx, "ADBE Gaussian Blur 2-0003"]).setValue(1); } catch (e0) {}
+    }
+
+    function sfPrefix(dir, title) { return (dir === "in" ? "IN " : "OUT ") + title + " \u00b7 "; }
+
+    // Puts one preset on one direction of the layer (its controls, and its tag on the marker).
+    function sfAdd(layer, comp, motion, curve, dir, dur, both, labels) {
+        var m = SF_MOTIONS[motion], mk = sfReadMarker(layer, dir), fd = comp.frameDuration || 0.01;
+        var title = labels.title || motion, keys = sfParamKeys(m), names, i, nm, w, data, end;
+        names = { title: title, curveLabel: labels.curve || "", fx: {} };
+        for (i = 0; i < keys.length; i++) {
+            nm = sfPrefix(dir, title) + (labels[keys[i]] || keys[i]);
+            sfRemoveFx(layer, nm);
+            sfAddControl(layer, keys[i], nm, sfDefault(m, keys[i], comp));
+            names.fx[keys[i]] = nm;
+        }
+        if (m.blur !== undefined) {
+            nm = sfPrefix(dir, title) + (labels.blur || "Blur");
+            sfRemoveFx(layer, nm);
+            sfAddBlur(layer, nm, m.blur);
+            names.fx.blur = nm;
+        }
+        w = acWindow(layer, comp, dir, dur, both, 0);
+        if (mk) {
+            // The direction already has presets: they now share the chosen duration; OUT keeps its end.
+            end = mk.time + mk.dur;
+            data = { time: dir === "in" ? mk.time : Math.max(layer.inPoint, end - (w.t1 - w.t0)), dur: w.t1 - w.t0, presets: mk.presets, names: mk.names };
+        } else {
+            data = { time: w.t0, dur: w.t1 - w.t0, presets: [], names: {} };
+        }
+        data.presets.push({ motion: motion, curve: curve });
+        data.names[motion] = names;
+        sfWriteMarker(layer, dir, data, fd);
+    }
+
+    // Takes one preset off one direction: its controls, its tag, the marker when it was the last one.
+    function sfTake(layer, comp, dir, motion) {
+        var mk = sfReadMarker(layer, dir), rest = [], i, fx, k;
+        if (!mk) { return false; }
+        fx = (mk.names[motion] && mk.names[motion].fx) || {};
+        for (k in fx) { if (fx.hasOwnProperty(k)) { sfRemoveFx(layer, fx[k]); } }
+        for (i = 0; i < mk.presets.length; i++) { if (mk.presets[i].motion !== motion) { rest.push(mk.presets[i]); } }
+        delete mk.names[motion];
+        sfWriteMarker(layer, dir, { time: mk.time, dur: mk.dur, presets: rest, names: mk.names }, comp.frameDuration);
+        return rest.length !== mk.presets.length;
+    }
+
+    function sfFind(mk, motion) {
+        var i;
+        for (i = 0; mk && i < mk.presets.length; i++) { if (mk.presets[i].motion === motion) { return mk.presets[i]; } }
+        return null;
+    }
+
+    function sfSetCurve(layer, comp, dir, motion, curve, label) {
+        var mk = sfReadMarker(layer, dir), p = sfFind(mk, motion);
+        if (!p) { throw new Error("PRESET_GONE"); }
+        p.curve = curve;
+        if (mk.names[motion]) { mk.names[motion].curveLabel = label || ""; }
+        sfWriteMarker(layer, dir, mk, comp.frameDuration);
+    }
+
+    function sfLayerState(layer) {
+        var list = sfAllPresets(layer), out = [], i;
+        for (i = 0; i < list.length; i++) { out.push(list[i].motion + ":" + list[i].dir + ":" + list[i].curve); }
+        return out;
+    }
+
+    function sfLayers(comp) {
+        var sel = comp.selectedLayers || [], out = [], i;
+        for (i = 0; i < sel.length; i++) {
+            if (!(sel[i] instanceof CameraLayer) && !(sel[i] instanceof LightLayer)) { out.push(sel[i]); }
+        }
+        return out;
+    }
+
+    // What the Edit view shows for the first selected layer.
+    function sfDescribe(layer) {
+        var out = [], dirs = ["in", "out"], d, mk, j, p, fx, keys, k, e, params;
+        for (d = 0; d < dirs.length; d++) {
+            mk = sfReadMarker(layer, dirs[d]);
+            if (!mk) { continue; }
+            var group = { dir: dirs[d], dur: mk.dur, delay: dirs[d] === "in" ? mk.time - layer.inPoint : layer.outPoint - (mk.time + mk.dur), presets: [] };
+            for (j = 0; j < mk.presets.length; j++) {
+                p = mk.presets[j];
+                fx = (mk.names[p.motion] && mk.names[p.motion].fx) || {};
+                params = [];
+                keys = sfParamKeys(SF_MOTIONS[p.motion] || {});
+                if (SF_MOTIONS[p.motion] && SF_MOTIONS[p.motion].blur !== undefined) { keys.push("blur"); }
+                for (k = 0; k < keys.length; k++) {
+                    e = sfFx(layer, fx[keys[k]]);
+                    if (e) { params.push({ key: keys[k], name: fx[keys[k]], value: e.property(1).value }); }
+                }
+                group.delay = Math.max(0, Math.round(group.delay * 1000) / 1000);
+                group.presets.push({ motion: p.motion, curve: p.curve, params: params });
+            }
+            out.push(group);
+        }
+        return out;
+    }
+
     // ---- FX Console helpers
 
     function fxSelectedLayers() {
@@ -1786,6 +2092,132 @@ var sayframeHost = (function () {
                     restoreActive(prevActive);
                 }
                 return { ref: ref };
+            });
+        },
+
+        // ---- Motion presets (Animation Composer style): markers + controls + expressions.
+        // Clicking a preset that is already on every selected layer in that direction takes it off.
+        sfApply: function (motion, curve, mode, dur, labels) {
+            return reply(function () {
+                var comp = activeComp();
+                var layers = sfLayers(comp);
+                var dirs = mode === "both" ? ["in", "out"] : [mode === "out" ? "out" : "in"];
+                var out = { applied: 0, removed: 0, skipped: [] }, i, j, l, all, have, sk;
+                if (!SF_MOTIONS[motion] || !SF_CURVES[curve]) { throw new Error("UNKNOWN_PRESET"); }
+                if (!(comp.selectedLayers || []).length) { throw new Error("NO_LAYERS_SELECTED"); }
+                labels = labels || {};
+                app.beginUndoGroup("Sayframe: " + motion);
+                try {
+                    all = layers.length > 0;
+                    for (i = 0; i < layers.length && all; i++) {
+                        for (j = 0; j < dirs.length; j++) {
+                            have = sfFind(sfReadMarker(layers[i], dirs[j]), motion);
+                            if (!have || have.curve !== curve) { all = false; }
+                        }
+                    }
+                    for (i = 0; i < layers.length; i++) {
+                        l = layers[i];
+                        for (j = 0; j < dirs.length; j++) {
+                            have = sfFind(sfReadMarker(l, dirs[j]), motion);
+                            if (all) {
+                                sfTake(l, comp, dirs[j], motion);
+                            } else if (have) {
+                                if (have.curve !== curve) { sfSetCurve(l, comp, dirs[j], motion, curve, labels.curve); }
+                            } else {
+                                sfAdd(l, comp, motion, curve, dirs[j], Math.max(0.05, Number(dur) || 0.6), dirs.length > 1, labels);
+                            }
+                        }
+                        sk = sfRebuild(l);
+                        for (j = 0; j < sk.length; j++) { out.skipped.push(sk[j]); }
+                        if (all) { out.removed++; } else { out.applied++; }
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                out.state = layers.length ? sfLayerState(layers[0]) : [];
+                return out;
+            });
+        },
+
+        // Which presets sit on the first selected layer ("motion:dir:curve"), for the ticks on the cards.
+        sfState: function () {
+            return reply(function () {
+                var item = app.project.activeItem, layers;
+                if (!item || !(item instanceof CompItem)) { return { state: [], layers: 0 }; }
+                layers = sfLayers(item);
+                return { state: layers.length ? sfLayerState(layers[0]) : [], layers: layers.length };
+            });
+        },
+
+        sfList: function () {
+            return reply(function () {
+                var e = acEditLayer();
+                return { layer: String(e.layer.name), groups: sfDescribe(e.layer) };
+            });
+        },
+
+        // Duration and delay of one direction: they move and stretch the marker; nothing else changes.
+        sfTiming: function (dir, dur, delay) {
+            return reply(function () {
+                var e = acEditLayer(), mk = sfReadMarker(e.layer, dir), len, d, t;
+                if (!mk) { throw new Error("PRESET_GONE"); }
+                len = e.layer.outPoint - e.layer.inPoint;
+                d = dur === undefined || dur === null ? mk.dur : Math.max(e.comp.frameDuration || 0.01, Math.min(Number(dur), len));
+                if (delay === undefined || delay === null) {
+                    delay = dir === "in" ? mk.time - e.layer.inPoint : e.layer.outPoint - (mk.time + mk.dur);
+                }
+                delay = Math.max(0, Math.min(Number(delay), len - d));
+                t = dir === "in" ? e.layer.inPoint + delay : e.layer.outPoint - delay - d;
+                app.beginUndoGroup("Sayframe: timing");
+                try {
+                    sfWriteMarker(e.layer, dir, { time: t, dur: d, presets: mk.presets, names: mk.names }, e.comp.frameDuration);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { layer: String(e.layer.name), groups: sfDescribe(e.layer) };
+            });
+        },
+
+        sfCurve: function (dir, motion, curve, label) {
+            return reply(function () {
+                var e = acEditLayer();
+                if (!SF_CURVES[curve]) { throw new Error("UNKNOWN_PRESET"); }
+                app.beginUndoGroup("Sayframe: curve");
+                try {
+                    sfSetCurve(e.layer, e.comp, dir, motion, curve, label);
+                    sfRebuild(e.layer);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { layer: String(e.layer.name), groups: sfDescribe(e.layer) };
+            });
+        },
+
+        sfParam: function (name, value) {
+            return reply(function () {
+                var e = acEditLayer(), fx = sfFx(e.layer, name);
+                if (!fx) { throw new Error("PRESET_GONE"); }
+                app.beginUndoGroup("Sayframe: setting");
+                try {
+                    fx.property(1).setValue(Number(value));
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { layer: String(e.layer.name), groups: sfDescribe(e.layer) };
+            });
+        },
+
+        sfRemove: function (dir, motion) {
+            return reply(function () {
+                var e = acEditLayer();
+                app.beginUndoGroup("Sayframe: remove " + motion);
+                try {
+                    if (!sfTake(e.layer, e.comp, dir, motion)) { throw new Error("PRESET_GONE"); }
+                    sfRebuild(e.layer);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { layer: String(e.layer.name), groups: sfDescribe(e.layer) };
             });
         },
 
