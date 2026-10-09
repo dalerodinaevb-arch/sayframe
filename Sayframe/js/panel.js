@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.16.0";
+    var VERSION = "1.17.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -657,6 +657,9 @@
         panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         fxBtn: el("fxBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
+        acTabs: el("acTabs"), acSearch: el("acSearch"), acFavOnly: el("acFavOnly"), acModeRow: el("acModeRow"), acMode: el("acMode"),
+        acDurRow: el("acDurRow"), acDur: el("acDur"), acDurVal: el("acDurVal"), acColorRow: el("acColorRow"), acColor: el("acColor"),
+        acGrid: el("acGrid"), acHint: el("acHint"), acSize: el("acSize"), acFoot: el("acFoot"),
         fxKeys: el("fxKeys"), fxKeysCombo: el("fxKeysCombo"),
         setTabAI: el("setTabAI"), setTabOther: el("setTabOther"), setPaneAI: el("setPaneAI"), setPaneOther: el("setPaneOther"),
         hotkeys: el("hotkeys"), hotkeysReset: el("hotkeysReset"), hotkeyNote: el("hotkeyNote"),
@@ -910,6 +913,7 @@
         ui.pasteBtn.disabled = on;
         ui.organizeBtn.disabled = on;
         ui.fxBtn.disabled = on;
+        ui.acGrid.classList.toggle("busy", on);
         setMotionDisabled(on);
         ui.settingsBtn.disabled = on;
         ui.refClear.disabled = on;
@@ -3000,6 +3004,449 @@
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
     }
 
+    // ------------------------------------------------------------ раздел «Анимация»
+    // Библиотека готовых пресетов, как в Animation Composer: переходы, текст, анимация, графика, звуки.
+    // Всё создаётся заново ключами, эффектами, аниматорами текста и шейп-слоями; звуки синтезированы
+    // нами (tools/make_sfx.py) — чужих пресетов и сэмплов в панели нет.
+
+    var AC_KEY = "sayframe.ac.v1";
+    var AC_SECTIONS = [
+        { id: "trans", label: "Переходы" },
+        { id: "text", label: "Текст" },
+        { id: "anim", label: "Анимация" },
+        { id: "graphic", label: "Графика" },
+        { id: "sfx", label: "Звуки" }
+    ];
+    var AC_PRESETS = {
+        trans: [["zoom-blur", "Зум с размытием"], ["spin-zoom", "Вращение с зумом"], ["push-left", "Сдвиг влево"], ["push-right", "Сдвиг вправо"],
+            ["push-up", "Сдвиг вверх"], ["wipe", "Шторка"], ["clock-wipe", "Круговая шторка"], ["flash", "Вспышка"], ["glitch", "Глитч"],
+            ["stretch", "Растяжение"], ["blur", "Размытие"]],
+        text: [["typewriter", "Печатная машинка"], ["fade-letters", "Проявление по буквам"], ["slide-letters", "Буквы снизу"],
+            ["pop-letters", "Буквы с масштабом"], ["blur-letters", "Буквы из размытия"], ["rotate-letters", "Буквы с поворотом"],
+            ["words", "По словам"], ["random", "Случайные буквы"], ["tracking", "Разлёт букв"]],
+        anim: [["fade", "Прозрачность"], ["scale-up", "Масштаб"], ["pop", "Пружинка"], ["slide-left", "Слева"], ["slide-right", "Справа"],
+            ["slide-up", "Снизу"], ["slide-down", "Сверху"], ["rotate-in", "Поворот"], ["spin-scale", "Вихрь"], ["blur-in", "Из размытия"],
+            ["drop-bounce", "Падение с отскоком"], ["swing", "Качание"], ["squash", "Сплющивание"]],
+        graphic: [["ring", "Кольцо"], ["burst", "Лучи"], ["underline", "Подчёркивание"], ["lower-third", "Плашка для титра"], ["arrow", "Стрелка"],
+            ["progress", "Полоса загрузки"], ["ripples", "Круги"], ["star", "Звезда"], ["counter", "Счётчик 0–100%"], ["timer", "Таймер 10 с"]],
+        sfx: [["whoosh", "Вжух"], ["swish", "Свист"], ["swipe-up", "Взмах"], ["pop", "Поп"], ["click", "Клик"], ["bubble", "Пузырь"],
+            ["ding", "Дзынь"], ["notify", "Уведомление"], ["riser", "Нарастание"], ["impact", "Удар"], ["glitch", "Глитч"], ["typing", "Клавиатура"]]
+    };
+    var AC_GLYPH = { arrow: "➜", star: "★", counter: "42%", timer: "00:10" };
+    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false };
+    var acState = loadAcState();
+    var acAudio = null;
+
+    function loadAcState() {
+        var s, out = {}, k;
+        try { s = JSON.parse(window.localStorage.getItem(AC_KEY) || "{}"); } catch (e) { s = {}; }
+        if (!s || typeof s !== "object") { s = {}; }
+        for (k in AC_DEFAULTS) {
+            if (AC_DEFAULTS.hasOwnProperty(k)) { out[k] = typeof s[k] === typeof AC_DEFAULTS[k] ? s[k] : AC_DEFAULTS[k]; }
+        }
+        if (!AC_PRESETS.hasOwnProperty(out.sec) && out.sec !== "edit") { out.sec = "trans"; }
+        if (["in", "out", "both"].indexOf(out.mode) < 0) { out.mode = "in"; }
+        out.dur = Math.min(3, Math.max(0.2, Math.round(Number(out.dur) * 10) / 10 || 0.6));
+        out.size = Math.min(200, Math.max(80, Number(out.size) || 112));
+        if (!/^#[0-9a-f]{6}$/i.test(out.color)) { out.color = "#ffffff"; }
+        out.fav = Array.isArray(s.fav) ? s.fav.filter(function (x) { return typeof x === "string"; }) : [];
+        return out;
+    }
+
+    function storeAcState() { try { window.localStorage.setItem(AC_KEY, JSON.stringify(acState)); } catch (e) {} }
+
+    function acAll() {
+        var out = [];
+        AC_SECTIONS.forEach(function (s) {
+            AC_PRESETS[s.id].forEach(function (p) { out.push({ sec: s.id, id: p[0], name: p[1], key: s.id + ":" + p[0] }); });
+        });
+        return out;
+    }
+
+    function acSectionLabel(sec) {
+        var i;
+        for (i = 0; i < AC_SECTIONS.length; i++) { if (AC_SECTIONS[i].id === sec) { return AC_SECTIONS[i].label; } }
+        return "";
+    }
+
+    function acVisible() {
+        var q = fxLower(ui.acSearch.value).replace(/^\s+|\s+$/g, "");
+        return acAll().filter(function (p) {
+            if (acState.favOnly && acState.fav.indexOf(p.key) < 0) { return false; }
+            if (q) { return fxLower(p.name).indexOf(q) >= 0 || fxLower(p.id).indexOf(q) >= 0; }
+            return acState.favOnly || p.sec === acState.sec;
+        });
+    }
+
+    function acThumb(p) {
+        var thumb = document.createElement("span");
+        var obj = document.createElement("span");
+        var i, bar;
+        thumb.className = "ac-thumb";
+        obj.className = "ac-obj ac-" + p.sec + " pv-" + p.sec + "-" + p.id;
+        if (p.sec === "text") { obj.textContent = "Текст"; }
+        if (p.sec === "graphic" && AC_GLYPH[p.id]) { obj.textContent = AC_GLYPH[p.id]; }
+        if (p.sec === "graphic" && p.id === "progress") { obj.appendChild(document.createElement("i")); }
+        if (p.sec === "sfx") {
+            for (i = 0; i < 5; i++) { bar = document.createElement("i"); obj.appendChild(bar); }
+        }
+        thumb.appendChild(obj);
+        return thumb;
+    }
+
+    function renderAc() {
+        var list = acVisible();
+        var searching = !!ui.acSearch.value.replace(/\s/g, "") || acState.favOnly;
+        var sec = acState.sec;
+        var editing = sec === "edit" && !searching;
+        ui.acGrid.innerHTML = "";
+        ui.acGrid.style.setProperty("--ac-size", acState.size + "px");
+        Array.prototype.forEach.call(ui.acTabs.querySelectorAll("button"), function (b) {
+            var on = !searching && b.getAttribute("data-sec") === sec;
+            b.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        ui.acFavOnly.setAttribute("aria-pressed", acState.favOnly ? "true" : "false");
+        ui.acModeRow.hidden = editing || !(searching || sec === "trans" || sec === "text" || sec === "anim");
+        ui.acColorRow.hidden = editing || !(searching || sec === "graphic");
+        ui.acDurRow.hidden = editing || (!searching && sec === "sfx");
+        ui.acFoot.hidden = editing;
+        pressGroup(ui.acMode, acState.mode);
+        ui.acDur.value = String(acState.dur);
+        ui.acDurVal.textContent = acState.dur.toFixed(1).replace(".", ",") + " с";
+        ui.acColor.value = acState.color;
+        ui.acSize.value = String(acState.size);
+        ui.acHint.textContent = acHintText(searching ? "" : sec);
+        if (editing) { renderAcEdit(); return; }
+        if (!list.length) {
+            ui.acGrid.appendChild(fxNote(acState.favOnly ? "В избранном пусто: нажмите ☆ на карточке, чтобы добавить." : "Ничего не нашлось."));
+            return;
+        }
+        list.forEach(function (p) { ui.acGrid.appendChild(acCard(p, searching)); });
+    }
+
+    function acHintText(sec) {
+        if (sec === "graphic") { return "Щелчок по карточке добавляет графику новым слоем у указателя времени."; }
+        if (sec === "sfx") { return "▶ — послушать. Щелчок по карточке кладёт звук в композицию у указателя времени."; }
+        if (sec === "text") { return "Выделите текстовый слой и щёлкните по карточке. Если текстового слоя нет, панель создаст новый."; }
+        return "Выделите слои и щёлкните по карточке. Наведите курсор, чтобы увидеть движение.";
+    }
+
+    function acCard(p, showSection) {
+        var card = document.createElement("div");
+        var name = document.createElement("span");
+        var star = document.createElement("button");
+        var fav = acState.fav.indexOf(p.key) >= 0;
+        var play;
+        card.className = "ac-card";
+        card.setAttribute("role", "button");
+        card.setAttribute("tabindex", "0");
+        card.setAttribute("data-key", p.key);
+        card.title = p.name + (showSection ? " · " + acSectionLabel(p.sec) : "");
+        card.appendChild(acThumb(p));
+        name.className = "ac-name";
+        name.textContent = p.name;
+        card.appendChild(name);
+        star.className = "ac-star" + (fav ? " on" : "");
+        star.textContent = fav ? "★" : "☆";
+        star.title = fav ? "Убрать из избранного" : "В избранное";
+        star.setAttribute("aria-label", star.title);
+        star.addEventListener("click", function (e) {
+            var at = acState.fav.indexOf(p.key);
+            e.stopPropagation();
+            if (at >= 0) { acState.fav.splice(at, 1); } else { acState.fav.push(p.key); }
+            storeAcState();
+            renderAc();
+        });
+        card.appendChild(star);
+        if (p.sec === "sfx") {
+            play = document.createElement("button");
+            play.className = "ac-play";
+            play.textContent = "▶";
+            play.title = "Послушать";
+            play.setAttribute("aria-label", "Послушать «" + p.name + "»");
+            play.addEventListener("click", function (e) { e.stopPropagation(); acPreviewSound(p); });
+            card.appendChild(play);
+        }
+        card.addEventListener("click", function () { applyAc(p); });
+        card.addEventListener("keydown", function (e) {
+            if (e.target === card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); applyAc(p); }
+        });
+        return card;
+    }
+
+    // ---- «Изменить»: пресеты Sayframe на выделенном слое — длительность, задержка, сила, плавность,
+    // замена на другой пресет того же рода и «Убрать». Меняется сразу, как отпустили ползунок.
+
+    var acEdit = { layer: "", items: null, error: "" };
+
+    function acPresetName(id) {
+        var secs = ["anim", "trans", "text"], i, j;
+        for (i = 0; i < secs.length; i++) {
+            for (j = 0; j < AC_PRESETS[secs[i]].length; j++) {
+                if (AC_PRESETS[secs[i]][j][0] === id) { return AC_PRESETS[secs[i]][j][1]; }
+            }
+        }
+        return id;
+    }
+
+    function acSameKind(id) {
+        var isText = AC_PRESETS.text.some(function (p) { return p[0] === id; });
+        return isText ? AC_PRESETS.text : AC_PRESETS.anim.concat(AC_PRESETS.trans);
+    }
+
+    async function loadAcEdit() {
+        var res;
+        acEdit.error = "";
+        try {
+            res = await host("acList", []);
+            acEdit.layer = res.layer;
+            acEdit.items = res.items;
+        } catch (e) {
+            acEdit.items = null;
+            acEdit.error = e && e.message === "NO_LAYERS_SELECTED" ? "Выделите слой, на котором стоит пресет Sayframe, и нажмите «Обновить»." : humanError(e);
+        }
+        if (acState.sec === "edit") { renderAc(); }
+    }
+
+    function acSlider(label, min, max, step, value, fmt, onChange) {
+        var row = document.createElement("label");
+        var span = document.createElement("span");
+        var input = document.createElement("input");
+        var out = document.createElement("output");
+        row.className = "ac-edit-row";
+        span.textContent = label;
+        input.type = "range";
+        input.className = "range";
+        input.min = String(min); input.max = String(max); input.step = String(step);
+        input.value = String(value);
+        input.setAttribute("aria-label", label);
+        out.textContent = fmt(Number(value));
+        input.addEventListener("input", function () { out.textContent = fmt(Number(input.value)); });
+        input.addEventListener("change", function () { onChange(Number(input.value)); });
+        row.appendChild(span); row.appendChild(input); row.appendChild(out);
+        return row;
+    }
+
+    function secText(v) { return v.toFixed(1).replace(".", ",") + " с"; }
+
+    function renderAcEdit() {
+        var grid = ui.acGrid, head = document.createElement("div"), title = document.createElement("span"), refresh = document.createElement("button");
+        head.className = "ac-edit-head";
+        title.textContent = acEdit.items ? "Слой «" + acEdit.layer + "»" : "";
+        refresh.className = "ghost";
+        refresh.id = "acEditRefresh";
+        refresh.textContent = "Обновить";
+        refresh.addEventListener("click", loadAcEdit);
+        head.appendChild(title);
+        head.appendChild(refresh);
+        grid.appendChild(head);
+        if (!acEdit.items) {
+            grid.appendChild(fxNote(acEdit.error || "Читаю пресеты на выделенном слое…"));
+            return;
+        }
+        if (!acEdit.items.length) {
+            grid.appendChild(fxNote("На этом слое нет пресетов Sayframe. Поставьте пресет из разделов «Переходы», «Текст» или «Анимация» — и его можно будет настроить здесь."));
+            return;
+        }
+        acEdit.items.forEach(function (it, index) { grid.appendChild(acEditItem(it, index)); });
+    }
+
+    function acEditItem(it, index) {
+        var box = document.createElement("div");
+        var head = document.createElement("div");
+        var name = document.createElement("b");
+        var remove = document.createElement("button");
+        var swap = document.createElement("select");
+        var swapRow = document.createElement("label");
+        var span = document.createElement("span");
+        box.className = "ac-edit-item";
+        box.setAttribute("data-index", String(index));
+        head.className = "ac-edit-top";
+        name.textContent = acPresetName(it.id) + " — " + (it.dir === "out" ? "исчезновение" : "появление");
+        remove.className = "ghost warn";
+        remove.textContent = "Убрать";
+        remove.addEventListener("click", function () { acEditCall("acRemove", [index], "«" + acPresetName(it.id) + "» убран со слоя."); });
+        head.appendChild(name);
+        head.appendChild(remove);
+        box.appendChild(head);
+        swapRow.className = "ac-edit-row";
+        span.textContent = "Пресет";
+        swap.className = "ac-swap";
+        acSameKind(it.id).forEach(function (p) {
+            var o = document.createElement("option");
+            o.value = p[0];
+            o.textContent = p[1];
+            swap.appendChild(o);
+        });
+        swap.value = it.id;
+        swap.addEventListener("change", function () { acEditSet(index, { id: swap.value }); });
+        swapRow.appendChild(span);
+        swapRow.appendChild(swap);
+        box.appendChild(swapRow);
+        box.appendChild(acSlider("Длительность", 0.1, 3, 0.1, it.dur, secText, function (v) { acEditSet(index, { dur: v }); }));
+        box.appendChild(acSlider("Задержка", 0, 2, 0.1, it.delay || 0, secText, function (v) { acEditSet(index, { delay: v }); }));
+        box.appendChild(acSlider("Сила", 20, 200, 10, Math.round((it.strength || 1) * 100), function (v) { return v + "%"; },
+            function (v) { acEditSet(index, { strength: v / 100 }); }));
+        box.appendChild(acSlider("Плавность", 0, 100, 5, it.ease || 0, function (v) { return v ? v + "%" : "как в пресете"; },
+            function (v) { acEditSet(index, { ease: v }); }));
+        return box;
+    }
+
+    function acEditSet(index, prm) {
+        var it = acEdit.items && acEdit.items[index];
+        acEditCall("acEdit", [index, prm], it ? "«" + acPresetName(prm.id || it.id) + "» обновлён." : "Пресет обновлён.");
+    }
+
+    async function acEditCall(fn, args, done) {
+        var res;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Меняю пресет…", "busy");
+        try {
+            res = await host(fn, args);
+            acEdit.layer = res.layer;
+            acEdit.items = res.items;
+            setBusy(false);
+            setStatus(done + " Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            setBusy(false);
+            if (e && e.message === "PRESET_GONE") {
+                setStatus("Этого пресета на слое уже нет — список обновлён.", "");
+                loadAcEdit();
+                return;
+            }
+            toolFailed(e);
+        }
+        renderAc();
+    }
+
+    function acSoundPath(id) { return platform.join(extensionDir(), "sfx", id + ".wav"); }
+
+    function acPreviewSound(p) {
+        try {
+            if (acAudio) { acAudio.pause(); }
+            acAudio = new Audio("file://" + encodeURI(acSoundPath(p.id)));
+            acAudio.play();
+        } catch (e) {}
+    }
+
+    function hexToRgb01(hex) {
+        var c = parseHex(hex);
+        return c ? [c.r / 255, c.g / 255, c.b / 255] : [1, 1, 1];
+    }
+
+    var AC_MODE_TEXT = { "in": "появление", "out": "исчезновение", "both": "появление и исчезновение" };
+
+    async function applyAc(p) {
+        var res, info, folder, dest;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Добавляю «" + p.name + "»…", "busy");
+        try {
+            if (p.sec === "anim" || p.sec === "trans") {
+                res = await host("acAnimate", [p.id, acState.mode, acState.dur]);
+                setBusy(false);
+                acReport(p, res, "");
+            } else if (p.sec === "text") {
+                res = await host("acText", [p.id, acState.mode, acState.dur, "Ваш текст"]);
+                setBusy(false);
+                acReport(p, res, res.created ? " Текстового слоя не было — создан новый «Ваш текст»." : "");
+            } else if (p.sec === "graphic") {
+                res = await host("acGraphic", [p.id, acState.dur, hexToRgb01(acState.color)]);
+                setBusy(false);
+                setStatus("Добавлено: «" + p.name + "» — новый слой «" + res.name + "» у указателя времени. Отменить — Cmd/Ctrl+Z.", "done");
+            } else {
+                info = await host("info", []);
+                if (!info.fileAccess) { throw new Error(FILE_ACCESS_HINT); }
+                folder = info.projectPath ? platform.join(platform.dirname(info.projectPath), "Sayframe SFX") :
+                    platform.join(platform.homedir(), "Documents", "Sayframe SFX");
+                await platform.mkdirp(folder);
+                dest = platform.join(folder, p.id + ".wav");
+                if (!(await platform.exists(dest))) {
+                    await platform.writeBytes(dest, base64ToBytes(await platform.readBase64(acSoundPath(p.id))));
+                }
+                res = await host("acSound", [dest, "Sayframe SFX"]);
+                setBusy(false);
+                setStatus("Звук «" + p.name + "» добавлен у указателя времени." + (res.reused ? "" : " Файл лежит в папке «Sayframe SFX» рядом с проектом."), "done");
+            }
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function acReport(p, res, extra) {
+        var what = plural(res.applied, "слой", "слоя", "слоёв");
+        if (!res.applied) {
+            setStatus("«" + p.name + "» не удалось добавить ни на один выделенный слой" + (res.skipped ? " (камеры и свет пропущены)" : "") + ".", res.failed ? "error" : "");
+            return;
+        }
+        setStatus("«" + p.name + "» — " + AC_MODE_TEXT[acState.mode] + ", " + what + "." +
+            (res.skipped ? " Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + "." : "") +
+            (res.failed ? " Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + "." : "") +
+            extra + " Отменить — Cmd/Ctrl+Z.", res.failed ? "error" : "done");
+    }
+
+    function base64ToBytes(b64) {
+        var bin = atob(b64), out = new Uint8Array(bin.length), i;
+        for (i = 0; i < bin.length; i++) { out[i] = bin.charCodeAt(i); }
+        return out;
+    }
+
+    function enableAc() {
+        AC_SECTIONS.forEach(function (s) {
+            var b = document.createElement("button");
+            b.className = "ac-tab";
+            b.setAttribute("role", "tab");
+            b.setAttribute("data-sec", s.id);
+            b.textContent = s.label;
+            b.addEventListener("click", function () {
+                acState.sec = s.id;
+                acState.favOnly = false;
+                ui.acSearch.value = "";
+                storeAcState();
+                renderAc();
+            });
+            ui.acTabs.appendChild(b);
+        });
+        (function () {
+            var b = document.createElement("button");
+            b.className = "ac-tab ac-tab-edit";
+            b.setAttribute("role", "tab");
+            b.setAttribute("data-sec", "edit");
+            b.textContent = "✎ Изменить";
+            b.title = "Настроить пресеты, которые уже стоят на выделенном слое";
+            b.addEventListener("click", function () {
+                acState.sec = "edit";
+                acState.favOnly = false;
+                ui.acSearch.value = "";
+                storeAcState();
+                acEdit.items = null;
+                renderAc();
+                loadAcEdit();
+            });
+            ui.acTabs.appendChild(b);
+        })();
+        ui.acSearch.addEventListener("input", renderAc);
+        ui.acSearch.addEventListener("keydown", function (e) { if (e.key === "Escape") { ui.acSearch.value = ""; renderAc(); } });
+        ui.acFavOnly.addEventListener("click", function () { acState.favOnly = !acState.favOnly; storeAcState(); renderAc(); });
+        Array.prototype.forEach.call(ui.acMode.querySelectorAll("button"), function (b) {
+            b.addEventListener("click", function () { acState.mode = b.getAttribute("data-value"); storeAcState(); pressGroup(ui.acMode, acState.mode); });
+        });
+        ui.acDur.addEventListener("input", function () {
+            acState.dur = Math.round(Number(ui.acDur.value) * 10) / 10;
+            ui.acDurVal.textContent = acState.dur.toFixed(1).replace(".", ",") + " с";
+            storeAcState();
+        });
+        ui.acColor.addEventListener("input", function () { acState.color = ui.acColor.value; storeAcState(); });
+        ui.acSize.addEventListener("input", function () {
+            acState.size = Number(ui.acSize.value);
+            ui.acGrid.style.setProperty("--ac-size", acState.size + "px");
+            storeAcState();
+        });
+        renderAc();
+        if (acState.sec === "edit") { loadAcEdit(); }
+    }
+
     // ---- FX Console: поиск эффектов и пресетов, как в одноимённом плагине Video Copilot.
     // Открывается горячей клавишей (по умолчанию Ctrl+Space) или лупой в шапке; Enter добавляет
     // найденное на выделенные слои. Там же — снимок кадра в PNG и в буфер обмена.
@@ -4752,6 +5199,7 @@
     ui.setTabAI.addEventListener("click", function () { showSetPane("ai"); });
     ui.setTabOther.addEventListener("click", function () { showSetPane("other"); });
     document.addEventListener("keydown", onHotkeyDown, true);
+    enableAc();
     listenHostHotkeys();
     registerHotkeys();
     hotkeyHint();
