@@ -278,16 +278,23 @@ function makeAE(opts, tmpDir) {
   write(path.join(tmpDir, "Documents", "Adobe", "After Effects 2026", "User Presets"), opts.userPresets);
   Folder.appPackage = new Folder(path.join(aeRoot, "Adobe After Effects 2026.app"));
   Folder.myDocuments = new Folder(path.join(tmpDir, "Documents"));
-  log.snaps = [];
+  log.snaps = []; log.saveDlg = []; log.events = []; log.tasks = [];
+  File.prototype.saveDlg = function (prompt) { log.saveDlg.push({ path: this.fsName, prompt }); return opts.saveAs === null ? null : new File(opts.saveAs || this.fsName); };
+  Object.defineProperty(File.prototype, "parent", { configurable: true, get() { return new Folder(path.dirname(this.fsName)); } });
+  const keyboardState = { keyName: "", ctrlKey: false, altKey: false, shiftKey: false, metaKey: false };
+  function CSXSEvent() {} CSXSEvent.prototype.dispatch = function () { log.events.push({ type: this.type, data: this.data }); };
+  function ExternalObject() {}
   comp.saveFrameToPng = function (t, file) { log.snaps.push({ t, path: file.fsName }); if (!opts.snapFails) fs.writeFileSync(file.fsName, fakePng(0)); };
   const app = { version: "26.0", project, effects: opts.effects || FX_EFFECTS,
+    scheduleTask: (code, ms, repeat) => { log.tasks.push({ code, ms, repeat }); return log.tasks.length; }, cancelTask: (id) => { log.tasks[id - 1].cancelled = true; },
     preferences: { getPrefAsLong: () => (opts.fileAccessOff ? 0 : 1) },
     beginUndoGroup: (n) => log.undo.push("begin:" + n), endUndoGroup: () => log.undo.push("end"), __ran: (x) => log.ran.push(x) };
-  const ctx = vm.createContext({ app, File, Folder, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
+  const ctx = vm.createContext({ app, File, Folder, CSXSEvent, ExternalObject, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
+  ctx.$.global = ctx;
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
   log.scripts = [];
-  return { log, project, comp, projItems, ctx, evalScript(script) {
+  return { log, project, comp, projItems, ctx, keyboardState, evalScript(script) {
     log.lastScript = script; log.scripts.push(script);
     if (!/^[\x09\x0a\x0d\x20-\x7e]*$/.test(script)) return "EvalScript error."; // the bridge must stay ASCII
     try {
@@ -410,8 +417,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       if (firstOpen) { if (stored) localStorage.setItem("sayframe.settings.v1", JSON.stringify(stored)); else localStorage.removeItem("sayframe.settings.v1"); }
       if (updateState && firstOpen) localStorage.setItem("sayframe.update.v1", JSON.stringify(updateState));
       window.__keyInterest = [];
+      window.__cepListeners = {};
       window.__adobe_cep__ = { evalScript(script, cb) { window.__hostEval(script).then(cb); },
         registerKeyEventsInterest(json) { window.__keyInterest.push(json); },
+        addEventListener(type, fn) { window.__cepListeners[type] = fn; },
         getSystemPath() { return withSystemPath ? "file://" + hostPath : ""; } };
       const call = (name) => function () { return window.__plat(name, Array.prototype.slice.call(arguments)); };
       window.__SAYFRAME_TEST_PLATFORM__ = {
@@ -1266,7 +1275,22 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = fs.existsSync(path.join(p.home, "Documents", "Sayframe Snapshots")) ? fs.readdirSync(path.join(p.home, "Documents", "Sayframe Snapshots")) : [];
   check("FX9 'snapshot' saves the current frame as a PNG named after the comp", t.length === 1 && /^Тест_\d{4}-\d{2}-\d{2}_\d{6}\.png$/.test(t[0]) && p.ae.log.snaps[0].t === 2.5, t.join());
   check("FX9 and copies it to the clipboard", (p.sys.copied || []).length === 1 && p.sys.copied[0].indexOf("«class PNGf»") > 0 && p.sys.copied[0].indexOf(t[0]) > 0, JSON.stringify(p.sys.copied));
-  check("FX9 the status says where it is", (await p.status()) === "Кадр сохранён: Документы › Sayframe Snapshots › " + t[0] + ". Он же в буфере обмена — можно сразу вставить." && (await p.page.locator("#fxConsole").isHidden()), await p.status());
+  check("FX9 the status says where it is", (await p.status()) === "Кадр сохранён: Sayframe Snapshots › " + t[0] + ". Он же в буфере обмена — можно сразу вставить." && (await p.page.locator("#fxConsole").isHidden()), await p.status());
+  check("FX9 a 'Save' window asks where to put it, starting in 'Sayframe Snapshots' for an unsaved project", p.ae.log.saveDlg.length === 1 && p.ae.log.saveDlg[0].prompt === "Сохранить кадр (PNG)" && p.ae.log.saveDlg[0].path === path.join(p.home, "Documents", "Sayframe Snapshots", t[0]));
+  await p.close();
+  const snapProj = fs.mkdtempSync(path.join(os.tmpdir(), "snapproj-"));
+  p = await open({ projectFile: path.join(snapProj, "ролик.aep") });
+  await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
+  t = fs.readdirSync(snapProj).filter((n) => /\.png$/.test(n));
+  check("FX10 with a saved project the 'Save' window opens in the project's folder", p.ae.log.saveDlg.length === 1 && path.dirname(p.ae.log.saveDlg[0].path) === snapProj && t.length === 1 && (await p.status()).indexOf("Кадр сохранён: " + path.basename(snapProj) + " › ") === 0, (await p.status()) + " " + JSON.stringify(p.ae.log.saveDlg));
+  await p.close();
+  p = await open({ projectFile: path.join(snapProj, "ролик.aep"), saveAs: path.join(snapProj, "мой кадр") });
+  await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
+  check("FX10 the name and place chosen in the window are used, .png is added if missing", fs.existsSync(path.join(snapProj, "мой кадр.png")) && /› мой кадр\.png\./.test(await p.status()), await p.status());
+  await p.close();
+  p = await open({ saveAs: null });
+  await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
+  check("FX10 Cancel in the window saves nothing", (await p.status()) === "Снимок отменён." && p.ae.log.snaps.length === 0 && !(p.sys.copied || []).length, await p.status());
   await p.close();
   p = await open({ copyFails: true });
   await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
@@ -1354,6 +1378,50 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click("#hotkeysReset"); await p.page.click("#saveSettings");
   await p.page.keyboard.press("Control+Space");
   check("H8 'Reset' brings back Ctrl+Space and clears the rest", (await p.page.locator("#fxConsole").isVisible()) && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  console.log("\n=== hotkeys outside the panel ===");
+    const holdKeys = async (p, state) => {
+    Object.assign(p.ae.keyboardState, { keyName: "", ctrlKey: false, altKey: false, shiftKey: false, metaKey: false }, state);
+    vm.runInContext("sayframeHost.pollKeys()", p.ae.ctx);
+    const evs = p.ae.log.events.splice(0);
+    for (const ev of evs) await p.page.evaluate((ev) => window.__cepListeners[ev.type] && window.__cepListeners[ev.type](ev), ev);
+    await p.page.waitForTimeout(60);
+    return evs;
+  };
+  p = await open({ selectedLayers: [mkFxLayer("A")] });
+  await p.page.waitForFunction(() => window.__cepListeners["com.sayframe.hotkey"]);
+  await p.page.waitForTimeout(300);
+  t = vm.runInContext("JSON.stringify($.global.__sayframeKeys)", p.ae.ctx);
+  check("K1 the panel tells After Effects which shortcuts to watch, and AE checks the keyboard several times a second", t === JSON.stringify([{ id: "console", key: "Space", ctrl: true, alt: false, shift: false, cmd: false }]) && p.ae.log.tasks.length >= 1 && p.ae.log.tasks[p.ae.log.tasks.length - 1].code === "sayframeHost.pollKeys()" && p.ae.log.tasks[p.ae.log.tasks.length - 1].repeat === true, t);
+  await p.page.evaluate(() => document.activeElement && document.activeElement.blur());
+  t = await holdKeys(p, { keyName: "Space", ctrlKey: true });
+  check("K2 Ctrl+Space held while another After Effects panel is active opens the search", t.length === 1 && t[0].data === "console" && (await p.page.locator("#fxConsole").isVisible()) && (await p.page.evaluate(() => document.activeElement.id)) === "fxSearch");
+  t = await holdKeys(p, { keyName: "Space", ctrlKey: true });
+  check("K2 holding it longer does not fire again", t.length === 0 && (await p.page.locator("#fxConsole").isVisible()));
+  await holdKeys(p, {});
+  t = await holdKeys(p, { keyName: "Space", ctrlKey: true, shiftKey: true });
+  check("K2 other modifiers do not match", t.length === 0);
+  await holdKeys(p, {});
+  t = await holdKeys(p, { keyName: "Space", ctrlKey: true });
+  check("K2 pressing it again closes the search", t.length === 1 && (await p.page.locator("#fxConsole").isHidden()));
+  await holdKeys(p, {});
+  await p.page.keyboard.press("Control+Space");
+  t = await holdKeys(p, { keyName: "Space", ctrlKey: true });
+  check("K3 when the panel itself caught the press, the event from After Effects is ignored (no double toggle)", t.length === 1 && (await p.page.locator("#fxConsole").isVisible()));
+  await p.page.keyboard.press("Escape");
+  await holdKeys(p, {});
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click('#hotkeys [data-action="tabTools"]'); await p.page.keyboard.press("Alt+Digit3");
+  await p.page.waitForTimeout(200);
+  t = JSON.parse(vm.runInContext("JSON.stringify($.global.__sayframeKeys)", p.ae.ctx));
+  check("K4 a changed shortcut is watched at once; the old polling task is stopped", t.length === 2 && t[1].id === "tabTools" && t[1].key === "3" && t[1].alt === true && p.ae.log.tasks.slice(0, -1).every((x) => x.cancelled), JSON.stringify(t));
+  t = await holdKeys(p, { keyName: "3", altKey: true });
+  check("K4 while the settings are open, presses are not acted on", t.length === 1 && (await p.page.locator("#tabMotion").getAttribute("aria-selected")) === "false");
+  await holdKeys(p, {});
+  await p.page.click("#settingsClose");
+  t = await holdKeys(p, { keyName: "3", altKey: true });
+  check("K5 a tab shortcut from outside switches tabs", (await p.page.locator("#tabMotion").getAttribute("aria-selected")) === "true" && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
   console.log("\n=== settings ===");
