@@ -45,7 +45,13 @@ function acInit(p, name, value, log) {
   Object.assign(p, { name, matchName: name, value, keys: [], interp: [], eases: 0, expression: "", dimensionsSeparated: false, children: [], propertyValueType: 0 });
   const adopt = (c) => { c.parentProperty = p; c.propertyDepth = (p.propertyDepth || 0) + 1; p.children.push(c); c.propertyIndex = p.children.length; return c; };
   p.property = (k) => {
-    if (typeof k === "number") return p.children[k - 1] || null;
+    if (typeof k === "number") {
+      // an effect's parameters exist from the start, like in After Effects (matchName "<effect>-0001", ...)
+      if (!p.children[k - 1] && p.parentProperty && p.parentProperty.matchName === "ADBE Effect Parade") {
+        while (p.children.length < k) adopt(acInit({}, p.matchName + "-" + String(p.children.length + 1).padStart(4, "0"), 0, log));
+      }
+      return p.children[k - 1] || null;
+    }
     let c = p.children.find((x) => x.matchName === k || x.name === k);
     if (!c) c = adopt(acInit({}, k, acDefault(k), log));
     return c;
@@ -67,11 +73,32 @@ function acInit(p, name, value, log) {
   p.setTemporalEaseAtKey = (i, a, b) => { if (!Array.isArray(a) || !Array.isArray(b)) throw new Error("ease must be arrays"); p.eases++; };
   return p;
 }
+// Layer markers, as in After Effects: a comment, a duration and hidden key/value parameters.
+function MarkerValue(comment) { this.comment = comment; this.duration = 0; this.params = {}; }
+MarkerValue.prototype.setParameters = function (o) { this.params = Object.assign({}, o); };
+MarkerValue.prototype.getParameters = function () { return Object.assign({}, this.params); };
+// Runs the expression After Effects would run on prop at time t (the JavaScript engine), with the
+// layer's markers and effects. Returns the value it gives.
+function sfEval(layer, prop, t) {
+  if (!prop.expression) return prop.value;
+  const mk = acAt(layer, "ADBE Marker");
+  const marks = mk ? mk.keys.map((k) => ({ time: k.t, duration: k.v.duration, comment: k.v.comment })) : [];
+  const parade = acAt(layer, "ADBE Effect Parade");
+  const effect = (n) => {
+    const e = parade && parade.children.find((c) => c.name === n);
+    if (!e) throw new Error("no effect " + n);
+    return (i) => e.children[i - 1].value;
+  };
+  return vm.runInNewContext(prop.expression, { value: JSON.parse(JSON.stringify(prop.value)), time: t, effect, Math,
+    thisLayer: { marker: { numKeys: marks.length, key: (i) => marks[i - 1] } }, thisComp: { frameDuration: 1 / 30 } });
+}
 // Finds a child by match names along a path (for checks).
 const acAt = (p, ...path) => path.reduce((n, k) => n && (typeof k === "number" ? n.children[k - 1] : n.children.find((x) => x.matchName === k)), p);
 function mkAcLayer(name, kind, log) {
   const L = acInit(kind === "text" ? new TextLayer() : kind === "camera" ? new CameraLayer() : {}, name, null, log);
   Object.assign(L, { name, inPoint: 0, outPoint: 5, startTime: 0, selected: true, propertyDepth: 0, comment: "" });
+  const mk = L.property("ADBE Marker");
+  mk.keyValue = (i) => mk.keys[i - 1].v;   // MarkerValue objects keep their methods
   return L;
 }
 // A layer for FX Console: remembers the effects and presets put on it; cameras take no effects.
@@ -330,7 +357,7 @@ function makeAE(opts, tmpDir) {
     scheduleTask: (code, ms, repeat) => { log.tasks.push({ code, ms, repeat }); return log.tasks.length; }, cancelTask: (id) => { log.tasks[id - 1].cancelled = true; },
     preferences: { getPrefAsLong: () => (opts.fileAccessOff ? 0 : 1) },
     beginUndoGroup: (n) => log.undo.push("begin:" + n), endUndoGroup: () => log.undo.push("end"), __ran: (x) => log.ran.push(x) };
-  const ctx = vm.createContext({ app, File, Folder, Shape: function Shape() {}, CSXSEvent, ExternalObject, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
+  const ctx = vm.createContext({ app, File, Folder, MarkerValue, Shape: function Shape() {}, CSXSEvent, ExternalObject, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   ctx.$.global = ctx;
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
@@ -1481,23 +1508,43 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.screenshot({ path: path.join(SHOTS, "28-animation-library.png") });
   t = await p.page.evaluate(() => getComputedStyle(document.querySelector("#acGrid .ac-card .ac-obj")).animationName);
   check("AC1 hovering a card plays its preview", t === "pv-trans-zoom-blur", t);
-  await acSec(p, "Анимация");
-  check("AC2 'Animation' section: 13 motion presets", (await acCards(p)).length === 13 && (await acCards(p))[2] === "Пружинка");
-  await acClick(p, "Пружинка");
-  let tg = acAt(AL, "ADBE Transform Group");
-  t = keysOf(acAt(tg, "ADBE Scale"));
-  check("AC3 'Pop' on appearance: scale overshoots and settles within 0.6 s from the layer's start", JSON.stringify(t) === JSON.stringify([[0, [0, 0, 0]], [0.36, [112, 112, 112]], [0.492, [96, 96, 96]], [0.6, [100, 100, 100]]]) && JSON.stringify(keysOf(acAt(tg, "ADBE Opacity"))) === JSON.stringify([[0, 0], [0.6, 100]]) && acAt(tg, "ADBE Scale").eases === 4, JSON.stringify(t));
-  check("AC3 one undo step; the camera is skipped; the status says so", p.ae.log.undo.join("|") === "begin:Sayframe: pop|end" && (await p.status()) === "«Пружинка» — появление, 1 слой. Пропущено: 1 слой. Отменить — Cmd/Ctrl+Z." && (await p.statusKind()) === "done", await p.status());
-  await p.page.click('#acMode button[data-value="out"]');
-  AL = mkAcLayer("B"); p.ae.comp.selectedLayers = [AL];
-  await acClick(p, "Слева");
-  tg = acAt(AL, "ADBE Transform Group");
-  check("AC4 'From the left' on disappearance: leaves to the left during the last 0.6 s and fades", JSON.stringify(keysOf(acAt(tg, "ADBE Position"))) === JSON.stringify([[4.4, [960, 540, 0]], [5, [384, 540, 0]]]) && JSON.stringify(keysOf(acAt(tg, "ADBE Opacity"))) === JSON.stringify([[4.4, 100], [5, 0]]), JSON.stringify(keysOf(acAt(tg, "ADBE Position"))));
+  await acSec(p, "Движения");
+  check("AC2 'Motions': folders like Motion Presets, 35 presets, each motion in its own curves", (await p.page.locator("#acFolders button").allInnerTexts()).join() === "Все,Прозрачность,Сдвиг,Масштаб,Поворот,Размытие,Комбо" && (await acCards(p)).length === 35 && (await acCards(p))[2] === "Снизу · плавно", (await acCards(p)).slice(0, 4).join());
+  await p.page.click('#acFolders button[data-folder="move"]');
+  check("AC2 a folder shows only its presets", (await acCards(p)).length === 12 && (await p.page.locator('#acFolders button[aria-pressed="true"]').innerText()) === "Сдвиг");
+  await p.page.locator("#acGrid .ac-card").nth(1).hover(); await p.page.waitForTimeout(300);
+  check("AC2 hovering a card plays its motion", await p.page.evaluate(() => document.querySelectorAll("#acGrid .ac-card")[1].querySelector(".ac-obj").getAnimations().length === 1));
+  await p.page.screenshot({ path: path.join(SHOTS, "28b-motions.png") });
+  AL.property("ADBE Transform Group").property("ADBE Position").setValueAtTime(3, [100, 100, 0]);
+  await acClick(p, "Снизу · с перелётом");
+  let mkr = acAt(AL, "ADBE Marker");
+  const layerFx = (l) => (acAt(l, "ADBE Effect Parade") ? acAt(l, "ADBE Effect Parade").children.map((c) => c.name) : []);
+  const posOf = (l, t) => r4(sfEval(l, acAt(l, "ADBE Transform Group", "ADBE Position"), t));
+  const opOf = (l, t) => r4(sfEval(l, acAt(l, "ADBE Transform Group", "ADBE Opacity"), t));
+  check("AC3 a motion preset bakes no keys: an IN marker 0.6 s long with its tag, and its settings as effects", mkr.keys.length === 1 && mkr.keys[0].t === 0 && Math.abs(mkr.keys[0].v.duration - 0.6) < 1e-9 && mkr.keys[0].v.comment === "IN: Снизу (с перелётом) {sf:from-bottom:in:over}" && layerFx(AL).join() === "IN Снизу · Дистанция,IN Снизу · Прозрачность" && acAt(AL, "ADBE Effect Parade", 1).children[0].value === 216 && acAt(AL, "ADBE Transform Group", "ADBE Position").keys.length === 1, JSON.stringify(mkr.keys.map((k) => k.v.comment)) + " " + layerFx(AL).join());
+  check("AC3 the expression moves the layer up from 216 px below, overshoots and settles on its own position", JSON.stringify(posOf(AL, 0)) === "[960,756,0]" && posOf(AL, 0.3)[1] < 540 && JSON.stringify(posOf(AL, 0.6)) === "[960,540,0]" && JSON.stringify(posOf(AL, 2)) === "[960,540,0]" && /^\/\/ Sayframe:/.test(acAt(AL, "ADBE Transform Group", "ADBE Position").expression), JSON.stringify([posOf(AL, 0), posOf(AL, 0.3), posOf(AL, 0.6)]));
+  check("AC3 it fades in softly at the same time (no overshoot on opacity)", opOf(AL, 0) === 0 && opOf(AL, 0.3) > 50 && opOf(AL, 0.3) < 100 && opOf(AL, 0.6) === 100, [opOf(AL, 0), opOf(AL, 0.3), opOf(AL, 0.6)].join());
+  check("AC3 one undo step; the camera is skipped; the status explains marker and settings; the card is marked IN", p.ae.log.undo.join("|") === "begin:Sayframe: from-bottom|end" && (await p.status()) === "«Снизу · с перелётом» — появление, 1 слой. Длительность — длина маркера IN, настройки — в Effect Controls. Отменить — Cmd/Ctrl+Z." && (await p.page.locator("#acGrid .ac-card.applied .ac-name").allInnerTexts()).join() === "Снизу · с перелётом" && (await p.page.locator("#acGrid .ac-card.applied .ac-badge").innerText()) === "IN", await p.status());
+  mkr.keys[0].v.duration = 1.5;
+  check("AC3 stretching the marker in After Effects changes the duration", posOf(AL, 0.6)[1] !== 540 && JSON.stringify(posOf(AL, 1.5)) === "[960,540,0]");
+  await acClick(p, "Снизу · с перелётом");
+  check("AC4 clicking the marked card again takes the preset off: marker, effects and expressions go, the user's key stays", mkr.keys.length === 0 && layerFx(AL).length === 0 && acAt(AL, "ADBE Transform Group", "ADBE Position").expression === "" && acAt(AL, "ADBE Transform Group", "ADBE Opacity").expression === "" && acAt(AL, "ADBE Transform Group", "ADBE Position").keys.length === 1 && /^«Снизу · с перелётом» снят: 1 слой\./.test(await p.status()) && (await p.page.locator("#acGrid .ac-card.applied").count()) === 0, await p.status());
   await p.page.click('#acMode button[data-value="both"]');
   await p.page.evaluate(() => { const r = document.getElementById("acDur"); r.value = "1"; r.dispatchEvent(new Event("input", { bubbles: true })); });
   AL = mkAcLayer("C"); p.ae.comp.selectedLayers = [AL];
-  await acClick(p, "Прозрачность");
-  check("AC5 'Both' with 1 s: in at the start and out at the end; the duration label follows the slider", JSON.stringify(keysOf(acAt(AL, "ADBE Transform Group", "ADBE Opacity"))) === JSON.stringify([[0, 0], [1, 100], [4, 100], [5, 0]]) && (await p.page.locator("#acDurVal").innerText()) === "1,0 с" && /появление и исчезновение/.test(await p.status()));
+  await p.page.click('#acFolders button[data-folder="all"]');
+  await acClick(p, "Прозрачность · плавно");
+  mkr = acAt(AL, "ADBE Marker");
+  check("AC5 'Both' with 1 s: an IN marker at the start and an OUT marker at the end, the opacity follows both", mkr.keys.map((k) => k.t + "/" + k.v.duration).join() === "0/1,4/1" && [0, 1, 2.5, 4, 5].map((t) => opOf(AL, t)).join() === "0,100,100,100,0" && (await p.page.locator("#acDurVal").innerText()) === "1,0 с" && /появление и исчезновение/.test(await p.status()) && (await p.page.locator("#acGrid .ac-card.applied .ac-badge").innerText()) === "IN + OUT", [0, 1, 2.5, 4, 5].map((t) => opOf(AL, t)).join());
+  await p.page.click('#acMode button[data-value="in"]');
+  await acClick(p, "Слева · плавно");
+  check("AC5 a second IN preset shares the IN marker and adds its own part to the expression", mkr.keys[0].v.comment === "IN: Прозрачность (плавно) + Слева (плавно) {sf:fade:in:ease}{sf:from-left:in:ease}" && JSON.stringify(posOf(AL, 0)) === "[744,540,0]" && opOf(AL, 0) === 0 && opOf(AL, 1) === 100, mkr.keys[0].v.comment);
+  AL = mkAcLayer("D"); p.ae.comp.selectedLayers = [AL];
+  AL.property("ADBE Transform Group").property("ADBE Position").dimensionsSeparated = true;
+  acAt(AL, "ADBE Transform Group").property("ADBE Position_0").value = 300;
+  acAt(AL, "ADBE Transform Group").property("ADBE Rotate Z").expression = "wiggle(1, 5)";
+  await acClick(p, "Снизу с поворотом · плавно");
+  check("AC5 separated X/Y position gets its own expressions; a rotation expression of the user's own is kept and reported", acAt(AL, "ADBE Transform Group", "ADBE Position_1").expression.indexOf("// Sayframe:") === 0 && sfEval(AL, acAt(AL, "ADBE Transform Group", "ADBE Position_1"), 0) === 216 && acAt(AL, "ADBE Transform Group", "ADBE Position_0").expression === "" && acAt(AL, "ADBE Transform Group", "ADBE Rotate Z").expression === "wiggle(1, 5)" && /не тронуты: ADBE Rotate Z/.test(await p.status()) && (await p.statusKind()) === "error", await p.status());
   await acSec(p, "Переходы");
   await p.page.click('#acMode button[data-value="in"]');
   AL = mkAcLayer("D"); p.ae.comp.selectedLayers = [AL];
@@ -1510,6 +1557,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("AC7 'Glitch' jumps frame by frame with held keys", t.keys.length >= 10 && t.interp.every((x) => x[1] === 6614) && t.keys[t.keys.length - 1].v === 100);
   // Every preset of every section runs through After Effects without an error.
   t = [];
+  // presets put on by earlier versions (keys) still work in After Effects
   for (const id of ["zoom-blur", "spin-zoom", "push-left", "push-right", "push-up", "wipe", "clock-wipe", "flash", "glitch", "stretch", "blur", "fade", "scale-up", "pop", "slide-left", "slide-right", "slide-up", "slide-down", "rotate-in", "spin-scale", "blur-in", "drop-bounce", "swing", "squash"]) {
     p.ae.comp.selectedLayers = [mkAcLayer(id)];
     const r = JSON.parse(vm.runInContext('sayframeHost.acAnimate("' + id + '", "both", 0.5)', p.ae.ctx));
@@ -1525,7 +1573,18 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     if (!r.ok) t.push(id + ":" + JSON.stringify(r));
   }
   check("AC8 all 43 presets build in After Effects without errors (24 motion and transition, 9 text, 10 graphics)", t.length === 0, t.join(" | "));
-  check("AC8 the panel lists exactly these presets", await p.page.evaluate(() => true) && (await (async () => { let n = 0; for (const l of ["Переходы", "Текст", "Анимация", "Графика", "Звуки"]) { await acSec(p, l); n += (await acCards(p)).length; } return n; })()) === 55);
+  for (const id of ["fade", "from-bottom", "from-top", "from-left", "from-right", "scale-up", "scale-down", "rotate", "spin", "blur", "blur-scale", "rise-rotate", "rise-scale", "stretch", "drop"]) {
+    for (const curve of ["ease", "linear", "over", "bounce", "elastic"]) {
+      const L = mkAcLayer(id); p.ae.comp.selectedLayers = [L];
+      const r = JSON.parse(vm.runInContext('sayframeHost.sfApply("' + id + '", "' + curve + '", "both", 0.5, {title: "T"})', p.ae.ctx));
+      const tg = acAt(L, "ADBE Transform Group");
+      const vals = [0, 0.1, 0.25, 0.5, 2, 4.6, 5].map((tt) => ["ADBE Position", "ADBE Scale", "ADBE Rotate Z", "ADBE Opacity"].map((m) => sfEval(L, tg.property(m), tt)));
+      if (!r.ok || r.applied !== 1 || !JSON.stringify(vals).split(/[\[\],]/).filter(Boolean).every((x) => isFinite(Number(x)))) t.push(id + "." + curve + ":" + JSON.stringify(r));
+      else if (JSON.stringify(vals[4]) !== JSON.stringify([[960, 540, 0], [100, 100, 100], 0, 100])) t.push(id + "." + curve + " not at rest in the middle: " + JSON.stringify(vals[4]));
+    }
+  }
+  check("AC8 every motion in every curve gives finite values and leaves the layer untouched between IN and OUT", t.length === 0, t.join(" | "));
+  check("AC8 the panel lists exactly these presets", await p.page.evaluate(() => true) && (await (async () => { let n = 0; for (const l of ["Переходы", "Текст", "Движения", "Графика", "Звуки"]) { await acSec(p, l); n += (await acCards(p)).length; } return n; })()) === 77);
   await p.close();
 
   // Text: on a selected text layer, or a new one when there is none.
@@ -1570,12 +1629,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   // Favourites, search across sections, card size, nothing selected.
   p = await open({ selectedLayers: [] });
-  await p.tab("tools"); await acSec(p, "Анимация");
-  await p.page.locator("#acGrid .ac-card", { has: p.page.locator(".ac-name", { hasText: "Качание" }) }).locator(".ac-star").click();
+  await p.tab("tools"); await acSec(p, "Движения");
+  await p.page.locator("#acGrid .ac-card", { has: p.page.locator(".ac-name", { hasText: "Вихрь · плавно" }) }).locator(".ac-star").click();
   await acSec(p, "Звуки");
   await p.page.locator("#acGrid .ac-card", { has: p.page.locator(".ac-name", { hasText: "Удар" }) }).locator(".ac-star").click();
   await p.page.click("#acFavOnly");
-  check("AC14 ★ shows the favourites from every section", (await acCards(p)).join() === "Качание,Удар" && (await p.page.locator("#acFavOnly").getAttribute("aria-pressed")) === "true");
+  check("AC14 ★ shows the favourites from every section", (await acCards(p)).join() === "Вихрь · плавно,Удар" && (await p.page.locator("#acFavOnly").getAttribute("aria-pressed")) === "true");
   await p.page.click("#acFavOnly");
   await p.page.fill("#acSearch", "букв");
   check("AC15 search looks through all sections", (await acCards(p)).join() === "Проявление по буквам,Буквы снизу,Буквы с масштабом,Буквы из размытия,Буквы с поворотом,Случайные буквы,Разлёт букв" && (await p.page.locator('#acTabs button[aria-selected="true"]').count()) === 0, (await acCards(p)).join());
@@ -1583,11 +1642,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.evaluate(() => { const r = document.getElementById("acSize"); r.value = "180"; r.dispatchEvent(new Event("input", { bubbles: true })); });
   t = await p.page.evaluate(() => Math.round(document.querySelector("#acGrid .ac-card").getBoundingClientRect().width));
   check("AC16 the size slider makes the cards bigger", t >= 170, t);
-  await acSec(p, "Анимация");
-  await acClick(p, "Масштаб");
+  await acSec(p, "Движения");
+  await acClick(p, "Из точки · плавно");
   check("AC17 nothing selected -> a hint", /^Выделите слой/.test(await p.status()) && (await p.statusKind()) === "", await p.status());
   await p.restart(); await p.tab("tools");
-  check("AC18 section, favourites and card size survive a restart", (await p.page.locator('#acTabs button[aria-selected="true"]').innerText()) === "Анимация" && (await p.page.locator("#acGrid .ac-star.on").count()) === 1 && (await p.page.inputValue("#acSize")) === "180" && p.errors.length === 0, p.errors.join(" | "));
+  check("AC18 section, favourites and card size survive a restart", (await p.page.locator('#acTabs button[aria-selected="true"]').innerText()) === "Движения" && (await p.page.locator("#acGrid .ac-star.on").count()) === 1 && (await p.page.inputValue("#acSize")) === "180" && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
   console.log("\n=== animation library: edit ===");
@@ -1602,47 +1661,47 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   let EL = mkAcLayer("Логотип");
   EL.comment = "моя заметка";
   p = await open({ selectedLayers: [EL] });
-  await p.tab("tools"); await acSec(p, "Анимация");
+  await p.tab("tools"); await acSec(p, "Переходы");
   // a key of the user's own on Position, which must survive every edit
   EL.property("ADBE Transform Group").property("ADBE Position").setValueAtTime(3, [100, 100, 0]);
-  await acClick(p, "Слева");
-  check("ED1 the layer remembers the preset in its comment, after the user's own note", /^моя заметка\n\[Sayframe presets\] \[\{"id":"slide-left","dir":"in"/.test(EL.comment), EL.comment.slice(0, 80));
+  await acClick(p, "Сдвиг влево");
+  check("ED1 the layer remembers the preset in its comment, after the user's own note", /^моя заметка\n\[Sayframe presets\] \[\{"id":"push-left","dir":"in"/.test(EL.comment), EL.comment.slice(0, 80));
   await p.page.click("#acTabs .ac-tab-edit");
   await p.page.waitForSelector(".ac-edit-item");
-  check("ED1 'Edit' lists it with its settings; the library options are hidden", (await p.page.locator(".ac-edit-head").innerText()).indexOf("Слой «Логотип»") === 0 && (await p.page.locator(".ac-edit-top b").innerText()) === "Слева — появление" && (await p.page.locator(".ac-edit-item .ac-edit-row output").allInnerTexts()).join() === "0,6 с,0,0 с,100%,как в пресете" && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acFoot").isHidden()));
+  check("ED1 'Edit' lists it with its settings; the library options are hidden", (await p.page.locator(".ac-edit-head").innerText()).indexOf("Слой «Логотип»") === 0 && (await p.page.locator(".ac-edit-top b").innerText()) === "Сдвиг влево — появление" && (await p.page.locator(".ac-edit-item .ac-edit-row output").allInnerTexts()).join() === "0,6 с,0,0 с,100%,как в пресете" && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acFoot").isHidden()));
   await p.page.screenshot({ path: path.join(SHOTS, "29-animation-edit.png") });
   const posKeys = () => keysOf(acAt(EL, "ADBE Transform Group", "ADBE Position")).map((k) => k[0] + ":" + k[1][0]).join(" ");
   await edSlide(p, 0, "Длительность", 1.2);
-  check("ED2 a longer duration moves the preset's keys; the user's own key stays", posKeys() === "0:384 1.2:960 3:100" && JSON.stringify(keysOf(acAt(EL, "ADBE Transform Group", "ADBE Opacity"))) === JSON.stringify([[0, 0], [1.2, 100]]) && p.ae.log.undo.slice(-2).join("|") === "begin:Sayframe: edit slide-left|end" && /обновлён/.test(await p.status()), posKeys());
+  check("ED2 a longer duration moves the preset's keys; the user's own key stays", posKeys() === "0:2880 1.2:960 3:100" && p.ae.log.undo.slice(-2).join("|") === "begin:Sayframe: edit push-left|end" && /обновлён/.test(await p.status()), posKeys());
   await edSlide(p, 0, "Задержка", 0.5);
-  check("ED3 a delay starts the move later", posKeys() === "0.5:384 1.7:960 3:100", posKeys());
+  check("ED3 a delay starts the move later", posKeys() === "0.5:2880 1.7:960 3:100", posKeys());
   await edSlide(p, 0, "Сила", 200);
-  check("ED4 strength 200% doubles the distance; the fade still goes to zero", posKeys() === "0.5:-192 1.7:960 3:100" && JSON.stringify(keysOf(acAt(EL, "ADBE Transform Group", "ADBE Opacity"))) === JSON.stringify([[0.5, 0], [1.7, 100]]), posKeys());
-  await p.page.selectOption(".ac-edit-item .ac-swap", "slide-right");
+  check("ED4 strength 200% doubles the distance", posKeys() === "0.5:4800 1.7:960 3:100", posKeys());
+  await p.page.selectOption(".ac-edit-item .ac-swap", "push-right");
   await p.idle(); await p.page.waitForTimeout(50);
-  check("ED5 another preset of the same kind replaces it, with the same settings", posKeys() === "0.5:2112 1.7:960 3:100" && (await p.page.locator(".ac-edit-top b").innerText()) === "Справа — появление" && (await p.page.locator(".ac-edit-item .ac-edit-row output").allInnerTexts()).join() === "1,2 с,0,5 с,200%,как в пресете", posKeys());
+  check("ED5 another preset of the same kind replaces it, with the same settings", posKeys() === "0.5:-2880 1.7:960 3:100" && (await p.page.locator(".ac-edit-top b").innerText()) === "Сдвиг вправо — появление" && (await p.page.locator(".ac-edit-item .ac-edit-row output").allInnerTexts()).join() === "1,2 с,0,5 с,200%,как в пресете", posKeys());
   await edSlide(p, 0, "Плавность", 30);
   check("ED6 softness is stored and shown", (await p.page.locator(".ac-edit-item .ac-edit-row output").last().innerText()) === "30%");
   await p.page.locator(".ac-edit-item button", { hasText: "Убрать" }).click(); await p.idle();
-  check("ED7 'Remove' takes out exactly its keys; the user's key and note stay, the record is gone", posKeys() === "3:100" && acAt(EL, "ADBE Transform Group", "ADBE Opacity").keys.length === 0 && EL.comment === "моя заметка" && /На этом слое нет пресетов/.test(await p.page.locator("#acGrid").innerText()));
+  check("ED7 'Remove' takes out exactly its keys; the user's key and note stay, the record is gone", posKeys() === "3:100" && (acAt(EL, "ADBE Transform Group", "ADBE Opacity") || { keys: [] }).keys.length === 0 && EL.comment === "моя заметка" && /На этом слое нет пресетов/.test(await p.page.locator("#acGrid").innerText()));
   await p.close();
 
   // Effects and text animators come out whole; a preset applied in both directions gives two entries.
   EL = mkAcLayer("Фото");
   p = await open({ selectedLayers: [EL] });
-  await p.tab("tools"); await acSec(p, "Анимация");
+  await p.tab("tools"); await acSec(p, "Переходы");
   await p.page.click('#acMode button[data-value="both"]');
-  await acClick(p, "Из размытия");
+  await acClick(p, /^Размытие$/);
   t = acAt(EL, "ADBE Effect Parade").children.map((c) => c.name);
   check("ED8 effects added by a preset get their own names", t.length === 2 && t.every((n) => /^Sayframe fx /.test(n)), t.join());
   await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".ac-edit-item");
-  check("ED8 'both' shows two entries: appearance and disappearance", (await p.page.locator(".ac-edit-top b").allInnerTexts()).join() === "Из размытия — появление,Из размытия — исчезновение");
+  check("ED8 'both' shows two entries: appearance and disappearance", (await p.page.locator(".ac-edit-top b").allInnerTexts()).join() === "Размытие — появление,Размытие — исчезновение");
   const fxBefore = acAt(EL, "ADBE Effect Parade").children.map((c) => c.name);
   await edSlide(p, 1, "Длительность", 1);
   t = acAt(EL, "ADBE Effect Parade").children.map((c) => c.name);
   check("ED8 editing one entry swaps only its own effect", t.length === 2 && t[0] === fxBefore[0] && t[1] !== fxBefore[1] && fxBefore.indexOf(t[1]) < 0, JSON.stringify(fxBefore) + " -> " + JSON.stringify(t));
   await p.page.locator('.ac-edit-item[data-index="0"] button', { hasText: "Убрать" }).click(); await p.idle();
-  check("ED8 removing one entry leaves the other", acAt(EL, "ADBE Effect Parade").children.length === 1 && (await p.page.locator(".ac-edit-top b").allInnerTexts()).join() === "Из размытия — исчезновение");
+  check("ED8 removing one entry leaves the other", acAt(EL, "ADBE Effect Parade").children.length === 1 && (await p.page.locator(".ac-edit-top b").allInnerTexts()).join() === "Размытие — исчезновение");
   const ET = mkAcLayer("Заголовок", "text");
   p.ae.comp.selectedLayers = [ET];
   await acSec(p, "Текст"); await p.page.click('#acMode button[data-value="in"]');
@@ -1656,17 +1715,51 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("ED10 nothing selected -> the Edit view says what to do", /Выделите слой, на котором стоит пресет/.test(await p.page.locator("#acGrid").innerText()) && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
+  console.log("\n=== motions: edit ===");
+  const ML = mkAcLayer("Кнопка");
+  p = await open({ selectedLayers: [ML] });
+  await p.tab("tools"); await acSec(p, "Движения");
+  await p.page.click('#acMode button[data-value="both"]');
+  await acClick(p, "Снизу · плавно");
+  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".sf-group");
+  const sfOut = (dir) => p.page.locator('.sf-group[data-dir="' + dir + '"] .ac-edit-row output').allInnerTexts();
+  const sfSlide = async (dir, label, value) => {
+    await p.page.evaluate(([d, l, v]) => {
+      const input = document.querySelector('.sf-group[data-dir="' + d + '"] input[aria-label="' + l + '"]');
+      input.value = String(v); input.dispatchEvent(new Event("input", { bubbles: true })); input.dispatchEvent(new Event("change", { bubbles: true }));
+    }, [dir, label, value]);
+    await p.idle(); await p.page.waitForTimeout(50);
+  };
+  const mPos = (t) => r4(sfEval(ML, acAt(ML, "ADBE Transform Group", "ADBE Position"), t))[1];
+  check("SE1 'Edit' shows the motions by direction: duration and delay of the marker, the curve and the preset's own settings", (await p.page.locator(".sf-group > .ac-edit-top b").allInnerTexts()).join() === "Появление (маркер IN),Исчезновение (маркер OUT)" && (await p.page.locator(".sf-preset .ac-edit-top b").allInnerTexts()).join() === "Снизу,Снизу" && (await sfOut("in")).join() === "0,6 с,0,0 с,216 px,0%" && (await p.page.locator('.sf-group[data-dir="in"] .sf-curve').inputValue()) === "ease", (await sfOut("in")).join());
+  await p.page.screenshot({ path: path.join(SHOTS, "29b-motions-edit.png") });
+  const mk2 = acAt(ML, "ADBE Marker");
+  await sfSlide("in", "Длительность", 1.2);
+  const mkTimes = () => mk2.keys.map((k) => r4(k.t) + "/" + r4(k.v.duration)).join();
+  check("SE2 duration stretches the IN marker; the motion follows", mkTimes() === "0/1.2,4.4/0.6" && mPos(0.6) > 540 && mPos(1.2) === 540 && /Длительность изменена/.test(await p.status()), mkTimes());
+  await sfSlide("in", "Задержка", 0.5);
+  check("SE3 delay moves the IN marker later", mk2.keys[0].t === 0.5 && mPos(0.5) === 756 && mPos(1.7) === 540);
+  await sfSlide("out", "Длительность", 1);
+  check("SE4 the OUT marker keeps its end at the layer's end", mkTimes() === "0.5/1.2,4/1" && mPos(5) === 756);
+  await sfSlide("in", "Дистанция", 400);
+  check("SE5 a setting changes the effect control in Effect Controls, and the motion with it", layerFx(ML).length === 4 && acAt(ML, "ADBE Effect Parade").children.find((c) => c.name === "IN Снизу · Дистанция").children[0].value === 400 && mPos(0.5) === 940 && mPos(5) === 756);
+  await p.page.selectOption('.sf-group[data-dir="in"] .sf-curve', "bounce"); await p.idle(); await p.page.waitForTimeout(50);
+  check("SE6 the curve can be changed", mk2.keys[0].v.comment === "IN: Снизу (с отскоком) {sf:from-bottom:in:bounce}" && /"bounce"/.test(acAt(ML, "ADBE Transform Group", "ADBE Position").expression), mk2.keys[0].v.comment);
+  await p.page.locator('.sf-group[data-dir="in"] .sf-preset button', { hasText: "Убрать" }).click(); await p.idle(); await p.page.waitForTimeout(50);
+  check("SE7 'Remove' takes off one direction: its marker and effects go, OUT stays and still works", mk2.keys.length === 1 && /^OUT:/.test(mk2.keys[0].v.comment) && layerFx(ML).join() === "OUT Снизу · Дистанция,OUT Снизу · Прозрачность" && mPos(0.5) === 540 && mPos(5) === 756 && (await p.page.locator(".sf-group").count()) === 1 && p.errors.length === 0, layerFx(ML).join());
+  await p.close();
+
   console.log("\n=== animation library: old host.jsx still loaded in After Effects ===");
   const STL = mkAcLayer("Фон", "av");
   p = await open({ selectedLayers: [STL], staleHost: true });
   await p.tab("tools");
-  await acSec(p, "Анимация");
-  await acClick(p, "Прозрачность");
+  await acSec(p, "Переходы");
+  await acClick(p, "Вспышка");
   check("AH1 the panel notices host.jsx lacks the preset functions, re-reads it and the preset goes on", p.ae.log.evalFiles === 1 && keysOf(acAt(STL, "ADBE Transform Group", "ADBE Opacity")).length === 2 && (await p.statusKind()) === "done", await p.status());
-  await acClick(p, "Прозрачность");
+  await acClick(p, "Вспышка");
   check("AH2 once re-read, it is not re-read again", p.ae.log.evalFiles === 1);
   acAt(STL, "ADBE Transform Group", "ADBE Opacity").addKey = () => { throw new Error("Cannot add a keyframe here"); };
-  await acClick(p, "Прозрачность");
+  await acClick(p, "Вспышка");
   check("AH3 when After Effects refuses, the status shows its own words", (await p.statusKind()) === "error" && /After Effects ответил: Cannot add a keyframe here/.test(await p.status()), await p.status());
   await p.close();
 
@@ -1807,7 +1900,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T2 Tools tab shows only the tools", (await vis(p, "#viewTools #acGrid")) && !(await vis(p, "#prompt")) && !(await vis(p, "#runBtn")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#newBtn")) && !(await vis(p, "#fixBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "false");
   check("T2 status line moved to the Tools tab", (await p.page.locator("#viewTools #statusBox").count()) === 1 && (await p.page.locator("#statusBox").count()) === 1 && (await vis(p, "#status")));
   await p.page.screenshot({ path: path.join(SHOTS, "17-tab-tools.png") });
-  check("T2 the Animation tab holds the preset library with five sections; the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Анимация,Графика,Звуки,✎ Изменить");
+  check("T2 the Animation tab holds the preset library with five sections; the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Звуки,✎ Изменить");
   await p.paste(); await p.idle(); await p.modalClick("Оставить как есть");
   check("T3 the paste block reports its result on its tab", /^Картинка вставлена/.test(await p.status()) && (await vis(p, "#status")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1 && p.ae.log.imports.length === 1, await p.status());
   t = await p.status();
