@@ -1255,7 +1255,29 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 
 /* Миниатюры: в покое — конечное состояние, при наведении движение повторяется по кругу. */
 .ac-obj { --c: var(--accent-hi); display: grid; place-items: center; }
-.ac-anim, .ac-trans { width: 30%; aspect-ratio: 1; border-radius: 22%; background: linear-gradient(135deg, var(--accent-hi), var(--accent)); box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.45); }
+.ac-trans { width: 30%; aspect-ratio: 1; border-radius: 22%; background: linear-gradient(135deg, var(--accent-hi), var(--accent)); box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.45); }
+/* «Движения»: знак Sayframe в круге; движение в превью считает панель по той же формуле, что и выражение на слое. */
+.ac-anim {
+  width: 34%; aspect-ratio: 1; border-radius: 50%; color: #fff; font: 800 clamp(14px, calc(var(--ac-size, 112px) / 5.2), 30px)/1 var(--round);
+  background: radial-gradient(circle at 32% 28%, var(--accent-hi), var(--accent) 70%); box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.45);
+  will-change: transform, opacity, filter;
+}
+.ac-badge {
+  position: absolute; left: 10px; top: 10px; padding: 2px 6px; border-radius: 6px; background: rgba(var(--accent-rgb), 0.95);
+  color: #fff; font: 800 10px/1.2 var(--round); letter-spacing: 0.04em; pointer-events: none;
+}
+.ac-badge[hidden] { display: none; }
+.ac-card.applied { border-color: rgba(var(--accent-rgb), 0.85); }
+.ac-folders { display: flex; flex-wrap: wrap; gap: 4px; }
+.ac-folders[hidden] { display: none; }
+.ac-folder {
+  padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted);
+  font: 600 11px/1.3 var(--round); cursor: pointer;
+}
+.ac-folder:hover { color: var(--text); background: var(--glass); }
+.ac-folder[aria-pressed="true"] { color: var(--text); border-color: rgba(var(--accent-rgb), 0.85); background: rgba(var(--accent-rgb), 0.16); }
+.sf-preset { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--line); }
+.sf-preset .ac-edit-top b { font-size: 12px; }
 .ac-text { color: #fff; font: 800 clamp(14px, calc(var(--ac-size, 112px) / 5.5), 30px)/1 var(--round); letter-spacing: 0.02em; white-space: nowrap; }
 .ac-graphic { color: #fff; font: 800 clamp(14px, calc(var(--ac-size, 112px) / 5), 32px)/1 var(--round); }
 .ac-sfx { display: flex; align-items: center; gap: 4px; height: 40%; }
@@ -1271,32 +1293,6 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .pv-graphic-progress { width: 64%; height: 9px; border-radius: 5px; background: rgba(255, 255, 255, 0.22); display: block; overflow: hidden; }
 .pv-graphic-progress i { display: block; height: 100%; width: 100%; border-radius: 5px; background: #fff; transform-origin: left center; }
 .pv-graphic-ripples { width: 14%; aspect-ratio: 1; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 7px transparent, 0 0 0 8px rgba(255, 255, 255, 0.6), 0 0 0 17px transparent, 0 0 0 18px rgba(255, 255, 255, 0.3); }
-@keyframes pv-anim-fade{0%{opacity:0}55%,100%{opacity:1}}
-.ac-card:hover .pv-anim-fade,.ac-card:focus-visible .pv-anim-fade{animation:pv-anim-fade 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-anim-scale-up{0%{transform:scale(0)}55%,100%{transform:scale(1)}}
-.ac-card:hover .pv-anim-scale-up,.ac-card:focus-visible .pv-anim-scale-up{animation:pv-anim-scale-up 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-anim-pop{0%{transform:scale(0);opacity:0}30%{transform:scale(1.18);opacity:1}42%{transform:scale(.93)}55%,100%{transform:scale(1)}}
-.ac-card:hover .pv-anim-pop,.ac-card:focus-visible .pv-anim-pop{animation:pv-anim-pop 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-anim-slide-left{0%{transform:translateX(-60px);opacity:0}55%,100%{transform:none;opacity:1}}
-.ac-card:hover .pv-anim-slide-left,.ac-card:focus-visible .pv-anim-slide-left{animation:pv-anim-slide-left 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-anim-slide-right{0%{transform:translateX(60px);opacity:0}55%,100%{transform:none;opacity:1}}
-.ac-card:hover .pv-anim-slide-right,.ac-card:focus-visible .pv-anim-slide-right{animation:pv-anim-slide-right 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-anim-slide-up{0%{transform:translateY(40px);opacity:0}55%,100%{transform:none;opacity:1}}
-.ac-card:hover .pv-anim-slide-up,.ac-card:focus-visible .pv-anim-slide-up{animation:pv-anim-slide-up 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-anim-slide-down{0%{transform:translateY(-40px);opacity:0}55%,100%{transform:none;opacity:1}}
-.ac-card:hover .pv-anim-slide-down,.ac-card:focus-visible .pv-anim-slide-down{animation:pv-anim-slide-down 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-anim-rotate-in{0%{transform:rotate(-90deg);opacity:0}55%,100%{transform:none;opacity:1}}
-.ac-card:hover .pv-anim-rotate-in,.ac-card:focus-visible .pv-anim-rotate-in{animation:pv-anim-rotate-in 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-anim-spin-scale{0%{transform:rotate(-180deg) scale(0)}55%,100%{transform:none}}
-.ac-card:hover .pv-anim-spin-scale,.ac-card:focus-visible .pv-anim-spin-scale{animation:pv-anim-spin-scale 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-anim-blur-in{0%{filter:blur(10px);opacity:0}55%,100%{filter:none;opacity:1}}
-.ac-card:hover .pv-anim-blur-in,.ac-card:focus-visible .pv-anim-blur-in{animation:pv-anim-blur-in 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-anim-drop-bounce{0%{transform:translateY(-70px)}28%{transform:none}37%{transform:translateY(-14px)}46%{transform:none}51%{transform:translateY(-4px)}55%,100%{transform:none}}
-.ac-card:hover .pv-anim-drop-bounce,.ac-card:focus-visible .pv-anim-drop-bounce{animation:pv-anim-drop-bounce 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-anim-swing{0%{transform:rotate(35deg);opacity:0}25%{transform:rotate(-16deg);opacity:1}40%{transform:rotate(7deg)}55%,100%{transform:none}}
-.ac-card:hover .pv-anim-swing,.ac-card:focus-visible .pv-anim-swing{animation:pv-anim-swing 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-anim-squash{0%{transform:scale(1.6,.4);opacity:0}55%,100%{transform:none;opacity:1}}
-.ac-card:hover .pv-anim-squash,.ac-card:focus-visible .pv-anim-squash{animation:pv-anim-squash 1.6s cubic-bezier(.3,.7,.3,1) infinite}
 @keyframes pv-trans-zoom-blur{0%{transform:scale(3);filter:blur(8px);opacity:0}55%,100%{transform:none;filter:none;opacity:1}}
 .ac-card:hover .pv-trans-zoom-blur,.ac-card:focus-visible .pv-trans-zoom-blur{animation:pv-trans-zoom-blur 1.6s cubic-bezier(.3,.7,.3,1) infinite}
 @keyframes pv-trans-spin-zoom{0%{transform:rotate(-360deg) scale(0);opacity:0}55%,100%{transform:none;opacity:1}}
@@ -1369,4 +1365,4 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .ac-edit-row { display: grid; grid-template-columns: 96px 1fr 84px; align-items: center; gap: 8px; color: var(--muted); font: 600 12px/1.2 var(--round); }
 .ac-edit-row output { color: var(--text); text-align: right; }
 .ac-edit-row .range { width: 100%; }
-.ac-swap { grid-column: 2 / 4; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--glass); color: var(--text); padding: 0 8px; font: 600 12.5px/1 var(--round); }
+.ac-swap, .sf-curve { grid-column: 2 / 4; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--glass); color: var(--text); padding: 0 8px; font: 600 12.5px/1 var(--round); }
