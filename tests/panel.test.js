@@ -334,12 +334,13 @@ function makeAE(opts, tmpDir) {
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   ctx.$.global = ctx;
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
+  if (opts.staleHost) vm.runInContext("delete sayframeHost.acAnimate; delete sayframeHost.acText; delete sayframeHost.acList;", ctx);
   log.scripts = [];
   return { log, project, comp, projItems, ctx, keyboardState, evalScript(script) {
     log.lastScript = script; log.scripts.push(script);
     if (!/^[\x09\x0a\x0d\x20-\x7e]*$/.test(script)) return "EvalScript error."; // the bridge must stay ASCII
     try {
-      if (/^\$\.evalFile\(/.test(script)) { vm.runInContext(hostSrc, ctx); return vm.runInContext("typeof sayframeHost", ctx); }
+      if (/^\$\.evalFile\(/.test(script)) { log.evalFiles = (log.evalFiles || 0) + 1; vm.runInContext(hostSrc, ctx); const rest = script.replace(/^\$\.evalFile\([^)]*\);\s*/, ""); const r0 = vm.runInContext(rest, ctx); return typeof r0 === "string" ? r0 : String(r0); }
       const r = vm.runInContext(script, ctx); return typeof r === "string" ? r : String(r);
     } catch (e) { return "EvalScript error."; }
   } };
@@ -1653,6 +1654,20 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p.ae.comp.selectedLayers = [];
   await p.page.click("#acEditRefresh"); await p.page.waitForTimeout(150);
   check("ED10 nothing selected -> the Edit view says what to do", /Выделите слой, на котором стоит пресет/.test(await p.page.locator("#acGrid").innerText()) && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  console.log("\n=== animation library: old host.jsx still loaded in After Effects ===");
+  const STL = mkAcLayer("Фон", "av");
+  p = await open({ selectedLayers: [STL], staleHost: true });
+  await p.tab("tools");
+  await acSec(p, "Анимация");
+  await acClick(p, "Прозрачность");
+  check("AH1 the panel notices host.jsx lacks the preset functions, re-reads it and the preset goes on", p.ae.log.evalFiles === 1 && keysOf(acAt(STL, "ADBE Transform Group", "ADBE Opacity")).length === 2 && (await p.statusKind()) === "done", await p.status());
+  await acClick(p, "Прозрачность");
+  check("AH2 once re-read, it is not re-read again", p.ae.log.evalFiles === 1);
+  acAt(STL, "ADBE Transform Group", "ADBE Opacity").addKey = () => { throw new Error("Cannot add a keyframe here"); };
+  await acClick(p, "Прозрачность");
+  check("AH3 when After Effects refuses, the status shows its own words", (await p.statusKind()) === "error" && /After Effects ответил: Cannot add a keyframe here/.test(await p.status()), await p.status());
   await p.close();
 
   console.log("\n=== settings ===");
