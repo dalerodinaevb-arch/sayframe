@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.18.0";
+    var VERSION = "1.19.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -3025,9 +3025,7 @@
         { id: "sfx", label: "Звуки" }
     ];
     var AC_PRESETS = {
-        trans: [["zoom-blur", "Зум с размытием"], ["spin-zoom", "Вращение с зумом"], ["push-left", "Сдвиг влево"], ["push-right", "Сдвиг вправо"],
-            ["push-up", "Сдвиг вверх"], ["wipe", "Шторка"], ["clock-wipe", "Круговая шторка"], ["flash", "Вспышка"], ["glitch", "Глитч"],
-            ["stretch", "Растяжение"], ["blur", "Размытие"]],
+        trans: [],
         text: [["typewriter", "Печатная машинка"], ["fade-letters", "Проявление по буквам"], ["slide-letters", "Буквы снизу"],
             ["pop-letters", "Буквы с масштабом"], ["blur-letters", "Буквы из размытия"], ["rotate-letters", "Буквы с поворотом"],
             ["words", "По словам"], ["random", "Случайные буквы"], ["tracking", "Разлёт букв"]],
@@ -3037,6 +3035,31 @@
         sfx: [["whoosh", "Вжух"], ["swish", "Свист"], ["swipe-up", "Взмах"], ["pop", "Поп"], ["click", "Клик"], ["bubble", "Пузырь"],
             ["ding", "Дзынь"], ["notify", "Уведомление"], ["riser", "Нарастание"], ["impact", "Удар"], ["glitch", "Глитч"], ["typing", "Клавиатура"]]
     };
+    // Переходы прошлых версий (ключами на самом слое, до 1.19): нужны только для «✎ Изменить».
+    var AC_LEGACY_TRANS = [["zoom-blur", "Зум с размытием"], ["spin-zoom", "Вращение с зумом"], ["push-left", "Сдвиг влево"], ["push-right", "Сдвиг вправо"],
+        ["push-up", "Сдвиг вверх"], ["wipe", "Шторка"], ["clock-wipe", "Круговая шторка"], ["flash", "Вспышка"], ["glitch", "Глитч"],
+        ["stretch", "Растяжение"], ["blur", "Размытие"]];
+
+    // ---- «Переходы» — как Transitions в Animation Composer: переход ставится на склейку, а не на слой.
+    // У указателя времени сверху появляется новый слой (половина до склейки, половина после): корректирующий
+    // для камеры и глитча, заливка для засветок и затемнений, шейп для шторок. Всё на нём — выражения от длины
+    // самого слоя, поэтому растянули слой — изменилась длительность. «Сила» — в Effect Controls.
+    var TR_FOLDERS = [
+        { id: "all", label: "Все" }, { id: "camera", label: "Камера" }, { id: "glitch", label: "Глитч" }, { id: "light", label: "Засветки" },
+        { id: "fade", label: "Затемнение" }, { id: "shapes", label: "Шейпы" }
+    ];
+    var TR_LIST = [
+        ["camera", "zoom-in", "Наезд"], ["camera", "zoom-out", "Отъезд"], ["camera", "zoom-rotate", "Наезд с поворотом"],
+        ["camera", "rotate", "Поворот"], ["camera", "pan-left", "Панорама влево"], ["camera", "pan-right", "Панорама вправо"],
+        ["camera", "pan-up", "Панорама вверх"], ["camera", "pan-down", "Панорама вниз"], ["camera", "shake", "Тряска"],
+        ["camera", "twirl", "Закрутка"], ["camera", "blur-zoom", "Зум с размытием"],
+        ["glitch", "glitch", "Цифровой глитч"], ["glitch", "glitch-shake", "Глитч с тряской"],
+        ["light", "leak-warm", "Тёплая засветка"], ["light", "leak-cool", "Холодная засветка"], ["light", "flash", "Вспышка"],
+        ["fade", "fade-black", "Через чёрный"], ["fade", "fade-white", "Через белый"],
+        ["shapes", "wipe-left", "Шторка"], ["shapes", "wipe-up", "Шторка вверх"], ["shapes", "circle", "Круг"]
+    ];
+    var TR_BY_ID = {};
+
     // Пресеты, поставленные прошлыми версиями ключами (до 1.18): нужны только для названий во «✎ Изменить».
     var AC_LEGACY_ANIM = [["fade", "Прозрачность"], ["scale-up", "Масштаб"], ["pop", "Пружинка"], ["slide-left", "Слева"], ["slide-right", "Справа"],
         ["slide-up", "Снизу"], ["slide-down", "Сверху"], ["rotate-in", "Поворот"], ["spin-scale", "Вихрь"], ["blur-in", "Из размытия"],
@@ -3081,8 +3104,13 @@
         });
     });
 
+    TR_LIST.forEach(function (t) {
+        TR_BY_ID[t[1]] = { folder: t[0], title: t[2] };
+        AC_PRESETS.trans.push([t[1], t[2]]);
+    });
+
     var AC_GLYPH = { arrow: "➜", star: "★", counter: "42%", timer: "00:10" };
-    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false, folder: "all" };
+    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false, folder: "all", tfolder: "all", tdur: 1 };
     var acState = loadAcState();
     var acAudio = null;
 
@@ -3099,6 +3127,8 @@
         out.size = Math.min(200, Math.max(80, Number(out.size) || 112));
         if (!/^#[0-9a-f]{6}$/i.test(out.color)) { out.color = "#ffffff"; }
         if (!SF_FOLDERS.some(function (f) { return f.id === out.folder; })) { out.folder = "all"; }
+        if (!TR_FOLDERS.some(function (f) { return f.id === out.tfolder; })) { out.tfolder = "all"; }
+        out.tdur = Math.min(3, Math.max(0.2, Math.round(Number(out.tdur) * 10) / 10 || 1));
         out.fav = Array.isArray(s.fav) ? s.fav.filter(function (x) { return typeof x === "string"; }) : [];
         return out;
     }
@@ -3111,6 +3141,7 @@
             AC_PRESETS[s.id].forEach(function (p) {
                 var item = { sec: s.id, id: p[0], name: p[1], key: s.id + ":" + p[0] }, sf = s.id === "anim" ? SF_BY_ID[p[0]] : null;
                 if (sf) { item.folder = sf.folder; item.motion = sf.motion; item.curve = sf.curve; item.title = sf.title; item.shape = sf.shape; }
+                if (s.id === "trans" && TR_BY_ID[p[0]]) { item.folder = TR_BY_ID[p[0]].folder; item.title = p[1]; }
                 out.push(item);
             });
         });
@@ -3129,7 +3160,10 @@
             if (acState.favOnly && acState.fav.indexOf(p.key) < 0) { return false; }
             if (q) { return fxLower(p.name).indexOf(q) >= 0 || fxLower(p.id).indexOf(q) >= 0; }
             if (acState.favOnly) { return true; }
-            return p.sec === acState.sec && (p.sec !== "anim" || acState.folder === "all" || p.folder === acState.folder);
+            if (p.sec !== acState.sec) { return false; }
+            if (p.sec === "anim") { return acState.folder === "all" || p.folder === acState.folder; }
+            if (p.sec === "trans") { return acState.tfolder === "all" || p.folder === acState.tfolder; }
+            return true;
         });
     }
 
@@ -3141,6 +3175,16 @@
         obj.className = "ac-obj ac-" + p.sec + " pv-" + p.sec + "-" + p.id;
         if (p.sec === "text") { obj.textContent = "Текст"; }
         if (p.sec === "anim") { obj.className = "ac-obj ac-anim"; obj.textContent = "✦"; }
+        if (p.sec === "trans") {
+            obj.className = "ac-obj ac-trv";
+            obj.innerHTML = "<i class=\"trv-a\">A</i><i class=\"trv-b\">B</i>";
+            bar = document.createElement("span");
+            bar.className = "trv-ov trv-" + p.id;
+            thumb.appendChild(obj);
+            thumb.appendChild(bar);
+            trStill(obj, bar, p.id);
+            return thumb;
+        }
         if (p.sec === "graphic" && AC_GLYPH[p.id]) { obj.textContent = AC_GLYPH[p.id]; }
         if (p.sec === "graphic" && p.id === "progress") { obj.appendChild(document.createElement("i")); }
         if (p.sec === "sfx") {
@@ -3162,14 +3206,14 @@
             b.setAttribute("aria-selected", on ? "true" : "false");
         });
         ui.acFavOnly.setAttribute("aria-pressed", acState.favOnly ? "true" : "false");
-        ui.acModeRow.hidden = editing || !(searching || sec === "trans" || sec === "text" || sec === "anim");
-        ui.acColorRow.hidden = editing || !(searching || sec === "graphic");
+        ui.acModeRow.hidden = editing || !(searching || sec === "text" || sec === "anim");
+        ui.acColorRow.hidden = editing || !(searching || sec === "graphic" || sec === "trans");
         ui.acDurRow.hidden = editing || (!searching && sec === "sfx");
         ui.acFoot.hidden = editing;
-        renderSfFolders(!searching && !editing && sec === "anim");
+        renderSfFolders(!searching && !editing && (sec === "anim" || sec === "trans") ? sec : "");
         pressGroup(ui.acMode, acState.mode);
-        ui.acDur.value = String(acState.dur);
-        ui.acDurVal.textContent = acState.dur.toFixed(1).replace(".", ",") + " с";
+        ui.acDur.value = String(acState[durKey()]);
+        ui.acDurVal.textContent = acState[durKey()].toFixed(1).replace(".", ",") + " с";
         ui.acColor.value = acState.color;
         ui.acSize.value = String(acState.size);
         ui.acHint.textContent = acHintText(searching ? "" : sec);
@@ -3182,21 +3226,98 @@
         markSfCards();
     }
 
-    function renderSfFolders(show) {
-        var box = ui.acFolders;
+    // У переходов своя длительность (по умолчанию 1 с: полсекунды до склейки и полсекунды после).
+    function durKey() { return acState.sec === "trans" && !acState.favOnly && !(ui.acSearch && ui.acSearch.value.replace(/\s/g, "")) ? "tdur" : "dur"; }
+
+    // Папки внутри раздела, как в дереве Animation Composer: у «Движений» и у «Переходов» свои.
+    function renderSfFolders(sec) {
+        var box = ui.acFolders, key = sec === "trans" ? "tfolder" : "folder";
         if (!box) { return; }
-        box.hidden = !show;
-        if (!show) { return; }
+        box.hidden = !sec;
+        if (!sec) { return; }
         box.innerHTML = "";
-        SF_FOLDERS.forEach(function (f) {
+        (sec === "trans" ? TR_FOLDERS : SF_FOLDERS).forEach(function (f) {
             var b = document.createElement("button");
             b.className = "ac-folder";
             b.setAttribute("data-folder", f.id);
-            b.setAttribute("aria-pressed", acState.folder === f.id ? "true" : "false");
+            b.setAttribute("aria-pressed", acState[key] === f.id ? "true" : "false");
             b.textContent = f.label;
-            b.addEventListener("click", function () { acState.folder = f.id; storeAcState(); renderAc(); });
+            b.addEventListener("click", function () { acState[key] = f.id; storeAcState(); renderAc(); });
             box.appendChild(b);
         });
+    }
+
+    // ---- превью переходов: клип A до склейки, клип B после, то же движение, что даст выражение на слое.
+    function trCut(t, a, b) {
+        return t < 0.5 ? a * Math.pow(t * 2, 3) : b * (1 - (1 - Math.pow(1 - (t * 2 - 1), 3)));
+    }
+
+    function trLook(id, t) {
+        var bell = Math.pow(Math.sin(Math.PI * t), 2), j = Math.floor(t * 24), r1 = Math.sin(j * 12.9898) * 43758.5453, rnd = r1 - Math.floor(r1);
+        var o = { s: 1, r: 0, x: 0, y: 0, blur: 0, skew: 0, ov: 0, ox: 0, oy: 0, os: 1 };
+        if (id === "zoom-in") { o.s = 1 + trCut(t, 3, -0.6); }
+        if (id === "zoom-out") { o.s = 1 + trCut(t, -0.6, 3); }
+        if (id === "zoom-rotate") { o.s = 1 + trCut(t, 2, -0.5); o.r = trCut(t, 90, -90); }
+        if (id === "rotate") { o.s = 1 + 0.3 * bell; o.r = trCut(t, 180, -180); }
+        if (id === "pan-left") { o.x = trCut(t, -1, 1); }
+        if (id === "pan-right") { o.x = trCut(t, 1, -1); }
+        if (id === "pan-up") { o.y = trCut(t, -1, 1); }
+        if (id === "pan-down") { o.y = trCut(t, 1, -1); }
+        if (id === "shake") { o.s = 1 + 0.15 * bell; o.x = Math.sin(t * 80) * 0.05 * bell; o.y = Math.cos(t * 67) * 0.04 * bell; o.r = Math.sin(t * 53) * 6 * bell; }
+        if (id === "twirl") { o.s = 1 + 0.5 * bell; o.r = trCut(t, 200, -200); o.blur = 3 * bell; }
+        if (id === "blur-zoom") { o.s = 1 + trCut(t, 1.5, -0.3); o.blur = 8 * bell; }
+        if (id === "glitch" || id === "glitch-shake") {
+            o.x = (rnd - 0.5) * (id === "glitch" ? 0.15 : 0.3) * bell; o.skew = (rnd - 0.5) * 40 * bell; o.s = 1 + rnd * 0.3 * bell;
+            if (id === "glitch-shake") { o.r = (rnd - 0.5) * 16 * bell; }
+        }
+        if (id === "leak-warm" || id === "leak-cool") { o.ov = Math.pow(Math.sin(Math.PI * t), 1.5); }
+        if (id === "flash") { o.ov = Math.pow(Math.max(0, 1 - Math.abs(t * 2 - 1)), 3); }
+        if (id === "fade-black" || id === "fade-white") { o.ov = Math.min(1, Math.sin(Math.PI * t) * 1.4); }
+        if (id === "wipe-left" || id === "wipe-up" || id === "circle") {
+            var f = t < 0.5 ? 0.5 * (1 - Math.pow(1 - t * 2, 3)) : 0.5 + 0.5 * Math.pow(t * 2 - 1, 3);
+            o.ov = 1;
+            if (id === "wipe-left") { o.ox = f * 2 - 1; }
+            if (id === "wipe-up") { o.oy = 1 - f * 2; }
+            if (id === "circle") { o.os = t < 0.5 ? 1 - Math.pow(1 - t * 2, 3) : 1 - Math.pow(t * 2 - 1, 3); }
+        }
+        return o;
+    }
+
+    // В покое карточка показывает кадр незадолго до склейки — так видно, чем переходы отличаются.
+    function trStill(clips, ov, id) {
+        var o = trLook(id, /^(wipe|circle)/.test(id) ? 0.2 : 0.42);
+        clips.style.transform = "translate(" + (o.x * 100).toFixed(1) + "%," + (o.y * 100).toFixed(1) + "%) rotate(" + o.r.toFixed(1) +
+            "deg) skewX(" + o.skew.toFixed(1) + "deg) scale(" + o.s.toFixed(3) + ")";
+        clips.style.filter = "blur(" + o.blur.toFixed(2) + "px)";
+        ov.style.opacity = String(Math.max(0, Math.min(1, o.ov)));
+        ov.style.transform = "translate(" + (o.ox * 100).toFixed(1) + "%," + (o.oy * 100).toFixed(1) + "%) scale(" + o.os.toFixed(3) + ")";
+    }
+
+    function trPreview(card, p) {
+        var clips = card.querySelector(".ac-trv"), b = card.querySelector(".trv-b"), ov = card.querySelector(".trv-ov");
+        var n = 48, total = 2000, play = 1600, i, t, o, cf = [], of = [];
+        if (!clips || !clips.animate) { return; }
+        for (i = 0; i <= n; i++) {
+            t = i / n;
+            o = trLook(p.id, t);
+            cf.push({ offset: t * play / total, transform: "translate(" + (o.x * 100).toFixed(1) + "%," + (o.y * 100).toFixed(1) + "%) rotate(" +
+                o.r.toFixed(1) + "deg) skewX(" + o.skew.toFixed(1) + "deg) scale(" + o.s.toFixed(3) + ")", filter: "blur(" + o.blur.toFixed(2) + "px)" });
+            of.push({ offset: t * play / total, opacity: Math.max(0, Math.min(1, o.ov)),
+                transform: "translate(" + (o.ox * 100).toFixed(1) + "%," + (o.oy * 100).toFixed(1) + "%) scale(" + o.os.toFixed(3) + ")" });
+        }
+        cf.push({ offset: 1, transform: "none", filter: "blur(0px)" });
+        of.push({ offset: 1, opacity: 0, transform: "none" });
+        stopTrPreview(card);
+        card.trAnims = [
+            clips.animate(cf, { duration: total, iterations: Infinity }),
+            b.animate([{ offset: 0, opacity: 0 }, { offset: 0.4, opacity: 0 }, { offset: 0.4001, opacity: 1 }, { offset: 0.9999, opacity: 1 }, { offset: 1, opacity: 0 }],
+                { duration: total, iterations: Infinity }),
+            ov.animate(of, { duration: total, iterations: Infinity })
+        ];
+    }
+
+    function stopTrPreview(card) {
+        if (card.trAnims) { card.trAnims.forEach(function (a) { a.cancel(); }); card.trAnims = null; }
     }
 
     // ---- какие «Движения» уже стоят на выделенном слое: значок IN / OUT на карточке.
@@ -3293,6 +3414,10 @@
         if (sec === "graphic") { return "Щелчок по карточке добавляет графику новым слоем у указателя времени."; }
         if (sec === "sfx") { return "▶ — послушать. Щелчок по карточке кладёт звук в композицию у указателя времени."; }
         if (sec === "text") { return "Выделите текстовый слой и щёлкните по карточке. Если текстового слоя нет, панель создаст новый."; }
+        if (sec === "trans") {
+            return "Поставьте указатель времени на склейку и щёлкните по карточке: сверху появится слой перехода — половина до склейки, " +
+                "половина после. Длительность — длина этого слоя, «Сила» — в Effect Controls. Цвет — для шторок и круга.";
+        }
         if (sec === "anim") {
             return "Выделите слои и щёлкните по карточке; щелчок по отмеченной снимает пресет. Ключи не запекаются: длительность — " +
                 "длина маркера IN/OUT на слое, настройки — в Effect Controls, ваши ключи и выражения остаются.";
@@ -3348,6 +3473,12 @@
             card.addEventListener("mouseleave", function () { stopSfPreview(card.querySelector(".ac-obj")); });
             card.addEventListener("blur", function () { stopSfPreview(card.querySelector(".ac-obj")); });
         }
+        if (p.sec === "trans") {
+            card.addEventListener("mouseenter", function () { trPreview(card, p); });
+            card.addEventListener("focus", function () { trPreview(card, p); });
+            card.addEventListener("mouseleave", function () { stopTrPreview(card); });
+            card.addEventListener("blur", function () { stopTrPreview(card); });
+        }
         card.addEventListener("click", function () { applyAc(p); });
         card.addEventListener("keydown", function (e) {
             if (e.target === card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); applyAc(p); }
@@ -3358,10 +3489,10 @@
     // ---- «Изменить»: пресеты Sayframe на выделенном слое — длительность, задержка, сила, плавность,
     // замена на другой пресет того же рода и «Убрать». Меняется сразу, как отпустили ползунок.
 
-    var acEdit = { layer: "", items: null, groups: [], error: "" };
+    var acEdit = { layer: "", items: null, groups: [], transition: null, error: "" };
 
     function acPresetName(id) {
-        var lists = [AC_LEGACY_ANIM, AC_PRESETS.trans, AC_PRESETS.text], i, j;
+        var lists = [AC_LEGACY_ANIM, AC_LEGACY_TRANS, AC_PRESETS.text], i, j;
         for (i = 0; i < lists.length; i++) {
             for (j = 0; j < lists[i].length; j++) {
                 if (lists[i][j][0] === id) { return lists[i][j][1]; }
@@ -3373,7 +3504,7 @@
     function acSameKind(id) {
         var isText = AC_PRESETS.text.some(function (p) { return p[0] === id; });
         var isLegacy = AC_LEGACY_ANIM.some(function (p) { return p[0] === id; });
-        return isText ? AC_PRESETS.text : (isLegacy ? AC_LEGACY_ANIM.concat(AC_PRESETS.trans) : AC_PRESETS.trans);
+        return isText ? AC_PRESETS.text : (isLegacy ? AC_LEGACY_ANIM.concat(AC_LEGACY_TRANS) : AC_LEGACY_TRANS);
     }
 
     async function loadAcEdit() {
@@ -3382,6 +3513,7 @@
         try {
             res = await host("sfList", []);
             acEdit.groups = res.groups;
+            acEdit.transition = res.transition || null;
             res = await host("acList", []);
             acEdit.layer = res.layer;
             acEdit.items = res.items;
@@ -3428,7 +3560,8 @@
             grid.appendChild(fxNote(acEdit.error || "Читаю пресеты на выделенном слое…"));
             return;
         }
-        if (!acEdit.items.length && !acEdit.groups.length) {
+        if (acEdit.transition) { grid.appendChild(trEditBox(acEdit.transition)); }
+        if (!acEdit.items.length && !acEdit.groups.length && !acEdit.transition) {
             grid.appendChild(fxNote("На этом слое нет пресетов Sayframe. Поставьте пресет из разделов «Движения», «Переходы» или «Текст» — и его можно будет настроить здесь."));
             return;
         }
@@ -3548,6 +3681,44 @@
         return box;
     }
 
+    // Выделен слой перехода: его длительность (слой растягивается вокруг склейки), сила и «Убрать».
+    function trEditBox(t) {
+        var box = document.createElement("div");
+        var head = document.createElement("div");
+        var name = document.createElement("b");
+        var remove = document.createElement("button");
+        var title = TR_BY_ID[t.id] ? TR_BY_ID[t.id].title : t.id;
+        box.className = "ac-edit-item tr-edit";
+        head.className = "ac-edit-top";
+        name.textContent = "Переход «" + title + "»";
+        remove.className = "ghost warn";
+        remove.textContent = "Убрать";
+        remove.addEventListener("click", async function () {
+            if (busy) { return; }
+            setBusy(true);
+            try {
+                await host("trRemove", []);
+                setBusy(false);
+                setStatus("Переход «" + title + "» убран. Отменить — Cmd/Ctrl+Z.", "done");
+                acEdit.transition = null;
+                loadAcEdit();
+            } catch (e) {
+                setBusy(false);
+                toolFailed(e);
+            }
+        });
+        head.appendChild(name);
+        head.appendChild(remove);
+        box.appendChild(head);
+        box.appendChild(acSlider("Длительность", 0.2, 4, 0.1, Math.round(t.dur * 10) / 10, secText, function (v) {
+            sfEditCall("trDuration", [v], "Длительность перехода изменена.");
+        }));
+        box.appendChild(acSlider("Сила", 0, 200, 5, Math.round(t.strength), function (v) { return v + "%"; }, function (v) {
+            sfEditCall("sfParam", [t.strengthName, v], "Сила перехода изменена.");
+        }));
+        return box;
+    }
+
     async function sfEditCall(fn, args, done) {
         var res;
         if (busy) { return; }
@@ -3557,6 +3728,7 @@
             res = await host(fn, args);
             acEdit.layer = res.layer;
             acEdit.groups = res.groups;
+            if (res.transition !== undefined) { acEdit.transition = res.transition; }
             setBusy(false);
             setStatus(done + " Отменить — Cmd/Ctrl+Z.", "done");
         } catch (e) {
@@ -3628,9 +3800,11 @@
                 sfSetState(res.state);
                 sfReport(p, res);
             } else if (p.sec === "trans") {
-                res = await host("acAnimate", [p.id, acState.mode, acState.dur]);
+                res = await host("trApply", [p.id, acState.tdur, hexToRgb01(acState.color),
+                    { title: p.name, prefix: "Переход: ", marker: "Склейка: ", strength: "Сила" }]);
                 setBusy(false);
-                acReport(p, res, "");
+                setStatus("«" + p.name + "» — на склейке " + secText(res.cut).replace(" с", " с от начала") + ", " + secText(res.dur) + ". Сверху новый слой «" + res.name +
+                    "»: растяните его, чтобы изменить длительность; «Сила» — в Effect Controls. Отменить — Cmd/Ctrl+Z.", "done");
             } else if (p.sec === "text") {
                 res = await host("acText", [p.id, acState.mode, acState.dur, "Ваш текст"]);
                 setBusy(false);
@@ -3736,8 +3910,8 @@
             b.addEventListener("click", function () { acState.mode = b.getAttribute("data-value"); storeAcState(); pressGroup(ui.acMode, acState.mode); });
         });
         ui.acDur.addEventListener("input", function () {
-            acState.dur = Math.round(Number(ui.acDur.value) * 10) / 10;
-            ui.acDurVal.textContent = acState.dur.toFixed(1).replace(".", ",") + " с";
+            acState[durKey()] = Math.round(Number(ui.acDur.value) * 10) / 10;
+            ui.acDurVal.textContent = acState[durKey()].toFixed(1).replace(".", ",") + " с";
             storeAcState();
         });
         ui.acColor.addEventListener("input", function () { acState.color = ui.acColor.value; storeAcState(); });
