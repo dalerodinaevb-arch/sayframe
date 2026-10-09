@@ -485,7 +485,8 @@ textarea:focus, .field:focus {
 /* Два ползунка расходятся от кнопки, как ручки ключа в редакторе графиков:
    светлая часть идёт от кнопки до бегунка, её длина и есть влияние. */
 .ease-card { gap: 6px; padding-bottom: 10px; }
-.motion-tools .tool-head { padding-right: 22px; }
+/* Первая строка названия обходит булавку и минус в правом верхнем углу; следующие строки идут на всю ширину. */
+.motion-tools .tool-head::before { content: ""; float: right; width: 32px; height: 14px; }
 /* Название, которое не помещается рядом с минусом, обрезается многоточием, а не вылезает из блока. */
 .motion-tools .tool-head b { overflow: hidden; text-overflow: ellipsis; }
 .ease-card .tool-head { margin-bottom: 4px; }
@@ -734,7 +735,7 @@ textarea:focus, .field:focus {
 /* Мелкие блоки (настройка «Блоки в разделе „Анимация“»): кнопки, отступы и подписи меньше,
    поэтому в ряд встаёт больше блоков. Меняется только размер, все функции те же. */
 [data-tools="small"] .motion-tools > .tool-card { padding: 9px 10px 10px; gap: 8px; border-radius: 14px; }
-[data-tools="small"] .motion-tools .tool-head { padding-right: 9px; }
+[data-tools="small"] .motion-tools .tool-head::before { width: 30px; height: 12px; }
 [data-tools="small"] .motion-tools .tool-head b { font-size: 11px; }
 [data-tools="small"] .motion-tools .anchor-wrap { gap: 8px; }
 [data-tools="small"] .motion-tools .anchor-grid { grid-template-columns: repeat(3, 26px); grid-auto-rows: 26px; gap: 2px; }
@@ -783,6 +784,8 @@ textarea:focus, .field:focus {
 [data-tools="small"] .motion-tools .ease-link svg { width: 14px; height: 14px; }
 [data-tools="small"] .motion-tools .tool-toggle { top: 1px; right: 2px; width: 18px; height: 18px; }
 [data-tools="small"] .motion-tools .tool-toggle svg { width: 10px; height: 10px; }
+[data-tools="small"] .motion-tools .tool-pin { top: 1px; right: 20px; width: 18px; height: 18px; }
+[data-tools="small"] .motion-tools .tool-pin svg { width: 11px; height: 11px; }
 [data-tools="small"] .motion-tools .tool-resize { top: 10px; bottom: 10px; right: -5px; width: 10px; }
 [data-tools="small"] .motion-tools .tool-resize::after { left: 4px; }
 [data-tools="small"] .motion-tools .tool-resize-y { left: 10px; right: 10px; bottom: -5px; height: 10px; }
@@ -1176,3 +1179,26 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .hotkey-actions .primary { width: auto; height: 30px; padding: 0 12px; font-size: 12.5px; border-radius: 9px; }
 .fx-keys { align-self: flex-start; height: 26px; padding: 0 8px; font-size: 11px; }
 .fx-keys b { color: var(--text); }
+
+/* Булавка рядом с минусом: закреплённый блок встаёт наверх. */
+.tool-pin {
+  position: absolute;
+  top: 2px; right: 31px;
+  width: 18px; height: 20px;
+  display: grid; place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.55;
+}
+.tool-pin svg { width: 12px; height: 12px; transform: rotate(35deg); }
+.tool-pin:hover { color: var(--text); opacity: 1; }
+.tool-pin:focus-visible { outline: 2px solid rgba(var(--accent-rgb), 0.9); outline-offset: -2px; opacity: 1; }
+.tool-pin[aria-pressed="true"] { color: var(--accent-hi); opacity: 1; }
+.tool-pin[aria-pressed="true"] svg { transform: none; }
+.tool-pin[aria-pressed="true"] .pin-body { fill: currentColor; }
+/* Тонкая линия между закреплёнными блоками и остальными: идёт посередине зазора между рядами. */
+.pin-line { position: absolute; left: 0; height: 1px; background: rgba(255, 255, 255, 0.16); pointer-events: none; }
