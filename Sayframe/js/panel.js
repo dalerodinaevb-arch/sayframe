@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.19.0";
+    var VERSION = "1.23.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -3026,14 +3026,10 @@
     ];
     var AC_PRESETS = {
         trans: [],
-        text: [["typewriter", "Печатная машинка"], ["fade-letters", "Проявление по буквам"], ["slide-letters", "Буквы снизу"],
-            ["pop-letters", "Буквы с масштабом"], ["blur-letters", "Буквы из размытия"], ["rotate-letters", "Буквы с поворотом"],
-            ["words", "По словам"], ["random", "Случайные буквы"], ["tracking", "Разлёт букв"]],
+        text: [],
         anim: [],
-        graphic: [["ring", "Кольцо"], ["burst", "Лучи"], ["underline", "Подчёркивание"], ["lower-third", "Плашка для титра"], ["arrow", "Стрелка"],
-            ["progress", "Полоса загрузки"], ["ripples", "Круги"], ["star", "Звезда"], ["counter", "Счётчик 0–100%"], ["timer", "Таймер 10 с"]],
-        sfx: [["whoosh", "Вжух"], ["swish", "Свист"], ["swipe-up", "Взмах"], ["pop", "Поп"], ["click", "Клик"], ["bubble", "Пузырь"],
-            ["ding", "Дзынь"], ["notify", "Уведомление"], ["riser", "Нарастание"], ["impact", "Удар"], ["glitch", "Глитч"], ["typing", "Клавиатура"]]
+        graphic: [],
+        sfx: []
     };
     // Переходы прошлых версий (ключами на самом слое, до 1.19): нужны только для «✎ Изменить».
     var AC_LEGACY_TRANS = [["zoom-blur", "Зум с размытием"], ["spin-zoom", "Вращение с зумом"], ["push-left", "Сдвиг влево"], ["push-right", "Сдвиг вправо"],
@@ -3045,17 +3041,19 @@
     // для камеры и глитча, заливка для засветок и затемнений, шейп для шторок. Всё на нём — выражения от длины
     // самого слоя, поэтому растянули слой — изменилась длительность. «Сила» — в Effect Controls.
     var TR_FOLDERS = [
-        { id: "all", label: "Все" }, { id: "camera", label: "Камера" }, { id: "glitch", label: "Глитч" }, { id: "light", label: "Засветки" },
-        { id: "fade", label: "Затемнение" }, { id: "shapes", label: "Шейпы" }
+        { id: "all", label: "Все" }, { id: "zoom", label: "Зум" }, { id: "pan", label: "Панорама" }, { id: "rotate", label: "Поворот" },
+        { id: "shake", label: "Тряска" }, { id: "glitch", label: "Глитч" }, { id: "light", label: "Засветки" },
+        { id: "fade", label: "Размытие и затемнение" }, { id: "shapes", label: "Шейпы" }
     ];
     var TR_LIST = [
-        ["camera", "zoom-in", "Наезд"], ["camera", "zoom-out", "Отъезд"], ["camera", "zoom-rotate", "Наезд с поворотом"],
-        ["camera", "rotate", "Поворот"], ["camera", "pan-left", "Панорама влево"], ["camera", "pan-right", "Панорама вправо"],
-        ["camera", "pan-up", "Панорама вверх"], ["camera", "pan-down", "Панорама вниз"], ["camera", "shake", "Тряска"],
-        ["camera", "twirl", "Закрутка"], ["camera", "blur-zoom", "Зум с размытием"],
+        ["zoom", "zoom-in", "Наезд"], ["zoom", "zoom-out", "Отъезд"], ["zoom", "zoom-in-out", "Наезд и отъезд"],
+        ["zoom", "zoom-distort-in", "Наезд с искажением"], ["zoom", "zoom-distort-out", "Отъезд с искажением"], ["zoom", "zoom-hit", "Мощный наезд с ударом"],
+        ["pan", "pan-left", "Панорама влево"], ["pan", "pan-right", "Панорама вправо"], ["pan", "pan-up", "Панорама вверх"], ["pan", "pan-down", "Панорама вниз"],
+        ["rotate", "rotate", "Поворот"], ["rotate", "roll", "Кувырок"], ["rotate", "zoom-rotate", "Наезд с поворотом"], ["rotate", "twirl", "Закрутка"],
+        ["shake", "shake", "Тряска с искажением"],
         ["glitch", "glitch", "Цифровой глитч"], ["glitch", "glitch-shake", "Глитч с тряской"],
         ["light", "leak-warm", "Тёплая засветка"], ["light", "leak-cool", "Холодная засветка"], ["light", "flash", "Вспышка"],
-        ["fade", "fade-black", "Через чёрный"], ["fade", "fade-white", "Через белый"],
+        ["fade", "blur-dissolve", "Через размытие"], ["fade", "fade-black", "Через чёрный"], ["fade", "fade-white", "Через белый"],
         ["shapes", "wipe-left", "Шторка"], ["shapes", "wipe-up", "Шторка вверх"], ["shapes", "circle", "Круг"]
     ];
     var TR_BY_ID = {};
@@ -3091,8 +3089,12 @@
         ["combo", "drop", "Падение", ["bounce", "over"], { dy: -1, far: true }]
     ];
     var SF_PARAM_LABELS = { dist: "Дистанция", sc: "Масштаб", scx: "Ширина", scy: "Высота", rot: "Угол", op: "Прозрачность", blur: "Размытие" };
-    var SF_PARAM_UNIT = { dist: " px", sc: "%", scx: "%", scy: "%", rot: "°", op: "%", blur: "" };
-    var SF_PARAM_RANGE = { dist: [0, 2000, 10], sc: [0, 400, 5], scx: [0, 600, 5], scy: [0, 600, 5], rot: [-720, 720, 5], op: [0, 100, 5], blur: [0, 200, 1] };
+    var SF_PARAM_UNIT = { dist: " px", sc: "%", scx: "%", scy: "%", rot: "°", op: "%", blur: "",
+        tpos: " px", tscale: "%", trot: "°", tblur: "", ttrack: "", tskew: "°", top: "%", stagger: "%" };
+    // Подписи настроек текстовых пресетов (во «✎ Изменить»); в панели эффекта их не добавляем.
+    var TX_PARAM_LABELS = { tpos: "Сдвиг", tscale: "Масштаб", trot: "Угол", tblur: "Размытие", ttrack: "Трекинг", tskew: "Наклон", top: "Прозрачность", stagger: "Очерёдность" };
+    var SF_PARAM_RANGE = { dist: [0, 2000, 10], sc: [0, 400, 5], scx: [0, 600, 5], scy: [0, 600, 5], rot: [-720, 720, 5], op: [0, 100, 5], blur: [0, 200, 1],
+        tpos: [-500, 500, 5], tscale: [0, 600, 5], trot: [-360, 360, 5], tblur: [0, 200, 1], ttrack: [-100, 300, 1], tskew: [-90, 90, 1], top: [0, 100, 5], stagger: [0, 95, 5] };
     var SF_BY_MOTION = {};
     var SF_BY_ID = {};
     SF_LIST.forEach(function (m) {
@@ -3104,13 +3106,194 @@
         });
     });
 
+    // Текст прошлых версий (ключами, до 1.21) — только для «✎ Изменить».
+    var AC_LEGACY_TEXT = [["typewriter", "Печатная машинка"], ["fade-letters", "Проявление по буквам"], ["slide-letters", "Буквы снизу"],
+        ["pop-letters", "Буквы с масштабом"], ["blur-letters", "Буквы из размытия"], ["rotate-letters", "Буквы с поворотом"],
+        ["words", "По словам"], ["random", "Случайные буквы"], ["tracking", "Разлёт букв"]];
+
+    // ---- «Текст» — как Text Presets в Animation Composer: те же маркеры IN/OUT, что у «Движений», а сам пресет —
+    // текстовый аниматор с селектором-выражением, который ведёт буквы, слова или строки по маркеру друг за другом.
+    // Пресеты разложены по анимируемым свойствам; каждый — по буквам, по словам и по строкам.
+    var TX_FOLDERS = [
+        { id: "all", label: "Все" }, { id: "fade", label: "Прозрачность" }, { id: "move", label: "Сдвиг" }, { id: "scale", label: "Масштаб" },
+        { id: "rotate", label: "Поворот" }, { id: "blur", label: "Размытие" }, { id: "other", label: "Трекинг и другое" }
+    ];
+    var TX_UNITS = [{ id: "all", label: "Все" }, { id: "c", label: "По буквам" }, { id: "w", label: "По словам" }, { id: "l", label: "По строкам" }];
+    var TX_UNIT_NAMES = { c: "по буквам", w: "по словам", l: "по строкам" };
+    var TX_LIST = [
+        ["fade", "fade", "Проявление", ["ease"], { op: 0 }],
+        ["move", "from-bottom", "Снизу", ["ease", "over"], { op: 0, y: 1 }],
+        ["move", "from-top", "Сверху", ["ease"], { op: 0, y: -1 }],
+        ["move", "from-left", "Слева", ["ease"], { op: 0, x: -1 }],
+        ["move", "from-right", "Справа", ["ease"], { op: 0, x: 1 }],
+        ["scale", "scale-up", "Из точки", ["ease", "over"], { op: 0, sc: 0 }],
+        ["scale", "scale-down", "Из крупного", ["ease"], { op: 0, sc: 300 }],
+        ["rotate", "rotate", "Поворот", ["over"], { op: 0, rot: -90 }],
+        ["blur", "blur", "Из размытия", ["ease"], { op: 0, blur: 1 }],
+        ["other", "tracking", "Разлёт", ["ease"], { op: 0, track: 1 }],
+        ["other", "skew", "Наклон", ["over"], { op: 0, skew: 40, y: 0.5 }],
+        ["other", "typewriter", "Печатная машинка", ["linear"], { op: 0, type: true }, ["c"]]
+    ];
+    var TX_BY_ID = {};
+    var TX_BY_MOTION = {};
+    TX_LIST.forEach(function (t) {
+        (t[5] || ["c", "w", "l"]).forEach(function (u) {
+            var motion = "tx-" + t[1] + "-" + u, title = t[2] + (t[5] ? "" : " " + TX_UNIT_NAMES[u]);
+            TX_BY_MOTION[motion] = { folder: t[0], motion: motion, title: title, curves: t[3], shape: t[4], unit: u };
+            t[3].forEach(function (c, i) {
+                var id = motion + "." + c;
+                TX_BY_ID[id] = { folder: t[0], motion: motion, curve: c, title: title, shape: t[4], unit: u };
+                AC_PRESETS.text.push([id, title + (i > 0 ? " · " + SF_CURVE_NAMES[c] : "")]);
+            });
+        });
+    });
+
+    // ---- «Звуки» — как Sound Effects в Animation Composer: папки, превью ▶, высота тона и громкость до вставки
+    // и потом во «✎ Изменить». Все звуки синтезированы tools/make_sfx.py (список ниже — из него же).
+    var SFX_FOLDERS = [
+        { id: "all", label: "Все" },
+        { id: "whoosh", label: "Вжухи" },
+        { id: "swipe", label: "Свайпы" },
+        { id: "impact", label: "Удары" },
+        { id: "riser", label: "Нарастания" },
+        { id: "ui", label: "Интерфейс" },
+        { id: "pop", label: "Попы" },
+        { id: "glitch", label: "Глитч" },
+        { id: "bell", label: "Звонки" },
+        { id: "cartoon", label: "Мультяшные" },
+        { id: "mech", label: "Механика" }
+    ];
+    var SFX_LIST = [
+        ["whoosh", "whoosh", "Вжух"], ["whoosh", "whoosh-short", "Вжух короткий"], ["whoosh", "whoosh-long", "Вжух длинный"],
+        ["whoosh", "whoosh-deep", "Вжух низкий"], ["whoosh", "whoosh-airy", "Вжух воздушный"], ["whoosh", "whoosh-fast", "Вжух быстрый"],
+        ["whoosh", "whoosh-double", "Двойной вжух"], ["whoosh", "whoosh-reverse", "Обратный вжух"], ["whoosh", "swish", "Свист"],
+        ["whoosh", "sword", "Взмах мечом"], ["whoosh", "wind-pass", "Порыв ветра"], ["whoosh", "swoosh-cloth", "Взмах ткани"],
+        ["swipe", "swipe-up", "Взмах"], ["swipe", "swipe-in", "Свайп вверх"], ["swipe", "swipe-out", "Свайп вниз"],
+        ["swipe", "swipe-long", "Длинный свайп"], ["swipe", "zip-up", "Молния вверх"], ["swipe", "zip-down", "Молния вниз"],
+        ["swipe", "page", "Перелистывание"], ["swipe", "scribble", "Карандаш"], ["impact", "impact", "Удар"],
+        ["impact", "impact-hard", "Жёсткий удар"], ["impact", "boom", "Кинематографичный бум"], ["impact", "punch", "Хлопок кулаком"],
+        ["impact", "thud", "Глухой удар"], ["impact", "metal", "Металл"], ["impact", "metal-high", "Металл высокий"],
+        ["impact", "explosion", "Взрыв"], ["impact", "braam", "Браам"], ["impact", "heartbeat", "Сердцебиение"], ["riser", "riser", "Нарастание"],
+        ["riser", "riser-short", "Нарастание короткое"], ["riser", "riser-long", "Нарастание длинное"],
+        ["riser", "riser-noise", "Шумовое нарастание"], ["riser", "riser-tone", "Тональное нарастание"], ["riser", "power-up", "Зарядка"],
+        ["riser", "downer", "Спад"], ["riser", "downer-long", "Долгий спад"], ["riser", "power-down", "Выключение"], ["ui", "click", "Клик"],
+        ["ui", "click-soft", "Мягкий клик"], ["ui", "click-hard", "Резкий клик"], ["ui", "tap", "Тап"], ["ui", "tick", "Тик"],
+        ["ui", "toggle-on", "Переключатель вкл"], ["ui", "toggle-off", "Переключатель выкл"], ["ui", "hover", "Наведение"],
+        ["ui", "select", "Выбор"], ["ui", "back", "Назад"], ["ui", "success", "Успех"], ["ui", "error", "Ошибка"], ["ui", "notify", "Уведомление"],
+        ["ui", "message", "Сообщение"], ["pop", "pop", "Поп"], ["pop", "pop-high", "Поп высокий"], ["pop", "pop-low", "Поп низкий"],
+        ["pop", "plop", "Плюх"], ["pop", "cork", "Пробка"], ["pop", "bubble", "Пузырь"], ["pop", "bubble-down", "Пузырь вниз"],
+        ["pop", "bubbles", "Пузырьки"], ["glitch", "glitch", "Глитч"], ["glitch", "glitch-short", "Глитч короткий"],
+        ["glitch", "glitch-long", "Глитч длинный"], ["glitch", "glitch-noise", "Цифровой шум"], ["glitch", "glitch-stutter", "Заикание"],
+        ["glitch", "bitcrush", "Битовый шум"], ["glitch", "data", "Передача данных"], ["glitch", "static", "Помехи"],
+        ["glitch", "tv-off", "Выключение ТВ"], ["bell", "ding", "Дзынь"], ["bell", "ding-low", "Дзынь низкий"],
+        ["bell", "ding-high", "Дзынь высокий"], ["bell", "bell", "Колокольчик"], ["bell", "chime-up", "Перелив вверх"],
+        ["bell", "chime-down", "Перелив вниз"], ["bell", "sparkle", "Волшебные искры"], ["bell", "alert", "Сигнал"], ["bell", "coin", "Монетка"],
+        ["cartoon", "boing", "Пружина"], ["cartoon", "slide-up", "Свисток вверх"], ["cartoon", "slide-down", "Свисток вниз"],
+        ["cartoon", "wobble", "Дрожание"], ["cartoon", "jump", "Прыжок"], ["cartoon", "fall", "Падение"], ["cartoon", "laser", "Лазер"],
+        ["cartoon", "power-8bit", "8 бит: усиление"], ["cartoon", "squeak", "Писк"], ["mech", "typing", "Клавиатура"],
+        ["mech", "typing-fast", "Быстрый набор"], ["mech", "shutter", "Затвор камеры"], ["mech", "flash", "Вспышка фотоаппарата"],
+        ["mech", "switch", "Выключатель"], ["mech", "clock", "Часы"]
+    ];
+    var SFX_BY_ID = {};
+    SFX_LIST.forEach(function (x) { SFX_BY_ID[x[1]] = { folder: x[0], title: x[2] }; AC_PRESETS.sfx.push([x[1], x[2]]); });
+
+    // ---- «Графика» — как Graphic Components в Animation Composer: новый слой у указателя времени (над выделенным
+    // слоем или в центре), анимация — выражения от длины слоя, «Цвет», «Размер» и «Толщина» — в Effect Controls.
+    var GR_FOLDERS = [
+        { id: "all", label: "Все" }, { id: "shapes", label: "Элементы" }, { id: "fx", label: "Спецэффекты" }, { id: "drawn", label: "Рисованные" },
+        { id: "bg", label: "Фоны" }, { id: "overlay", label: "Оверлеи" }, { id: "titles", label: "Плашки" }
+    ];
+    var GR_DUR = { shapes: 1.2, fx: 1.2, drawn: 2.5, bg: 5, overlay: 5, titles: 4 };
+    var GR_LIST = [
+        ["shapes", "ring-burst", "Кольцо"], ["shapes", "ring-double", "Двойное кольцо"], ["shapes", "lines-burst", "Лучи"], ["shapes", "dots-burst", "Точки"],
+        ["shapes", "star-burst", "Звёзды"], ["shapes", "circle-pop", "Круг"], ["shapes", "square-spin", "Квадрат"], ["shapes", "triangle-burst", "Треугольники"],
+        ["shapes", "plus-burst", "Плюсы"], ["shapes", "zigzag", "Зигзаг"], ["shapes", "ripples", "Круги на воде"], ["shapes", "sparkle", "Искорка"],
+        ["shapes", "confetti", "Конфетти"],
+        ["fx", "speed-lines", "Линии скорости"], ["fx", "smoke-puff", "Облачко дыма"], ["fx", "explosion-burst", "Взрыв"], ["fx", "lightning", "Молния"],
+        ["fx", "sunburst", "Солнечные лучи"], ["fx", "glitch-blocks", "Глитч-блоки"], ["fx", "shockwave", "Ударная волна"], ["fx", "swirl", "Вихрь"],
+        ["drawn", "underline", "Подчёркивание"], ["drawn", "circle-scribble", "Обводка"], ["drawn", "arrow", "Стрелка"], ["drawn", "cross-out", "Зачёркивание"],
+        ["drawn", "check", "Галочка"], ["drawn", "highlight", "Маркер"], ["drawn", "bracket", "Скобки"], ["drawn", "star-doodle", "Звёздочка"],
+        ["drawn", "exclaim", "Акцент"],
+        ["bg", "bg-gradient", "Градиент"], ["bg", "bg-grid", "Сетка"], ["bg", "bg-dots", "Точки"], ["bg", "bg-stripes", "Полосы"], ["bg", "bg-rays", "Лучи"],
+        ["bg", "bg-circles", "Круги"],
+        ["overlay", "vignette", "Виньетка"], ["overlay", "grain", "Зерно плёнки"], ["overlay", "flicker", "Мерцание"], ["overlay", "letterbox", "Кинополосы"],
+        ["overlay", "frame", "Рамка"], ["overlay", "scanlines", "Строки развёртки"],
+        ["titles", "lower-third", "Плашка для титра"], ["titles", "callout", "Выноска"], ["titles", "label", "Ярлык"], ["titles", "progress", "Полоса загрузки"],
+        ["titles", "counter", "Счётчик"], ["titles", "timer", "Таймер"]
+    ];
+    var GR_TEXT_DEFAULT = { "lower-third": "Имя Фамилия", "callout": "Подпись", "label": "Ярлык" };
+    var GR_BY_ID = {};
+    GR_LIST.forEach(function (g) { GR_BY_ID[g[1]] = { folder: g[0], title: g[2] }; AC_PRESETS.graphic.push([g[1], g[2]]); });
+
+    // Значки карточек: маленький SVG того же рисунка (цвет — из «Цвет графики»).
+    function grIcon(id) {
+        var S = function (d, extra) { return "<path d=\"" + d + "\" " + (extra || "") + "/>"; };
+        var C = function (x, y, r, extra) { return "<circle cx=\"" + x + "\" cy=\"" + y + "\" r=\"" + r + "\" " + (extra || "") + "/>"; };
+        var R = function (x, y, w, h, rx, extra) { return "<rect x=\"" + x + "\" y=\"" + y + "\" width=\"" + w + "\" height=\"" + h + "\" rx=\"" + (rx || 0) + "\" " + (extra || "") + "/>"; };
+        var F = "fill=\"currentColor\" stroke=\"none\"", i, out = "", a;
+        var rays = function (n, r1, r2) { var o = ""; for (i = 0; i < n; i++) { a = i * 2 * Math.PI / n; o += S("M" + (50 + Math.sin(a) * r1).toFixed(1) + " " + (50 - Math.cos(a) * r1).toFixed(1) + "L" + (50 + Math.sin(a) * r2).toFixed(1) + " " + (50 - Math.cos(a) * r2).toFixed(1)); } return o; };
+        var ring = function (n, r, fn) { var o = ""; for (i = 0; i < n; i++) { a = i * 2 * Math.PI / n; o += fn(50 + Math.sin(a) * r, 50 - Math.cos(a) * r, a); } return o; };
+        var star = function (cx, cy, r1, r2, n) { var p = "", k; for (k = 0; k < n * 2; k++) { a = k * Math.PI / n; var rr = k % 2 ? r2 : r1; p += (k ? "L" : "M") + (cx + Math.sin(a) * rr).toFixed(1) + " " + (cy - Math.cos(a) * rr).toFixed(1); } return p + "Z"; };
+        switch (id) {
+        case "ring-burst": out = C(50, 50, 28); break;
+        case "ring-double": out = C(50, 50, 30) + C(50, 50, 18); break;
+        case "lines-burst": out = rays(12, 18, 38); break;
+        case "dots-burst": out = ring(10, 32, function (x, y) { return C(x, y, 4, F); }); break;
+        case "star-burst": out = ring(8, 32, function (x, y) { return S(star(x, y, 7, 3, 5), F); }); break;
+        case "circle-pop": out = C(50, 50, 24, F); break;
+        case "square-spin": out = R(30, 30, 40, 40, 6, "transform=\"rotate(20 50 50)\""); break;
+        case "triangle-burst": out = ring(6, 32, function (x, y) { return S("M" + x + " " + (y - 6) + "l6 10h-12z", F); }); break;
+        case "plus-burst": out = ring(6, 32, function (x, y) { return S("M" + (x - 5) + " " + y + "h10M" + x + " " + (y - 5) + "v10"); }); break;
+        case "zigzag": out = S("M15 58L25 42L35 58L45 42L55 58L65 42L75 58L85 42"); break;
+        case "ripples": out = C(50, 50, 10) + C(50, 50, 22, "opacity=\".6\"") + C(50, 50, 34, "opacity=\".3\""); break;
+        case "sparkle": out = S(star(50, 50, 28, 6, 4), F); break;
+        case "confetti": out = R(22, 30, 6, 10, 1, F + " transform=\"rotate(20 25 35)\"") + R(48, 22, 6, 10, 1, F + " transform=\"rotate(-30 51 27)\"") + R(70, 40, 6, 10, 1, F) + R(35, 60, 6, 10, 1, F + " transform=\"rotate(50 38 65)\"") + R(62, 66, 6, 10, 1, F); break;
+        case "speed-lines": out = rays(16, 30, 48); break;
+        case "smoke-puff": out = C(40, 55, 14, F + " opacity=\".7\"") + C(58, 48, 16, F + " opacity=\".7\"") + C(52, 62, 12, F + " opacity=\".7\""); break;
+        case "explosion-burst": out = S(star(50, 50, 34, 18, 12), F); break;
+        case "lightning": out = S("M54 14L40 50H54L44 86", "stroke-width=\"6\""); break;
+        case "sunburst": out = ring(12, 0, function (x, y, a2) { return S("M50 50L" + (50 + Math.sin(a2 - 0.13) * 46).toFixed(1) + " " + (50 - Math.cos(a2 - 0.13) * 46).toFixed(1) + "L" + (50 + Math.sin(a2 + 0.13) * 46).toFixed(1) + " " + (50 - Math.cos(a2 + 0.13) * 46).toFixed(1) + "Z", F + " opacity=\".7\""); }); break;
+        case "glitch-blocks": out = R(18, 30, 30, 7, 0, F) + R(52, 46, 34, 7, 0, F) + R(26, 62, 24, 7, 0, F) + R(60, 24, 16, 7, 0, F); break;
+        case "shockwave": out = C(50, 50, 34, "stroke-width=\"8\"") + C(50, 50, 44, "stroke-width=\"2\""); break;
+        case "swirl": out = S("M50 50m0-2a4 4 0 1 1-4 4a10 10 0 1 1 10 10a18 18 0 1 1-18-18a28 28 0 1 1 28 28"); break;
+        case "underline": out = S("M14 58q12-10 24 0t24 0t24 0"); break;
+        case "circle-scribble": out = S("M50 30c26 0 38 10 36 20s-16 20-36 20s-36-8-36-20s20-22 42-18"); break;
+        case "arrow": out = S("M16 66q30-46 66-20M70 40l12 6l-6 12"); break;
+        case "cross-out": out = S("M24 30L76 70M76 30L24 70"); break;
+        case "check": out = S("M24 52l16 16l36-36", "stroke-width=\"8\""); break;
+        case "highlight": out = S("M14 52L86 48", "stroke-width=\"16\" opacity=\".55\""); break;
+        case "bracket": out = S("M30 26H22V74H30M70 26H78V74H70"); break;
+        case "star-doodle": out = S(star(50, 52, 32, 13, 5)); break;
+        case "exclaim": out = rays(5, 20, 34).replace(/<path/g, "<path transform=\"rotate(-60 50 50)\""); break;
+        case "bg-gradient": out = "<defs><linearGradient id=\"g\" x1=\"0\" x2=\"1\" y1=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"currentColor\"/><stop offset=\"1\" stop-color=\"#101018\"/></linearGradient></defs>" + R(4, 14, 92, 72, 6, "fill=\"url(#g)\" stroke=\"none\""); break;
+        case "bg-grid": for (i = 0; i < 5; i++) { out += S("M" + (10 + i * 20) + " 14V86", "stroke-width=\"1.5\"") + S("M4 " + (20 + i * 15) + "H96", "stroke-width=\"1.5\""); } break;
+        case "bg-dots": for (i = 0; i < 20; i++) { out += C(14 + (i % 5) * 18, 24 + Math.floor(i / 5) * 17, 2.6, F); } break;
+        case "bg-stripes": for (i = 0; i < 6; i++) { out += S("M" + (i * 20 - 10) + " 86L" + (i * 20 + 30) + " 14", "stroke-width=\"6\" opacity=\".6\""); } break;
+        case "bg-rays": out = ring(16, 0, function (x, y, a2) { return i % 2 ? "" : S("M50 50L" + (50 + Math.sin(a2) * 60).toFixed(1) + " " + (50 - Math.cos(a2) * 60).toFixed(1) + "L" + (50 + Math.sin(a2 + 0.4) * 60).toFixed(1) + " " + (50 - Math.cos(a2 + 0.4) * 60).toFixed(1) + "Z", F + " opacity=\".5\""); }); break;
+        case "bg-circles": out = C(50, 50, 12) + C(50, 50, 24, "opacity=\".7\"") + C(50, 50, 36, "opacity=\".45\"") + C(50, 50, 48, "opacity=\".25\""); break;
+        case "vignette": out = "<defs><radialGradient id=\"v\"><stop offset=\".45\" stop-color=\"currentColor\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000\"/></radialGradient></defs>" + R(4, 14, 92, 72, 4, "fill=\"url(#v)\" stroke=\"none\""); break;
+        case "grain": for (i = 0; i < 40; i++) { out += C((i * 37) % 92 + 4, (i * 53) % 70 + 15, 1.4, F + " opacity=\".7\""); } break;
+        case "flicker": out = R(4, 14, 92, 72, 4, F + " opacity=\".35\""); break;
+        case "letterbox": out = R(4, 14, 92, 14, 0, "fill=\"#000\" stroke=\"none\"") + R(4, 72, 92, 14, 0, "fill=\"#000\" stroke=\"none\"") + R(4, 28, 92, 44, 0, F + " opacity=\".25\""); break;
+        case "frame": out = R(12, 22, 76, 56, 4); break;
+        case "scanlines": for (i = 0; i < 12; i++) { out += S("M4 " + (16 + i * 6) + "H96", "stroke-width=\"1.5\" opacity=\".5\""); } break;
+        case "lower-third": out = R(14, 54, 66, 16, 2, "fill=\"#20202a\" stroke=\"none\"") + R(14, 54, 3, 16, 0, F) + S("M22 62H60", "stroke-width=\"3\""); break;
+        case "callout": out = C(24, 70, 4, F) + S("M24 70L40 52H84", "stroke-width=\"3\""); break;
+        case "label": out = R(22, 38, 56, 24, 12, F); break;
+        case "progress": out = R(14, 44, 72, 12, 6) + S("M20 50H56", "stroke-width=\"6\""); break;
+        case "counter": out = "<text x=\"50\" y=\"60\" text-anchor=\"middle\" font-size=\"28\" font-weight=\"800\" fill=\"currentColor\" stroke=\"none\">42%</text>"; break;
+        case "timer": out = "<text x=\"50\" y=\"60\" text-anchor=\"middle\" font-size=\"24\" font-weight=\"800\" fill=\"currentColor\" stroke=\"none\">00:10</text>"; break;
+        }
+        return "<svg viewBox=\"0 0 100 100\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\">" + out + "</svg>";
+    }
+
     TR_LIST.forEach(function (t) {
         TR_BY_ID[t[1]] = { folder: t[0], title: t[2] };
         AC_PRESETS.trans.push([t[1], t[2]]);
     });
 
     var AC_GLYPH = { arrow: "➜", star: "★", counter: "42%", timer: "00:10" };
-    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false, folder: "all", tfolder: "all", tdur: 1 };
+    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false, folder: "all", tfolder: "all", tdur: 0.8, xfolder: "all", xunit: "all", sfolder: "all", pitch: 0, vol: 0, gfolder: "all" };
     var acState = loadAcState();
     var acAudio = null;
 
@@ -3128,7 +3311,13 @@
         if (!/^#[0-9a-f]{6}$/i.test(out.color)) { out.color = "#ffffff"; }
         if (!SF_FOLDERS.some(function (f) { return f.id === out.folder; })) { out.folder = "all"; }
         if (!TR_FOLDERS.some(function (f) { return f.id === out.tfolder; })) { out.tfolder = "all"; }
-        out.tdur = Math.min(3, Math.max(0.2, Math.round(Number(out.tdur) * 10) / 10 || 1));
+        if (!TX_FOLDERS.some(function (f) { return f.id === out.xfolder; })) { out.xfolder = "all"; }
+        if (!TX_UNITS.some(function (f) { return f.id === out.xunit; })) { out.xunit = "all"; }
+        if (!SFX_FOLDERS.some(function (f) { return f.id === out.sfolder; })) { out.sfolder = "all"; }
+        if (!GR_FOLDERS.some(function (f) { return f.id === out.gfolder; })) { out.gfolder = "all"; }
+        out.pitch = Math.max(-12, Math.min(12, Math.round(Number(out.pitch)) || 0));
+        out.vol = Math.max(-24, Math.min(6, Math.round(Number(out.vol)) || 0));
+        out.tdur = Math.min(3, Math.max(0.2, Math.round(Number(out.tdur) * 10) / 10 || 0.8));
         out.fav = Array.isArray(s.fav) ? s.fav.filter(function (x) { return typeof x === "string"; }) : [];
         return out;
     }
@@ -3142,6 +3331,12 @@
                 var item = { sec: s.id, id: p[0], name: p[1], key: s.id + ":" + p[0] }, sf = s.id === "anim" ? SF_BY_ID[p[0]] : null;
                 if (sf) { item.folder = sf.folder; item.motion = sf.motion; item.curve = sf.curve; item.title = sf.title; item.shape = sf.shape; }
                 if (s.id === "trans" && TR_BY_ID[p[0]]) { item.folder = TR_BY_ID[p[0]].folder; item.title = p[1]; }
+                if (s.id === "sfx" && SFX_BY_ID[p[0]]) { item.folder = SFX_BY_ID[p[0]].folder; }
+                if (s.id === "graphic" && GR_BY_ID[p[0]]) { item.folder = GR_BY_ID[p[0]].folder; }
+                if (s.id === "text" && TX_BY_ID[p[0]]) {
+                    sf = TX_BY_ID[p[0]];
+                    item.folder = sf.folder; item.motion = sf.motion; item.curve = sf.curve; item.title = sf.title; item.shape = sf.shape; item.unit = sf.unit;
+                }
                 out.push(item);
             });
         });
@@ -3163,6 +3358,9 @@
             if (p.sec !== acState.sec) { return false; }
             if (p.sec === "anim") { return acState.folder === "all" || p.folder === acState.folder; }
             if (p.sec === "trans") { return acState.tfolder === "all" || p.folder === acState.tfolder; }
+            if (p.sec === "sfx") { return acState.sfolder === "all" || p.folder === acState.sfolder; }
+            if (p.sec === "graphic") { return acState.gfolder === "all" || p.folder === acState.gfolder; }
+            if (p.sec === "text") { return (acState.xfolder === "all" || p.folder === acState.xfolder) && (acState.xunit === "all" || p.unit === acState.xunit); }
             return true;
         });
     }
@@ -3173,7 +3371,11 @@
         var i, bar;
         thumb.className = "ac-thumb";
         obj.className = "ac-obj ac-" + p.sec + " pv-" + p.sec + "-" + p.id;
-        if (p.sec === "text") { obj.textContent = "Текст"; }
+        if (p.sec === "text") {
+            obj.className = "ac-obj ac-text ac-txt";
+            txSpans(obj, p.unit);
+            txStill(obj, p);
+        }
         if (p.sec === "anim") { obj.className = "ac-obj ac-anim"; obj.textContent = "✦"; }
         if (p.sec === "trans") {
             obj.className = "ac-obj ac-trv";
@@ -3185,8 +3387,11 @@
             trStill(obj, bar, p.id);
             return thumb;
         }
-        if (p.sec === "graphic" && AC_GLYPH[p.id]) { obj.textContent = AC_GLYPH[p.id]; }
-        if (p.sec === "graphic" && p.id === "progress") { obj.appendChild(document.createElement("i")); }
+        if (p.sec === "graphic") {
+            obj.className = "ac-obj ac-gr";
+            obj.style.color = acState.color;
+            obj.innerHTML = grIcon(p.id);
+        }
         if (p.sec === "sfx") {
             for (i = 0; i < 5; i++) { bar = document.createElement("i"); obj.appendChild(bar); }
         }
@@ -3208,9 +3413,16 @@
         ui.acFavOnly.setAttribute("aria-pressed", acState.favOnly ? "true" : "false");
         ui.acModeRow.hidden = editing || !(searching || sec === "text" || sec === "anim");
         ui.acColorRow.hidden = editing || !(searching || sec === "graphic" || sec === "trans");
-        ui.acDurRow.hidden = editing || (!searching && sec === "sfx");
+        ui.acDurRow.hidden = editing || (!searching && (sec === "sfx" || sec === "graphic"));
         ui.acFoot.hidden = editing;
-        renderSfFolders(!searching && !editing && (sec === "anim" || sec === "trans") ? sec : "");
+        renderSfFolders(!searching && !editing && (sec === "anim" || sec === "trans" || sec === "text" || sec === "sfx" || sec === "graphic") ? sec : "");
+        if (ui.acSndRow) {
+            ui.acSndRow.hidden = editing || !(searching || sec === "sfx");
+            ui.acPitch.value = String(acState.pitch);
+            ui.acPitchVal.textContent = pitchText(acState.pitch);
+            ui.acVol.value = String(acState.vol);
+            ui.acVolVal.textContent = volText(acState.vol);
+        }
         pressGroup(ui.acMode, acState.mode);
         ui.acDur.value = String(acState[durKey()]);
         ui.acDurVal.textContent = acState[durKey()].toFixed(1).replace(".", ",") + " с";
@@ -3231,61 +3443,76 @@
 
     // Папки внутри раздела, как в дереве Animation Composer: у «Движений» и у «Переходов» свои.
     function renderSfFolders(sec) {
-        var box = ui.acFolders, key = sec === "trans" ? "tfolder" : "folder";
+        var box = ui.acFolders, key = sec === "trans" ? "tfolder" : (sec === "text" ? "xfolder" : (sec === "sfx" ? "sfolder" : (sec === "graphic" ? "gfolder" : "folder")));
         if (!box) { return; }
         box.hidden = !sec;
         if (!sec) { return; }
         box.innerHTML = "";
-        (sec === "trans" ? TR_FOLDERS : SF_FOLDERS).forEach(function (f) {
-            var b = document.createElement("button");
-            b.className = "ac-folder";
-            b.setAttribute("data-folder", f.id);
-            b.setAttribute("aria-pressed", acState[key] === f.id ? "true" : "false");
-            b.textContent = f.label;
-            b.addEventListener("click", function () { acState[key] = f.id; storeAcState(); renderAc(); });
-            box.appendChild(b);
-        });
+        function chips(list, k, attr) {
+            list.forEach(function (f) {
+                var b = document.createElement("button");
+                b.className = "ac-folder";
+                b.setAttribute(attr, f.id);
+                b.setAttribute("aria-pressed", acState[k] === f.id ? "true" : "false");
+                b.textContent = f.label;
+                b.addEventListener("click", function () { acState[k] = f.id; storeAcState(); renderAc(); });
+                box.appendChild(b);
+            });
+        }
+        chips(sec === "trans" ? TR_FOLDERS : (sec === "text" ? TX_FOLDERS : (sec === "sfx" ? SFX_FOLDERS : (sec === "graphic" ? GR_FOLDERS : SF_FOLDERS))), key, "data-folder");
+        if (sec === "text") {
+            var br = document.createElement("span");
+            br.className = "ac-folder-break";
+            box.appendChild(br);
+            chips(TX_UNITS, "xunit", "data-unit");
+        }
     }
 
     // ---- превью переходов: клип A до склейки, клип B после, то же движение, что даст выражение на слое.
-    function trCut(t, a, b) {
-        return t < 0.5 ? a * Math.pow(t * 2, 3) : b * (1 - (1 - Math.pow(1 - (t * 2 - 1), 3)));
-    }
+    function trIn(x) { return x <= 0 ? 0 : Math.pow(2, 10 * x - 10); }
+    function trOut(x) { return x >= 1 ? 1 : 1 - Math.pow(2, -10 * x); }
+    function trCut(t, a, b) { return t < 0.5 ? a * trIn(t * 2) : b * (1 - trOut(t * 2 - 1)); }
 
+    // Та же математика, что в выражениях на слое перехода (экспоненциальное движение к склейке и от неё).
     function trLook(id, t) {
-        var bell = Math.pow(Math.sin(Math.PI * t), 2), j = Math.floor(t * 24), r1 = Math.sin(j * 12.9898) * 43758.5453, rnd = r1 - Math.floor(r1);
+        var bell = Math.pow(Math.sin(Math.PI * t), 2), peak = t < 0.5 ? trIn(t * 2) : trIn(2 - t * 2);
+        var after = t < 0.5 ? 0 : Math.pow(1 - (t * 2 - 1), 2);
+        var j = Math.floor(t * 24), r1 = Math.sin(j * 12.9898) * 43758.5453, rnd = r1 - Math.floor(r1);
         var o = { s: 1, r: 0, x: 0, y: 0, blur: 0, skew: 0, ov: 0, ox: 0, oy: 0, os: 1 };
-        if (id === "zoom-in") { o.s = 1 + trCut(t, 3, -0.6); }
-        if (id === "zoom-out") { o.s = 1 + trCut(t, -0.6, 3); }
-        if (id === "zoom-rotate") { o.s = 1 + trCut(t, 2, -0.5); o.r = trCut(t, 90, -90); }
-        if (id === "rotate") { o.s = 1 + 0.3 * bell; o.r = trCut(t, 180, -180); }
-        if (id === "pan-left") { o.x = trCut(t, -1, 1); }
-        if (id === "pan-right") { o.x = trCut(t, 1, -1); }
-        if (id === "pan-up") { o.y = trCut(t, -1, 1); }
-        if (id === "pan-down") { o.y = trCut(t, 1, -1); }
-        if (id === "shake") { o.s = 1 + 0.15 * bell; o.x = Math.sin(t * 80) * 0.05 * bell; o.y = Math.cos(t * 67) * 0.04 * bell; o.r = Math.sin(t * 53) * 6 * bell; }
-        if (id === "twirl") { o.s = 1 + 0.5 * bell; o.r = trCut(t, 200, -200); o.blur = 3 * bell; }
-        if (id === "blur-zoom") { o.s = 1 + trCut(t, 1.5, -0.3); o.blur = 8 * bell; }
+        if (/^zoom-(in|distort-in)$/.test(id)) { o.s = 1 + trCut(t, 2, -0.67); o.blur = 5 * peak; }
+        if (/^zoom-(out|distort-out)$/.test(id)) { o.s = 1 + trCut(t, -0.67, 2); o.blur = 5 * peak; }
+        if (id === "zoom-in-out") { o.s = 1 + trCut(t, 2, 2); o.blur = 5 * peak; }
+        if (id === "zoom-hit") { o.s = 1 + trCut(t, 3, -0.75) + 0.12 * after * Math.sin(t * 40); o.x = Math.sin(t * 90) * 0.05 * after; o.blur = 6 * peak; }
+        if (id === "pan-left") { o.x = trCut(t, -1, 1); o.blur = 4 * peak; }
+        if (id === "pan-right") { o.x = trCut(t, 1, -1); o.blur = 4 * peak; }
+        if (id === "pan-up") { o.y = trCut(t, -1, 1); o.blur = 4 * peak; }
+        if (id === "pan-down") { o.y = trCut(t, 1, -1); o.blur = 4 * peak; }
+        if (id === "rotate") { o.s = 1 + 0.2 * bell; o.r = trCut(t, 90, -90); o.blur = 3 * peak; }
+        if (id === "roll") { o.s = 1 + 0.3 * bell; o.r = trCut(t, 180, -180); o.blur = 4 * peak; }
+        if (id === "zoom-rotate") { o.s = 1 + trCut(t, 2, -0.6); o.r = trCut(t, 120, -120); o.blur = 5 * peak; }
+        if (id === "twirl") { o.s = 1 + trCut(t, 1.5, -0.5); o.r = trCut(t, 200, -200); o.blur = 4 * peak; }
+        if (id === "shake") { o.s = 1 + 0.25 * bell; o.x = Math.sin(t * 90) * 0.07 * bell; o.y = Math.cos(t * 71) * 0.05 * bell; o.r = Math.sin(t * 57) * 10 * bell; o.blur = 2 * bell; }
         if (id === "glitch" || id === "glitch-shake") {
-            o.x = (rnd - 0.5) * (id === "glitch" ? 0.15 : 0.3) * bell; o.skew = (rnd - 0.5) * 40 * bell; o.s = 1 + rnd * 0.3 * bell;
-            if (id === "glitch-shake") { o.r = (rnd - 0.5) * 16 * bell; }
+            o.x = (rnd - 0.5) * (id === "glitch" ? 0.2 : 0.35) * bell; o.skew = (rnd - 0.5) * 50 * bell; o.s = 1 + rnd * 0.3 * bell;
+            if (id === "glitch-shake") { o.r = (rnd - 0.5) * 18 * bell; }
         }
-        if (id === "leak-warm" || id === "leak-cool") { o.ov = Math.pow(Math.sin(Math.PI * t), 1.5); }
-        if (id === "flash") { o.ov = Math.pow(Math.max(0, 1 - Math.abs(t * 2 - 1)), 3); }
+        if (id === "blur-dissolve") { o.s = 1 + 0.15 * bell; o.blur = 10 * bell; }
+        if (id === "leak-warm" || id === "leak-cool") { o.ov = Math.pow(Math.sin(Math.PI * t), 1.2); }
+        if (id === "flash") { o.ov = peak; }
         if (id === "fade-black" || id === "fade-white") { o.ov = Math.min(1, Math.sin(Math.PI * t) * 1.4); }
         if (id === "wipe-left" || id === "wipe-up" || id === "circle") {
-            var f = t < 0.5 ? 0.5 * (1 - Math.pow(1 - t * 2, 3)) : 0.5 + 0.5 * Math.pow(t * 2 - 1, 3);
+            var f = t < 0.5 ? 0.5 * trOut(t * 2) : 0.5 + 0.5 * trIn(t * 2 - 1);
             o.ov = 1;
             if (id === "wipe-left") { o.ox = f * 2 - 1; }
             if (id === "wipe-up") { o.oy = 1 - f * 2; }
-            if (id === "circle") { o.os = t < 0.5 ? 1 - Math.pow(1 - t * 2, 3) : 1 - Math.pow(t * 2 - 1, 3); }
+            if (id === "circle") { o.os = t < 0.5 ? trOut(t * 2) : 1 - trIn(t * 2 - 1); }
         }
         return o;
     }
 
     // В покое карточка показывает кадр незадолго до склейки — так видно, чем переходы отличаются.
     function trStill(clips, ov, id) {
-        var o = trLook(id, /^(wipe|circle)/.test(id) ? 0.2 : 0.42);
+        var o = trLook(id, /^(wipe|circle)/.test(id) ? 0.12 : 0.46);
         clips.style.transform = "translate(" + (o.x * 100).toFixed(1) + "%," + (o.y * 100).toFixed(1) + "%) rotate(" + o.r.toFixed(1) +
             "deg) skewX(" + o.skew.toFixed(1) + "deg) scale(" + o.s.toFixed(3) + ")";
         clips.style.filter = "blur(" + o.blur.toFixed(2) + "px)";
@@ -3315,6 +3542,20 @@
             ov.animate(of, { duration: total, iterations: Infinity })
         ];
     }
+
+    // Превью графики: значок появляется, как слой — с перелётом, держится и уходит.
+    function grPreview(card, p) {
+        var svg = card.querySelector(".ac-gr svg"), f = GR_BY_ID[p.id] ? GR_BY_ID[p.id].folder : "shapes";
+        if (!svg || !svg.animate) { return; }
+        grStop(card);
+        card.grAnim = svg.animate(f === "bg" || f === "overlay" ?
+            [{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }] :
+            [{ transform: "scale(0) rotate(-20deg)", opacity: 0 }, { transform: "scale(1.15) rotate(4deg)", opacity: 1, offset: 0.2 },
+                { transform: "scale(1) rotate(0deg)", opacity: 1, offset: 0.3 }, { transform: "scale(1)", opacity: 1, offset: 0.8 }, { transform: "scale(0.6)", opacity: 0 }],
+            { duration: 1800, iterations: Infinity, easing: "ease-out" });
+    }
+
+    function grStop(card) { if (card.grAnim) { card.grAnim.cancel(); card.grAnim = null; } }
 
     function stopTrPreview(card) {
         if (card.trAnims) { card.trAnims.forEach(function (a) { a.cancel(); }); card.trAnims = null; }
@@ -3346,7 +3587,7 @@
 
     async function pollSfState() {
         var res;
-        if (busy || ui.viewTools.hidden || acState.sec !== "anim" || document.hidden) { return; }
+        if (busy || ui.viewTools.hidden || (acState.sec !== "anim" && acState.sec !== "text") || document.hidden) { return; }
         try {
             res = await host("sfState", []);
             sfSetState(res.state);
@@ -3404,16 +3645,85 @@
 
     function stopSfPreview(obj) { if (obj.sfAnim) { obj.sfAnim.cancel(); obj.sfAnim = null; } }
 
+    // Превью текста: каждая буква (слово, строка) — отдельный кусок, который идёт по той же формуле и с той же
+    // очерёдностью, что и селектор на слое.
+    function txSpans(obj, unit) {
+        var parts = unit === "l" ? ["Ваш", "текст"] : (unit === "w" ? ["Ваш", " ", "текст"] : "Ваш текст".split(""));
+        obj.innerHTML = "";
+        parts.forEach(function (t) {
+            var sp = document.createElement("span");
+            sp.className = t === " " ? "txs txs-gap" : "txs";
+            sp.textContent = t === " " ? "\u00a0" : t;
+            obj.appendChild(sp);
+            if (unit === "l" && t === "Ваш") { obj.appendChild(document.createElement("br")); }
+        });
+    }
+
+    function txFrame(m, k, ks, i, n) {
+        var sc = m.sc !== undefined ? 1 + k * (m.sc / 100 - 1) : 1;
+        return {
+            transform: "translate(" + (((m.x || 0) * 0.9 + (m.track ? (i - (n - 1) / 2) * 0.35 : 0)) * k).toFixed(3) + "em," + ((m.y || 0) * 0.9 * k).toFixed(3) +
+                "em) rotate(" + ((m.rot || 0) * k).toFixed(1) + "deg) skewX(" + ((m.skew || 0) * k).toFixed(1) + "deg) scale(" + Math.max(0, sc).toFixed(3) + ")",
+            opacity: Math.max(0, Math.min(1, 1 - ks)),
+            filter: "blur(" + ((m.blur || 0) * 6 * ks).toFixed(2) + "px)"
+        };
+    }
+
+    // В покое — кадр посередине появления: видно, как идут буквы, слова или строки.
+    function txStill(obj, p) {
+        var spans = Array.prototype.filter.call(obj.querySelectorAll(".txs"), function (x) { return !x.classList.contains("txs-gap"); });
+        var n = spans.length, m = p.shape, c = p.curve, soft = c === "linear" ? "linear" : "ease";
+        var stag = m.type ? 0.97 : (p.unit === "c" ? 0.6 : p.unit === "w" ? 0.5 : 0.4);
+        spans.forEach(function (sp, i) {
+            var st = (n > 1 ? i / (n - 1) : 0) * stag, lp = (0.55 - st) / Math.max(1 - stag, 0.02), fr = txFrame(m, 1 - sfCurve(lp, c), 1 - sfCurve(lp, soft), i, n);
+            sp.style.transform = fr.transform;
+            sp.style.opacity = String(Math.max(0.12, fr.opacity));
+            sp.style.filter = fr.filter;
+        });
+    }
+
+    function txPreview(card, p) {
+        var spans = Array.prototype.filter.call(card.querySelectorAll(".txs"), function (x) { return !x.classList.contains("txs-gap"); });
+        var n = spans.length, m = p.shape, c = p.curve, soft = c === "linear" ? "linear" : "ease";
+        var stag = m.type ? 0.97 : (p.unit === "c" ? 0.6 : p.unit === "w" ? 0.5 : 0.4);
+        var inMs = 1100, hold = 700, outMs = 1100, rest = 400, total = inMs + hold + outMs + rest, steps = 24;
+        txStop(card);
+        card.txAnims = spans.map(function (sp, i) {
+            var frames = [], j, t, st = (n > 1 ? i / (n - 1) : 0) * stag, w = Math.max(1 - stag, 0.02), lp, fr;
+            for (j = 0; j <= steps; j++) {
+                t = j / steps; lp = (t - st) / w;
+                fr = txFrame(m, 1 - sfCurve(lp, c), 1 - sfCurve(lp, soft), i, n); fr.offset = t * inMs / total; frames.push(fr);
+            }
+            for (j = 0; j <= steps; j++) {
+                t = j / steps; lp = (t - st) / w;
+                fr = txFrame(m, 1 - sfCurve(1 - lp, c), 1 - sfCurve(1 - lp, soft), i, n); fr.offset = (inMs + hold + t * outMs) / total; frames.push(fr);
+            }
+            fr = txFrame(m, 1, 1, i, n); fr.offset = 1; frames.push(fr);
+            return sp.animate(frames, { duration: total, iterations: Infinity });
+        });
+    }
+
+    function txStop(card) { if (card.txAnims) { card.txAnims.forEach(function (a) { a.cancel(); }); card.txAnims = null; } }
+
     function sfLabels(p) {
-        var out = { title: p.title, curve: SF_CURVE_NAMES[p.curve] }, k;
+        var out = { title: p.title, curve: SF_CURVE_NAMES[p.curve], fade: "прозрачность", text: "Ваш текст" }, k;
         for (k in SF_PARAM_LABELS) { if (SF_PARAM_LABELS.hasOwnProperty(k)) { out[k] = SF_PARAM_LABELS[k]; } }
         return out;
     }
 
     function acHintText(sec) {
-        if (sec === "graphic") { return "Щелчок по карточке добавляет графику новым слоем у указателя времени."; }
-        if (sec === "sfx") { return "▶ — послушать. Щелчок по карточке кладёт звук в композицию у указателя времени."; }
-        if (sec === "text") { return "Выделите текстовый слой и щёлкните по карточке. Если текстового слоя нет, панель создаст новый."; }
+        if (sec === "graphic") {
+            return "Щелчок по карточке добавляет графику новым слоем у указателя времени — поверх выделенного слоя или в центре кадра. " +
+                "Длительность — длина слоя; цвет, размер и толщина — в Effect Controls.";
+        }
+        if (sec === "sfx") {
+            return "▶ — послушать с выбранной высотой тона. Щелчок по карточке кладёт звук в композицию у указателя времени. " +
+                "Высота тона — как в сэмплере: выше — звук короче, ниже — длиннее.";
+        }
+        if (sec === "text") {
+            return "Выделите текстовый слой и щёлкните по карточке (нет слоя — панель создаст новый); щелчок по отмеченной снимает пресет. " +
+                "Длительность — длина маркера IN/OUT, значения — в аниматоре текста, очерёдность букв — в «✎ Изменить».";
+        }
         if (sec === "trans") {
             return "Поставьте указатель времени на склейку и щёлкните по карточке: сверху появится слой перехода — половина до склейки, " +
                 "половина после. Длительность — длина этого слоя, «Сила» — в Effect Controls. Цвет — для шторок и круга.";
@@ -3461,17 +3771,28 @@
             play.addEventListener("click", function (e) { e.stopPropagation(); acPreviewSound(p); });
             card.appendChild(play);
         }
-        if (p.sec === "anim") {
+        if (p.motion) {
             badge = document.createElement("span");
             badge.className = "ac-badge";
             badge.hidden = true;
             card.appendChild(badge);
             card.setAttribute("data-motion", p.motion);
             card.setAttribute("data-curve", p.curve);
-            card.addEventListener("mouseenter", function () { sfPreview(card.querySelector(".ac-obj"), p); });
-            card.addEventListener("focus", function () { sfPreview(card.querySelector(".ac-obj"), p); });
-            card.addEventListener("mouseleave", function () { stopSfPreview(card.querySelector(".ac-obj")); });
-            card.addEventListener("blur", function () { stopSfPreview(card.querySelector(".ac-obj")); });
+            if (p.sec === "text") {
+                card.addEventListener("mouseenter", function () { txPreview(card, p); });
+                card.addEventListener("focus", function () { txPreview(card, p); });
+                card.addEventListener("mouseleave", function () { txStop(card); });
+                card.addEventListener("blur", function () { txStop(card); });
+            } else {
+                card.addEventListener("mouseenter", function () { sfPreview(card.querySelector(".ac-obj"), p); });
+                card.addEventListener("focus", function () { sfPreview(card.querySelector(".ac-obj"), p); });
+                card.addEventListener("mouseleave", function () { stopSfPreview(card.querySelector(".ac-obj")); });
+                card.addEventListener("blur", function () { stopSfPreview(card.querySelector(".ac-obj")); });
+            }
+        }
+        if (p.sec === "graphic") {
+            card.addEventListener("mouseenter", function () { grPreview(card, p); });
+            card.addEventListener("mouseleave", function () { grStop(card); });
         }
         if (p.sec === "trans") {
             card.addEventListener("mouseenter", function () { trPreview(card, p); });
@@ -3489,10 +3810,10 @@
     // ---- «Изменить»: пресеты Sayframe на выделенном слое — длительность, задержка, сила, плавность,
     // замена на другой пресет того же рода и «Убрать». Меняется сразу, как отпустили ползунок.
 
-    var acEdit = { layer: "", items: null, groups: [], transition: null, error: "" };
+    var acEdit = { layer: "", items: null, groups: [], transition: null, sound: null, graphic: null, error: "" };
 
     function acPresetName(id) {
-        var lists = [AC_LEGACY_ANIM, AC_LEGACY_TRANS, AC_PRESETS.text], i, j;
+        var lists = [AC_LEGACY_ANIM, AC_LEGACY_TRANS, AC_LEGACY_TEXT], i, j;
         for (i = 0; i < lists.length; i++) {
             for (j = 0; j < lists[i].length; j++) {
                 if (lists[i][j][0] === id) { return lists[i][j][1]; }
@@ -3502,9 +3823,9 @@
     }
 
     function acSameKind(id) {
-        var isText = AC_PRESETS.text.some(function (p) { return p[0] === id; });
+        var isText = AC_LEGACY_TEXT.some(function (p) { return p[0] === id; });
         var isLegacy = AC_LEGACY_ANIM.some(function (p) { return p[0] === id; });
-        return isText ? AC_PRESETS.text : (isLegacy ? AC_LEGACY_ANIM.concat(AC_LEGACY_TRANS) : AC_LEGACY_TRANS);
+        return isText ? AC_LEGACY_TEXT : (isLegacy ? AC_LEGACY_ANIM.concat(AC_LEGACY_TRANS) : AC_LEGACY_TRANS);
     }
 
     async function loadAcEdit() {
@@ -3514,6 +3835,8 @@
             res = await host("sfList", []);
             acEdit.groups = res.groups;
             acEdit.transition = res.transition || null;
+            acEdit.sound = res.sound || null;
+            acEdit.graphic = res.graphic || null;
             res = await host("acList", []);
             acEdit.layer = res.layer;
             acEdit.items = res.items;
@@ -3561,7 +3884,9 @@
             return;
         }
         if (acEdit.transition) { grid.appendChild(trEditBox(acEdit.transition)); }
-        if (!acEdit.items.length && !acEdit.groups.length && !acEdit.transition) {
+        if (acEdit.sound) { grid.appendChild(sndEditBox(acEdit.sound)); }
+        if (acEdit.graphic) { grid.appendChild(grEditBox(acEdit.graphic)); }
+        if (!acEdit.items.length && !acEdit.groups.length && !acEdit.transition && !acEdit.sound && !acEdit.graphic) {
             grid.appendChild(fxNote("На этом слое нет пресетов Sayframe. Поставьте пресет из разделов «Движения», «Переходы» или «Текст» — и его можно будет настроить здесь."));
             return;
         }
@@ -3634,7 +3959,7 @@
     }
 
     function sfEditPreset(g, p) {
-        var info = SF_BY_MOTION[p.motion] || { title: p.motion, curves: [p.curve] };
+        var info = SF_BY_MOTION[p.motion] || TX_BY_MOTION[p.motion] || { title: p.motion, curves: [p.curve] };
         var box = document.createElement("div");
         var head = document.createElement("div");
         var name = document.createElement("b");
@@ -3670,14 +3995,106 @@
         box.appendChild(row);
         p.params.forEach(function (prm) {
             var r = SF_PARAM_RANGE[prm.key] || [0, 100, 1];
-            var label = SF_PARAM_LABELS[prm.key] || prm.key;
+            var label = SF_PARAM_LABELS[prm.key] || TX_PARAM_LABELS[prm.key] || prm.key;
             var v = Math.round(Number(prm.value) * 100) / 100;
             box.appendChild(acSlider(label, Math.min(r[0], v), Math.max(r[1], v), r[2], v, function (x) {
                 return String(x).replace(".", ",") + (SF_PARAM_UNIT[prm.key] || "");
             }, function (x) {
+                if (prm.key === "stagger") {
+                    sfEditCall("sfStagger", [g.dir, p.motion, x / 100], "«" + info.title + "»: очерёдность изменена.");
+                    return;
+                }
                 sfEditCall("sfParam", [prm.name, x], "«" + info.title + "»: " + label.toLowerCase() + " изменена.");
             }));
         });
+        return box;
+    }
+
+    // Выделена графика из библиотеки: цвет, размер (у счётчика — значение), толщина, длительность и «Убрать».
+    function grEditBox(g) {
+        var box = document.createElement("div");
+        var head = document.createElement("div");
+        var name = document.createElement("b");
+        var remove = document.createElement("button");
+        var row = document.createElement("label");
+        var span = document.createElement("span");
+        var color = document.createElement("input");
+        var title = GR_BY_ID[g.id] ? GR_BY_ID[g.id].title : g.id;
+        box.className = "ac-edit-item gr-edit";
+        head.className = "ac-edit-top";
+        name.textContent = "Графика «" + title + "»";
+        remove.className = "ghost warn";
+        remove.textContent = "Убрать";
+        remove.addEventListener("click", async function () {
+            if (busy) { return; }
+            setBusy(true);
+            try {
+                await host("grRemove", []);
+                setBusy(false);
+                setStatus("Графика «" + title + "» убрана. Отменить — Cmd/Ctrl+Z.", "done");
+                acEdit.graphic = null;
+                loadAcEdit();
+            } catch (e) {
+                setBusy(false);
+                toolFailed(e);
+            }
+        });
+        head.appendChild(name);
+        head.appendChild(remove);
+        box.appendChild(head);
+        row.className = "ac-edit-row";
+        span.textContent = "Цвет";
+        color.type = "color";
+        color.className = "gr-color";
+        color.value = g.color;
+        color.setAttribute("aria-label", "Цвет");
+        color.addEventListener("change", function () { sfEditCall("grSet", ["color", hexToRgb01(color.value)], "Цвет изменён."); });
+        row.appendChild(span);
+        row.appendChild(color);
+        box.appendChild(row);
+        box.appendChild(acSlider("Длительность", 0.2, 10, 0.1, Math.round(g.dur * 10) / 10, secText, function (v) { sfEditCall("grSet", ["dur", v], "Длительность изменена."); }));
+        box.appendChild(acSlider(g.id === "counter" ? "Значение" : "Размер", 0, 400, 5, Math.round(g.size), function (v) { return v + (g.id === "counter" ? "" : "%"); },
+            function (v) { sfEditCall("grSet", ["size", v], (g.id === "counter" ? "Значение" : "Размер") + " изменён."); }));
+        if (g.thick !== undefined) {
+            box.appendChild(acSlider("Толщина", 0, 60, 1, Math.round(g.thick), function (v) { return v + " px"; }, function (v) { sfEditCall("grSet", ["thick", v], "Толщина изменена."); }));
+        }
+        return box;
+    }
+
+    // Выделен звук из библиотеки: высота тона (полутоны; слой ускоряется или замедляется) и громкость.
+    function sndEditBox(snd) {
+        var box = document.createElement("div");
+        var head = document.createElement("div");
+        var name = document.createElement("b");
+        var remove = document.createElement("button");
+        box.className = "ac-edit-item snd-edit";
+        head.className = "ac-edit-top";
+        name.textContent = "Звук «" + String(snd.name).replace(/^♪\s*/, "") + "»";
+        remove.className = "ghost warn";
+        remove.textContent = "Убрать";
+        remove.addEventListener("click", async function () {
+            if (busy) { return; }
+            setBusy(true);
+            try {
+                await host("sndRemove", []);
+                setBusy(false);
+                setStatus("Звук убран. Отменить — Cmd/Ctrl+Z.", "done");
+                acEdit.sound = null;
+                loadAcEdit();
+            } catch (e) {
+                setBusy(false);
+                toolFailed(e);
+            }
+        });
+        head.appendChild(name);
+        head.appendChild(remove);
+        box.appendChild(head);
+        box.appendChild(acSlider("Высота тона", -12, 12, 1, Math.round(snd.pitch), pitchText, function (v) {
+            sfEditCall("sndSet", [v, null], "Высота тона изменена.");
+        }));
+        box.appendChild(acSlider("Громкость", -24, 6, 1, Math.round(snd.volume), volText, function (v) {
+            sfEditCall("sndSet", [null, v], "Громкость изменена.");
+        }));
         return box;
     }
 
@@ -3729,6 +4146,8 @@
             acEdit.layer = res.layer;
             acEdit.groups = res.groups;
             if (res.transition !== undefined) { acEdit.transition = res.transition; }
+            if (res.sound !== undefined) { acEdit.sound = res.sound; }
+            if (res.graphic !== undefined) { acEdit.graphic = res.graphic; }
             setBusy(false);
             setStatus(done + " Отменить — Cmd/Ctrl+Z.", "done");
         } catch (e) {
@@ -3773,12 +4192,35 @@
 
     function acSoundPath(id) { return platform.join(extensionDir(), "sfx", id + ".wav"); }
 
+    // Превью звучит так же, как слой в After Effects: быстрее — выше, медленнее — ниже (без сохранения высоты).
     function acPreviewSound(p) {
         try {
             if (acAudio) { acAudio.pause(); }
             acAudio = new Audio("file://" + encodeURI(acSoundPath(p.id)));
+            acAudio.preservesPitch = false;
+            acAudio.webkitPreservesPitch = false;
+            acAudio.playbackRate = Math.pow(2, acState.pitch / 12);
+            acAudio.volume = Math.min(1, Math.pow(10, acState.vol / 20));
             acAudio.play();
         } catch (e) {}
+    }
+
+    function pitchText(v) { v = Math.round(v * 10) / 10; return (v > 0 ? "+" : "") + String(v).replace(".", ",") + " пт"; }
+    function volText(v) { v = Math.round(v * 10) / 10; return (v > 0 ? "+" : "") + String(v).replace(".", ",") + " дБ"; }
+
+    // Ряд «Высота тона / Громкость» для звуков: значения запоминаются и идут в слой при вставке.
+    function buildSndRow() {
+        var row = document.createElement("div");
+        row.id = "acSndRow";
+        row.className = "ac-row ac-snd";
+        row.innerHTML = '<label class="ac-slider">Высота тона <input id="acPitch" class="range" type="range" min="-12" max="12" step="1" aria-label="Высота тона"><output id="acPitchVal"></output></label>' +
+            '<label class="ac-slider">Громкость <input id="acVol" class="range" type="range" min="-24" max="6" step="1" aria-label="Громкость"><output id="acVolVal"></output></label>';
+        ui.acFolders.parentNode.insertBefore(row, ui.acFolders);
+        ui.acSndRow = row;
+        ui.acPitch = row.querySelector("#acPitch"); ui.acPitchVal = row.querySelector("#acPitchVal");
+        ui.acVol = row.querySelector("#acVol"); ui.acVolVal = row.querySelector("#acVolVal");
+        ui.acPitch.addEventListener("input", function () { acState.pitch = Number(ui.acPitch.value); ui.acPitchVal.textContent = pitchText(acState.pitch); storeAcState(); });
+        ui.acVol.addEventListener("input", function () { acState.vol = Number(ui.acVol.value); ui.acVolVal.textContent = volText(acState.vol); storeAcState(); });
     }
 
     function hexToRgb01(hex) {
@@ -3806,13 +4248,19 @@
                 setStatus("«" + p.name + "» — на склейке " + secText(res.cut).replace(" с", " с от начала") + ", " + secText(res.dur) + ". Сверху новый слой «" + res.name +
                     "»: растяните его, чтобы изменить длительность; «Сила» — в Effect Controls. Отменить — Cmd/Ctrl+Z.", "done");
             } else if (p.sec === "text") {
-                res = await host("acText", [p.id, acState.mode, acState.dur, "Ваш текст"]);
+                res = await host("sfApply", [p.motion, p.curve, acState.mode, acState.dur, sfLabels(p)]);
                 setBusy(false);
-                acReport(p, res, res.created ? " Текстового слоя не было — создан новый «Ваш текст»." : "");
+                sfSetState(res.state);
+                sfReport(p, res, (res.created ? " Текстового слоя не было — создан новый «Ваш текст»." : "") +
+                    (res.notText && !res.created ? " Не текстовые слои пропущены: " + res.notText + "." : ""));
             } else if (p.sec === "graphic") {
-                res = await host("acGraphic", [p.id, acState.dur, hexToRgb01(acState.color)]);
+                res = await host("grApply", [p.id, GR_DUR[p.folder] || 2, hexToRgb01(acState.color), {
+                    title: p.name, marker: "Графика: ", color: "Цвет", size: "Размер", value: "Значение", thick: "Толщина",
+                    text: GR_TEXT_DEFAULT[p.id] || "", textPrefix: "Текст: " }]);
                 setBusy(false);
-                setStatus("Добавлено: «" + p.name + "» — новый слой «" + res.name + "» у указателя времени. Отменить — Cmd/Ctrl+Z.", "done");
+                setStatus("«" + p.name + "» — новый слой «" + res.name + "» у указателя времени, " + secText(res.dur) + "." +
+                    (res.text ? " Текст — отдельным слоем «" + res.text + "», он привязан к графике." : "") +
+                    " Растяните слой, чтобы изменить длительность; цвет, размер и толщина — в Effect Controls и во «✎ Изменить». Отменить — Cmd/Ctrl+Z.", "done");
             } else {
                 info = await host("info", []);
                 if (!info.fileAccess) { throw new Error(FILE_ACCESS_HINT); }
@@ -3823,16 +4271,17 @@
                 if (!(await platform.exists(dest))) {
                     await platform.writeBytes(dest, base64ToBytes(await platform.readBase64(acSoundPath(p.id))));
                 }
-                res = await host("acSound", [dest, "Sayframe SFX"]);
+                res = await host("acSound", [dest, "Sayframe SFX", acState.pitch, acState.vol, "♪ " + p.name]);
                 setBusy(false);
-                setStatus("Звук «" + p.name + "» добавлен у указателя времени." + (res.reused ? "" : " Файл лежит в папке «Sayframe SFX» рядом с проектом."), "done");
+                setStatus("Звук «" + p.name + "» добавлен у указателя времени" + (acState.pitch ? ", высота тона " + pitchText(acState.pitch) : "") + "." +
+                    (res.reused ? "" : " Файл лежит в папке «Sayframe SFX» рядом с проектом.") + " Высоту тона и громкость можно поменять во «✎ Изменить».", "done");
             }
         } catch (e) {
             toolFailed(e);
         }
     }
 
-    function sfReport(p, res) {
+    function sfReport(p, res, extra) {
         var skipped = res.skipped && res.skipped.length ?
             " Свойства со своими выражениями не тронуты: " + res.skipped.filter(function (x, i, a) { return a.indexOf(x) === i; }).join(", ") + "." : "";
         if (res.removed && !res.applied) {
@@ -3841,7 +4290,7 @@
         }
         setStatus("«" + p.name + "» — " + AC_MODE_TEXT[acState.mode] + ", " + plural(res.applied, "слой", "слоя", "слоёв") + "." +
             " Длительность — длина маркера " + (acState.mode === "out" ? "OUT" : acState.mode === "in" ? "IN" : "IN/OUT") +
-            ", настройки — в Effect Controls." + skipped + " Отменить — Cmd/Ctrl+Z.", skipped ? "error" : "done");
+            (p.sec === "text" ? ", настройки — в аниматоре текста на слое." : ", настройки — в Effect Controls.") + (extra || "") + skipped + " Отменить — Cmd/Ctrl+Z.", skipped ? "error" : "done");
     }
 
     function acReport(p, res, extra) {
@@ -3902,6 +4351,7 @@
         ui.acFolders.className = "ac-folders";
         ui.acFolders.hidden = true;
         ui.acGrid.parentNode.insertBefore(ui.acFolders, ui.acGrid);
+        buildSndRow();
         if (!sfPollTimer) { sfPollTimer = setInterval(pollSfState, 1500); }
         ui.acSearch.addEventListener("input", renderAc);
         ui.acSearch.addEventListener("keydown", function (e) { if (e.key === "Escape") { ui.acSearch.value = ""; renderAc(); } });
@@ -3914,7 +4364,11 @@
             ui.acDurVal.textContent = acState[durKey()].toFixed(1).replace(".", ",") + " с";
             storeAcState();
         });
-        ui.acColor.addEventListener("input", function () { acState.color = ui.acColor.value; storeAcState(); });
+        ui.acColor.addEventListener("input", function () {
+            acState.color = ui.acColor.value;
+            storeAcState();
+            Array.prototype.forEach.call(ui.acGrid.querySelectorAll(".ac-gr"), function (o) { o.style.color = acState.color; });
+        });
         ui.acSize.addEventListener("input", function () {
             acState.size = Number(ui.acSize.value);
             ui.acGrid.style.setProperty("--ac-size", acState.size + "px");
@@ -4933,7 +5387,8 @@
         rest = items.filter(function (x) { return pins.indexOf(x.name) < 0; });
         base = placeGroup(pinned, 0);
         if (!pinned.length) { base = 0; }
-        placeGroup(rest, base);
+        // Под закреплёнными — один пустой ряд, посередине которого линия: так она не липнет к блокам.
+        placeGroup(rest, pinned.length && rest.length ? base + 1 : base);
 
         // Блоки на свои клетки; в документе — в порядке чтения, чтобы Tab шёл по ним так же.
         sorted = items.slice().sort(function (a, b) {
@@ -4960,7 +5415,7 @@
             '" height="' + (m.cell - 1) + '" rx="' + Math.round(m.cell / 5) + '" fill="rgba(255,255,255,0.035)" stroke="rgba(255,255,255,0.13)" stroke-dasharray="3 3"/></svg>') + '")';
         if (pinned.length && rest.length) {
             ui.pinLine.hidden = false;
-            ui.pinLine.style.top = Math.round(base * step - m.gap / 2) + "px";
+            ui.pinLine.style.top = Math.round(base * step + m.cell / 2) + "px";
             ui.pinLine.style.width = (cols * step - m.gap) + "px";
         } else {
             ui.pinLine.hidden = true;
