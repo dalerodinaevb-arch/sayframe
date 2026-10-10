@@ -1013,6 +1013,7 @@ var sayframeHost = (function () {
         var q = jsonString;
         for (i = 0; i < list.length; i++) {
             it = list[i];
+            if (sfTextId(it.motion)) { sftExpr(layer, it, skipped); continue; }
             m = SF_MOTIONS[it.motion];
             if (!m) { continue; }
             fx = it.names.fx || {};
@@ -1074,9 +1075,9 @@ var sayframeHost = (function () {
 
     // Puts one preset on one direction of the layer (its controls, and its tag on the marker).
     function sfAdd(layer, comp, motion, curve, dir, dur, both, labels) {
-        var m = SF_MOTIONS[motion], mk = sfReadMarker(layer, dir), fd = comp.frameDuration || 0.01;
-        var title = labels.title || motion, keys = sfParamKeys(m), names, i, nm, w, data, end;
-        names = { title: title, curveLabel: labels.curve || "", fx: {} };
+        var m = SF_MOTIONS[motion] || {}, mk = sfReadMarker(layer, dir), fd = comp.frameDuration || 0.01;
+        var title = labels.title || motion, keys = sfTextId(motion) ? [] : sfParamKeys(m), names, i, nm, w, data, end;
+        names = sfTextId(motion) ? sftAdd(layer, motion, dir, labels) : { title: title, curveLabel: labels.curve || "", fx: {} };
         for (i = 0; i < keys.length; i++) {
             nm = sfPrefix(dir, title) + (labels[keys[i]] || keys[i]);
             sfRemoveFx(layer, nm);
@@ -1108,6 +1109,8 @@ var sayframeHost = (function () {
         if (!mk) { return false; }
         fx = (mk.names[motion] && mk.names[motion].fx) || {};
         for (k in fx) { if (fx.hasOwnProperty(k)) { sfRemoveFx(layer, fx[k]); } }
+        fx = (mk.names[motion] && mk.names[motion].anim) || [];
+        for (i = 0; i < fx.length; i++) { sftRemove(layer, fx[i].name); }
         for (i = 0; i < mk.presets.length; i++) { if (mk.presets[i].motion !== motion) { rest.push(mk.presets[i]); } }
         delete mk.names[motion];
         sfWriteMarker(layer, dir, { time: mk.time, dur: mk.dur, presets: rest, names: mk.names }, comp.frameDuration);
@@ -1152,8 +1155,8 @@ var sayframeHost = (function () {
             for (j = 0; j < mk.presets.length; j++) {
                 p = mk.presets[j];
                 fx = (mk.names[p.motion] && mk.names[p.motion].fx) || {};
-                params = [];
-                keys = sfParamKeys(SF_MOTIONS[p.motion] || {});
+                params = sfTextId(p.motion) ? sftDescribe(layer, p.motion, mk.names[p.motion] || {}) : [];
+                keys = sfTextId(p.motion) ? [] : sfParamKeys(SF_MOTIONS[p.motion] || {});
                 if (SF_MOTIONS[p.motion] && SF_MOTIONS[p.motion].blur !== undefined) { keys.push("blur"); }
                 for (k = 0; k < keys.length; k++) {
                     e = sfFx(layer, fx[keys[k]]);
@@ -1167,6 +1170,695 @@ var sayframeHost = (function () {
         return out;
     }
 
+
+    // ---- Text presets, Animation Composer style. Same IN/OUT markers as the motions (one marker per direction
+    // holds every preset of that direction), but a text preset is a text animator named after it
+    // (e.g. "IN From bottom by letter") whose own properties hold the hidden state, plus an Expression Selector that
+    // walks the letters, words or lines through the marker one after another. Nothing is baked into keys:
+    // the marker's length is the duration, the animator's values are the settings, and the order of the
+    // letters ("stagger") is a setting too.
+    var SFT = {
+        "fade": { op: 0 },
+        "from-bottom": { op: 0, pos: [0, 80] },
+        "from-top": { op: 0, pos: [0, -80] },
+        "from-left": { op: 0, pos: [-80, 0] },
+        "from-right": { op: 0, pos: [80, 0] },
+        "scale-up": { op: 0, scale: 0 },
+        "scale-down": { op: 0, scale: 300 },
+        "rotate": { op: 0, rot: -90 },
+        "blur": { op: 0, blur: 40 },
+        "tracking": { op: 0, track: 60 },
+        "skew": { op: 0, skew: 40, pos: [0, 40] },
+        "typewriter": { op: 0, type: true }
+    };
+    var SFT_BASED = { c: 2, w: 3, l: 4 };
+    var SFT_STAGGER = { c: 0.6, w: 0.5, l: 0.4 };
+    var SFT_PROPS = [
+        ["pos", "ADBE Text Position 3D"], ["scale", "ADBE Text Scale 3D"], ["rot", "ADBE Text Rotation"],
+        ["blur", "ADBE Text Blur"], ["track", "ADBE Text Tracking Amount"], ["skew", "ADBE Text Skew"], ["op", "ADBE Text Opacity"]
+    ];
+
+    function sfTextId(motion) {
+        var m = /^tx-([a-z\-]+)-([cwl])$/.exec(String(motion));
+        return m && SFT[m[1]] ? { fx: m[1], unit: m[2], def: SFT[m[1]] } : null;
+    }
+
+    function sfKnown(motion) { return !!(SF_MOTIONS[motion] || sfTextId(motion)); }
+
+    function sftValue(key, def) {
+        if (key === "pos") { return [def.pos[0], def.pos[1], 0]; }
+        if (key === "scale") { return [def.scale, def.scale, 100]; }
+        if (key === "blur") { return [def.blur, def.blur]; }
+        return def[key];
+    }
+
+    function sftAnimators(layer) {
+        var tp = layer.property("ADBE Text Properties");
+        return tp ? tp.property("ADBE Text Animators") : null;
+    }
+
+    function sftFind(layer, name) {
+        var a = sftAnimators(layer), i;
+        if (!a || !name) { return null; }
+        for (i = 1; i <= a.numProperties; i++) { if (a.property(i).name === name) { return a.property(i); } }
+        return null;
+    }
+
+    function sftRemove(layer, name) {
+        var a = sftFind(layer, name);
+        while (a) { a.remove(); a = sftFind(layer, name); }
+    }
+
+    function sftAmount(anim) {
+        var sels = anim.property("ADBE Text Selectors"), i, sel;
+        for (i = 1; sels && i <= sels.numProperties; i++) {
+            sel = sels.property(i);
+            if (sel.matchName === "ADBE Text Expressible Selector") { return sel.property("ADBE Text Expressible Amount"); }
+        }
+        return null;
+    }
+
+    // One animator with the given properties and an Expression Selector based on letters, words or lines.
+    function sftMake(layer, name, keys, def, unit) {
+        var root = ["ADBE Text Properties", "ADBE Text Animators"], ai, a, i, pi, si;
+        sftRemove(layer, name);
+        ai = acAdd(layer, root, "ADBE Text Animator");
+        a = root.concat([ai]);
+        acP(layer, a).name = name;
+        for (i = 0; i < keys.length; i++) {
+            pi = acAdd(layer, a.concat(["ADBE Text Animator Properties"]), SFT_MATCH[keys[i]]);
+            acP(layer, a.concat(["ADBE Text Animator Properties", pi])).setValue(sftValue(keys[i], def));
+        }
+        si = acAdd(layer, a.concat(["ADBE Text Selectors"]), "ADBE Text Expressible Selector");
+        try { acP(layer, a.concat(["ADBE Text Selectors", si, "ADBE Text Range Type2"])).setValue(SFT_BASED[unit]); } catch (e0) {}
+    }
+
+    var SFT_MATCH = {};
+    (function () { var i; for (i = 0; i < SFT_PROPS.length; i++) { SFT_MATCH[SFT_PROPS[i][0]] = SFT_PROPS[i][1]; } })();
+
+    function sftKeys(def) {
+        var out = [], i;
+        for (i = 0; i < SFT_PROPS.length; i++) { if (SFT_PROPS[i][0] !== "op" && def[SFT_PROPS[i][0]] !== undefined) { out.push(SFT_PROPS[i][0]); } }
+        return out;
+    }
+
+    function sftAdd(layer, motion, dir, labels) {
+        var t = sfTextId(motion), title = labels.title || motion, keys = sftKeys(t.def);
+        var names = { title: title, curveLabel: labels.curve || "", text: true, anim: [], stagger: t.def.type ? 0.97 : SFT_STAGGER[t.unit] };
+        var base = (dir === "in" ? "IN " : "OUT ") + title;
+        if (keys.length) {
+            sftMake(layer, base, keys, t.def, t.unit);
+            names.anim.push({ name: base, soft: false });
+            if (t.def.op !== undefined) {
+                sftMake(layer, base + " \u00b7 " + (labels.fade || "opacity"), ["op"], t.def, t.unit);
+                names.anim.push({ name: base + " \u00b7 " + (labels.fade || "opacity"), soft: true });
+            }
+        } else {
+            sftMake(layer, base, ["op"], t.def, t.unit);
+            names.anim.push({ name: base, soft: false });
+        }
+        return names;
+    }
+
+    // The Amount of each animator's selector: 100 = hidden, 0 = at rest; every unit gets its own slice of the marker.
+    function sftExpr(layer, it, skipped) {
+        var anims = it.names.anim || [], i, a, amt, curve, q = jsonString;
+        var st = Math.max(0, Math.min(0.97, Number(it.names.stagger) || 0));
+        for (i = 0; i < anims.length; i++) {
+            a = sftFind(layer, anims[i].name);
+            if (!a) { continue; }
+            amt = sftAmount(a);
+            if (!amt) { continue; }
+            curve = anims[i].soft ? (it.curve === "linear" ? "linear" : "ease") : it.curve;
+            sfSetExpr(amt, "var r=0,k=sfM(" + q("{sf:" + it.motion + ":" + it.dir + ":") + ");\n" +
+                "if(k){var d=Math.max(k.duration,thisComp.frameDuration),s=" + st + ",n=Math.max(1,textTotal),u=textIndex-1;" +
+                "var st=(n>1?u/(n-1):0)*s*d,w=Math.max(d*(1-s),thisComp.frameDuration),p=(time-k.time-st)/w;" +
+                "r=100*(" + q(it.dir) + "==\"in\"?1-sfF(p," + q(curve) + "):1-sfF(1-p," + q(curve) + "));}\nr", skipped);
+        }
+    }
+
+    // What the Edit view shows for a text preset: the main animator's values as single numbers, and the stagger.
+    function sftDescribe(layer, motion, names) {
+        var t = sfTextId(motion), out = [], keys, a, i, prop, v, anims = names.anim || [];
+        if (!t) { return out; }
+        a = anims.length ? sftFind(layer, anims[0].name) : null;
+        keys = sftKeys(t.def);
+        if (!keys.length) { keys = ["op"]; }
+        for (i = 0; a && i < keys.length; i++) {
+            prop = a.property("ADBE Text Animator Properties").property(SFT_MATCH[keys[i]]);
+            if (!prop) { continue; }
+            v = prop.value;
+            if (keys[i] === "pos") { v = t.def.pos[0] !== 0 ? v[0] : v[1]; }
+            if (keys[i] === "scale" || keys[i] === "blur") { v = v[0]; }
+            out.push({ key: "t" + keys[i], name: "anim:" + anims[0].name + "|" + keys[i] + "|" + motion, value: v });
+        }
+        out.push({ key: "stagger", name: "stagger", value: Math.round((Number(names.stagger) || 0) * 100) });
+        return out;
+    }
+
+    function sftSetParam(layer, spec, value) {
+        var parts = spec.substring(5).split("|"), a = sftFind(layer, parts[0]), t = sfTextId(parts[2]), prop, v;
+        if (!a || !t) { throw new Error("PRESET_GONE"); }
+        prop = a.property("ADBE Text Animator Properties").property(SFT_MATCH[parts[1]]);
+        if (!prop) { throw new Error("PRESET_GONE"); }
+        value = Number(value);
+        if (parts[1] === "pos") {
+            v = prop.value.slice(0);
+            if (t.def.pos[0] !== 0) { v[0] = value; } else { v[1] = value; }
+        } else if (parts[1] === "scale") {
+            v = [value, value, 100];
+        } else if (parts[1] === "blur") {
+            v = [value, value];
+        } else {
+            v = value;
+        }
+        prop.setValue(v);
+    }
+
+
+    // ---- Sounds: pitch the way a sampler does it (and the way Animation Composer's sound pitch sounds): the
+    // layer is played faster or slower, so it gets higher and shorter, or lower and longer. In After Effects
+    // that is the layer's Stretch: +12 semitones = 50%, -12 = 200%. Volume is the layer's Audio Levels.
+    function sndIs(layer) {
+        try { return !!(layer.source && layer.source.mainSource && layer.source.mainSource.file &&
+            String(layer.source.mainSource.file.fsName).indexOf("Sayframe SFX") >= 0); } catch (e0) { return false; }
+    }
+
+    function sndApply(layer, pitch, volume) {
+        var lv;
+        pitch = Math.max(-24, Math.min(24, pitch));
+        layer.stretch = 100 / Math.pow(2, pitch / 12);
+        try {
+            lv = layer.property("ADBE Audio Group").property("ADBE Audio Levels");
+            lv.setValue([volume, volume]);
+        } catch (e0) {}
+    }
+
+    function sndDescribe(layer) {
+        var v = 0, lv;
+        if (!sndIs(layer)) { return null; }
+        try { lv = layer.property("ADBE Audio Group").property("ADBE Audio Levels").value; v = lv[0]; } catch (e0) {}
+        return { name: String(layer.name), pitch: Math.round(12 * Math.log(100 / (layer.stretch || 100)) / Math.LN2 * 10) / 10, volume: Math.round(v * 10) / 10 };
+    }
+
+    // ---- Graphics, the way Animation Composer's graphic components work: a new layer at the time indicator
+    // (over the selected layer, or in the middle of the comp) whose animation is driven by expressions from the
+    // layer's own length, with Color, Size and Thickness controls in Effect Controls. Nothing is baked into keys:
+    // stretch the layer to change the duration, change a control to restyle it.
+
+    function grHead(n) {
+        return [
+            "// Sayframe graphic: written by the Sayframe panel. Its length is the duration; colour, size and thickness are in Effect Controls.",
+            "function gT(){return time-thisLayer.inPoint;}",
+            "function gL(){return Math.max(thisLayer.outPoint-thisLayer.inPoint,thisComp.frameDuration);}",
+            "function gP(){return Math.min(1,Math.max(0,gT()/gL()));}",
+            "function gC(n,d){try{return effect(n)(1);}catch(e){return d;}}",
+            "function gE(x){x=Math.min(1,Math.max(0,x));return 1-Math.pow(1-x,3);}",
+            "function gB(x){x=Math.min(1,Math.max(0,x));var s=1.70158,q=x-1;return 1+(s+1)*q*q*q+s*q*q;}",
+            "function gIn(d){return gE(gT()/d);}",
+            "function gOut(d){return gE((thisLayer.outPoint-time)/d);}",
+            "function gS(){return gC(" + jsonString(n.size) + ",100)/100;}",
+            "function gW(){return gC(" + jsonString(n.thick) + ",8);}",
+            "function gK(){return gC(" + jsonString(n.color) + ",[1,1,1,1]);}"
+        ].join("\n");
+    }
+
+    // A small toolkit over shape layers: everything is addressed by group index from the root.
+    function grCtx(l, comp, names) {
+        var c = { l: l, comp: comp, n: names };
+        c.x = function (prop, body) { prop.expression = grHead(names) + "\n" + body; return prop; };
+        c.g = function (name) {
+            var gi = acGroup(l);
+            try { acP(l, ["ADBE Root Vectors Group", gi]).name = name; } catch (e0) {}
+            return gi;
+        };
+        c.p = function (gi, path) { return acP(l, ["ADBE Root Vectors Group", gi].concat(path)); };
+        c.add = function (gi, mn) { return acIn(l, gi, mn); };
+        c.ell = function (gi, size, posExpr) {
+            var i = c.add(gi, "ADBE Vector Shape - Ellipse");
+            c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Ellipse Size"]).setValue([size, size]);
+            if (posExpr) { c.x(c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Ellipse Position"]), posExpr); }
+            return i;
+        };
+        c.rect = function (gi, w, h, round, posExpr) {
+            var i = c.add(gi, "ADBE Vector Shape - Rect");
+            c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Rect Size"]).setValue([w, h]);
+            if (round) { c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Rect Roundness"]).setValue(round); }
+            if (posExpr) { c.x(c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Rect Position"]), posExpr); }
+            return i;
+        };
+        c.star = function (gi, points, outer, inner, polygon) {
+            var i = c.add(gi, "ADBE Vector Shape - Star");
+            try { c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Star Type"]).setValue(polygon ? 2 : 1); } catch (e0) {}
+            c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Star Points"]).setValue(points);
+            c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Star Outer Radius"]).setValue(outer);
+            if (!polygon) { c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Star Inner Radius"]).setValue(inner); }
+            return i;
+        };
+        c.path = function (gi, pts, closed) { return acPath(l, gi, pts, closed); };
+        c.trim = function (gi, startExpr, endExpr) {
+            var i = c.add(gi, "ADBE Vector Filter - Trim");
+            if (startExpr) { c.x(c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Trim Start"]), startExpr); }
+            if (endExpr) { c.x(c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Trim End"]), endExpr); }
+            return i;
+        };
+        c.wiggle = function (gi, size) {
+            try {
+                var i = c.add(gi, "ADBE Vector Filter - Wiggler");
+                c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Wiggler Size"]).setValue(size);
+                c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Temporal Freq"]).setValue(6);
+            } catch (e0) {}
+        };
+        c.stroke = function (gi, widthExpr, colorExpr) {
+            var i = c.add(gi, "ADBE Vector Graphic - Stroke");
+            c.x(c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Stroke Color"]), colorExpr || "gK()");
+            c.x(c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Stroke Width"]), widthExpr || "gW()");
+            try { c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Stroke Line Cap"]).setValue(2); } catch (e0) {}
+            try { c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Stroke Line Join"]).setValue(2); } catch (e1) {}
+            return i;
+        };
+        c.fill = function (gi, colorExpr) {
+            var i = c.add(gi, "ADBE Vector Graphic - Fill");
+            c.x(c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Fill Color"]), colorExpr || "gK()");
+            return i;
+        };
+        c.repeat = function (gi, copies, rot, pos) {
+            var i = c.add(gi, "ADBE Vector Filter - Repeater");
+            c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Repeater Copies"]).setValue(copies);
+            c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Repeater Transform", "ADBE Vector Repeater Position"]).setValue(pos || [0, 0]);
+            if (rot) { c.p(gi, ["ADBE Vectors Group", i, "ADBE Vector Repeater Transform", "ADBE Vector Repeater Rotation"]).setValue(rot); }
+            return i;
+        };
+        c.t = function (gi, prop, expr) {
+            var mn = { pos: "ADBE Vector Position", scale: "ADBE Vector Scale", rot: "ADBE Vector Rotation", op: "ADBE Vector Group Opacity", anchor: "ADBE Vector Anchor" }[prop];
+            return c.x(c.p(gi, ["ADBE Vector Transform Group", mn]), expr);
+        };
+        c.lt = function (prop, expr) {
+            var mn = { pos: "ADBE Position", scale: "ADBE Scale", rot: "ADBE Rotate Z", op: "ADBE Opacity" }[prop];
+            return c.x(acP(l, ["ADBE Transform Group", mn]), expr);
+        };
+        return c;
+    }
+
+    function grPoly(n, fn) { var out = [], i; for (i = 0; i <= n; i++) { out.push(fn(i / n)); } return out; }
+
+    // One-shot pops: in for most of the layer, then fade at its end.
+    var GR_POP = "[100*gB(gT()/0.45)*gS(),100*gB(gT()/0.45)*gS()]";
+    var GR_FADE = "100*gOut(0.25)";
+
+    function grBurstLines(c, copies, r1, r2, width) {
+        var gi = c.g("Rays");
+        c.path(gi, [[0, -r1], [0, -r2]], false);
+        c.trim(gi, "100*gE(gP()*1.6-0.3)", "100*gE(gP()*1.6)");
+        c.stroke(gi, "gW()*" + (width || 1));
+        c.repeat(gi, copies, 360 / copies);
+        return gi;
+    }
+
+    function grParticles(c, count, body) {
+        var i, gi;
+        for (i = 0; i < count; i++) { gi = c.g("Particle " + (i + 1)); body(gi, i); }
+    }
+
+    var GR_BUILD = {
+        // ---- shape elements (one-shot)
+        "ring-burst": function (c) {
+            var gi = c.g("Ring");
+            c.ell(gi, 200);
+            c.stroke(gi, "gW()*(1-gE(gP()))*2");
+            c.t(gi, "scale", "var s=gE(gP()*1.2)*120;[s,s]");
+        },
+        "ring-double": function (c) {
+            var a = c.g("Ring 1"), b = c.g("Ring 2");
+            c.ell(a, 200); c.stroke(a, "gW()*(1-gE(gP()))*2"); c.t(a, "scale", "var s=gE(gP()*1.2)*120;[s,s]");
+            c.ell(b, 200); c.stroke(b, "gW()*(1-gE(gP()-0.15))*1.4"); c.t(b, "scale", "var s=gE(gP()*1.2-0.18)*90;[s,s]");
+        },
+        "lines-burst": function (c) { grBurstLines(c, 12, 60, 150, 1); },
+        "dots-burst": function (c) {
+            var gi = c.g("Dots");
+            c.ell(gi, 22, "[0,-gE(gP()*1.3)*170]");
+            c.fill(gi);
+            c.repeat(gi, 10, 36);
+            c.t(gi, "scale", "var s=100*(1-gE(gP()*1.3-0.4));[s,s]");
+        },
+        "star-burst": function (c) {
+            var gi = c.g("Stars");
+            c.star(gi, 5, 18, 8);
+            c.fill(gi);
+            c.t(gi, "anchor", "[0,gE(gP()*1.3)*170]");
+            c.t(gi, "rot", "gP()*180");
+            c.repeat(gi, 8, 45);
+            c.t(gi, "op", "100*(1-gE(gP()*1.3-0.5))");
+        },
+        "circle-pop": function (c) {
+            var gi = c.g("Circle");
+            c.ell(gi, 160); c.fill(gi);
+            c.t(gi, "scale", "var s=100*gB(gT()/0.4)*gOut(0.3);[s,s]");
+        },
+        "square-spin": function (c) {
+            var gi = c.g("Square");
+            c.rect(gi, 140, 140, 18); c.stroke(gi);
+            c.t(gi, "scale", "var s=100*gB(gT()/0.5)*gOut(0.3);[s,s]");
+            c.t(gi, "rot", "gE(gP())*180");
+        },
+        "triangle-burst": function (c) {
+            var gi = c.g("Triangles");
+            c.star(gi, 3, 16, 0, true); c.fill(gi);
+            c.t(gi, "anchor", "[0,gE(gP()*1.3)*160]");
+            c.t(gi, "rot", "gP()*240");
+            c.repeat(gi, 6, 60);
+            c.t(gi, "op", "100*(1-gE(gP()*1.3-0.5))");
+        },
+        "plus-burst": function (c) {
+            var gi = c.g("Plus");
+            c.path(gi, [[-12, 0], [12, 0]], false);
+            var g2 = c.g("Plus vertical");
+            c.path(g2, [[0, -12], [0, 12]], false);
+            c.stroke(gi, "gW()*0.7"); c.stroke(g2, "gW()*0.7");
+            c.t(gi, "anchor", "[0,gE(gP()*1.3)*150]"); c.t(g2, "anchor", "[0,gE(gP()*1.3)*150]");
+            c.repeat(gi, 6, 60); c.repeat(g2, 6, 60);
+            c.t(gi, "op", "100*(1-gE(gP()*1.3-0.5))"); c.t(g2, "op", "100*(1-gE(gP()*1.3-0.5))");
+        },
+        "zigzag": function (c) {
+            var gi = c.g("Zigzag");
+            c.path(gi, grPoly(8, function (u) { return [-240 + 480 * u, (Math.round(u * 8) % 2 ? -30 : 30)]; }), false);
+            c.trim(gi, "100*gE(gP()*1.5-0.5)", "100*gE(gP()*1.5)");
+            c.stroke(gi);
+        },
+        "ripples": function (c) {
+            var i, gi;
+            for (i = 0; i < 3; i++) {
+                gi = c.g("Ripple " + (i + 1));
+                c.ell(gi, 200);
+                c.stroke(gi, "var q=(gT()/1.2+" + (i / 3) + ")%1;gW()*(1-q)");
+                c.t(gi, "scale", "var q=(gT()/1.2+" + (i / 3) + ")%1;[q*130,q*130]");
+            }
+        },
+        "sparkle": function (c) {
+            var gi = c.g("Sparkle");
+            c.star(gi, 4, 70, 14); c.fill(gi);
+            c.t(gi, "scale", "var s=100*gB(gT()/0.35)*gOut(0.3)*(1+0.12*Math.sin(gT()*12));[s,s]");
+            c.t(gi, "rot", "gT()*40");
+        },
+        "confetti": function (c) {
+            grParticles(c, 18, function (gi, i) {
+                c.rect(gi, 14, 22, 2);
+                c.fill(gi, "seedRandom(" + (i + 1) + ",true);var k=gK();var m=0.55+random()*0.45;[k[0]*m,k[1]*m,k[2]*m,1]");
+                c.t(gi, "pos", "seedRandom(" + (i + 1) + ",true);var a=random(-Math.PI,0),v=random(250,520),t=gT();[Math.cos(a)*v*t*0.9,Math.sin(a)*v*t+500*t*t]");
+                c.t(gi, "rot", "seedRandom(" + (i + 1) + ",true);random(-1,1)*720*gT()");
+                c.t(gi, "op", GR_FADE);
+            });
+        },
+        // ---- 2D special effects
+        "speed-lines": function (c) {
+            grParticles(c, 20, function (gi, i) {
+                var ang = i * 18;
+                c.path(gi, [[0, -520], [0, -900]], false);
+                c.trim(gi, "posterizeTime(12);seedRandom(" + (i + 1) + ",false);random(0,40)", "posterizeTime(12);seedRandom(" + (i + 1) + ",false);random(50,100)");
+                c.stroke(gi, "gW()*0.6");
+                c.t(gi, "rot", String(ang));
+                c.t(gi, "op", "100*gIn(0.15)*gOut(0.2)");
+            });
+        },
+        "smoke-puff": function (c) {
+            grParticles(c, 7, function (gi, i) {
+                c.ell(gi, 90);
+                c.fill(gi, "var k=gK();[k[0]*0.8,k[1]*0.8,k[2]*0.8,1]");
+                c.t(gi, "pos", "seedRandom(" + (i + 1) + ",true);var a=random(0,Math.PI*2),r=gE(gP())*random(60,140);[Math.cos(a)*r,Math.sin(a)*r-gP()*60]");
+                c.t(gi, "scale", "seedRandom(" + (i + 1) + ",true);var s=(0.4+gE(gP())*random(0.8,1.4))*100;[s,s]");
+                c.t(gi, "op", "80*(1-gP())");
+            });
+        },
+        "explosion-burst": function (c) {
+            var a = c.g("Spikes"), b = c.g("Core");
+            c.star(a, 12, 180, 90); c.fill(a);
+            c.t(a, "scale", "var s=100*gB(gT()/0.3)*(1-gE(gP()*1.2-0.3));[s,s]");
+            c.ell(b, 140); c.fill(b, "[1,1,1,1]");
+            c.t(b, "scale", "var s=100*gE(gT()/0.25)*(1-gE(gP()*1.2-0.2));[s,s]");
+        },
+        "lightning": function (c) {
+            var gi = c.g("Bolt");
+            c.path(gi, [[-20, -320], [30, -120], [-30, -40], [40, 140], [-10, 320]], false);
+            c.stroke(gi, "gW()*1.2");
+            c.t(gi, "op", "posterizeTime(15);seedRandom(1,false);random()<0.75?100*gOut(0.2):0");
+        },
+        "sunburst": function (c) {
+            var gi = c.g("Rays");
+            c.path(gi, [[0, 0], [-40, -400], [40, -400]], true);
+            c.fill(gi);
+            c.repeat(gi, 12, 30);
+            c.t(gi, "rot", "gT()*25");
+            c.t(gi, "scale", "var s=100*gE(gT()/0.5)*gOut(0.4);[s,s]");
+            c.t(gi, "op", "70");
+        },
+        "glitch-blocks": function (c) {
+            grParticles(c, 10, function (gi, i) {
+                c.rect(gi, 120, 24, 0, "posterizeTime(12);seedRandom(" + (i + 1) + ",false);[random(-400,400),random(-220,220)]");
+                c.fill(gi);
+                c.t(gi, "op", "posterizeTime(12);seedRandom(" + (i + 20) + ",false);random()<0.5?100*gOut(0.15):0");
+            });
+        },
+        "shockwave": function (c) {
+            var a = c.g("Wave"), b = c.g("Wave thin");
+            c.ell(a, 200); c.stroke(a, "gW()*3*(1-gE(gP()))"); c.t(a, "scale", "var s=gE(gP()*1.1)*250;[s,s]");
+            c.ell(b, 200); c.stroke(b, "gW()*0.5*(1-gE(gP()))"); c.t(b, "scale", "var s=gE(gP()*1.1-0.1)*320;[s,s]");
+        },
+        "swirl": function (c) {
+            var gi = c.g("Swirl");
+            c.path(gi, grPoly(60, function (u) { var a = u * Math.PI * 5, r = 10 + 160 * u; return [Math.cos(a) * r, Math.sin(a) * r]; }), false);
+            c.trim(gi, "100*gE(gP()*1.4-0.4)", "100*gE(gP()*1.4)");
+            c.stroke(gi);
+            c.t(gi, "rot", "gT()*120");
+        },
+        // ---- hand drawn (a little wiggle on the path makes them look drawn)
+        "underline": function (c) {
+            var gi = c.g("Underline");
+            c.path(gi, grPoly(30, function (u) { return [-300 + 600 * u, Math.sin(u * Math.PI * 3) * 10]; }), false);
+            c.trim(gi, "100*(1-gOut(0.4))", "100*gIn(0.6)");
+            c.wiggle(gi, 3); c.stroke(gi);
+        },
+        "circle-scribble": function (c) {
+            var gi = c.g("Scribble");
+            c.path(gi, grPoly(70, function (u) { var a = -Math.PI / 2 + u * Math.PI * 2.3, k = 1 + 0.06 * u; return [Math.cos(a) * 280 * k, Math.sin(a) * 130 * k]; }), false);
+            c.trim(gi, "100*(1-gOut(0.4))", "100*gIn(0.7)");
+            c.wiggle(gi, 4); c.stroke(gi);
+        },
+        "arrow": function (c) {
+            var a = c.g("Arrow line"), b = c.g("Arrow head");
+            c.path(a, grPoly(20, function (u) { return [-260 + 500 * u, -120 * Math.sin(u * Math.PI) + 40 * u]; }), false);
+            c.trim(a, "100*(1-gOut(0.4))", "100*gIn(0.6)"); c.wiggle(a, 2); c.stroke(a);
+            c.path(b, [[200, 0], [240, 40], [190, 70]], false);
+            c.trim(b, "100*(1-gOut(0.4))", "100*gE((gT()-0.5)/0.25)"); c.stroke(b);
+        },
+        "cross-out": function (c) {
+            var a = c.g("Stroke 1"), b = c.g("Stroke 2");
+            c.path(a, [[-200, -120], [200, 120]], false); c.trim(a, "100*(1-gOut(0.3))", "100*gIn(0.35)"); c.wiggle(a, 3); c.stroke(a);
+            c.path(b, [[200, -120], [-200, 120]], false); c.trim(b, "100*(1-gOut(0.3))", "100*gE((gT()-0.3)/0.35)"); c.wiggle(b, 3); c.stroke(b);
+        },
+        "check": function (c) {
+            var gi = c.g("Check");
+            c.path(gi, [[-120, 0], [-40, 90], [140, -120]], false);
+            c.trim(gi, "100*(1-gOut(0.3))", "100*gIn(0.5)"); c.wiggle(gi, 2); c.stroke(gi, "gW()*1.4");
+        },
+        "highlight": function (c) {
+            var gi = c.g("Marker");
+            c.path(gi, [[-300, 0], [300, -6]], false);
+            c.trim(gi, "100*(1-gOut(0.3))", "100*gIn(0.5)");
+            c.stroke(gi, "gW()*6", "var k=gK();[k[0],k[1],k[2],1]");
+            c.t(gi, "op", "55");
+        },
+        "bracket": function (c) {
+            var a = c.g("Left"), b = c.g("Right");
+            c.path(a, [[-260, -140], [-300, -140], [-300, 140], [-260, 140]], false); c.trim(a, "100*(1-gOut(0.3))", "100*gIn(0.5)"); c.wiggle(a, 2); c.stroke(a);
+            c.path(b, [[260, -140], [300, -140], [300, 140], [260, 140]], false); c.trim(b, "100*(1-gOut(0.3))", "100*gIn(0.5)"); c.wiggle(b, 2); c.stroke(b);
+        },
+        "star-doodle": function (c) {
+            var gi = c.g("Star"), i, pts = [];
+            for (i = 0; i <= 5; i++) { pts.push([Math.cos(-Math.PI / 2 + i * 4 * Math.PI / 5) * 150, Math.sin(-Math.PI / 2 + i * 4 * Math.PI / 5) * 150]); }
+            c.path(gi, pts, false);
+            c.trim(gi, "100*(1-gOut(0.3))", "100*gIn(0.7)"); c.wiggle(gi, 3); c.stroke(gi);
+        },
+        "exclaim": function (c) {
+            var gi = c.g("Accent");
+            c.path(gi, [[0, -70], [0, -130]], false);
+            c.trim(gi, "100*(1-gOut(0.3))", "100*gIn(0.3)");
+            c.stroke(gi);
+            c.repeat(gi, 5, 30);
+            c.t(gi, "rot", "-60");
+        },
+        // ---- backgrounds (full frame; a soft fade in and out)
+        "bg-grid": function (c) {
+            var w = c.comp.width, h = c.comp.height, a = c.g("Vertical"), b = c.g("Horizontal");
+            c.path(a, [[-w / 2 - 80, -h], [-w / 2 - 80, h]], false); c.stroke(a, "gW()*0.25"); c.repeat(a, Math.ceil(w / 80) + 3, 0, [80, 0]);
+            c.t(a, "pos", "[(gT()*30)%80,0]");
+            c.path(b, [[-w, -h / 2 - 80], [w, -h / 2 - 80]], false); c.stroke(b, "gW()*0.25"); c.repeat(b, Math.ceil(h / 80) + 3, 0, [0, 80]);
+            c.t(b, "pos", "[0,(gT()*30)%80]");
+            c.lt("op", "60*gIn(0.5)*gOut(0.5)");
+        },
+        "bg-dots": function (c) {
+            var w = c.comp.width, h = c.comp.height, gi = c.g("Dots");
+            c.ell(gi, 10, "[-" + (w / 2) + ",-" + (h / 2) + "]"); c.fill(gi);
+            c.repeat(gi, Math.ceil(w / 60) + 1, 0, [60, 0]);
+            c.repeat(gi, Math.ceil(h / 60) + 1, 0, [0, 60]);
+            c.t(gi, "scale", "var s=100+20*Math.sin(gT()*3);[s,s]");
+            c.lt("op", "50*gIn(0.5)*gOut(0.5)");
+        },
+        "bg-stripes": function (c) {
+            var w = c.comp.width, h = c.comp.height, gi = c.g("Stripes");
+            c.rect(gi, 40, h * 3, 0, "[-" + (w * 1.2) + ",0]"); c.fill(gi);
+            c.repeat(gi, Math.ceil(w * 2.4 / 100) + 2, 0, [100, 0]);
+            c.t(gi, "pos", "[(gT()*60)%100,0]");
+            c.t(gi, "rot", "30");
+            c.lt("op", "35*gIn(0.5)*gOut(0.5)");
+        },
+        "bg-rays": function (c) {
+            var gi = c.g("Rays"), r = Math.ceil(Math.sqrt(c.comp.width * c.comp.width + c.comp.height * c.comp.height));
+            c.path(gi, [[0, 0], [-r * 0.2, -r], [r * 0.2, -r]], true); c.fill(gi);
+            c.repeat(gi, 16, 22.5);
+            c.t(gi, "rot", "gT()*8");
+            c.lt("op", "40*gIn(0.5)*gOut(0.5)");
+        },
+        "bg-circles": function (c) {
+            var i, gi;
+            for (i = 0; i < 6; i++) {
+                gi = c.g("Circle " + (i + 1));
+                c.ell(gi, 300);
+                c.stroke(gi, "gW()*0.5");
+                c.t(gi, "scale", "var q=(gT()/4+" + (i / 6) + ")%1;[q*700,q*700]");
+                c.t(gi, "op", "var q=(gT()/4+" + (i / 6) + ")%1;100*(1-q)");
+            }
+            c.lt("op", "70*gIn(0.5)*gOut(0.5)");
+        },
+        // ---- overlays (shape ones; solid ones are in grSolid)
+        "letterbox": function (c) {
+            var w = c.comp.width, h = c.comp.height, a = c.g("Top bar"), b = c.g("Bottom bar");
+            c.rect(a, w + 20, h * 0.12, 0, "[0,-" + (h / 2) + "+" + (h * 0.06) + "-(1-gIn(0.6)*gOut(0.6))*" + (h * 0.13) + "]");
+            c.fill(a, "[0,0,0,1]");
+            c.rect(b, w + 20, h * 0.12, 0, "[0," + (h / 2) + "-" + (h * 0.06) + "+(1-gIn(0.6)*gOut(0.6))*" + (h * 0.13) + "]");
+            c.fill(b, "[0,0,0,1]");
+        },
+        "frame": function (c) {
+            var gi = c.g("Frame");
+            c.rect(gi, c.comp.width * 0.9, c.comp.height * 0.86, 12);
+            c.trim(gi, "0", "100*gIn(0.8)*gOut(0.5)");
+            c.stroke(gi, "gW()*0.6");
+        },
+        "scanlines": function (c) {
+            var w = c.comp.width, h = c.comp.height, gi = c.g("Lines");
+            c.path(gi, [[-w, -h / 2 - 8], [w, -h / 2 - 8]], false);
+            c.stroke(gi, "2", "[0,0,0,1]");
+            c.repeat(gi, Math.ceil(h / 6) + 3, 0, [0, 6]);
+            c.t(gi, "pos", "[0,(gT()*12)%6]");
+            c.lt("op", "35*gIn(0.3)*gOut(0.3)");
+        },
+        // ---- titles and labels (text is a separate layer parented to the graphic)
+        "lower-third": function (c) {
+            var a = c.g("Bar"), b = c.g("Accent");
+            c.rect(a, 640, 110, 6, "[320,0]"); c.fill(a, "[0.08,0.08,0.1,0.9]");
+            c.t(a, "scale", "[100*gE(gT()/0.5)*gOut(0.4),100]");
+            c.rect(b, 12, 110, 0, "[0,0]"); c.fill(b);
+            c.t(b, "scale", "[100,100*gB(gT()/0.4)*gOut(0.3)]");
+        },
+        "callout": function (c) {
+            var a = c.g("Dot"), b = c.g("Line");
+            c.ell(a, 24); c.fill(a);
+            c.t(a, "scale", "var s=100*gB(gT()/0.3)*gOut(0.3);[s,s]");
+            c.path(b, [[0, 0], [120, -120], [420, -120]], false);
+            c.trim(b, "100*(1-gOut(0.4))", "100*gE((gT()-0.15)/0.5)");
+            c.stroke(b, "gW()*0.5");
+        },
+        "label": function (c) {
+            var a = c.g("Pill");
+            c.rect(a, 360, 90, 45); c.fill(a);
+            c.t(a, "scale", "var s=100*gB(gT()/0.4)*gOut(0.3);[s,s]");
+        },
+        "progress": function (c) {
+            var a = c.g("Track"), b = c.g("Fill");
+            c.rect(a, 600, 36, 18); c.stroke(a, "gW()*0.4");
+            c.path(b, [[-282, 0], [282, 0]], false);
+            c.trim(b, "0", "100*gE(gP())");
+            c.stroke(b, "22");
+            c.lt("op", "100*gIn(0.3)*gOut(0.3)");
+        }
+    };
+
+    // Layers that are not shape layers: solids with an effect, and text that counts.
+    var GR_SOLID = {
+        "bg-gradient": function (l, c) {
+            var g = acAdd(l, ["ADBE Effect Parade"], "ADBE 4ColorGradient"), i;
+            var cols = ["gK()", "var k=gK();[k[0]*0.3,k[1]*0.3,k[2]*0.45,1]", "var k=gK();[k[2],k[0],k[1],1]", "[0.03,0.03,0.06,1]"];
+            for (i = 0; i < 4; i++) { c.x(acP(l, ["ADBE Effect Parade", g, "ADBE 4ColorGradient-000" + (2 + i * 2)]), cols[i]); }
+            c.x(acP(l, ["ADBE Effect Parade", g, "ADBE 4ColorGradient-0001"]), "[value[0]+Math.sin(time*0.7)*thisComp.width*0.2,value[1]+Math.cos(time*0.5)*thisComp.height*0.2]");
+            c.x(acP(l, ["ADBE Effect Parade", g, "ADBE 4ColorGradient-0007"]), "[value[0]+Math.cos(time*0.6)*thisComp.width*0.2,value[1]+Math.sin(time*0.8)*thisComp.height*0.2]");
+            c.lt("op", "100*gIn(0.5)*gOut(0.5)");
+        },
+        "vignette": function (l, c) {
+            var g = acAdd(l, ["ADBE Effect Parade"], "ADBE Ramp");
+            try {
+                acP(l, ["ADBE Effect Parade", g, "ADBE Ramp-0001"]).setValue([c.comp.width / 2, c.comp.height / 2]);
+                acP(l, ["ADBE Effect Parade", g, "ADBE Ramp-0002"]).setValue([1, 1, 1, 1]);
+                acP(l, ["ADBE Effect Parade", g, "ADBE Ramp-0003"]).setValue([0, 0]);
+                acP(l, ["ADBE Effect Parade", g, "ADBE Ramp-0004"]).setValue([0, 0, 0, 1]);
+                acP(l, ["ADBE Effect Parade", g, "ADBE Ramp-0005"]).setValue(2);
+            } catch (e0) {}
+            try { l.blendingMode = BlendingMode.MULTIPLY; } catch (e1) {}
+            c.lt("op", "100*gIn(0.5)*gOut(0.5)*gS()");
+        },
+        "grain": function (l, c) {
+            var g = acAdd(l, ["ADBE Effect Parade"], "ADBE Noise");
+            c.x(acP(l, ["ADBE Effect Parade", g, "ADBE Noise-0001"]), "12*gS()*gIn(0.3)*gOut(0.3)");
+        },
+        "flicker": function (l, c) {
+            try { l.blendingMode = BlendingMode.ADD; } catch (e0) {}
+            c.lt("op", "posterizeTime(12);seedRandom(1,false);(random()<0.3?random(10,35):random(0,6))*gS()*gIn(0.2)*gOut(0.2)");
+        },
+        "counter": function (l, c) {
+            c.x(acP(l, ["ADBE Text Properties", "ADBE Text Document"]), "Math.round(gC(" + jsonString(c.n.size) + ",100)*gE(gP()/0.9))+\"%\"");
+            c.lt("op", "100*gIn(0.2)*gOut(0.2)");
+        },
+        "timer": function (l, c) {
+            c.x(acP(l, ["ADBE Text Properties", "ADBE Text Document"]),
+                "var s=Math.max(0,Math.ceil(thisLayer.outPoint-time));var m=Math.floor(s/60),r=s%60;(m<10?\"0\":\"\")+m+\":\"+(r<10?\"0\":\"\")+r");
+            c.lt("op", "100*gIn(0.2)*gOut(0.2)");
+        }
+    };
+    var GR_KIND = { "bg-gradient": "solid", "vignette": "solid", "grain": "adj", "flicker": "solid", "counter": "text", "timer": "text" };
+    var GR_STROKE = { "ring-burst": 1, "ring-double": 1, "lines-burst": 1, "square-spin": 1, "plus-burst": 1, "zigzag": 1, "ripples": 1, "speed-lines": 1,
+        "lightning": 1, "shockwave": 1, "swirl": 1, "underline": 1, "circle-scribble": 1, "arrow": 1, "cross-out": 1, "check": 1, "highlight": 1,
+        "bracket": 1, "star-doodle": 1, "exclaim": 1, "bg-grid": 1, "bg-circles": 1, "frame": 1, "callout": 1, "progress": 1 };
+    var GR_FULL = { "bg-gradient": 1, "bg-grid": 1, "bg-dots": 1, "bg-stripes": 1, "bg-rays": 1, "bg-circles": 1, "vignette": 1, "grain": 1,
+        "flicker": 1, "letterbox": 1, "frame": 1, "scanlines": 1 };
+    var GR_TEXT = { "lower-third": [50, -12, 0], "callout": [440, -150, 0], "label": [0, 0, 1] };
+
+    function grRead(layer) {
+        var mk = layer.property("ADBE Marker"), i, mv, m, params;
+        if (!mk) { return null; }
+        for (i = 1; i <= mk.numKeys; i++) {
+            mv = mk.keyValue(i);
+            m = /\{sfg:([a-z0-9\-]+)\}/.exec(String(mv.comment));
+            if (!m) { continue; }
+            try { params = mv.getParameters() || {}; } catch (e0) { params = {}; }
+            return { id: m[1], names: params.sg ? eval("(" + params.sg + ")") : {} };
+        }
+        return null;
+    }
+
+    function grHex(c) {
+        var out = "#", i, h;
+        for (i = 0; i < 3; i++) { h = Math.round(Math.max(0, Math.min(1, c[i])) * 255).toString(16); out += h.length < 2 ? "0" + h : h; }
+        return out;
+    }
+
+    function grDescribe(layer) {
+        var g = grRead(layer), out, fx;
+        if (!g) { return null; }
+        out = { id: g.id, dur: Math.round((layer.outPoint - layer.inPoint) * 1000) / 1000, names: g.names };
+        fx = sfFx(layer, g.names.color); out.color = fx ? grHex(fx.property(1).value) : "#ffffff";
+        fx = sfFx(layer, g.names.size); out.size = fx ? fx.property(1).value : 100;
+        fx = sfFx(layer, g.names.thick); if (fx) { out.thick = fx.property(1).value; }
+        return out;
+    }
+
     // ---- Transitions, the way Animation Composer does them: a transition goes on a cut, not on a layer.
     // At the time indicator (the cut) a new layer appears on top of the comp, half before the cut and
     // half after it: an adjustment layer for camera moves and glitches, a solid for light leaks and fades,
@@ -1175,71 +1867,99 @@ var sayframeHost = (function () {
     // A "Strength" slider in Effect Controls scales the move.
 
     var TR_KIND = {
-        "zoom-in": "adj", "zoom-out": "adj", "zoom-rotate": "adj", "rotate": "adj", "pan-left": "adj", "pan-right": "adj",
-        "pan-up": "adj", "pan-down": "adj", "shake": "adj", "twirl": "adj", "blur-zoom": "adj",
-        "glitch": "adj", "glitch-shake": "adj",
+        "zoom-in": "adj", "zoom-out": "adj", "zoom-in-out": "adj", "zoom-distort-in": "adj", "zoom-distort-out": "adj", "zoom-hit": "adj",
+        "pan-left": "adj", "pan-right": "adj", "pan-up": "adj", "pan-down": "adj",
+        "rotate": "adj", "roll": "adj", "zoom-rotate": "adj", "twirl": "adj",
+        "shake": "adj", "glitch": "adj", "glitch-shake": "adj", "blur-dissolve": "adj",
         "leak-warm": "solid", "leak-cool": "solid", "flash": "solid", "fade-black": "solid", "fade-white": "solid",
         "wipe-left": "shape", "wipe-up": "shape", "circle": "shape"
     };
 
+    // The look of a "seamless" camera transition: the move is exponential (almost all of it happens in
+    // the last frames before the cut and the first frames after it), mirrored Motion Tile fills the edges,
+    // the Transform effect draws its own motion blur, and a zoom / spin / directional blur and lens
+    // distortion peak exactly on the cut.
     function trHead(strength) {
         return [
             "// Sayframe transition: written by the Sayframe panel. The cut is in the middle of this layer; its length is the duration.",
             "function tP(){var a=thisLayer.inPoint,b=thisLayer.outPoint;return Math.min(1,Math.max(0,(time-a)/Math.max(b-a,thisComp.frameDuration)));}",
             "function tK(){try{return effect(" + jsonString(strength) + ")(1)/100;}catch(e){return 1;}}",
-            "function tIn(x){return x*x*x;}",
-            "function tOut(x){return 1-Math.pow(1-x,3);}",
+            "function tIn(x){return x<=0?0:Math.pow(2,10*x-10);}",
+            "function tOut(x){return x>=1?1:1-Math.pow(2,-10*x);}",
+            "function tPeak(){var p=tP();return p<0.5?tIn(p*2):tIn(2-p*2);}",
             "function tBell(){return Math.pow(Math.sin(Math.PI*tP()),2);}",
+            "function tAfter(){var p=tP();return p<0.5?0:Math.pow(1-(p*2-1),2);}",
             "function tSplit(a,b){var p=tP();return p<0.5?a*tIn(p*2):b*(1-tOut(p*2-1));}"
         ].join("\n");
     }
 
     function trExpr(prop, strength, body) { prop.expression = trHead(strength) + "\n" + body; }
 
-    // Motion Tile with mirrored edges first, so zooming out, panning and rotating never show empty edges.
-    function trCamera(l, k, opts) {
-        var tile = acAdd(l, ["ADBE Effect Parade"], "ADBE Tile"), tr, s;
-        try {
-            acP(l, ["ADBE Effect Parade", tile, "ADBE Tile-0004"]).setValue(400);
-            acP(l, ["ADBE Effect Parade", tile, "ADBE Tile-0005"]).setValue(400);
-            acP(l, ["ADBE Effect Parade", tile, "ADBE Tile-0006"]).setValue(1);
-        } catch (e0) {}
-        if (opts.twirl) {
-            s = acAdd(l, ["ADBE Effect Parade"], "ADBE Twirl");
-            trExpr(acP(l, ["ADBE Effect Parade", s, "ADBE Twirl-0001"]), k, "720*tBell()*tK()");
-            try { acP(l, ["ADBE Effect Parade", s, "ADBE Twirl-0002"]).setValue(60); } catch (e1) {}
+    function trFx(l, matchName) { return acAdd(l, ["ADBE Effect Parade"], matchName); }
+
+    function trSet(l, fx, param, value) { try { acP(l, ["ADBE Effect Parade", fx, param]).setValue(value); } catch (e0) {} }
+
+    function trCamera(l, k, o) {
+        var tile = trFx(l, "ADBE Tile"), tr, fx;
+        trSet(l, tile, "ADBE Tile-0004", 400);
+        trSet(l, tile, "ADBE Tile-0005", 400);
+        trSet(l, tile, "ADBE Tile-0006", 1);
+        if (o.twirl) {
+            fx = trFx(l, "ADBE Twirl");
+            trExpr(acP(l, ["ADBE Effect Parade", fx, "ADBE Twirl-0001"]), k, o.twirl);
+            trSet(l, fx, "ADBE Twirl-0002", 75);
         }
-        tr = acAdd(l, ["ADBE Effect Parade"], "ADBE Geometry2");
-        try {
-            acP(l, ["ADBE Effect Parade", tr, "ADBE Geometry2-0009"]).setValue(0);
-            acP(l, ["ADBE Effect Parade", tr, "ADBE Geometry2-0010"]).setValue(180);
-        } catch (e2) {}
-        if (opts.scale) {
-            trExpr(acP(l, ["ADBE Effect Parade", tr, "ADBE Geometry2-0003"]), k, opts.scale);
-            trExpr(acP(l, ["ADBE Effect Parade", tr, "ADBE Geometry2-0004"]), k, opts.scale);
+        tr = trFx(l, "ADBE Geometry2");
+        trSet(l, tr, "ADBE Geometry2-0009", 0);
+        trSet(l, tr, "ADBE Geometry2-0010", 360);
+        if (o.scale) {
+            trExpr(acP(l, ["ADBE Effect Parade", tr, "ADBE Geometry2-0003"]), k, o.scale);
+            trExpr(acP(l, ["ADBE Effect Parade", tr, "ADBE Geometry2-0004"]), k, o.scale);
         }
-        if (opts.rot) { trExpr(acP(l, ["ADBE Effect Parade", tr, "ADBE Geometry2-0007"]), k, opts.rot); }
-        if (opts.pos) { trExpr(acP(l, ["ADBE Effect Parade", tr, "ADBE Geometry2-0002"]), k, opts.pos); }
-        if (opts.skew) { trExpr(acP(l, ["ADBE Effect Parade", tr, "ADBE Geometry2-0005"]), k, opts.skew); }
-        if (opts.blur) {
-            s = acAdd(l, ["ADBE Effect Parade"], "ADBE Box Blur2");
-            trExpr(acP(l, ["ADBE Effect Parade", s, "ADBE Box Blur2-0001"]), k, opts.blur);
+        if (o.rot) { trExpr(acP(l, ["ADBE Effect Parade", tr, "ADBE Geometry2-0007"]), k, o.rot); }
+        if (o.pos) { trExpr(acP(l, ["ADBE Effect Parade", tr, "ADBE Geometry2-0002"]), k, o.pos); }
+        if (o.skew) { trExpr(acP(l, ["ADBE Effect Parade", tr, "ADBE Geometry2-0005"]), k, o.skew); }
+        if (o.lens) {
+            fx = trFx(l, "ADBE Optics Compensation");
+            trExpr(acP(l, ["ADBE Effect Parade", fx, "ADBE Optics Compensation-0001"]), k, o.lens);
+        }
+        if (o.radial) {
+            fx = trFx(l, "ADBE Radial Blur");
+            trExpr(acP(l, ["ADBE Effect Parade", fx, "ADBE Radial Blur-0001"]), k, o.radial);
+            trSet(l, fx, "ADBE Radial Blur-0003", o.spin ? 1 : 2);
+            trSet(l, fx, "ADBE Radial Blur-0004", 2);
+        }
+        if (o.dir) {
+            fx = trFx(l, "ADBE Motion Blur");
+            trSet(l, fx, "ADBE Motion Blur-0001", o.dirAngle || 0);
+            trExpr(acP(l, ["ADBE Effect Parade", fx, "ADBE Motion Blur-0002"]), k, o.dir);
+        }
+        if (o.blur) {
+            fx = trFx(l, "ADBE Box Blur2");
+            trExpr(acP(l, ["ADBE Effect Parade", fx, "ADBE Box Blur2-0001"]), k, o.blur);
+        }
+        if (o.mosaic) {
+            fx = trFx(l, "ADBE Mosaic");
+            trExpr(acP(l, ["ADBE Effect Parade", fx, "ADBE Mosaic-0001"]), k, o.mosaic);
+            trExpr(acP(l, ["ADBE Effect Parade", fx, "ADBE Mosaic-0002"]), k, o.mosaic);
         }
     }
 
     var TR_GLITCH = "posterizeTime(12);seedRandom(index,false);";
+    // A short decaying shake right after the cut (the "hit").
+    var TR_HIT = "var h=tAfter()*tK();";
 
     function trLeak(l, k, colors) {
-        var g = acAdd(l, ["ADBE Effect Parade"], "ADBE 4ColorGradient"), i;
-        for (i = 0; i < 4; i++) {
-            try { acP(l, ["ADBE Effect Parade", g, "ADBE 4ColorGradient-000" + (2 + i * 2)]).setValue(colors[i]); } catch (e0) {}
-        }
+        var g = trFx(l, "ADBE 4ColorGradient"), i, b;
+        for (i = 0; i < 4; i++) { trSet(l, g, "ADBE 4ColorGradient-000" + (2 + i * 2), colors[i]); }
         trExpr(acP(l, ["ADBE Effect Parade", g, "ADBE 4ColorGradient-0001"]), k,
-            "[value[0]+Math.sin(time*1.3)*thisComp.width*0.25,value[1]+Math.cos(time*0.9)*thisComp.height*0.2]");
+            "[value[0]+Math.sin(time*2.3)*thisComp.width*0.35,value[1]+Math.cos(time*1.7)*thisComp.height*0.3]");
         trExpr(acP(l, ["ADBE Effect Parade", g, "ADBE 4ColorGradient-0005"]), k,
-            "[value[0]+Math.cos(time*1.1)*thisComp.width*0.2,value[1]+Math.sin(time*1.7)*thisComp.height*0.25]");
+            "[value[0]+Math.cos(time*1.9)*thisComp.width*0.3,value[1]+Math.sin(time*2.6)*thisComp.height*0.35]");
+        b = trFx(l, "ADBE Gaussian Blur 2");
+        trSet(l, b, "ADBE Gaussian Blur 2-0001", 80);
         try { l.blendingMode = BlendingMode.SCREEN; } catch (e1) {}
-        trExpr(acP(l, ["ADBE Transform Group", "ADBE Opacity"]), k, "100*Math.pow(Math.sin(Math.PI*tP()),1.5)*Math.min(1,tK())");
+        trExpr(acP(l, ["ADBE Transform Group", "ADBE Opacity"]), k, "100*Math.pow(Math.sin(Math.PI*tP()),1.2)*Math.min(1,tK())");
     }
 
     function trShape(l, comp, k, id, color) {
@@ -1266,33 +1986,58 @@ var sayframeHost = (function () {
     }
 
     var TR_BUILD = {
-        "zoom-in": function (l, k) { trCamera(l, k, { scale: "100*(1+tK()*tSplit(3,-0.6))" }); },
-        "zoom-out": function (l, k) { trCamera(l, k, { scale: "100*(1+tK()*tSplit(-0.6,3))" }); },
-        "zoom-rotate": function (l, k) { trCamera(l, k, { scale: "100*(1+tK()*tSplit(2,-0.5))", rot: "tK()*tSplit(90,-90)" }); },
-        "rotate": function (l, k) { trCamera(l, k, { scale: "100*(1+0.3*tBell()*tK())", rot: "tK()*tSplit(180,-180)" }); },
-        "pan-left": function (l, k) { trCamera(l, k, { pos: "[value[0]+tK()*tSplit(-1,1)*thisComp.width,value[1]]" }); },
-        "pan-right": function (l, k) { trCamera(l, k, { pos: "[value[0]+tK()*tSplit(1,-1)*thisComp.width,value[1]]" }); },
-        "pan-up": function (l, k) { trCamera(l, k, { pos: "[value[0],value[1]+tK()*tSplit(-1,1)*thisComp.height]" }); },
-        "pan-down": function (l, k) { trCamera(l, k, { pos: "[value[0],value[1]+tK()*tSplit(1,-1)*thisComp.height]" }); },
-        "shake": function (l, k) {
-            trCamera(l, k, { scale: "100*(1+0.15*tBell()*tK())", pos: "var a=tBell()*tK();[value[0]+noise(time*18)*90*a,value[1]+noise(time*18+40)*60*a]",
-                rot: "noise(time*14+90)*6*tBell()*tK()" });
+        // camera zoom
+        "zoom-in": function (l, k) { trCamera(l, k, { scale: "100*(1+tK()*tSplit(2,-0.67))", radial: "60*tPeak()*tK()" }); },
+        "zoom-out": function (l, k) { trCamera(l, k, { scale: "100*(1+tK()*tSplit(-0.67,2))", radial: "60*tPeak()*tK()" }); },
+        "zoom-in-out": function (l, k) { trCamera(l, k, { scale: "100*(1+tK()*tSplit(2,2))", radial: "60*tPeak()*tK()" }); },
+        "zoom-distort-in": function (l, k) {
+            trCamera(l, k, { scale: "100*(1+tK()*tSplit(2,-0.67))", radial: "70*tPeak()*tK()", lens: "Math.min(150,120*tPeak()*tK())" });
         },
-        "twirl": function (l, k) { trCamera(l, k, { twirl: true, scale: "100*(1+0.5*tBell()*tK())" }); },
-        "blur-zoom": function (l, k) { trCamera(l, k, { scale: "100*(1+tK()*tSplit(1.5,-0.3))", blur: "60*tBell()*tK()" }); },
+        "zoom-distort-out": function (l, k) {
+            trCamera(l, k, { scale: "100*(1+tK()*tSplit(-0.67,2))", radial: "70*tPeak()*tK()", lens: "Math.min(150,120*tPeak()*tK())" });
+        },
+        "zoom-hit": function (l, k) {
+            trCamera(l, k, { scale: TR_HIT + "100*(1+tK()*tSplit(3,-0.75))+12*h*Math.sin(time*40)",
+                pos: TR_HIT + "[value[0]+noise(time*25)*80*h,value[1]+noise(time*25+30)*60*h]",
+                rot: TR_HIT + "noise(time*20+60)*5*h", radial: "80*tPeak()*tK()", lens: "Math.min(150,100*tPeak()*tK())" });
+        },
+        // camera pan
+        "pan-left": function (l, k) { trCamera(l, k, { pos: "[value[0]+tK()*tSplit(-1,1)*thisComp.width,value[1]]", dir: "200*tPeak()*tK()", dirAngle: 90 }); },
+        "pan-right": function (l, k) { trCamera(l, k, { pos: "[value[0]+tK()*tSplit(1,-1)*thisComp.width,value[1]]", dir: "200*tPeak()*tK()", dirAngle: 90 }); },
+        "pan-up": function (l, k) { trCamera(l, k, { pos: "[value[0],value[1]+tK()*tSplit(-1,1)*thisComp.height]", dir: "200*tPeak()*tK()", dirAngle: 0 }); },
+        "pan-down": function (l, k) { trCamera(l, k, { pos: "[value[0],value[1]+tK()*tSplit(1,-1)*thisComp.height]", dir: "200*tPeak()*tK()", dirAngle: 0 }); },
+        // camera rotate
+        "rotate": function (l, k) { trCamera(l, k, { scale: "100*(1+0.2*tBell()*tK())", rot: "tK()*tSplit(90,-90)", radial: "40*tPeak()*tK()", spin: true }); },
+        "roll": function (l, k) { trCamera(l, k, { scale: "100*(1+0.3*tBell()*tK())", rot: "tK()*tSplit(180,-180)", radial: "60*tPeak()*tK()", spin: true }); },
+        "zoom-rotate": function (l, k) {
+            trCamera(l, k, { scale: "100*(1+tK()*tSplit(2,-0.6))", rot: "tK()*tSplit(120,-120)", radial: "70*tPeak()*tK()", lens: "Math.min(150,80*tPeak()*tK())" });
+        },
+        "twirl": function (l, k) {
+            trCamera(l, k, { twirl: "tK()*tSplit(540,-540)", scale: "100*(1+tK()*tSplit(1.5,-0.5))", radial: "50*tPeak()*tK()" });
+        },
+        // camera shake
+        "shake": function (l, k) {
+            trCamera(l, k, { scale: "100*(1+0.25*tBell()*tK())", pos: "var a=tBell()*tK();[value[0]+noise(time*22)*140*a,value[1]+noise(time*22+40)*100*a]",
+                rot: "noise(time*16+90)*10*tBell()*tK()", lens: "Math.min(150,90*tPeak()*tK())", dir: "120*tBell()*tK()", dirAngle: 90 });
+        },
+        // glitch
         "glitch": function (l, k) {
-            trCamera(l, k, { pos: TR_GLITCH + "var a=tBell()*tK();[value[0]+(random()-0.5)*thisComp.width*0.15*a,value[1]+(random()-0.5)*40*a]",
-                skew: TR_GLITCH + "(random()-0.5)*40*tBell()*tK()", scale: TR_GLITCH + "100*(1+random()*0.3*tBell()*tK())" });
+            trCamera(l, k, { pos: TR_GLITCH + "var a=tBell()*tK();[value[0]+(random()-0.5)*thisComp.width*0.2*a,value[1]+(random()-0.5)*50*a]",
+                skew: TR_GLITCH + "(random()-0.5)*50*tBell()*tK()", scale: TR_GLITCH + "100*(1+random()*0.3*tBell()*tK())",
+                mosaic: TR_GLITCH + "(random()<0.45*tBell()*tK())?Math.round(20+random()*60):4000" });
         },
         "glitch-shake": function (l, k) {
-            trCamera(l, k, { pos: TR_GLITCH + "var a=tBell()*tK();[value[0]+(random()-0.5)*thisComp.width*0.3*a,value[1]+(random()-0.5)*120*a]",
-                skew: TR_GLITCH + "(random()-0.5)*70*tBell()*tK()", scale: TR_GLITCH + "100*(1+random()*0.5*tBell()*tK())",
-                rot: TR_GLITCH + "(random()-0.5)*16*tBell()*tK()" });
+            trCamera(l, k, { pos: TR_GLITCH + "var a=tBell()*tK();[value[0]+(random()-0.5)*thisComp.width*0.35*a,value[1]+(random()-0.5)*140*a]",
+                skew: TR_GLITCH + "(random()-0.5)*80*tBell()*tK()", scale: TR_GLITCH + "100*(1+random()*0.5*tBell()*tK())",
+                rot: TR_GLITCH + "(random()-0.5)*18*tBell()*tK()", mosaic: TR_GLITCH + "(random()<0.6*tBell()*tK())?Math.round(12+random()*50):4000" });
         },
+        // blurs & fades
+        "blur-dissolve": function (l, k) { trCamera(l, k, { scale: "100*(1+0.15*tBell()*tK())", blur: "80*Math.pow(Math.sin(Math.PI*tP()),2)*tK()" }); },
         "leak-warm": function (l, k) { trLeak(l, k, [[1, 0.55, 0.1, 1], [1, 0.2, 0.3, 1], [1, 0.85, 0.4, 1], [0.2, 0.04, 0, 1]]); },
         "leak-cool": function (l, k) { trLeak(l, k, [[0.2, 0.6, 1, 1], [0.6, 0.3, 1, 1], [0.3, 1, 0.9, 1], [0, 0.03, 0.15, 1]]); },
         "flash": function (l, k) {
-            trExpr(acP(l, ["ADBE Transform Group", "ADBE Opacity"]), k, "100*Math.pow(Math.max(0,1-Math.abs(tP()*2-1)),3)*Math.min(1,tK())");
+            try { l.blendingMode = BlendingMode.ADD; } catch (e0) {}
+            trExpr(acP(l, ["ADBE Transform Group", "ADBE Opacity"]), k, "100*tPeak()*Math.min(1,tK())");
         },
         "fade-black": function (l, k) {
             trExpr(acP(l, ["ADBE Transform Group", "ADBE Opacity"]), k, "100*Math.min(1,tK())*Math.min(1,Math.sin(Math.PI*tP())*1.4)");
@@ -2251,6 +2996,135 @@ var sayframeHost = (function () {
             });
         },
 
+        // ---- Graphics: a new layer at the time indicator; colour, size and thickness are controls on it.
+        grApply: function (id, dur, color, labels) {
+            return reply(function () {
+                var comp = activeComp();
+                var kind = GR_KIND[id] || "shape", t0 = comp.time, len, t1, l, c, names, sel, i, pos, name, txt, mv, doc, tp, off;
+                if (!(GR_BUILD[id] || GR_SOLID[id])) { throw new Error("UNKNOWN_PRESET"); }
+                labels = labels || {};
+                color = color || [1, 1, 1];
+                len = Math.max(0.2, Number(dur) || 2);
+                t1 = Math.min(comp.duration, t0 + len);
+                if (t1 - t0 < 0.2) { t0 = Math.max(0, t1 - len); }
+                pos = [comp.width / 2, comp.height / 2];
+                sel = comp.selectedLayers || [];
+                if (!GR_FULL[id]) {
+                    for (i = 0; i < sel.length; i++) {
+                        try {
+                            if (!(sel[i] instanceof CameraLayer) && !(sel[i] instanceof LightLayer)) {
+                                tp = sel[i].property("ADBE Transform Group").property("ADBE Position").value;
+                                if (tp && tp.length >= 2) { pos = [tp[0], tp[1]]; }
+                                break;
+                            }
+                        } catch (e0) {}
+                    }
+                }
+                name = (labels.prefix || "") + (labels.title || id);
+                names = { color: labels.color || "Color", size: id === "counter" ? (labels.value || "Value") : (labels.size || "Size"),
+                    thick: GR_STROKE[id] ? (labels.thick || "Thickness") : "", text: "" };
+                app.beginUndoGroup("Sayframe: graphic " + id);
+                try {
+                    for (i = 0; i < sel.length; i++) { try { sel[i].selected = false; } catch (e1) {} }
+                    if (kind === "shape") {
+                        l = comp.layers.addShape();
+                    } else if (kind === "text") {
+                        l = acTextLayer(comp, id === "timer" ? "00:00" : "0%", name, len, color);
+                    } else {
+                        l = comp.layers.addSolid(id === "vignette" || id === "flicker" ? [1, 1, 1] : [0, 0, 0], name, comp.width, comp.height, comp.pixelAspect || 1, comp.duration);
+                        if (kind === "adj") { l.adjustmentLayer = true; }
+                    }
+                    l.name = name;
+                    l.startTime = 0;
+                    l.inPoint = t0;
+                    l.outPoint = t1;
+                    try { acP(l, ["ADBE Transform Group", "ADBE Position"]).setValue(GR_FULL[id] ? [comp.width / 2, comp.height / 2] : pos); } catch (e2) {}
+                    i = acAdd(l, ["ADBE Effect Parade"], "ADBE Color Control");
+                    acP(l, ["ADBE Effect Parade", i]).name = names.color;
+                    acP(l, ["ADBE Effect Parade", i, 1]).setValue([color[0], color[1], color[2], 1]);
+                    sfAddControl(l, "size", names.size, 100);
+                    if (names.thick) { sfAddControl(l, "thick", names.thick, 8); }
+                    c = grCtx(l, comp, names);
+                    if (kind === "shape") {
+                        GR_BUILD[id](c);
+                        if (!GR_FULL[id]) { c.lt("scale", "[value[0]*gS(),value[1]*gS()]"); }
+                    } else {
+                        GR_SOLID[id](l, c);
+                    }
+                    if (GR_TEXT[id]) {
+                        off = GR_TEXT[id];
+                        txt = acTextLayer(comp, labels.text || "Text", (labels.textPrefix || "") + (labels.title || id), len, [1, 1, 1]);
+                        txt.startTime = 0; txt.inPoint = t0; txt.outPoint = t1;
+                        try {
+                            tp = acP(txt, ["ADBE Text Properties", "ADBE Text Document"]);
+                            doc = tp.value;
+                            doc.fontSize = Math.round(comp.height / 22);
+                            doc.justification = off[2] ? ParagraphJustification.CENTER_JUSTIFY : ParagraphJustification.LEFT_JUSTIFY;
+                            tp.setValue(doc);
+                        } catch (e3) {}
+                        txt.parent = l;
+                        try { acP(txt, ["ADBE Transform Group", "ADBE Position"]).setValue([off[0], off[1] + (off[2] ? comp.height / 60 : 0)]); } catch (e4) {}
+                        acP(txt, ["ADBE Transform Group", "ADBE Opacity"]).expression =
+                            "// Sayframe graphic text\n100*Math.min(1,Math.max(0,(time-inPoint-0.25)/0.3))*Math.min(1,Math.max(0,(outPoint-time)/0.3))";
+                        names.text = String(txt.name);
+                        try { txt.selected = false; } catch (e5) {}
+                    }
+                    mv = new MarkerValue((labels.marker || "Graphic: ") + (labels.title || id) + " {sfg:" + id + "}");
+                    try { mv.setParameters({ sg: toJSON(names) }); } catch (e6) {}
+                    l.property("ADBE Marker").setValueAtTime(t0, mv);
+                    try { l.selected = true; } catch (e7) {}
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { name: String(l.name), dur: t1 - t0, text: names.text };
+            });
+        },
+
+        // Selected graphic: key "color" ([r,g,b]), "size", "thick" or "dur" (seconds; the text that belongs to it follows).
+        grSet: function (key, value) {
+            return reply(function () {
+                var e = acEditLayer(), g = grRead(e.layer), fx, i, ch, d;
+                if (!g) { throw new Error("PRESET_GONE"); }
+                app.beginUndoGroup("Sayframe: graphic");
+                try {
+                    if (key === "dur") {
+                        d = Math.max(0.2, Number(value));
+                        e.layer.outPoint = Math.min(e.comp.duration, e.layer.inPoint + d);
+                        for (i = 1; i <= e.comp.numLayers; i++) {
+                            ch = e.comp.layer(i);
+                            try { if (ch.parent === e.layer) { ch.outPoint = e.layer.outPoint; } } catch (e0) {}
+                        }
+                    } else {
+                        fx = sfFx(e.layer, g.names[key]);
+                        if (!fx) { throw new Error("PRESET_GONE"); }
+                        fx.property(1).setValue(key === "color" ? [value[0], value[1], value[2], 1] : Number(value));
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { layer: String(e.layer.name), groups: sfDescribe(e.layer), graphic: grDescribe(e.layer) };
+            });
+        },
+
+        grRemove: function () {
+            return reply(function () {
+                var e = acEditLayer(), i, ch, kids = [];
+                if (!grRead(e.layer)) { throw new Error("PRESET_GONE"); }
+                app.beginUndoGroup("Sayframe: remove graphic");
+                try {
+                    for (i = 1; i <= e.comp.numLayers; i++) {
+                        ch = e.comp.layer(i);
+                        try { if (ch && ch.parent === e.layer) { kids.push(ch); } } catch (e0) {}
+                    }
+                    for (i = 0; i < kids.length; i++) { kids[i].remove(); }
+                    e.layer.remove();
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { removed: true };
+            });
+        },
+
         // ---- Transitions: a new layer on top at the time indicator (the cut), half before it and half after.
         trApply: function (id, dur, color, labels) {
             return reply(function () {
@@ -2333,12 +3207,25 @@ var sayframeHost = (function () {
                 var comp = activeComp();
                 var layers = sfLayers(comp);
                 var dirs = mode === "both" ? ["in", "out"] : [mode === "out" ? "out" : "in"];
-                var out = { applied: 0, removed: 0, skipped: [] }, i, j, l, all, have, sk;
-                if (!SF_MOTIONS[motion] || !SF_CURVES[curve]) { throw new Error("UNKNOWN_PRESET"); }
-                if (!(comp.selectedLayers || []).length) { throw new Error("NO_LAYERS_SELECTED"); }
+                var out = { applied: 0, removed: 0, skipped: [], created: false, notText: 0 }, i, j, l, all, have, sk, isText = !!sfTextId(motion), txt;
+                if (!sfKnown(motion) || !SF_CURVES[curve]) { throw new Error("UNKNOWN_PRESET"); }
+                if (!isText && !(comp.selectedLayers || []).length) { throw new Error("NO_LAYERS_SELECTED"); }
                 labels = labels || {};
                 app.beginUndoGroup("Sayframe: " + motion);
                 try {
+                    if (isText) {
+                        // Text presets go on text layers; with none selected, a new one is made at the time indicator.
+                        txt = [];
+                        for (i = 0; i < layers.length; i++) { if (layers[i] instanceof TextLayer) { txt.push(layers[i]); } else { out.notText++; } }
+                        if (!txt.length) {
+                            for (i = 0; i < layers.length; i++) { try { layers[i].selected = false; } catch (e0) {} }
+                            l = acTextLayer(comp, labels.text || "Text", labels.text || "Text", Math.max(3, Number(dur) * 2 + 1.5), [1, 1, 1]);
+                            try { l.selected = true; } catch (e1) {}
+                            txt.push(l);
+                            out.created = true;
+                        }
+                        layers = txt;
+                    }
                     all = layers.length > 0;
                     for (i = 0; i < layers.length && all; i++) {
                         for (j = 0; j < dirs.length; j++) {
@@ -2383,7 +3270,7 @@ var sayframeHost = (function () {
         sfList: function () {
             return reply(function () {
                 var e = acEditLayer();
-                return { layer: String(e.layer.name), groups: sfDescribe(e.layer), transition: trDescribe(e.layer) };
+                return { layer: String(e.layer.name), groups: sfDescribe(e.layer), transition: trDescribe(e.layer), sound: sndDescribe(e.layer), graphic: grDescribe(e.layer) };
             });
         },
 
@@ -2426,15 +3313,58 @@ var sayframeHost = (function () {
 
         sfParam: function (name, value) {
             return reply(function () {
-                var e = acEditLayer(), fx = sfFx(e.layer, name);
-                if (!fx) { throw new Error("PRESET_GONE"); }
+                var e = acEditLayer(), isAnim = String(name).indexOf("anim:") === 0, fx = isAnim ? null : sfFx(e.layer, name);
+                if (!isAnim && !fx) { throw new Error("PRESET_GONE"); }
                 app.beginUndoGroup("Sayframe: setting");
                 try {
-                    fx.property(1).setValue(Number(value));
+                    if (isAnim) { sftSetParam(e.layer, name, value); } else { fx.property(1).setValue(Number(value)); }
                 } finally {
                     app.endUndoGroup();
                 }
                 return { layer: String(e.layer.name), groups: sfDescribe(e.layer), transition: trDescribe(e.layer) };
+            });
+        },
+
+        // A sound of the library on the selected layer: pitch (semitones) and volume (dB).
+        sndSet: function (pitch, volume) {
+            return reply(function () {
+                var e = acEditLayer();
+                if (!sndIs(e.layer)) { throw new Error("PRESET_GONE"); }
+                app.beginUndoGroup("Sayframe: sound");
+                try {
+                    sndApply(e.layer, pitch === null || pitch === undefined ? sndDescribe(e.layer).pitch : Number(pitch),
+                        volume === null || volume === undefined ? sndDescribe(e.layer).volume : Number(volume));
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { layer: String(e.layer.name), groups: sfDescribe(e.layer), sound: sndDescribe(e.layer) };
+            });
+        },
+
+        sndRemove: function () {
+            return reply(function () {
+                var e = acEditLayer();
+                if (!sndIs(e.layer)) { throw new Error("PRESET_GONE"); }
+                app.beginUndoGroup("Sayframe: remove sound");
+                try { e.layer.remove(); } finally { app.endUndoGroup(); }
+                return { removed: true };
+            });
+        },
+
+        // Text presets: how much the letters (words, lines) follow one another, 0 = all together.
+        sfStagger: function (dir, motion, value) {
+            return reply(function () {
+                var e = acEditLayer(), mk = sfReadMarker(e.layer, dir);
+                if (!sfFind(mk, motion) || !mk.names[motion]) { throw new Error("PRESET_GONE"); }
+                app.beginUndoGroup("Sayframe: stagger");
+                try {
+                    mk.names[motion].stagger = Math.max(0, Math.min(0.97, Number(value)));
+                    sfWriteMarker(e.layer, dir, mk, e.comp.frameDuration);
+                    sfRebuild(e.layer);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { layer: String(e.layer.name), groups: sfDescribe(e.layer) };
             });
         },
 
@@ -2585,7 +3515,7 @@ var sayframeHost = (function () {
         },
 
         // Imports a sound once (reused if it is already in the project) and puts it at the time indicator.
-        acSound: function (path, binName) {
+        acSound: function (path, binName, pitch, volume, title) {
             return reply(function () {
                 var comp = activeComp();
                 var proj = app.project;
@@ -2607,10 +3537,12 @@ var sayframeHost = (function () {
                     }
                     l = comp.layers.add(item);
                     l.startTime = comp.time;
+                    if (title) { try { l.name = String(title); } catch (e2) {} }
+                    sndApply(l, Number(pitch) || 0, Number(volume) || 0);
                 } finally {
                     app.endUndoGroup();
                 }
-                return { name: String(item.name), reused: reused };
+                return { name: String(item.name), reused: reused, pitch: Number(pitch) || 0 };
             });
         },
 
