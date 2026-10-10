@@ -1285,6 +1285,12 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .ac-card.applied { border-color: rgba(var(--accent-rgb), 0.85); }
 .ac-folders { display: flex; flex-wrap: wrap; gap: 4px; }
 .ac-folders[hidden] { display: none; }
+.ac-gr { width: 62%; height: 86%; display: grid; place-items: center; }
+.ac-gr svg { width: 100%; height: 100%; overflow: visible; }
+.gr-color { grid-column: 2 / 4; width: 100%; height: 30px; padding: 0 2px; border: 1px solid var(--line); border-radius: 8px; background: transparent; }
+.ac-folder-break { flex-basis: 100%; height: 0; }
+.ac-txt { display: block; text-align: center; line-height: 1.1; white-space: nowrap; font-size: clamp(13px, calc(var(--ac-size, 112px) / 6.5), 26px); }
+.ac-txt .txs { display: inline-block; will-change: transform, opacity, filter; }
 .ac-folder {
   padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted);
   font: 600 11px/1.3 var(--round); cursor: pointer;
@@ -1308,24 +1314,6 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .pv-graphic-progress { width: 64%; height: 9px; border-radius: 5px; background: rgba(255, 255, 255, 0.22); display: block; overflow: hidden; }
 .pv-graphic-progress i { display: block; height: 100%; width: 100%; border-radius: 5px; background: #fff; transform-origin: left center; }
 .pv-graphic-ripples { width: 14%; aspect-ratio: 1; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 7px transparent, 0 0 0 8px rgba(255, 255, 255, 0.6), 0 0 0 17px transparent, 0 0 0 18px rgba(255, 255, 255, 0.3); }
-@keyframes pv-text-typewriter{0%{clip-path:inset(0 100% 0 0)}55%,100%{clip-path:inset(0 0 0 0)}}
-.ac-card:hover .pv-text-typewriter,.ac-card:focus-visible .pv-text-typewriter{animation:pv-text-typewriter 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-text-fade-letters{0%{-webkit-mask-position:100% 0;opacity:.0}10%{opacity:1}55%,100%{-webkit-mask-position:0 0}}
-.ac-card:hover .pv-text-fade-letters,.ac-card:focus-visible .pv-text-fade-letters{animation:pv-text-fade-letters 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-text-slide-letters{0%{transform:translateY(22px);opacity:0}55%,100%{transform:none;opacity:1}}
-.ac-card:hover .pv-text-slide-letters,.ac-card:focus-visible .pv-text-slide-letters{animation:pv-text-slide-letters 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-text-pop-letters{0%{transform:scale(0)}35%{transform:scale(1.15)}55%,100%{transform:none}}
-.ac-card:hover .pv-text-pop-letters,.ac-card:focus-visible .pv-text-pop-letters{animation:pv-text-pop-letters 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-text-blur-letters{0%{filter:blur(8px);opacity:0}55%,100%{filter:none;opacity:1}}
-.ac-card:hover .pv-text-blur-letters,.ac-card:focus-visible .pv-text-blur-letters{animation:pv-text-blur-letters 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-text-rotate-letters{0%{transform:perspective(200px) rotateX(90deg);opacity:0}55%,100%{transform:none;opacity:1}}
-.ac-card:hover .pv-text-rotate-letters,.ac-card:focus-visible .pv-text-rotate-letters{animation:pv-text-rotate-letters 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-text-words{0%{transform:translateY(14px);opacity:0}55%,100%{transform:none;opacity:1}}
-.ac-card:hover .pv-text-words,.ac-card:focus-visible .pv-text-words{animation:pv-text-words 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-text-random{0%{opacity:0}10%{opacity:.6}20%{opacity:.1}30%{opacity:.8}40%{opacity:.3}55%,100%{opacity:1}}
-.ac-card:hover .pv-text-random,.ac-card:focus-visible .pv-text-random{animation:pv-text-random 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-@keyframes pv-text-tracking{0%{letter-spacing:.6em;opacity:0}55%,100%{letter-spacing:.02em;opacity:1}}
-.ac-card:hover .pv-text-tracking,.ac-card:focus-visible .pv-text-tracking{animation:pv-text-tracking 1.6s cubic-bezier(.3,.7,.3,1) infinite}
 @keyframes pv-graphic-ring{0%{transform:scale(0);border-width:10px;opacity:1}55%{transform:scale(1);border-width:1px}75%,100%{transform:scale(1);opacity:0}}
 .ac-card:hover .pv-graphic-ring,.ac-card:focus-visible .pv-graphic-ring{animation:pv-graphic-ring 1.6s cubic-bezier(.3,.7,.3,1) infinite}
 @keyframes pv-graphic-burst{0%{transform:scale(.3);opacity:1}55%{transform:scale(1.1);opacity:0}100%{opacity:0}}
@@ -1346,7 +1334,6 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .ac-card:hover .pv-graphic-counter,.ac-card:focus-visible .pv-graphic-counter{animation:pv-graphic-counter 1.6s cubic-bezier(.3,.7,.3,1) infinite}
 @keyframes pv-graphic-timer{0%,49%{opacity:1}50%,100%{opacity:.5}}
 .ac-card:hover .pv-graphic-timer,.ac-card:focus-visible .pv-graphic-timer{animation:pv-graphic-timer 1.6s cubic-bezier(.3,.7,.3,1) infinite}
-.pv-text-fade-letters{-webkit-mask-image:linear-gradient(90deg,#000 45%,transparent 55%);-webkit-mask-size:220% 100%;-webkit-mask-position:0 0}
 
 /* «Изменить»: пресеты на выделенном слое */
 .ac-tab-edit { margin-left: auto; }
