@@ -38,7 +38,7 @@ const FX_EFFECTS = [
 ];
 // A generic After Effects property for the Animation library: any child it is asked for exists,
 // keys and eases are recorded. acDefault gives transform values a realistic start.
-const AC_DEF = { "ADBE Geometry2-0002": [960, 540], "ADBE 4ColorGradient-0001": [480, 270], "ADBE 4ColorGradient-0005": [1440, 810], "ADBE Opacity": 100, "ADBE Scale": [100, 100, 100], "ADBE Position": [960, 540, 0], "ADBE Rotate Z": 0,
+const AC_DEF = { "ADBE Geometry2-0002": [960, 540], "ADBE 4ColorGradient-0007": [1440, 270], "ADBE 4ColorGradient-0001": [480, 270], "ADBE 4ColorGradient-0005": [1440, 810], "ADBE Opacity": 100, "ADBE Scale": [100, 100, 100], "ADBE Position": [960, 540, 0], "ADBE Rotate Z": 0,
   "ADBE Text Percent Start": 0, "ADBE Text Percent End": 100, "ADBE Text Tracking Amount": 0 };
 const acDefault = (mn) => (AC_DEF[mn] !== undefined ? JSON.parse(JSON.stringify(AC_DEF[mn])) : 0);
 function acInit(p, name, value, log) {
@@ -79,7 +79,7 @@ MarkerValue.prototype.setParameters = function (o) { this.params = Object.assign
 MarkerValue.prototype.getParameters = function () { return Object.assign({}, this.params); };
 // Runs the expression After Effects would run on prop at time t (the JavaScript engine), with the
 // layer's markers and effects. Returns the value it gives.
-function sfEval(layer, prop, t) {
+function sfEval(layer, prop, t, extra) {
   if (!prop.expression) return prop.value;
   const mk = acAt(layer, "ADBE Marker");
   const marks = mk ? mk.keys.map((k) => ({ time: k.t, duration: k.v.duration, comment: k.v.comment })) : [];
@@ -94,7 +94,8 @@ function sfEval(layer, prop, t) {
     noise: (x) => Math.sin(x * 1.7) * 0.8, seedRandom: (n) => { seed = n + Math.floor(t * 12); }, posterizeTime: () => {},
     random: () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; },
     thisLayer: { marker: { numKeys: marks.length, key: (i) => marks[i - 1] }, inPoint: layer.inPoint, outPoint: layer.outPoint },
-    thisComp: { frameDuration: 1 / 30, width: 1920, height: 1080 } });
+    inPoint: layer.inPoint, outPoint: layer.outPoint,
+    thisComp: { frameDuration: 1 / 30, width: 1920, height: 1080 }, ...(extra || {}) });
 }
 // Every property in a layer's tree that carries an expression.
 const exprProps = (p, out = []) => { (p.children || []).forEach((c) => { if (c.expression) out.push(c); exprProps(c, out); }); return out; };
@@ -274,7 +275,11 @@ function makeAE(opts, tmpDir) {
   const comp = Object.assign(new CompItem(), { name: "Тест", width: 1920, height: 1080, duration: 10, frameRate: 30, frameDuration: 1 / 30, time: opts.compTime || 0, numLayers: opts.exprLayers ? opts.exprLayers.length : 2, workAreaStart: 0, workAreaDuration: 5,
     openInViewer() { log.opened++; project.activeItem = comp; },
     selectedProperties: opts.selectedProperties || [], selectedLayers: opts.selectedLayers || [],
-    layers: { add(item) { log.layerAdds.push(item); return { index: 1, property() { return { property() { return { setValue() {} }; } }; } }; },
+    layers: { add(item) {
+      const l = { index: 1, stretch: 100, name: "", source: item, levels: [0, 0] };
+      l.property = (g) => (g === "ADBE Audio Group" ? { property: () => ({ setValue(v) { l.levels = v; }, get value() { return l.levels; } }) } : { property() { return { setValue() {} }; } });
+      l.remove = () => { log.layersRemoved.push(l.name); };
+      log.layerAdds.push(item); log.addedLayers.push(l); return l; },
       // A temporary null, as After Effects adds it: on top (other layers move down one index) and it becomes the only selected layer.
       addNull() {
         const all = comp.selectedLayers.slice();
@@ -356,7 +361,7 @@ function makeAE(opts, tmpDir) {
   write(path.join(tmpDir, "Documents", "Adobe", "After Effects 2026", "User Presets"), opts.userPresets);
   Folder.appPackage = new Folder(path.join(aeRoot, "Adobe After Effects 2026.app"));
   Folder.myDocuments = new Folder(path.join(tmpDir, "Documents"));
-  log.acAdds = []; log.acLayers = []; log.acRemoved = []; log.layersRemoved = [];
+  log.acAdds = []; log.acLayers = []; log.acRemoved = []; log.layersRemoved = []; log.addedLayers = [];
   log.snaps = []; log.saveDlg = []; log.events = []; log.tasks = [];
   File.prototype.saveDlg = function (prompt) { log.saveDlg.push({ path: this.fsName, prompt }); return opts.saveAs === null ? null : new File(opts.saveAs || this.fsName); };
   Object.defineProperty(File.prototype, "parent", { configurable: true, get() { return new Folder(path.dirname(this.fsName)); } });
@@ -372,7 +377,7 @@ function makeAE(opts, tmpDir) {
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   ctx.$.global = ctx;
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
-  if (opts.staleHost) vm.runInContext("delete sayframeHost.acAnimate; delete sayframeHost.acText; delete sayframeHost.acList; delete sayframeHost.trApply;", ctx);
+  if (opts.staleHost) vm.runInContext("delete sayframeHost.acAnimate; delete sayframeHost.acText; delete sayframeHost.acList; delete sayframeHost.trApply; delete sayframeHost.sfApply;", ctx);
   log.scripts = [];
   return { log, project, comp, projItems, ctx, keyboardState, evalScript(script) {
     log.lastScript = script; log.scripts.push(script);
@@ -1513,7 +1518,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   let AL = mkAcLayer("Логотип", "av"), ACam = mkAcLayer("Камера", "camera");
   p = await open({ selectedLayers: [AL, ACam] });
   await p.tab("tools");
-  check("AC1 the Animation tab: five sections, 'Transitions' open, search, timing and a card grid", (await p.page.locator('#acTabs button[aria-selected="true"]').innerText()) === "Переходы" && (await acCards(p)).length === 21 && (await p.page.locator("#acSearch").isVisible()) && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acDurVal").innerText()) === "1,0 с" && (await p.page.locator("#acColorRow").isVisible()) && (await p.page.locator("#acFolders button").allInnerTexts()).join() === "Все,Камера,Глитч,Засветки,Затемнение,Шейпы");
+  check("AC1 the Animation tab: five sections, 'Transitions' open, search, timing and a card grid", (await p.page.locator('#acTabs button[aria-selected="true"]').innerText()) === "Переходы" && (await acCards(p)).length === 26 && (await p.page.locator("#acSearch").isVisible()) && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acDurVal").innerText()) === "0,8 с" && (await p.page.locator("#acColorRow").isVisible()) && (await p.page.locator("#acFolders button").allInnerTexts()).join() === "Все,Зум,Панорама,Поворот,Тряска,Глитч,Засветки,Размытие и затемнение,Шейпы");
   await p.page.locator("#acGrid .ac-card").first().hover();
   await p.page.waitForTimeout(400);
   await p.page.screenshot({ path: path.join(SHOTS, "28-animation-library.png") });
@@ -1529,6 +1534,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   AL.property("ADBE Transform Group").property("ADBE Position").setValueAtTime(3, [100, 100, 0]);
   await acClick(p, "Снизу · с перелётом");
   let mkr = acAt(AL, "ADBE Marker");
+  const amountOf = (a) => a.children.find((c) => c.matchName === "ADBE Text Selectors").children[0].children.find((c) => c.matchName === "ADBE Text Expressible Amount");
   const layerFx = (l) => (acAt(l, "ADBE Effect Parade") ? acAt(l, "ADBE Effect Parade").children.map((c) => c.name) : []);
   const posOf = (l, t) => r4(sfEval(l, acAt(l, "ADBE Transform Group", "ADBE Position"), t));
   const opOf = (l, t) => r4(sfEval(l, acAt(l, "ADBE Transform Group", "ADBE Opacity"), t));
@@ -1562,19 +1568,21 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   let TRL = p.ae.log.acLayers[p.ae.log.acLayers.length - 1];
   const trMk = (l) => acAt(l, "ADBE Marker").keys.map((k) => k.t + " " + k.v.comment).join();
   const geo = (l, mn) => acAt(l, "ADBE Effect Parade").children.find((c) => c.matchName === "ADBE Geometry2").children.find((c) => c.matchName === mn);
-  check("AC6 a transition goes on the cut: a new adjustment layer on top, 0.5 s before and after the time indicator, with a cut marker", TRL.adjustmentLayer === true && TRL.movedToTop === true && TRL.name === "Переход: Наезд" && TRL.inPoint === 1.5 && TRL.outPoint === 2.5 && trMk(TRL) === "2 Склейка: Наезд {sft:zoom-in}" && acAt(TRL, "ADBE Effect Parade").children.map((c) => c.matchName).join() === "ADBE Slider Control,ADBE Tile,ADBE Geometry2" && acAt(TRL, "ADBE Effect Parade", 1).name === "Сила", trMk(TRL));
-  t = [1.5, 1.98, 2.02, 2.5].map((tt) => Math.round(sfEval(TRL, geo(TRL, "ADBE Geometry2-0003"), tt)));
-  check("AC6 'Zoom in' pushes into the cut and comes out of it: 100% → ~400% | ~40% → 100%", t[0] === 100 && t[1] > 350 && t[2] < 50 && t[3] === 100 && /^«Наезд» — на склейке 2,0 с от начала, 1,0 с\. Сверху новый слой «Переход: Наезд»/.test(await p.status()) && TRL.selected === true && AL.selected === false, t.join() + " " + await p.status());
+  check("AC6 a transition goes on the cut: a new adjustment layer on top, 0.4 s before and after the time indicator, with a cut marker", TRL.adjustmentLayer === true && TRL.movedToTop === true && TRL.name === "Переход: Наезд" && Math.abs(TRL.inPoint - 1.6) < 1e-9 && Math.abs(TRL.outPoint - 2.4) < 1e-9 && trMk(TRL) === "2 Склейка: Наезд {sft:zoom-in}" && acAt(TRL, "ADBE Effect Parade").children.map((c) => c.matchName).join() === "ADBE Slider Control,ADBE Tile,ADBE Geometry2,ADBE Radial Blur" && acAt(TRL, "ADBE Effect Parade", 1).name === "Сила", trMk(TRL) + " " + acAt(TRL, "ADBE Effect Parade").children.map((c) => c.matchName).join());
+  t = [1.6, 1.8, 1.99, 2.01, 2.2, 2.4].map((tt) => Math.round(sfEval(TRL, geo(TRL, "ADBE Geometry2-0003"), tt)));
+  const rb = acAt(TRL, "ADBE Effect Parade").children.find((c) => c.matchName === "ADBE Radial Blur");
+  const rbv = [1.6, 1.99, 2.4].map((tt) => Math.round(sfEval(TRL, rb.children.find((c) => c.matchName === "ADBE Radial Blur-0001"), tt)));
+  check("AC6 'Zoom in' is exponential: almost still far from the cut, then shoots into it and out (100 → ~300% | ~33% → 100%), with a zoom blur peaking on the cut", t[0] === 100 && t[1] < 110 && t[2] > 250 && t[3] < 45 && t[4] > 95 && t[5] === 100 && rbv[0] === 0 && rbv[1] >= 40 && rbv[2] === 0 && rb.children.find((c) => c.matchName === "ADBE Radial Blur-0003").value === 2 && /^«Наезд» — на склейке 2,0 с от начала, 0,8 с\. Сверху новый слой «Переход: Наезд»/.test(await p.status()) && TRL.selected === true && AL.selected === false, t.join() + " / " + rbv.join() + " " + await p.status());
   await p.page.evaluate(() => { const c = document.getElementById("acColor"); c.value = "#ff0000"; c.dispatchEvent(new Event("input", { bubbles: true })); });
   await p.page.click('#acFolders button[data-folder="shapes"]');
   await acClick(p, /^Шторка$/);
   TRL = p.ae.log.acLayers[p.ae.log.acLayers.length - 1];
-  t = [1.5, 2, 2.5].map((tt) => Math.round(sfEval(TRL, acAt(TRL, "ADBE Transform Group", "ADBE Position"), tt)[0]));
-  check("AC7 'Wipe' is a shape layer in the chosen colour: it comes in from the left, covers the cut and leaves to the right", t.join() === "-960,960,2880" && JSON.stringify(acAt(TRL, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Graphic - Fill", "ADBE Vector Fill Color").value) === "[1,0,0,1]", t.join());
+  t = [1.6, 2, 2.4].map((tt) => Math.round(sfEval(TRL, acAt(TRL, "ADBE Transform Group", "ADBE Position"), tt)[0]));
+  check("AC7 'Wipe' is a shape layer in the chosen colour: it comes in from the left, covers the cut and leaves to the right", t[0] === -960 && Math.abs(t[1] - 960) < 5 && t[2] === 2880 && JSON.stringify(acAt(TRL, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Graphic - Fill", "ADBE Vector Fill Color").value) === "[1,0,0,1]", t.join());
   await p.page.click('#acFolders button[data-folder="fade"]');
   await acClick(p, "Через чёрный");
   TRL = p.ae.log.acLayers[p.ae.log.acLayers.length - 1];
-  t = [1.5, 2, 2.5].map((tt) => Math.round(sfEval(TRL, acAt(TRL, "ADBE Transform Group", "ADBE Opacity"), tt)));
+  t = [1.6, 2, 2.4].map((tt) => Math.round(sfEval(TRL, acAt(TRL, "ADBE Transform Group", "ADBE Opacity"), tt)));
   check("AC7 'Through black' is a black solid that is fully black at the cut", JSON.stringify(TRL.solidColor) === "[0,0,0]" && TRL.adjustmentLayer === false && t.join() === "0,100,0", t.join());
   // Every preset of every section runs through After Effects without an error.
   t = [];
@@ -1605,7 +1613,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     }
   }
   check("AC8 every motion in every curve gives finite values and leaves the layer untouched between IN and OUT", t.length === 0, t.join(" | "));
-  for (const id of ["zoom-in", "zoom-out", "zoom-rotate", "rotate", "pan-left", "pan-right", "pan-up", "pan-down", "shake", "twirl", "blur-zoom", "glitch", "glitch-shake", "leak-warm", "leak-cool", "flash", "fade-black", "fade-white", "wipe-left", "wipe-up", "circle"]) {
+  for (const id of ["zoom-in", "zoom-out", "zoom-in-out", "zoom-distort-in", "zoom-distort-out", "zoom-hit", "pan-left", "pan-right", "pan-up", "pan-down", "rotate", "roll", "zoom-rotate", "twirl", "shake", "glitch", "glitch-shake", "blur-dissolve", "leak-warm", "leak-cool", "flash", "fade-black", "fade-white", "wipe-left", "wipe-up", "circle"]) {
     p.ae.comp.time = 3;
     const r = JSON.parse(vm.runInContext('sayframeHost.trApply("' + id + '", 1.2, [1, 1, 1], {title: "T", strength: "K"})', p.ae.ctx));
     const L = p.ae.log.acLayers[p.ae.log.acLayers.length - 1];
@@ -1614,47 +1622,126 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     if (!r.ok || !ex.length || !JSON.stringify(vals).split(/[\[\],]/).filter(Boolean).every((x) => isFinite(Number(x)))) t.push(id + ":" + JSON.stringify(r) + " " + ex.length);
   }
   check("AC8 every transition builds, and all its expressions give finite values across the cut", t.length === 0, t.join(" | "));
-  check("AC8 the panel lists exactly these presets", await p.page.evaluate(() => true) && (await (async () => { let n = 0; for (const l of ["Переходы", "Текст", "Движения", "Графика", "Звуки"]) { await acSec(p, l); if (await p.page.locator('#acFolders button[data-folder="all"]').isVisible()) await p.page.click('#acFolders button[data-folder="all"]'); n += (await acCards(p)).length; } return n; })()) === 87);
+  t = [];
+  for (const fx of ["fade", "from-bottom", "from-top", "from-left", "from-right", "scale-up", "scale-down", "rotate", "blur", "tracking", "skew", "typewriter"]) {
+    for (const u of fx === "typewriter" ? ["c"] : ["c", "w", "l"]) {
+      for (const curve of ["ease", "over", "linear"]) {
+        const L = mkAcLayer("T", "text"); p.ae.comp.selectedLayers = [L];
+        const r = JSON.parse(vm.runInContext('sayframeHost.sfApply("tx-' + fx + "-" + u + '", "' + curve + '", "both", 0.6, {title: "T", fade: "f"})', p.ae.ctx));
+        const an = acAt(L, "ADBE Text Properties", "ADBE Text Animators").children;
+        const vals = an.map((a) => [0, 0.2, 0.6, 2, 4.5, 5].map((tt) => [1, 3, 5].map((i) => sfEval(L, amountOf(a), tt, { textIndex: i, textTotal: 5 }))));
+        if (!r.ok || r.applied !== 1 || an.length < 2 || !JSON.stringify(vals).split(/[\[\],]/).filter(Boolean).every((x) => isFinite(Number(x)))) t.push(fx + "-" + u + "." + curve + ":" + JSON.stringify(r));
+        else if (vals.some((v) => v[3].some((x) => x !== 0))) t.push(fx + "-" + u + "." + curve + " not at rest between IN and OUT");
+      }
+    }
+  }
+  check("AC8 every text preset (12 kinds × letters/words/lines × curves) builds two directions and its selectors give finite amounts, 0 between IN and OUT", t.length === 0, t.join(" | "));
+  t = [];
+  for (const id of ["ring-burst", "ring-double", "lines-burst", "dots-burst", "star-burst", "circle-pop", "square-spin", "triangle-burst", "plus-burst", "zigzag", "ripples", "sparkle", "confetti", "speed-lines", "smoke-puff", "explosion-burst", "lightning", "sunburst", "glitch-blocks", "shockwave", "swirl", "underline", "circle-scribble", "arrow", "cross-out", "check", "highlight", "bracket", "star-doodle", "exclaim", "bg-gradient", "bg-grid", "bg-dots", "bg-stripes", "bg-rays", "bg-circles", "vignette", "grain", "flicker", "letterbox", "frame", "scanlines", "lower-third", "callout", "label", "progress", "counter", "timer"]) {
+    p.ae.comp.time = 1; p.ae.comp.selectedLayers = [];
+    const r = JSON.parse(vm.runInContext('sayframeHost.grApply("' + id + '", 2, [1, 0.5, 0], {title: "G", color: "C", size: "S", thick: "W", value: "V", text: "x"})', p.ae.ctx));
+    const L = p.ae.log.acLayers.filter((l) => acAt(l, "ADBE Marker") && acAt(l, "ADBE Marker").keys.some((k) => /sfg:/.test(k.v.comment))).pop();
+    const ex = exprProps(L).concat(exprProps(acAt(L, "ADBE Transform Group") || { children: [] }));
+    const vals = ex.map((pr) => [1, 1.3, 2, 2.9, 3].map((tt) => sfEval(L, pr, tt)));
+    if (!r.ok || !ex.length || JSON.stringify(vals).indexOf("null") >= 0) t.push(id + ":" + JSON.stringify(r) + " " + ex.length + " " + JSON.stringify(vals).slice(0, 120));
+  }
+  check("AC8 every graphic (48) builds, and all its expressions give real values over the layer", t.length === 0, t.join(" | "));
+  check("AC8 the panel lists exactly these presets", await p.page.evaluate(() => true) && (await (async () => { let n = 0; for (const l of ["Переходы", "Текст", "Движения", "Графика", "Звуки"]) { await acSec(p, l); if (await p.page.locator('#acFolders button[data-folder="all"]').isVisible()) await p.page.click('#acFolders button[data-folder="all"]'); n += (await acCards(p)).length; } return n; })()) === 243);
   await p.close();
 
   // Text: on a selected text layer, or a new one when there is none.
   p = await open({ selectedLayers: [mkAcLayer("Фон")] });
   await p.tab("tools"); await acSec(p, "Текст");
-  await acClick(p, "Печатная машинка");
+  await p.page.click('#acFolders button[data-folder="move"]');
+  check("AC9 'Text' is laid out like Text Presets: folders by animated property, and letters / words / lines", (await p.page.locator("#acFolders button[data-folder]").allInnerTexts()).join() === "Все,Прозрачность,Сдвиг,Масштаб,Поворот,Размытие,Трекинг и другое" && (await p.page.locator("#acFolders button[data-unit]").allInnerTexts()).join() === "Все,По буквам,По словам,По строкам" && (await acCards(p)).length === 15);
+  await p.page.click('#acFolders button[data-unit="c"]');
+  check("AC9 the unit chips narrow it to one unit", (await acCards(p)).join() === "Снизу по буквам,Снизу по буквам · с перелётом,Сверху по буквам,Слева по буквам,Справа по буквам", (await acCards(p)).join());
+  await p.page.locator("#acGrid .ac-card").first().hover(); await p.page.waitForTimeout(300);
+  check("AC9 hovering a text preset moves its letters one after another", await p.page.evaluate(() => document.querySelectorAll("#acGrid .ac-card")[0].querySelectorAll(".txs").length === 9 && document.querySelectorAll("#acGrid .ac-card")[0].querySelector(".txs").getAnimations().length === 1));
+  await acClick(p, "Снизу по буквам");
   t = p.ae.log.acLayers[0];
-  const anim1 = t && acAt(t, "ADBE Text Properties", "ADBE Text Animators", 1);
-  check("AC9 no text layer selected: a new text layer 'Ваш текст' is made and typed in letter by letter", !!t && t.name === "Ваш текст" && JSON.stringify(keysOf(acAt(anim1, "ADBE Text Selectors", 1, "ADBE Text Percent Start"))) === JSON.stringify([[0, 0], [0.6, 100]]) && acAt(anim1, "ADBE Text Animator Properties", 1).matchName === "ADBE Text Opacity" && /создан новый «Ваш текст»/.test(await p.status()), await p.status());
+  const tAnims = (l) => acAt(l, "ADBE Text Properties", "ADBE Text Animators").children;
+  const amt = (l, a, tt, i, n) => Math.round(sfEval(l, amountOf(a), tt, { textIndex: i, textTotal: n }));
+  let ta = t && tAnims(t);
+  check("AC9 no text layer selected: a new 'Ваш текст' layer gets an IN marker and two text animators named after the preset (move, and a soft fade)", !!t && t.name === "Ваш текст" && ta.map((a) => a.name).join() === "IN Снизу по буквам,IN Снизу по буквам · прозрачность" && JSON.stringify(acAt(ta[0], "ADBE Text Animator Properties", "ADBE Text Position 3D").value) === "[0,80,0]" && acAt(ta[1], "ADBE Text Animator Properties", "ADBE Text Opacity").value === 0 && ta[0].children.find((c) => c.matchName === "ADBE Text Selectors").children[0].matchName === "ADBE Text Expressible Selector" && acAt(ta[0], "ADBE Text Selectors", 1, "ADBE Text Range Type2").value === 2 && acAt(t, "ADBE Marker").keys[0].v.comment === "IN: Снизу по буквам (плавно) {sf:tx-from-bottom-c:in:ease}" && /создан новый «Ваш текст»/.test(await p.status()), ta && ta.map((a) => a.name).join() + " " + await p.status());
+  check("AC9 the selector walks the letters through the marker one after another (letter 1 first, letter 8 last)", amt(t, ta[0], 0, 1, 8) === 100 && amt(t, ta[0], 0.24, 1, 8) === 0 && amt(t, ta[0], 0.3, 8, 8) === 100 && amt(t, ta[0], 0.6, 8, 8) === 0 && amt(t, ta[0], 0.12, 1, 8) > 0 && amt(t, ta[0], 0.12, 1, 8) < 100, [amt(t, ta[0], 0.12, 1, 8), amt(t, ta[0], 0.3, 8, 8)].join());
+  check("AC9 the card is marked IN", (await p.page.locator("#acGrid .ac-card.applied .ac-badge").innerText()) === "IN");
+  p.ae.comp.selectedLayers = [t];   // After Effects selects the new layer
+  await acClick(p, "Снизу по буквам");
+  check("AC9 clicking it again takes it off: animators and marker go", tAnims(t).length === 0 && acAt(t, "ADBE Marker").keys.length === 0 && /снят/.test(await p.status()), await p.status());
   const TL = mkAcLayer("Заголовок", "text");
   p.ae.comp.selectedLayers = [TL];
   await p.page.click('#acMode button[data-value="out"]');
-  await acClick(p, "По словам");
-  const anim2 = acAt(TL, "ADBE Text Properties", "ADBE Text Animators", 1);
-  check("AC10 'By words' on a selected text layer: words, and on disappearance the End of the range moves", acAt(anim2, "ADBE Text Selectors", 1, "ADBE Text Range Advanced", "ADBE Text Range Type2").value === 3 && JSON.stringify(keysOf(acAt(anim2, "ADBE Text Selectors", 1, "ADBE Text Percent End"))) === JSON.stringify([[4.4, 0], [5, 100]]) && p.ae.log.acLayers.length === 1);
+  await p.page.click('#acFolders button[data-unit="w"]');
+  await acClick(p, "Снизу по словам · с перелётом");
+  ta = tAnims(TL);
+  check("AC10 on a selected text layer, by words, on disappearance: an OUT marker at the end, words leave one by one with overshoot", acAt(ta[0], "ADBE Text Selectors", 1, "ADBE Text Range Type2").value === 3 && acAt(TL, "ADBE Marker").keys[0].t === 4.4 && amt(TL, ta[0], 4.4, 1, 2) === 0 && amt(TL, ta[0], 5, 2, 2) === 100 && amt(TL, ta[0], 4.45, 1, 2) < 0 && p.ae.log.acLayers.length === 1, [amt(TL, ta[0], 4.4, 1, 2), amt(TL, ta[0], 4.45, 1, 2), amt(TL, ta[0], 5, 2, 2)].join());
   await p.close();
 
-  // Graphics: new layers at the time indicator, in the chosen colour.
-  p = await open({ compTime: 2, selectedLayers: [mkAcLayer("Фон")] });
+  // Graphics: a new layer at the time indicator, driven by expressions, with Colour / Size / Thickness controls.
+  const GBG = mkAcLayer("Фон");
+  GBG.property("ADBE Transform Group").property("ADBE Position").value = [400, 300, 0];
+  p = await open({ compTime: 2, selectedLayers: [GBG] });
   await p.tab("tools"); await acSec(p, "Графика");
-  check("AC11 'Graphics' shows the colour picker, not the timing buttons", (await p.page.locator("#acColorRow").isVisible()) && (await p.page.locator("#acModeRow").isHidden()));
+  check("AC11 'Graphics': 48 graphics in folders like Graphic Components; colour picker, no timing buttons", (await acCards(p)).length === 48 && (await p.page.locator("#acFolders button").allInnerTexts()).join() === "Все,Элементы,Спецэффекты,Рисованные,Фоны,Оверлеи,Плашки" && (await p.page.locator("#acColorRow").isVisible()) && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acDurRow").isHidden()) && (await p.page.locator("#acGrid .ac-gr svg").count()) === 48);
   await p.page.evaluate(() => { const c = document.getElementById("acColor"); c.value = "#ff0000"; c.dispatchEvent(new Event("input", { bubbles: true })); });
-  await acClick(p, "Кольцо");
+  await acClick(p, /^Кольцо$/);
   t = p.ae.log.acLayers[0];
-  const agrp = t && acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group");
-  check("AC11 'Ring' becomes a new shape layer at the time indicator, red, growing from zero, and is selected", !!t && t.name === "Ring" && t.startTime === 2 && t.selected === true && agrp.children[0].matchName === "ADBE Vector Shape - Ellipse" && JSON.stringify(acAt(agrp, "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Color").value) === "[1,0,0,1]" && /Кольцо.*новый слой «Ring»/.test(await p.status()), await p.status());
+  const gfx = (l) => acAt(l, "ADBE Effect Parade").children;
+  const ringScale = (tt) => sfEval(t, acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vector Transform Group", "ADBE Vector Scale"), tt);
+  check("AC11 'Ring' is a new shape layer from the time indicator, over the selected layer, with Colour / Size / Thickness controls and a marker", !!t && t.name === "Кольцо" && t.inPoint === 2 && Math.abs(t.outPoint - 3.2) < 1e-9 && t.selected === true && GBG.selected === false && JSON.stringify(acAt(t, "ADBE Transform Group", "ADBE Position").value) === "[400,300]" && gfx(t).map((e) => e.matchName + ":" + e.name).join() === "ADBE Color Control:Цвет,ADBE Slider Control:Размер,ADBE Slider Control:Толщина" && JSON.stringify(gfx(t)[0].children[0].value) === "[1,0,0,1]" && acAt(t, "ADBE Marker").keys[0].v.comment === "Графика: Кольцо {sfg:ring-burst}", t && [t.name, t.inPoint, t.outPoint, t.selected, GBG.selected, JSON.stringify(acAt(t, "ADBE Transform Group", "ADBE Position").value), JSON.stringify(gfx(t)[0].children[0].value), acAt(t, "ADBE Marker").keys[0].v.comment].join(" | "));
+  check("AC11 it is all expressions from the layer's length: the ring grows from 0 and its stroke thins; the colour comes from the control", ringScale(2)[0] === 0 && ringScale(2.6)[0] > 80 && /gK\(\)/.test(acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Color").expression) && /^\/\/ Sayframe graphic/.test(acAt(t, "ADBE Transform Group", "ADBE Scale").expression) && /Растяните слой/.test(await p.status()), JSON.stringify([ringScale(2), ringScale(2.6)]));
+  await p.page.click('#acFolders button[data-folder="titles"]');
+  await acClick(p, "Плашка для титра");
+  const LT = p.ae.log.acLayers[1], LTT = p.ae.log.acLayers[2];
+  check("AC12 'Lower third' brings its own text layer, parented to the bar and fading in after it", LT.name === "Плашка для титра" && LTT && LTT.parent === LT && LTT.name === "Текст: Плашка для титра" && /Текст — отдельным слоем/.test(await p.status()), await p.status());
   await acClick(p, "Счётчик");
-  t = p.ae.log.acLayers[1];
-  check("AC12 'Counter' is a text layer counting with an expression", t.name === "Counter" && /linear\(time, inPoint/.test(acAt(t, "ADBE Text Properties", "ADBE Text Document").expression));
+  t = p.ae.log.acLayers[3];
+  check("AC12 'Counter' is a text layer counting to its 'Значение' control over the layer", t.name === "Счётчик" && gfx(t)[1].name === "Значение" && sfEval(t, acAt(t, "ADBE Text Properties", "ADBE Text Document"), 2) === "0%" && sfEval(t, acAt(t, "ADBE Text Properties", "ADBE Text Document"), 5.9) === "100%", sfEval(t, acAt(t, "ADBE Text Properties", "ADBE Text Document"), 5.9));
+  // Edit: the selected graphic
+  p.ae.comp.selectedLayers = [p.ae.log.acLayers[0]];
+  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".gr-edit");
+  check("AC12 'Edit' on a graphic: colour, duration, size, thickness, remove", (await p.page.locator(".gr-edit .ac-edit-top b").innerText()) === "Графика «Кольцо»" && (await p.page.inputValue(".gr-edit .gr-color")) === "#ff0000" && (await p.page.locator(".gr-edit .ac-edit-row output").allInnerTexts()).join() === "1,2 с,100%,8 px", (await p.page.locator(".gr-edit .ac-edit-row output").allInnerTexts()).join());
+  await p.page.evaluate(() => { const i = document.querySelector('.gr-edit input[aria-label="Размер"]'); i.value = "200"; i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); });
+  await p.idle(); await p.page.waitForTimeout(50);
+  await p.page.evaluate(() => { const i = document.querySelector(".gr-edit .gr-color"); i.value = "#00ff00"; i.dispatchEvent(new Event("change", { bubbles: true })); });
+  await p.idle(); await p.page.waitForTimeout(50);
+  await p.page.evaluate(() => { const i = document.querySelector('.gr-edit input[aria-label="Длительность"]'); i.value = "3"; i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); });
+  await p.idle(); await p.page.waitForTimeout(50);
+  t = p.ae.log.acLayers[0];
+  check("AC12 size, colour and duration change the controls and the layer", gfx(t)[1].children[0].value === 200 && JSON.stringify(gfx(t)[0].children[0].value) === "[0,1,0,1]" && t.outPoint === 5);
+  await p.page.locator(".gr-edit button", { hasText: "Убрать" }).click(); await p.idle(); await p.page.waitForTimeout(50);
+  check("AC12 'Remove' deletes the graphic", p.ae.log.layersRemoved.join() === "Кольцо" && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
   // Sounds: our own synthesized files, copied next to the project and placed at the time indicator.
   p = await open({ compTime: 1.5 });
   await p.tab("tools"); await acSec(p, "Звуки");
-  check("AC13 'Sounds': 12 sounds, each with a play button, no timing options", (await acCards(p)).length === 12 && (await p.page.locator("#acGrid .ac-play").count()) === 12 && (await p.page.locator("#acDurRow").isHidden()));
+  check("AC13 'Sounds': 94 sounds in 10 folders, each with a play button, pitch and volume instead of timing", (await acCards(p)).length === 94 && (await p.page.locator("#acGrid .ac-play").count()) === 94 && (await p.page.locator("#acDurRow").isHidden()) && (await p.page.locator("#acSndRow").isVisible()) && (await p.page.locator("#acFolders button").allInnerTexts()).join() === "Все,Вжухи,Свайпы,Удары,Нарастания,Интерфейс,Попы,Глитч,Звонки,Мультяшные,Механика");
+  await p.page.click('#acFolders button[data-folder="impact"]');
+  check("AC13 a folder shows only its sounds", (await acCards(p)).length === 10 && (await acCards(p))[0] === "Удар");
+  await p.page.click('#acFolders button[data-folder="all"]');
+  await p.page.evaluate(() => { const r = document.getElementById("acPitch"); r.value = "-12"; r.dispatchEvent(new Event("input", { bubbles: true })); });
   await acClick(p, "Вжух");
   t = path.join(p.home, "Documents", "Sayframe SFX", "whoosh.wav");
   check("AC13 clicking a sound copies it to 'Sayframe SFX' and puts it into the comp", fs.existsSync(t) && fs.readFileSync(t).equals(fs.readFileSync(path.join(EXT, "sfx", "whoosh.wav"))) && p.ae.log.imports.join() === t && p.ae.log.layerAdds.length === 1 && /^Звук «Вжух» добавлен/.test(await p.status()), await p.status());
+  check("AC13 pitch −12 semitones plays the layer at half speed (Stretch 200%), like a sampler; the layer is named after the sound", p.ae.log.addedLayers[0].stretch === 200 && p.ae.log.addedLayers[0].name === "♪ Вжух" && /высота тона −?-12 пт/.test(await p.status()), p.ae.log.addedLayers[0].stretch + " " + await p.status());
+  const SND = p.ae.log.addedLayers[0];
+  SND.source.mainSource = { file: { fsName: t } }; p.ae.project.activeItem = p.ae.comp; p.ae.comp.selectedLayers = [SND];
+  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".snd-edit");
+  check("AC13 'Edit' on the sound layer shows its pitch and volume", (await p.page.locator(".snd-edit .ac-edit-top b").innerText()) === "Звук «Вжух»" && (await p.page.locator(".snd-edit .ac-edit-row output").allInnerTexts()).join() === "-12 пт,0 дБ", (await p.page.locator(".snd-edit .ac-edit-row output").allInnerTexts()).join());
+  await p.page.evaluate(() => { const i = document.querySelector('.snd-edit input[aria-label="Высота тона"]'); i.value = "7"; i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); });
+  await p.idle(); await p.page.waitForTimeout(50);
+  await p.page.evaluate(() => { const i = document.querySelector('.snd-edit input[aria-label="Громкость"]'); i.value = "-6"; i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); });
+  await p.idle(); await p.page.waitForTimeout(50);
+  check("AC13 +7 semitones → Stretch ≈ 66.7%, −6 dB → Audio Levels", Math.abs(SND.stretch - 100 / Math.pow(2, 7 / 12)) < 1e-6 && JSON.stringify(SND.levels) === "[-6,-6]", SND.stretch + " " + JSON.stringify(SND.levels));
+  await p.page.locator(".snd-edit button", { hasText: "Убрать" }).click(); await p.idle(); await p.page.waitForTimeout(50);
+  check("AC13 'Remove' deletes the sound layer", p.ae.log.layersRemoved.join() === "♪ Вжух" && p.errors.length === 0, p.errors.join(" | "));
+  await acSec(p, "Звуки");
   t = fs.readdirSync(path.join(EXT, "sfx")).filter((n) => /\.wav$/.test(n));
-  check("AC13 all 12 sounds are real WAV files", t.length === 12 && t.every((n) => fs.readFileSync(path.join(EXT, "sfx", n)).subarray(0, 4).toString() === "RIFF" && fs.readFileSync(path.join(EXT, "sfx", n)).subarray(8, 12).toString() === "WAVE"), t.join());
+  const listed = await p.page.evaluate(() => Array.from(document.querySelectorAll("#acGrid .ac-card")).map((c) => c.getAttribute("data-key").replace(/^sfx:/, "") + ".wav").sort());
+  check("AC13 every sound in the panel has its file and every file is in the panel", JSON.stringify(listed) === JSON.stringify(t.slice().sort()), listed.length + " vs " + t.length);
+  check("AC13 all 94 sounds are real WAV files", t.length === 94 && t.every((n) => fs.readFileSync(path.join(EXT, "sfx", n)).subarray(0, 4).toString() === "RIFF" && fs.readFileSync(path.join(EXT, "sfx", n)).subarray(8, 12).toString() === "WAVE"), t.join());
   await p.close();
 
   // Favourites, search across sections, card size, nothing selected.
@@ -1662,12 +1749,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.tab("tools"); await acSec(p, "Движения");
   await p.page.locator("#acGrid .ac-card", { has: p.page.locator(".ac-name", { hasText: "Вихрь · плавно" }) }).locator(".ac-star").click();
   await acSec(p, "Звуки");
-  await p.page.locator("#acGrid .ac-card", { has: p.page.locator(".ac-name", { hasText: "Удар" }) }).locator(".ac-star").click();
+  await p.page.locator("#acGrid .ac-card", { has: p.page.locator(".ac-name", { hasText: /^Удар$/ }) }).locator(".ac-star").click();
   await p.page.click("#acFavOnly");
   check("AC14 ★ shows the favourites from every section", (await acCards(p)).join() === "Вихрь · плавно,Удар" && (await p.page.locator("#acFavOnly").getAttribute("aria-pressed")) === "true");
   await p.page.click("#acFavOnly");
-  await p.page.fill("#acSearch", "букв");
-  check("AC15 search looks through all sections", (await acCards(p)).join() === "Проявление по буквам,Буквы снизу,Буквы с масштабом,Буквы из размытия,Буквы с поворотом,Случайные буквы,Разлёт букв" && (await p.page.locator('#acTabs button[aria-selected="true"]').count()) === 0, (await acCards(p)).join());
+  await p.page.fill("#acSearch", "по букв");
+  t = await acCards(p);
+  check("AC15 search looks through all sections", t.length === 13 && t.every((n) => /по буквам/.test(n)) && (await p.page.locator('#acTabs button[aria-selected="true"]').count()) === 0, t.join());
   await p.page.fill("#acSearch", "");
   await p.page.evaluate(() => { const r = document.getElementById("acSize"); r.value = "180"; r.dispatchEvent(new Event("input", { bubbles: true })); });
   t = await p.page.evaluate(() => Math.round(document.querySelector("#acGrid .ac-card").getBoundingClientRect().width));
@@ -1741,8 +1829,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("ED8 removing one entry leaves the other", acAt(EL, "ADBE Effect Parade").children.length === 1 && (await p.page.locator(".ac-edit-top b").allInnerTexts()).join() === "Размытие — исчезновение");
   const ET = mkAcLayer("Заголовок", "text");
   p.ae.comp.selectedLayers = [ET];
-  await acSec(p, "Текст"); await p.page.click('#acMode button[data-value="in"]');
-  await acClick(p, "Буквы снизу");
+  vm.runInContext('sayframeHost.acText("slide-letters", "in", 0.6, "x")', p.ae.ctx);
   await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".ac-edit-item");
   await p.page.selectOption(".ac-edit-item .ac-swap", "blur-letters"); await p.idle(); await p.page.waitForTimeout(50);
   t = acAt(ET, "ADBE Text Properties", "ADBE Text Animators").children;
@@ -1786,6 +1873,20 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("SE7 'Remove' takes off one direction: its marker and effects go, OUT stays and still works", mk2.keys.length === 1 && /^OUT:/.test(mk2.keys[0].v.comment) && layerFx(ML).join() === "OUT Снизу · Дистанция,OUT Снизу · Прозрачность" && mPos(0.5) === 540 && mPos(5) === 756 && (await p.page.locator(".sf-group").count()) === 1 && p.errors.length === 0, layerFx(ML).join());
   await p.close();
 
+  console.log("\n=== text presets: edit ===");
+  const XL = mkAcLayer("Титр", "text");
+  p = await open({ selectedLayers: [XL] });
+  await p.tab("tools"); await acSec(p, "Текст");
+  await acClick(p, "Снизу по буквам");
+  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".sf-preset");
+  const xAn = () => acAt(XL, "ADBE Text Properties", "ADBE Text Animators").children;
+  check("TX1 'Edit' shows a text preset with its shift and the order of the letters", (await p.page.locator(".sf-preset .ac-edit-top b").innerText()) === "Снизу по буквам" && (await p.page.locator('.sf-group[data-dir="in"] .ac-edit-row output').allInnerTexts()).join() === "0,6 с,0,0 с,80 px,60%", (await p.page.locator('.sf-group[data-dir="in"] .ac-edit-row output').allInnerTexts()).join());
+  await edSlideIn(p, '.sf-group[data-dir="in"]', "Сдвиг", 150);
+  check("TX2 the shift is the animator's own Position, changed in place", JSON.stringify(acAt(xAn()[0], "ADBE Text Animator Properties", "ADBE Text Position 3D").value) === "[0,150,0]");
+  await edSlideIn(p, '.sf-group[data-dir="in"]', "Очерёдность", 0);
+  check("TX3 order 0% moves all letters together", Math.round(sfEval(XL, amountOf(xAn()[0]), 0.3, { textIndex: 1, textTotal: 6 })) === Math.round(sfEval(XL, amountOf(xAn()[0]), 0.3, { textIndex: 6, textTotal: 6 })) && /очерёдность изменена/.test(await p.status()) && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
   console.log("\n=== transitions: edit ===");
   p = await open({ compTime: 2, selectedLayers: [] });
   await p.tab("tools"); await acSec(p, "Переходы");
@@ -1793,12 +1894,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const TL2 = p.ae.log.acLayers[0];
   p.ae.comp.selectedLayers = [TL2];
   await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".tr-edit");
-  check("TE1 selecting the transition layer, 'Edit' shows the transition: duration, strength, remove", (await p.page.locator(".tr-edit .ac-edit-top b").innerText()) === "Переход «Отъезд»" && (await p.page.locator(".tr-edit .ac-edit-row output").allInnerTexts()).join() === "1,0 с,100%");
+  check("TE1 selecting the transition layer, 'Edit' shows the transition: duration, strength, remove", (await p.page.locator(".tr-edit .ac-edit-top b").innerText()) === "Переход «Отъезд»" && (await p.page.locator(".tr-edit .ac-edit-row output").allInnerTexts()).join() === "0,8 с,100%");
   await edSlideIn(p, ".tr-edit", "Длительность", 2);
   check("TE2 a longer duration stretches the layer around the cut", TL2.inPoint === 1 && TL2.outPoint === 3 && /Длительность перехода изменена/.test(await p.status()), TL2.inPoint + ".." + TL2.outPoint);
   await edSlideIn(p, ".tr-edit", "Сила", 50);
   const g2 = acAt(TL2, "ADBE Effect Parade").children.find((c) => c.matchName === "ADBE Geometry2").children.find((c) => c.matchName === "ADBE Geometry2-0003");
-  check("TE3 strength is the 'Сила' slider in Effect Controls and halves the move", acAt(TL2, "ADBE Effect Parade", 1).children[0].value === 50 && Math.round(sfEval(TL2, g2, 1.95)) > 60 && Math.round(sfEval(TL2, g2, 1.95)) < 85, sfEval(TL2, g2, 1.95));
+  check("TE3 strength is the 'Сила' slider in Effect Controls and halves the move", acAt(TL2, "ADBE Effect Parade", 1).children[0].value === 50 && Math.round(sfEval(TL2, g2, 1.97)) > 60 && Math.round(sfEval(TL2, g2, 1.97)) < 90, sfEval(TL2, g2, 1.97));
   await p.page.locator(".tr-edit button", { hasText: "Убрать" }).click(); await p.idle(); await p.page.waitForTimeout(50);
   check("TE4 'Remove' deletes the transition layer", p.ae.log.layersRemoved.join() === "Переход: Отъезд" && /убран/.test(await p.status()) && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
@@ -1809,13 +1910,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.tab("tools");
   await acSec(p, "Текст");
   const anims = () => acAt(STL, "ADBE Text Properties", "ADBE Text Animators").children.length;
-  await acClick(p, "Буквы снизу");
+  await acClick(p, "Проявление по буквам");
   check("AH1 the panel notices host.jsx lacks the preset functions, re-reads it and the preset goes on", p.ae.log.evalFiles === 1 && anims() === 1 && (await p.statusKind()) === "done", await p.status());
-  await acClick(p, "Буквы снизу");
-  check("AH2 once re-read, it is not re-read again", p.ae.log.evalFiles === 1 && anims() === 2);
+  await acClick(p, "Проявление по буквам");
+  check("AH2 once re-read, it is not re-read again", p.ae.log.evalFiles === 1 && anims() === 0);
   acAt(STL, "ADBE Text Properties", "ADBE Text Animators").addProperty = () => { throw new Error("Cannot add an animator here"); };
-  await acClick(p, "Буквы снизу");
-  check("AH3 when After Effects refuses, the status shows its own words", (await p.statusKind()) === "error" && /After Effects ответил: Cannot add an animator here/.test(await p.status()), await p.status());
+  await acClick(p, "Проявление по буквам");
+  check("AH3 when After Effects refuses, the status shows its own words", (await p.statusKind()) === "error" && /Cannot add an animator here/.test(await p.status()), await p.status());
   await p.close();
 
   console.log("\n=== settings ===");
@@ -2751,7 +2852,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = await toolRects(p);
   check("PN2 a pinned block goes to the very top", (await toolOrder(p)).split(",")[0] === "paste" && /paste:0,0,/.test(await cellsNow(p)) && (await pinOf(p, "paste").getAttribute("aria-pressed")) === "true" && (await pinOf(p, "paste").getAttribute("title")) === "Открепить", await cellsNow(p));
   const lineY = await pinLine(p);
-  check("PN2 a thin line separates it from the other blocks below", lineY !== null && lineY > t.paste.b && ["ease", "anchor", "align", "shift", "organize"].every((k) => t[k].t > lineY), lineY + " " + JSON.stringify(t));
+  check("PN2 a thin line separates it from the other blocks below, with room on both sides", lineY !== null && lineY - t.paste.b >= 14 && ["ease", "anchor", "align", "shift", "organize"].every((k) => t[k].t - lineY >= 14), lineY + " " + JSON.stringify(t));
   await p.page.screenshot({ path: path.join(SHOTS, "27-pinned-block.png") });
   await pinOf(p, "organize").click();
   t = await toolRects(p);
