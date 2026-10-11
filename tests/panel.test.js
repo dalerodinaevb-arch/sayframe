@@ -480,6 +480,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         }
         case "postJSON": {
           const [url, headers, body] = args;
+          if ((opts.statsUrl && url === opts.statsUrl) || /^https:\/\/script\.google\.com\/macros\//.test(url)) {
+            net.stats = (net.stats || []).concat([{ url, headers, body: JSON.parse(body) }]);
+            if (opts.statsFail) throw new Error("getaddrinfo ENOTFOUND script.google.com");
+            return { status: 302, text: "" };   // Apps Script answers a POST with a redirect to the result
+          }
           net.requests.push({ url, headers, body: JSON.parse(body), ascii: true });
           if (opts.offline) throw new Error("getaddrinfo ENOTFOUND api.anthropic.com");
           const r = net.replies.shift();
@@ -491,8 +496,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     });
 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false }, opts.settings || {});
-    await page.addInitScript(({ stored, tmpDir, home, hostPath, withSystemPath, updateUrl, updateState, updateEveryMs }) => {
+    await page.addInitScript(({ stored, tmpDir, home, hostPath, withSystemPath, updateUrl, updateState, updateEveryMs, statsUrl }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
+      if (statsUrl) window.__SAYFRAME_STATS_URL__ = statsUrl;
       window.__SAYFRAME_TEST_UPDATE_EVERY_MS__ = updateEveryMs || 0;
       window.__opened = [];
       // Seed saved state only when the page is first opened. Touching localStorage from this start-up
@@ -506,7 +512,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       window.__adobe_cep__ = { evalScript(script, cb) { window.__hostEval(script).then(cb); },
         registerKeyEventsInterest(json) { window.__keyInterest.push(json); },
         addEventListener(type, fn) { window.__cepListeners[type] = fn; },
-        getSystemPath() { return withSystemPath ? "file://" + hostPath : ""; } };
+        getSystemPath() { return withSystemPath ? "file://" + hostPath : ""; },
+        getHostEnvironment() { return JSON.stringify({ appName: "AEFT", appVersion: "25.0.1" }); } };
       const call = (name) => function () { return window.__plat(name, Array.prototype.slice.call(arguments)); };
       window.__SAYFRAME_TEST_PLATFORM__ = {
         available: true,
@@ -521,7 +528,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         openExternal: (u) => { window.__opened.push(u); return true; },
         reload: () => { window.__plat("reloaded", []).then(() => window.location.reload()); }
       };
-    }, { stored, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0 });
+    }, { stored, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "" });
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
     // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
@@ -1670,6 +1677,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   let ta = t && tAnims(t);
   check("AC9 no text layer selected: a new 'Ваш текст' layer gets an IN marker and two text animators named after the preset (move, and a soft fade)", !!t && t.name === "Ваш текст" && ta.map((a) => a.name).join() === "IN Снизу по буквам,IN Снизу по буквам · прозрачность" && JSON.stringify(acAt(ta[0], "ADBE Text Animator Properties", "ADBE Text Position 3D").value) === "[0,80,0]" && acAt(ta[1], "ADBE Text Animator Properties", "ADBE Text Opacity").value === 0 && ta[0].children.find((c) => c.matchName === "ADBE Text Selectors").children[0].matchName === "ADBE Text Expressible Selector" && acAt(ta[0], "ADBE Text Selectors", 1, "ADBE Text Range Type2").value === 2 && acAt(t, "ADBE Marker").keys[0].v.comment === "In" && acAt(t, "ADBE Marker").keys[0].v.params.sfp === '[{"motion":"tx-from-bottom-c","curve":"ease"}]' && /создан новый «Ваш текст»/.test(await p.status()), ta && ta.map((a) => a.name).join() + " " + await p.status());
   check("AC9 the selector walks the letters through the marker one after another (letter 1 first, letter 8 last)", amt(t, ta[0], 0, 1, 8) === 100 && amt(t, ta[0], 0.24, 1, 8) === 0 && amt(t, ta[0], 0.3, 8, 8) === 100 && amt(t, ta[0], 0.6, 8, 8) === 0 && amt(t, ta[0], 0.12, 1, 8) > 0 && amt(t, ta[0], 0.12, 1, 8) < 100, [amt(t, ta[0], 0.12, 1, 8), amt(t, ta[0], 0.3, 8, 8)].join());
+  const txSize = await p.page.evaluate(() => { const th = document.querySelector("#acGrid .ac-thumb"), x = th.querySelector(".ac-txt"); x.style.transform = "none"; const w = x.getBoundingClientRect().width / th.clientWidth; x.style.transform = ""; return { w, fs: parseFloat(getComputedStyle(x).fontSize) }; });
+  check("AC9b text previews are small and neat like Animation Composer: the title takes about half of the mini screen", txSize.fs >= 9 && txSize.fs <= 22 && txSize.w > 0.3 && txSize.w < 0.6, JSON.stringify(txSize));
   check("AC9 the card is marked IN", (await p.page.locator("#acGrid .ac-card.applied .ac-badge").innerText()) === "IN");
   p.ae.comp.selectedLayers = [t];   // After Effects selects the new layer
   await acClick(p, "Снизу по буквам");
@@ -3735,6 +3744,45 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const stale = spawnSync("python3", ["tools/release.py", "--check"], { cwd: scratch, encoding: "utf8" });
     check("U18 --check notices panel files edited after a release", stale.status === 1 && /css\/panel\.css/.test(stale.stdout), stale.stdout);
     fs.rmSync(scratch, { recursive: true, force: true });
+  }
+
+  // Anonymous install statistics: one "install" signal, then at most one "day" signal a day.
+  {
+    const SU = "https://script.google.com/macros/s/TEST/exec";
+    const statsN = (q) => (q.net.stats || []).length;
+    const waitStats = async (q, n) => { for (let i = 0; i < 40 && statsN(q) < n; i++) await q.page.waitForTimeout(200); };
+    p = await open({ statsUrl: SU });
+    await p.ready();
+    await waitStats(p, 1);
+    const s1 = (p.net.stats || [])[0];
+    check("ST1 first start sends one anonymous 'install': random id, version, system, After Effects version — and nothing else", statsN(p) === 1 && s1.body.ev === "install" && /^[0-9a-f]{32}$/.test(s1.body.id) && s1.body.v === (await p.page.evaluate(() => document.getElementById("versionText").textContent.replace("Sayframe ", ""))) && s1.body.os === "Mac" && s1.body.ae === "25.0.1" && Object.keys(s1.body).sort().join() === "ae,ev,id,os,v" && /text\/plain/.test(s1.headers["content-type"]) && !s1.headers["x-api-key"] && p.net.requests.length === 0, JSON.stringify(p.net.stats));
+    await p.restart();
+    await p.page.waitForTimeout(4600);
+    check("ST2 opening the panel again the same day sends nothing", statsN(p) === 1, JSON.stringify(p.net.stats));
+    await p.page.evaluate(() => { const st = JSON.parse(localStorage.getItem("sayframe.stats.v1")); st.day = "2000-1-1"; localStorage.setItem("sayframe.stats.v1", JSON.stringify(st)); });
+    await p.restart();
+    await waitStats(p, 2);
+    check("ST3 on a new day it sends one 'day' with the same id", statsN(p) === 2 && p.net.stats[1].body.ev === "day" && p.net.stats[1].body.id === s1.body.id, JSON.stringify(p.net.stats));
+    await p.page.click("#settingsBtn");
+    await p.page.click("#setTabOther");
+    check("ST4 Settings → General has the 'Анонимная статистика' switch, on by default", (await p.page.locator("#statsOn").isChecked()) && /Анонимная статистика/.test(await p.page.locator("#setPaneOther").innerText()));
+    await p.page.locator("label.switch", { has: p.page.locator("#statsOn") }).click();
+    await p.page.click("#saveSettings");
+    await p.page.evaluate(() => { const st = JSON.parse(localStorage.getItem("sayframe.stats.v1")); st.day = "2000-1-1"; localStorage.setItem("sayframe.stats.v1", JSON.stringify(st)); });
+    await p.restart();
+    await p.page.waitForTimeout(4600);
+    check("ST5 with the switch off nothing is sent", statsN(p) === 2 && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.settings.v1"))).stats === false, JSON.stringify(p.net.stats));
+    await p.close();
+    p = await open({ statsUrl: SU, statsFail: true });
+    await p.ready();
+    await waitStats(p, 1);
+    check("ST6 without internet the 'install' is not marked as sent, so the next start tries again", statsN(p) === 1 && !JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.stats.v1"))).sent && p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
+    p = await open({});
+    await p.ready();
+    await p.page.waitForTimeout(4600);
+    check("ST7 the built-in address is your Google Apps Script, and the signal never mixes with AI requests", statsN(p) === 1 && /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(p.net.stats[0].url) && p.net.requests.length === 0, JSON.stringify(p.net.stats));
+    await p.close();
   }
 
   p = await open({ width: 380, height: 760 });
