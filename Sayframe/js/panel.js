@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.23.1";
+    var VERSION = "1.24.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -46,6 +46,9 @@
     var MAX_CHECK_ROUNDS = 2;
     var FRAME_CHOICES = [6, 8, 12, 16];
     var SETTINGS_KEY = "sayframe.settings.v1";
+    // Анонимная статистика: адрес веб-приложения Google Apps Script (tools/stats/Code.gs). Пусто — ничего не отправляется.
+    var STATS_URL = "https://script.google.com/macros/s/AKfycbwztwaUNH-e6ujv3hiN_OLrOABwl3qFcso5QenP-cW7jjKQASZsPOWFyGGzFBgDK5oQQg/exec";
+    var STATS_KEY = "sayframe.stats.v1";
     var OLD_SETTINGS_KEY = "claudePanel.settings.v2"; // настройки прежней версии панели
     var PASTE_BIN = "Из буфера";
     var LINK_MAX_BYTES = 150 * 1024 * 1024;   // больше ссылка-референс не скачивается
@@ -103,6 +106,7 @@
         panelWidth: 380,    // ширина содержимого в пикселях; сама панель After Effects может быть шире
         toolSize: "large",  // размер блоков раздела «Инструменты»: "large" или "small"
         toolTitles: true,   // показывать ли названия блоков раздела «Инструменты»
+        stats: true,        // отправлять ли автору анонимный сигнал «установлено» и «открыто сегодня»
         hotkeys: ""         // горячие клавиши: "console=Ctrl+Space;snapshot=;…"; пусто — стандартные
     };
     var PANEL_WIDTH_MIN = 280;
@@ -661,7 +665,7 @@
         sheet: el("settingsSheet"), settingsClose: el("settingsClose"), apiKey: el("apiKey"), testKey: el("testKey"),
         keyHint: el("keyHint"), models: el("models"), provider: el("provider"), apiKeyLabel: el("apiKeyLabel"), accentSwatches: el("accentSwatches"), accentHex: el("accentHex"),
         bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"),
+        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), statsOn: el("statsOn"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         fxBtn: el("fxBtn"), snapBtn: el("snapBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
         acTabs: el("acTabs"), acSearch: el("acSearch"), acFavOnly: el("acFavOnly"), acModeRow: el("acModeRow"), acMode: el("acMode"),
@@ -2555,6 +2559,7 @@
         pressGroup(ui.frames, draft.refFrames);
         pressGroup(ui.toolSize, draft.toolSize);
         ui.toolTitles.checked = draft.toolTitles;
+        ui.statsOn.checked = draft.stats !== false;
         closeFxConsole();
         hotkeyEdit = null;
         ui.hotkeyNote.textContent = "";
@@ -2570,6 +2575,7 @@
             draft.selfCheck = ui.selfCheck.checked;
             draft.alwaysAsk = ui.alwaysAsk.checked;
             draft.toolTitles = ui.toolTitles.checked;
+            draft.stats = ui.statsOn.checked;
             settings = draft;
             storeSettings(settings);
             registerHotkeys();
@@ -3677,7 +3683,7 @@
             transform: "translate(" + (((m.x || 0) * 0.9 + (m.track ? (i - (n - 1) / 2) * 0.35 : 0)) * k).toFixed(3) + "em," + ((m.y || 0) * 0.9 * k).toFixed(3) +
                 "em) rotate(" + ((m.rot || 0) * k).toFixed(1) + "deg) skewX(" + ((m.skew || 0) * k).toFixed(1) + "deg) scale(" + Math.max(0, sc).toFixed(3) + ")",
             opacity: Math.max(0, Math.min(1, 1 - ks)),
-            filter: "blur(" + ((m.blur || 0) * 6 * ks).toFixed(2) + "px)"
+            filter: "blur(" + ((m.blur || 0) * 0.45 * ks).toFixed(3) + "em)"
         };
     }
 
@@ -4404,9 +4410,18 @@
         ui.acSize.addEventListener("input", function () {
             acState.size = Number(ui.acSize.value);
             ui.acGrid.style.setProperty("--ac-size", acState.size + "px");
+            acFitText();
             storeAcState();
         });
+        // text previews follow the real width of a mini screen, like the small titles in Animation Composer
+        function acFitText() {
+            var t = ui.acGrid.querySelector(".ac-thumb");
+            if (t && t.clientWidth) { ui.acGrid.style.setProperty("--ac-w", t.clientWidth + "px"); }
+        }
+        if (typeof window.ResizeObserver === "function") { new window.ResizeObserver(acFitText).observe(ui.acGrid); }
+        window.addEventListener("resize", acFitText);
         renderAc();
+        acFitText();
         if (acState.sec === "edit") { loadAcEdit(); }
     }
 
@@ -6202,6 +6217,34 @@
         checkForUpdate(false).catch(function () {}).then(function () { backgroundChecking = false; });
     }
     setTimeout(backgroundUpdateCheck, 1200);
+
+    // Анонимная статистика: один раз после установки — «install», потом не чаще раза в день — «day».
+    // Уходят только случайный номер установки, версия Sayframe, система и версия After Effects.
+    function statsPing() {
+        var url = window.__SAYFRAME_STATS_URL__ || STATS_URL, st = {}, ev, day, ae = "", d = new Date(), bytes, i;
+        if (!url || settings.stats === false) { return; }
+        try { st = JSON.parse(window.localStorage.getItem(STATS_KEY) || "{}") || {}; } catch (e) { st = {}; }
+        if (!/^[0-9a-f]{32}$/.test(st.id || "")) {
+            bytes = new Uint8Array(16);
+            window.crypto.getRandomValues(bytes);
+            for (st.id = "", i = 0; i < 16; i++) { st.id += (bytes[i] + 256).toString(16).slice(1); }
+        }
+        day = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+        ev = !st.sent ? "install" : (st.day !== day ? "day" : "");
+        try { window.localStorage.setItem(STATS_KEY, JSON.stringify(st)); } catch (e) {}
+        if (!ev) { return; }
+        try { ae = String(JSON.parse(window.__adobe_cep__.getHostEnvironment()).appVersion || ""); } catch (e) {}
+        platform.postJSON(url, { "content-type": "text/plain;charset=utf-8" },
+            JSON.stringify({ ev: ev, id: st.id, v: VERSION, os: platform.isWindows() ? "Windows" : "Mac", ae: ae }), 20000)
+            .then(function (r) {
+                if (!r || r.status >= 400) { return; }
+                st.sent = 1;
+                st.day = day;
+                try { window.localStorage.setItem(STATS_KEY, JSON.stringify(st)); } catch (e) {}
+            })
+            .catch(function () {});
+    }
+    setTimeout(statsPing, 4000);
     setInterval(backgroundUpdateCheck, UPDATE_CHECK_EVERY_MS);
     window.addEventListener("focus", backgroundUpdateCheck);
 })();
