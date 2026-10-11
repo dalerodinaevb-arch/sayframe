@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.24.0";
+    var VERSION = "1.25.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -551,6 +551,10 @@
 
     function humanError(e) {
         var m = e && e.message ? e.message : String(e);
+        var ec = /^EC_(COUNT|PROPS):(\d+):(\d+)$/.exec(m);
+        if (ec && ec[1] === "COUNT") { return "Скопировано ключей: " + ec[2] + ", выделено: " + ec[3] + ". Выделите столько же ключей или кратно больше (" + ec[2] + ", " + (ec[2] * 2) + ", " + (ec[2] * 3) + "…)."; }
+        if (ec) { return "Скопированы ключи " + ec[2] + " свойств, а выделены у " + ec[3] + ". Выделите ключи у одного свойства или у стольких же, сколько копировали."; }
+        if (m === "EC_TYPE") { return "Значения можно вставить только в свойство того же типа: позицию — в позицию, цвет — в цвет. Плавность вставляется куда угодно."; }
         if (m === "HOST_UNAVAILABLE") { return "Панель открыта вне After Effects, связи с программой нет."; }
         if (m === "HOST_NOT_LOADED" || m === "HOST_ERROR" || m === "HOST_BAD_REPLY") {
             return "After Effects не ответил панели. Закройте и снова откройте её в меню Window > Extensions.";
@@ -691,6 +695,10 @@
         tabs: el("tabs"), tabClaude: el("tabClaude"), tabTools: el("tabTools"), viewClaude: el("viewClaude"), viewTools: el("viewTools"),
         statusSlotClaude: el("statusSlotClaude"), statusSlotTools: el("statusSlotTools"),
         tabMotion: el("tabMotion"), viewMotion: el("viewMotion"), statusSlotMotion: el("statusSlotMotion"),
+        tabShape: el("tabShape"), viewShape: el("viewShape"), statusSlotShape: el("statusSlotShape"),
+        shapeTools: el("shapeTools"), shapeGridCells: el("shapeGridCells"), shapePinLine: el("shapePinLine"),
+        ecOptsToggle: el("ecOptsToggle"), ecOpts: el("ecOpts"), ecCopy: el("ecCopy"), ecPasteEase: el("ecPasteEase"), ecPasteValue: el("ecPasteValue"),
+        ecThrough: el("ecThrough"), ecClip: el("ecClip"),
         easeIn: el("easeIn"), easeOut: el("easeOut"), easeInVal: el("easeInVal"), easeOutVal: el("easeOutVal"),
         easeLink: el("easeLink"), easeBothBtn: el("easeBothBtn"),
         motionTools: el("motionTools"), alignGrid: el("alignGrid"), alignTo: el("alignTo"), easeCurve: el("easeCurve"), easeCurveToggle: el("easeCurveToggle"), easeCurvePath: el("easeCurvePath"), easeHandles: el("easeHandles"),
@@ -715,7 +723,8 @@
     var TABS = {
         claude: { tab: ui.tabClaude, view: ui.viewClaude, slot: ui.statusSlotClaude },
         tools: { tab: ui.tabTools, view: ui.viewTools, slot: ui.statusSlotTools },
-        motion: { tab: ui.tabMotion, view: ui.viewMotion, slot: ui.statusSlotMotion }
+        motion: { tab: ui.tabMotion, view: ui.viewMotion, slot: ui.statusSlotMotion },
+        shape: { tab: ui.tabShape, view: ui.viewShape, slot: ui.statusSlotShape }
     };
 
     function showTab(name) {
@@ -728,7 +737,7 @@
             }
         }
         TABS[name].slot.appendChild(ui.statusBox);
-        if (name === "motion") { relayoutTools(); }
+        if (name === "motion" || name === "shape") { relayoutTools(); }
         try { window.localStorage.setItem(TAB_KEY, name); } catch (e) {}
     }
 
@@ -925,6 +934,9 @@
         ui.organizeBtn.disabled = on;
         ui.fxBtn.disabled = on;
         ui.snapBtn.disabled = on;
+        ui.ecCopy.disabled = on;
+        ui.ecPasteEase.disabled = on;
+        ui.ecPasteValue.disabled = on;
         ui.acGrid.classList.toggle("busy", on);
         setMotionDisabled(on);
         ui.settingsBtn.disabled = on;
@@ -2625,6 +2637,10 @@
     var STAGGER_ORDERS = ["asc", "desc", "selection", "random"];
     var MAX_STEP_FRAMES = 999;
     var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste", "organize"];
+    var SHAPE_TOOL_NAMES = ["easecopy"];
+    // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
+    // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
+    var G = { names: TOOL_NAMES };
 
     // ---- сетка раздела «Инструменты»: блоки стоят по клеткам, двигаются и растягиваются по ним.
     // Клетка квадратная: у крупных блоков 36 px и 8 px между клетками, у мелких 22 и 6 (кратно 2 и 4,
@@ -2648,7 +2664,7 @@
         var i, pair, m, w, h;
         for (i = 0; i < parts.length; i++) {
             pair = parts[i].split("=");
-            if (pair.length !== 2 || TOOL_NAMES.indexOf(pair[0]) < 0) { continue; }
+            if (pair.length !== 2 || G.names.indexOf(pair[0]) < 0) { continue; }
             m = /^(\d{1,2})x(\d{1,2})$/.exec(pair[1]);
             if (m) {
                 w = Number(m[1]);
@@ -2674,15 +2690,15 @@
     function sizesText(sizes) {
         var out = [];
         var i, z;
-        for (i = 0; i < TOOL_NAMES.length; i++) {
-            z = sizes[TOOL_NAMES[i]];
-            if (z && !(z.w === TOOL_DEFAULT_COLS && !z.h)) { out.push(TOOL_NAMES[i] + "=" + z.w + "x" + (z.h || 0)); }
+        for (i = 0; i < G.names.length; i++) {
+            z = sizes[G.names[i]];
+            if (z && !(z.w === TOOL_DEFAULT_COLS && !z.h)) { out.push(G.names[i] + "=" + z.w + "x" + (z.h || 0)); }
         }
         return out.join(";");
     }
 
     function sizeOf(name) {
-        return parseSizes(motion.sizes)[name] || { w: TOOL_DEFAULT_COLS, h: 0 };
+        return parseSizes(G.st.sizes)[name] || { w: TOOL_DEFAULT_COLS, h: 0 };
     }
 
     // Места блоков: "ease=0,0;anchor=4,0" — колонка и ряд левого верхнего угла. Пусто — блоки идут
@@ -2693,7 +2709,7 @@
         var i, pair, m;
         for (i = 0; i < parts.length; i++) {
             pair = parts[i].split("=");
-            if (pair.length !== 2 || TOOL_NAMES.indexOf(pair[0]) < 0) { continue; }
+            if (pair.length !== 2 || G.names.indexOf(pair[0]) < 0) { continue; }
             m = /^(\d{1,2}),(\d{1,3})$/.exec(pair[1]);
             if (m) { out[pair[0]] = { x: Number(m[1]), y: Number(m[2]) }; }
         }
@@ -2703,9 +2719,9 @@
     function placesText(places) {
         var out = [];
         var i, q;
-        for (i = 0; i < TOOL_NAMES.length; i++) {
-            q = places[TOOL_NAMES[i]];
-            if (q) { out.push(TOOL_NAMES[i] + "=" + q.x + "," + q.y); }
+        for (i = 0; i < G.names.length; i++) {
+            q = places[G.names[i]];
+            if (q) { out.push(G.names[i] + "=" + q.x + "," + q.y); }
         }
         return out.join(";");
     }
@@ -2717,10 +2733,10 @@
         var out = [];
         var i;
         for (i = 0; i < want.length; i++) {
-            if (TOOL_NAMES.indexOf(want[i]) >= 0 && out.indexOf(want[i]) < 0) { out.push(want[i]); }
+            if (G.names.indexOf(want[i]) >= 0 && out.indexOf(want[i]) < 0) { out.push(want[i]); }
         }
-        for (i = 0; i < TOOL_NAMES.length; i++) {
-            if (out.indexOf(TOOL_NAMES[i]) < 0) { out.push(TOOL_NAMES[i]); }
+        for (i = 0; i < G.names.length; i++) {
+            if (out.indexOf(G.names[i]) < 0) { out.push(G.names[i]); }
         }
         return out.join(",");
     }
@@ -2830,12 +2846,12 @@
     function cleanPins(text) {
         var out = [];
         String(text || "").split(",").forEach(function (n) {
-            if (TOOL_NAMES.indexOf(n) >= 0 && out.indexOf(n) < 0) { out.push(n); }
+            if (G.names.indexOf(n) >= 0 && out.indexOf(n) < 0) { out.push(n); }
         });
         return out.join(",");
     }
 
-    function pinList() { return motion && motion.pins ? motion.pins.split(",") : []; }
+    function pinList() { return G.st && G.st.pins ? G.st.pins.split(",") : []; }
 
     var PIN_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
         '<path class="pin-body" d="M6 2.2h4l-.6 4 2.4 2.3v1H4.2v-1L6.6 6.2z"/><path d="M8 9.5V14"/></svg>';
@@ -2856,18 +2872,19 @@
     }
 
     function togglePin(name) {
-        var pins = pinList(), at = pins.indexOf(name), places = parsePlaces(motion.places);
+        var pins = pinList(), at = pins.indexOf(name), places = parsePlaces(G.st.places);
         if (at >= 0) { pins.splice(at, 1); } else { pins.push(name); }
         // Сохранённое место блока больше не подходит: он переезжает в другую часть.
         delete places[name];
-        motion.places = placesText(places);
-        motion.pins = cleanPins(pins.join(","));
-        storeMotion();
+        G.st.places = placesText(places);
+        G.st.pins = cleanPins(pins.join(","));
+        G.store();
         showPins();
         relayoutTools();
     }
 
-    function enablePins() {
+    function enablePins(g) {
+        G = g;
         toolCards().forEach(function (card) {
             var name = card.getAttribute("data-tool");
             var toggle = card.querySelector(".tool-toggle");
@@ -2875,7 +2892,7 @@
             b.className = "tool-pin";
             b.setAttribute("data-pin", name);
             b.innerHTML = PIN_ICON;
-            b.addEventListener("click", function (e) { e.stopPropagation(); togglePin(name); });
+            b.addEventListener("click", function (e) { e.stopPropagation(); G = g; togglePin(name); });
             card.insertBefore(b, toggle || card.firstChild);
         });
         showPins();
@@ -5294,11 +5311,11 @@
     // ---- сетка блоков раздела «Инструменты»
 
     function toolCards() {
-        return Array.prototype.slice.call(ui.motionTools.querySelectorAll(".tool-card"));
+        return Array.prototype.slice.call(G.el.querySelectorAll(".tool-card"));
     }
 
     function toolOf(node) {
-        while (node && node !== ui.motionTools) {
+        while (node && node !== G.el) {
             if (node.getAttribute && node.getAttribute("data-tool")) { return node; }
             node = node.parentNode;
         }
@@ -5306,7 +5323,7 @@
     }
 
     function cardByName(name) {
-        return ui.motionTools.querySelector('.tool-card[data-tool="' + name + '"]');
+        return G.el.querySelector('.tool-card[data-tool="' + name + '"]');
     }
 
     // Ползунок, число, кнопка или список: двойной щелчок по ним — работа с ними, а не просьба о перестановке.
@@ -5325,12 +5342,12 @@
     // Сколько клеток помещается в ширину панели. 0 — раздел сейчас не виден.
     function gridCols() {
         var m = gridModule();
-        var width = ui.motionTools.clientWidth;
+        var width = G.el.clientWidth;
         if (!width) { return 0; }
         return Math.max(1, Math.floor((width + m.gap) / (m.cell + m.gap)));
     }
 
-    var lastLayout = null;   // { cols, pos: { name: { x, y, w, h } } } — как блоки стоят сейчас
+    // G.last — как блоки этой сетки стоят сейчас: { cols, step, pos: { name: { x, y, w, h } }, need, pinRows }
 
     // Раскладывает блоки по сетке. places — места блоков (или null: по порядку, с переносом),
     // first — блок, который при споре за клетку получает её (его тянут или растягивают).
@@ -5338,7 +5355,7 @@
         var m = gridModule();
         var step = m.cell + m.gap;
         var cols = gridCols();
-        var names = motion.order.split(",");
+        var names = G.st.order.split(",");
         var cards = {};
         var items = [];
         var taken = [];
@@ -5347,9 +5364,9 @@
         var i, it, card, z, h, rows, sorted, pinned, rest, base;
 
         if (!cols) { return null; }
-        ui.motionTools.style.gridTemplateColumns = "repeat(" + cols + ", " + m.cell + "px)";
-        ui.motionTools.style.gridAutoRows = m.cell + "px";
-        ui.motionTools.style.gap = m.gap + "px";
+        G.el.style.gridTemplateColumns = "repeat(" + cols + ", " + m.cell + "px)";
+        G.el.style.gridAutoRows = m.cell + "px";
+        G.el.style.gap = m.gap + "px";
 
         function free(r0, c0, w, hh) {
             var a, b;
@@ -5456,22 +5473,22 @@
         }
         reorderCards(sorted, cards);
         h = rows;
-        ui.gridCells.style.width = (cols * step - m.gap) + "px";
-        ui.gridCells.style.height = (h * step - m.gap) + "px";
-        ui.gridCells.style.backgroundSize = step + "px " + step + "px";
-        ui.gridCells.style.backgroundImage = 'url("data:image/svg+xml,' + encodeURIComponent(
+        G.cells.style.width = (cols * step - m.gap) + "px";
+        G.cells.style.height = (h * step - m.gap) + "px";
+        G.cells.style.backgroundSize = step + "px " + step + "px";
+        G.cells.style.backgroundImage = 'url("data:image/svg+xml,' + encodeURIComponent(
             '<svg xmlns="http://www.w3.org/2000/svg" width="' + step + '" height="' + step + '"><rect x="0.5" y="0.5" width="' + (m.cell - 1) +
             '" height="' + (m.cell - 1) + '" rx="' + Math.round(m.cell / 5) + '" fill="rgba(255,255,255,0.035)" stroke="rgba(255,255,255,0.13)" stroke-dasharray="3 3"/></svg>') + '")';
         if (pinned.length && rest.length) {
-            ui.pinLine.hidden = false;
-            ui.pinLine.style.top = Math.round(base * step + m.cell / 2) + "px";
-            ui.pinLine.style.width = (cols * step - m.gap) + "px";
+            G.line.hidden = false;
+            G.line.style.top = Math.round(base * step + m.cell / 2) + "px";
+            G.line.style.width = (cols * step - m.gap) + "px";
         } else {
-            ui.pinLine.hidden = true;
+            G.line.hidden = true;
         }
-        lastLayout = { cols: cols, step: step, pos: pos, need: {}, pinRows: pinned.length ? base : 0 };
-        for (i = 0; i < items.length; i++) { lastLayout.need[items[i].name] = items[i].need; }
-        return lastLayout;
+        G.last = { cols: cols, step: step, pos: pos, need: {}, pinRows: pinned.length ? base : 0 };
+        for (i = 0; i < items.length; i++) { G.last.need[items[i].name] = items[i].need; }
+        return G.last;
     }
 
     // Порядок блоков в документе меняется, только если он правда другой; фокус при этом не теряется.
@@ -5482,20 +5499,25 @@
         var i;
         for (i = 0; same && i < now.length; i++) { same = now[i] === cards[sorted[i].name]; }
         if (same) { return; }
-        for (i = 0; i < sorted.length; i++) { ui.motionTools.appendChild(cards[sorted[i].name]); }
-        if (active && active !== document.body && ui.motionTools.contains(active) && document.activeElement !== active) {
+        for (i = 0; i < sorted.length; i++) { G.el.appendChild(cards[sorted[i].name]); }
+        if (active && active !== document.body && G.el.contains(active) && document.activeElement !== active) {
             try { active.focus(); } catch (e) {}
         }
     }
 
     function placesNow() {
-        return motion.places ? parsePlaces(motion.places) : null;
+        return G.st.places ? parsePlaces(G.st.places) : null;
     }
 
     var toolGridReady = false;
 
+    var GRIDS = [];   // все сетки блоков: «Инструменты» и «Шейп»
+
     function relayoutTools() {
-        if (toolGridReady) { layoutTools(placesNow(), null); }
+        var keep = G;
+        if (!toolGridReady) { return; }
+        GRIDS.forEach(function (g) { G = g; layoutTools(placesNow(), null); });
+        G = keep;
     }
 
     // Запоминает, где блоки стоят сейчас: с этого момента они держат свои клетки.
@@ -5505,24 +5527,24 @@
         var places = {};
         var i, q;
         for (i = 0; i < cards.length; i++) { names.push(cards[i].getAttribute("data-tool")); }
-        motion.order = cleanToolOrder(names.join(","));
-        if (fixed && lastLayout) {
-            for (i = 0; i < TOOL_NAMES.length; i++) {
-                q = lastLayout.pos[TOOL_NAMES[i]];
-                if (q) { places[TOOL_NAMES[i]] = { x: q.x, y: q.y }; }
+        G.st.order = cleanToolOrder(names.join(","));
+        if (fixed && G.last) {
+            for (i = 0; i < G.names.length; i++) {
+                q = G.last.pos[G.names[i]];
+                if (q) { places[G.names[i]] = { x: q.x, y: q.y }; }
             }
-            motion.places = placesText(places);
+            G.st.places = placesText(places);
         }
-        storeMotion();
+        G.store();
     }
 
     // Где блоки стоят сейчас, с размерами: { name: { x, y, w, h } }.
     function currentPlaces() {
         var out = {};
         var i, q;
-        for (i = 0; i < TOOL_NAMES.length; i++) {
-            q = lastLayout && lastLayout.pos[TOOL_NAMES[i]];
-            if (q) { out[TOOL_NAMES[i]] = { x: q.x, y: q.y, w: q.w, h: q.h }; }
+        for (i = 0; i < G.names.length; i++) {
+            q = G.last && G.last.pos[G.names[i]];
+            if (q) { out[G.names[i]] = { x: q.x, y: q.y, w: q.w, h: q.h }; }
         }
         return out;
     }
@@ -5544,7 +5566,7 @@
             }
         }
         places[name] = { x: x, y: y };
-        motion.places = placesText(places);
+        G.st.places = placesText(places);
         return layoutTools(places, name).pos[name];
     }
 
@@ -5552,12 +5574,12 @@
     function nudgeTool(card, dx, dy) {
         var name = card.getAttribute("data-tool");
         var base, me, tx, ty, k, o, now;
-        if (!lastLayout) { return false; }
+        if (!G.last) { return false; }
         base = currentPlaces();
         me = base[name];
         tx = me.x + dx;
         ty = me.y + dy;
-        if (tx < 0 || ty < 0 || tx + me.w > lastLayout.cols) { return false; }
+        if (tx < 0 || ty < 0 || tx + me.w > G.last.cols) { return false; }
         for (k in base) {
             if (!base.hasOwnProperty(k) || k === name) { continue; }
             o = base[k];
@@ -5576,71 +5598,78 @@
     // Размер блока в клетках. w: число клеток (TOOL_FULL — на всю ширину), h: 0 — по содержимому.
     function setToolCells(card, w, h) {
         var name = card.getAttribute("data-tool");
-        var sizes = parseSizes(motion.sizes);
-        var cols = lastLayout ? lastLayout.cols : TOOL_FULL;
-        var need = lastLayout && lastLayout.need[name] ? lastLayout.need[name] : 0;
+        var sizes = parseSizes(G.st.sizes);
+        var cols = G.last ? G.last.cols : TOOL_FULL;
+        var need = G.last && G.last.need[name] ? G.last.need[name] : 0;
         if (w >= cols) { w = TOOL_FULL; }
         if (w < TOOL_MIN_COLS) { w = TOOL_MIN_COLS; }
         if (h <= need) { h = 0; }
         if (h > TOOL_MAX_ROWS) { h = TOOL_MAX_ROWS; }
         sizes[name] = { w: w, h: h };
-        motion.sizes = sizesText(sizes);
+        G.st.sizes = sizesText(sizes);
         layoutTools(placesNow(), name);
     }
 
-    function enableToolReordering() {
+    function enableToolReordering(g) {
+        G = g;
         // На обычных событиях мыши: события указателя (pointer events) в After Effects не срабатывали.
         var drag = null;        // { card, name, offX, offY, x, y, moved, base }
         var dragEndedAt = 0;
 
         function finish() {
             if (!drag) { return; }
+            G = g;
             if (drag.moved) {
                 drag.card.className = drag.card.className.replace(/\s*dragging/g, "");
-                ui.motionTools.className = ui.motionTools.className.replace(/\s*reordering/g, "");
+                G.el.className = G.el.className.replace(/\s*reordering/g, "");
                 storeLayout(true);
                 dragEndedAt = Date.now();
             }
             drag = null;
         }
 
-        ui.motionTools.addEventListener("mousedown", function (e) {
-            var card = toolOf(e.target);
-            var r;
+        g.el.addEventListener("mousedown", function (e) {
+            var card, r;
+            G = g;
+            card = toolOf(e.target);
             if (!arranging || !card || e.button !== 0 || isResizeHandle(e.target)) { return; }
             finish();
             r = card.getBoundingClientRect();
             drag = { card: card, name: card.getAttribute("data-tool"), x: e.clientX, y: e.clientY, offX: e.clientX - r.left, offY: e.clientY - r.top, moved: false, base: null, at: "" };
             e.preventDefault();
         });
-        ui.motionTools.addEventListener("dragstart", function (e) { e.preventDefault(); });
+        g.el.addEventListener("dragstart", function (e) { e.preventDefault(); });
 
         // Двойной щелчок по свободному месту блока включает перестановку; по ползунку, числу или кнопке — нет.
-        ui.motionTools.addEventListener("dblclick", function (e) {
-            var card = toolOf(e.target);
+        g.el.addEventListener("dblclick", function (e) {
+            var card;
+            G = g;
+            card = toolOf(e.target);
             if (!card || Date.now() - dragEndedAt < 300) { return; }
             // Двойной щелчок по краю блока возвращает ему обычный размер и перестановку не трогает.
-            if (isResizeHandle(e.target)) { setToolCells(card, TOOL_DEFAULT_COLS, 0); storeMotion(); return; }
+            if (isResizeHandle(e.target)) { setToolCells(card, TOOL_DEFAULT_COLS, 0); G.store(); return; }
             if (!arranging && isToolControl(e.target, card)) { return; }
             setArranging(!arranging);
         });
 
         document.addEventListener("mousemove", function (e) {
             var grid, tx, ty, key;
-            if (!drag || !lastLayout) { return; }
+            if (!drag) { return; }
+            G = g;
+            if (!G.last) { return; }
             if (!drag.moved) {
                 if (Math.abs(e.clientX - drag.x) < TOOL_DRAG_START_PX && Math.abs(e.clientY - drag.y) < TOOL_DRAG_START_PX) { return; }
                 drag.moved = true;
                 drag.base = currentPlaces();
                 drag.card.className += " dragging";
-                ui.motionTools.className += " reordering";
+                G.el.className += " reordering";
             }
             e.preventDefault();
             // Левый верхний угол блока прилипает к ближайшей клетке; остальные блоки уступают место.
-            grid = ui.motionTools.getBoundingClientRect();
-            tx = Math.round((e.clientX - drag.offX - grid.left) / lastLayout.step);
-            ty = Math.round((e.clientY - drag.offY - grid.top) / lastLayout.step);
-            tx = Math.max(0, Math.min(tx, lastLayout.cols - lastLayout.pos[drag.name].w));
+            grid = G.el.getBoundingClientRect();
+            tx = Math.round((e.clientX - drag.offX - grid.left) / G.last.step);
+            ty = Math.round((e.clientY - drag.offY - grid.top) / G.last.step);
+            tx = Math.max(0, Math.min(tx, G.last.cols - G.last.pos[drag.name].w));
             ty = Math.max(0, ty);
             key = tx + "," + ty;
             if (key === drag.at) { return; }
@@ -5652,8 +5681,9 @@
         window.addEventListener("blur", function () { finish(); });
 
         // С клавиатуры: фокус на полоске, стрелки двигают блок на клетку.
-        ui.motionTools.addEventListener("keydown", function (e) {
+        g.el.addEventListener("keydown", function (e) {
             var grip = e.target;
+            G = g;
             var dx = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
             var dy = e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0;
             var card;
@@ -5668,14 +5698,16 @@
 
     // ---- размер блоков: за правый край — ширина, за нижний — высота, за угол — обе; по клеткам
 
-    function enableToolResizing() {
+    function enableToolResizing(g) {
         var rs = null;          // { card, mode, left, top }
+        G = g;
 
         function finish() {
             if (!rs) { return; }
+            G = g;
             rs.card.className = rs.card.className.replace(/\s*resizing/g, "");
-            ui.motionTools.className = ui.motionTools.className.replace(/\s*resizing(-\w+)?/g, "");
-            storeLayout(!!motion.places);
+            G.el.className = G.el.className.replace(/\s*resizing(-\w+)?/g, "");
+            storeLayout(!!G.st.places);
             rs = null;
         }
 
@@ -5702,32 +5734,35 @@
         });
 
         function cellsAt(e) {
-            var step = lastLayout.step;
+            var step = G.last.step;
             var gap = gridModule().gap;
-            var now = lastLayout.pos[rs.card.getAttribute("data-tool")];
+            var now = G.last.pos[rs.card.getAttribute("data-tool")];
             var w = now.w, h = now.h;
             if (rs.mode !== "y") { w = Math.round((e.clientX - rs.left + gap) / step); }
             if (rs.mode !== "x") { h = Math.round((e.clientY - rs.top + gap) / step); }
             return { w: Math.max(1, w), h: Math.max(1, h) };
         }
 
-        ui.motionTools.addEventListener("mousedown", function (e) {
+        g.el.addEventListener("mousedown", function (e) {
             var card, r, mode;
             if (e.button !== 0 || !isResizeHandle(e.target)) { return; }
+            G = g;
             card = toolOf(e.target);
-            if (!card || !lastLayout) { return; }
+            if (!card || !G.last) { return; }
             finish();
             r = card.getBoundingClientRect();
             mode = e.target.getAttribute("data-resize");
             rs = { card: card, mode: mode, left: r.left, top: r.top, at: "" };
             card.className += " resizing";
-            ui.motionTools.className += " resizing resizing-" + mode;
+            G.el.className += " resizing resizing-" + mode;
             e.preventDefault();
         });
 
         document.addEventListener("mousemove", function (e) {
             var z, key;
-            if (!rs || !lastLayout) { return; }
+            if (!rs) { return; }
+            G = g;
+            if (!G.last) { return; }
             e.preventDefault();
             z = cellsAt(e);
             key = z.w + "x" + z.h;
@@ -5741,14 +5776,16 @@
 
         // С клавиатуры: на правом крае стрелки влево-вправо меняют ширину, на нижнем вверх-вниз — высоту.
         // Home — обычный размер, End — на всю ширину.
-        ui.motionTools.addEventListener("keydown", function (e) {
+        g.el.addEventListener("keydown", function (e) {
             var card, name, z, now;
-            if (!isResizeHandle(e.target) || e.metaKey || e.ctrlKey || e.altKey || !lastLayout) { return; }
+            if (!isResizeHandle(e.target) || e.metaKey || e.ctrlKey || e.altKey) { return; }
+            G = g;
+            if (!G.last) { return; }
             card = toolOf(e.target);
             if (!card) { return; }
             name = card.getAttribute("data-tool");
             z = sizeOf(name);
-            now = lastLayout.pos[name];
+            now = G.last.pos[name];
             if (e.key === "ArrowLeft") { setToolCells(card, now.w - 1, z.h); }
             else if (e.key === "ArrowRight") { setToolCells(card, now.w + 1, z.h); }
             else if (e.key === "ArrowUp") { setToolCells(card, z.w, now.h - 1); }
@@ -5757,35 +5794,165 @@
             else if (e.key === "End") { setToolCells(card, TOOL_FULL, z.h); }
             else { return; }
             e.preventDefault();
-            storeLayout(!!motion.places);
+            storeLayout(!!G.st.places);
         });
     }
 
     // Раздел пересчитывает сетку, когда меняется ширина панели или содержимое блоков.
-    function watchToolGrid() {
+    function watchToolGrid(g) {
         var lastWidth = -1;
         toolGridReady = true;
         function check() {
-            var w = ui.motionTools.clientWidth;
+            var w = g.el.clientWidth;
             if (w !== lastWidth) { lastWidth = w; relayoutTools(); }
         }
         if (typeof window.ResizeObserver === "function") {
-            new window.ResizeObserver(check).observe(ui.motionTools);
+            new window.ResizeObserver(check).observe(g.el);
         }
         window.addEventListener("resize", check);
+    }
+
+    // Обычные места и размеры — для всех сеток сразу.
+    function enableGridReset() {
         if (document.fonts && document.fonts.ready) { document.fonts.ready.then(relayoutTools); }
         ui.arrangeReset.addEventListener("click", function () {
-            motion.places = "";
-            motion.sizes = "";
-            motion.order = MOTION_DEFAULTS.order;
+            var keep = G;
+            GRIDS.forEach(function (g) {
+                G = g;
+                G.st.places = "";
+                G.st.sizes = "";
+                G.st.order = G.defOrder;
+                G.store();
+            });
+            G = keep;
             relayoutTools();
-            storeMotion();
         });
     }
 
+    // ------------------------------------------------------------ шейп
+    // Вкладка «Шейп» — такая же сетка блоков, как «Инструменты», со своими местами, размерами и булавками.
+
+    var SHAPE_KEY = "sayframe.shape.v1";
+    var EC_KEY = "sayframe.easecopy.v1";
+    var SHAPE_DEFAULTS = { order: "easecopy", sizes: "", places: "", pins: "", ecOpts: true, ecThrough: false };
+
+    function loadShape() {
+        var m = {}, saved, k, keep = G;
+        for (k in SHAPE_DEFAULTS) { if (SHAPE_DEFAULTS.hasOwnProperty(k)) { m[k] = SHAPE_DEFAULTS[k]; } }
+        try { saved = JSON.parse(window.localStorage.getItem(SHAPE_KEY) || "{}"); } catch (e) { saved = null; }
+        if (saved && typeof saved === "object") {
+            for (k in SHAPE_DEFAULTS) {
+                if (SHAPE_DEFAULTS.hasOwnProperty(k) && typeof saved[k] === typeof SHAPE_DEFAULTS[k]) { m[k] = saved[k]; }
+            }
+        }
+        G = { names: SHAPE_TOOL_NAMES };
+        m.order = cleanToolOrder(m.order);
+        m.sizes = sizesText(parseSizes(m.sizes));
+        m.places = placesText(parsePlaces(m.places));
+        m.pins = cleanPins(m.pins);
+        G = keep;
+        return m;
+    }
+
+    var shape = loadShape();
+
+    function storeShape() {
+        try { window.localStorage.setItem(SHAPE_KEY, JSON.stringify(shape)); } catch (e) {}
+    }
+
+    // ---- «Копия плавности»: как EaseCopy — плавность отдельно от значений и значения отдельно от плавности.
+    // Буфер хранится в панели (и переживает её перезапуск): что скопировано, у скольких свойств и ключей.
+    var ecClip = null;
+    try { ecClip = JSON.parse(window.localStorage.getItem(EC_KEY) || "null"); } catch (e) { ecClip = null; }
+    if (!ecClip || !ecClip.groups || !ecClip.groups.length) { ecClip = null; }
+
+    function showEcClip() {
+        var n, names;
+        if (!ecClip) {
+            ui.ecClip.textContent = "Буфер пуст: выделите ключи и нажмите «Копировать».";
+            ui.ecClip.classList.remove("has");
+            return;
+        }
+        n = 0;
+        names = [];
+        ecClip.groups.forEach(function (g) { n += g.keys.length; if (names.indexOf(g.name) < 0) { names.push(g.name); } });
+        ui.ecClip.textContent = "В буфере: " + plural(n, "ключ", "ключа", "ключей") + " · " + names.slice(0, 3).join(", ") + (names.length > 3 ? "…" : "");
+        ui.ecClip.classList.add("has");
+    }
+
+    function showEcFold() {
+        var open = shape.ecOpts !== false, label = open ? "Скрыть настройку" : "Показать настройку";
+        if (!open) { label += " (сквозная скорость: " + (shape.ecThrough ? "вкл." : "выкл.") + ")"; }
+        if (open) { ui.ecOpts.removeAttribute("hidden"); } else { ui.ecOpts.setAttribute("hidden", ""); }
+        ui.ecOptsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+        ui.ecOptsToggle.setAttribute("aria-label", label);
+        ui.ecOptsToggle.title = label;
+    }
+
+    async function onEcCopy() {
+        var res;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Копирую ключи…", "busy");
+        try {
+            res = await host("ecCopy", []);
+            setBusy(false);
+            ecClip = { groups: res.groups };
+            try { window.localStorage.setItem(EC_KEY, JSON.stringify(ecClip)); } catch (e1) {}
+            showEcClip();
+            setStatus("Скопировано: " + plural(res.keys, "ключ", "ключа", "ключей") + (res.groups.length > 1 ? " у " + res.groups.length + " свойств" : "") +
+                ". Выделите другие ключи и нажмите «Вставить плавность» или «Вставить значения».", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    async function onEcPaste(mode) {
+        var res;
+        if (busy) { return; }
+        if (!ecClip) { setStatus("Сначала выделите ключи и нажмите «Копировать».", ""); return; }
+        setBusy(true);
+        setStatus(mode === "value" ? "Вставляю значения…" : "Вставляю плавность…", "busy");
+        try {
+            res = await host("ecPaste", [ecClip, mode, !!shape.ecThrough]);
+            setBusy(false);
+            setStatus((mode === "value" ? "Значения вставлены: " : "Плавность вставлена: ") + plural(res.keys, "ключ", "ключа", "ключей") +
+                (res.properties > 1 ? " у " + res.properties + " свойств" : "") + ".\nОтменить: Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            var m = e && e.message ? e.message : String(e);
+            setBusy(false);
+            setStatus(humanError(e), m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || /^EC_/.test(m) ? "" : "error");
+        }
+    }
+
+    function enableShape() {
+        var sg = { name: "shape", el: ui.shapeTools, cells: ui.shapeGridCells, line: ui.shapePinLine, names: SHAPE_TOOL_NAMES, st: shape, store: storeShape, defOrder: SHAPE_DEFAULTS.order, last: null };
+        GRIDS.push(sg);
+        enableToolReordering(sg);
+        enableToolResizing(sg);
+        enablePins(sg);
+        watchToolGrid(sg);
+        ui.ecOptsToggle.addEventListener("click", function () {
+            shape.ecOpts = shape.ecOpts === false;
+            showEcFold();
+            relayoutTools();
+            storeShape();
+        });
+        ui.ecThrough.checked = !!shape.ecThrough;
+        ui.ecThrough.addEventListener("change", function () { shape.ecThrough = ui.ecThrough.checked; storeShape(); showEcFold(); });
+        ui.ecCopy.addEventListener("click", onEcCopy);
+        ui.ecPasteEase.addEventListener("click", function () { onEcPaste("ease"); });
+        ui.ecPasteValue.addEventListener("click", function () { onEcPaste("value"); });
+        showEcFold();
+        showEcClip();
+    }
+
     function enableMotion() {
-        enableToolReordering();
-        enableToolResizing();
+        var mg = { name: "motion", el: ui.motionTools, cells: ui.gridCells, line: ui.pinLine, names: TOOL_NAMES, st: motion, store: storeMotion, defOrder: MOTION_DEFAULTS.order, last: null };
+        GRIDS.push(mg);
+        G = mg;
+        enableToolReordering(mg);
+        enableToolResizing(mg);
         ui.anchorKeys.value = motion.anchorKeys;
         drawEase();
         ui.easeIn.addEventListener("input", function () { onEaseSlider("in"); });
@@ -5801,7 +5968,7 @@
         });
         ui.easeLink.addEventListener("change", onEaseLink);
         enableFolding();
-        enablePins();
+        enablePins(mg);
         ui.easeBothBtn.addEventListener("click", function () { onEase("both"); });
         ui.anchorKeys.addEventListener("change", function () {
             var v = ui.anchorKeys.value;
@@ -5811,7 +5978,10 @@
         ui.alignTo.value = motion.alignTo;
         enableShiftTool();
         showFoldParts();
-        watchToolGrid();
+        watchToolGrid(mg);
+        enableGridReset();
+        enableShape();
+        G = mg;
         relayoutTools();
         ui.alignTo.addEventListener("change", function () {
             motion.alignTo = ui.alignTo.value === "selection" ? "selection" : "comp";
