@@ -2253,6 +2253,187 @@ var sayframeHost = (function () {
         return out;
     }
 
+    // ---- Ease copy (like EaseCopy): eases apart from values, values apart from eases.
+    // A speed is stored twice: as it is, and relative to the average speed of its segment (the line to the
+    // neighbouring key). On paste the relative speed is scaled to the target segment, so an ease taken from
+    // a short move fits a long one, from Position fits Opacity, and it flips when the target moves the other way.
+
+    function ecGroups(comp) {
+        var props = comp.selectedProperties;
+        var out = [];
+        var i, k, p, sel, keys;
+        for (i = 0; i < props.length; i++) {
+            p = props[i];
+            if (p.propertyType !== PropertyType.PROPERTY || !p.numKeys) { continue; }
+            sel = p.selectedKeys;
+            if (!sel || !sel.length) { continue; }
+            keys = [];
+            for (k = 0; k < sel.length; k++) { keys.push(sel[k]); }
+            out.push({ prop: p, keys: keys });
+        }
+        return out;
+    }
+
+    function ecNums(v) {
+        var r = [];
+        var i;
+        if (typeof v === "number") { return [v]; }
+        if (v && typeof v === "object" && typeof v.length === "number") {
+            for (i = 0; i < v.length; i++) {
+                if (typeof v[i] !== "number") { return null; }
+                r.push(v[i]);
+            }
+            return r;
+        }
+        return null;
+    }
+
+    // Average speed between keys a and b: one number per ease dimension. A spatial value (one ease for
+    // several numbers) gets its length of travel; null when the segment does not exist or is not numeric.
+    function ecSegment(p, a, b, dims) {
+        var v0, v1, dt, d, sum;
+        var out = [];
+        if (a < 1 || b > p.numKeys) { return null; }
+        v0 = ecNums(p.keyValue(a));
+        v1 = ecNums(p.keyValue(b));
+        dt = p.keyTime(b) - p.keyTime(a);
+        if (!v0 || !v1 || v0.length !== v1.length || dt <= 0) { return null; }
+        if (dims === 1 && v0.length > 1) {
+            sum = 0;
+            for (d = 0; d < v0.length; d++) { sum += (v1[d] - v0[d]) * (v1[d] - v0[d]); }
+            return [Math.sqrt(sum) / dt];
+        }
+        for (d = 0; d < dims; d++) { out.push(d < v0.length ? (v1[d] - v0[d]) / dt : 0); }
+        return out;
+    }
+
+    function ecSide(list, seg) {
+        var r = [];
+        var d, sp;
+        for (d = 0; d < list.length; d++) {
+            sp = list[d].speed;
+            r.push({ s: sp, r: (seg && Math.abs(seg[d]) > 1e-9) ? sp / seg[d] : null, f: list[d].influence });
+        }
+        return r;
+    }
+
+    // Numbers and arrays stay as they are, a path becomes plain data; anything else (text) is not copied.
+    function ecValue(v) {
+        var n = ecNums(v);
+        if (typeof v === "number") { return v; }
+        if (n) { return n; }
+        if (v && v.vertices) { return { shape: { v: v.vertices, i: v.inTangents, o: v.outTangents, c: !!v.closed } }; }
+        return null;
+    }
+
+    function ecMakeValue(x) {
+        var sh;
+        if (x && x.shape) {
+            sh = new Shape();
+            sh.vertices = x.shape.v;
+            sh.inTangents = x.shape.i;
+            sh.outTangents = x.shape.o;
+            sh.closed = x.shape.c;
+            return sh;
+        }
+        return x;
+    }
+
+    // Speeds for one side of a target key: the copied side scaled to the target segment.
+    function ecSpeeds(side, seg, dims, numeric) {
+        var out = [];
+        var d, e;
+        for (d = 0; d < dims; d++) {
+            e = side[Math.min(d, side.length - 1)];
+            if (e.r !== null && e.r !== undefined && seg) { out.push(e.r * seg[d]); }
+            else if (!numeric && e.r === null) { out.push(e.s); }
+            else { out.push(0); }
+        }
+        return out;
+    }
+
+    function ecEases(side, speeds) {
+        var r = [];
+        var d;
+        for (d = 0; d < speeds.length; d++) {
+            r.push(new KeyframeEase(speeds[d], clampInfluence(side[Math.min(d, side.length - 1)].f)));
+        }
+        return r;
+    }
+
+    // Which copied group goes to which target: one group to every target, or group by group.
+    function ecPairs(clip, targets) {
+        var n = clip.groups.length;
+        var out = [];
+        var i;
+        if (n !== 1 && n !== targets.length) { throw new Error("EC_PROPS:" + n + ":" + targets.length); }
+        for (i = 0; i < targets.length; i++) {
+            out.push({ src: clip.groups[n === 1 ? 0 : i], dst: targets[i] });
+            if (targets[i].keys.length % out[i].src.keys.length !== 0) {
+                throw new Error("EC_COUNT:" + out[i].src.keys.length + ":" + targets[i].keys.length);
+            }
+        }
+        return out;
+    }
+
+    function ecPasteEase(pair, through) {
+        var p = pair.dst.prop;
+        var keys = pair.dst.keys;
+        var src = pair.src.keys;
+        var numeric = !!ecNums(p.keyValue(keys[0]));
+        var plan = [];
+        var j, idx, r, dims, inSp, outSp, mid, d, avg;
+        // Speeds are worked out for every key first: changing one key must not change the next one's segment.
+        for (j = 0; j < keys.length; j++) {
+            idx = keys[j];
+            r = src[j % src.length];
+            dims = p.keyInTemporalEase(idx).length;
+            inSp = ecSpeeds(r.i, ecSegment(p, idx - 1, idx, dims), dims, numeric);
+            outSp = ecSpeeds(r.o, ecSegment(p, idx, idx + 1, dims), dims, numeric);
+            mid = through && j > 0 && j < keys.length - 1 && idx > 1 && idx < p.numKeys;
+            if (mid) {
+                for (d = 0; d < dims; d++) { avg = (inSp[d] + outSp[d]) / 2; inSp[d] = avg; outSp[d] = avg; }
+            }
+            plan.push({ idx: idx, r: r, inSp: inSp, outSp: outSp, mid: mid });
+        }
+        for (j = 0; j < plan.length; j++) {
+            idx = plan[j].idx;
+            r = plan[j].r;
+            p.setInterpolationTypeAtKey(idx, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+            try { p.setTemporalAutoBezierAtKey(idx, false); } catch (e1) {}
+            try { p.setTemporalContinuousAtKey(idx, plan[j].mid ? true : !!r.c); } catch (e2) {}
+            p.setTemporalEaseAtKey(idx, ecEases(r.i, plan[j].inSp), ecEases(r.o, plan[j].outSp));
+            if (r.it !== KeyframeInterpolationType.BEZIER || r.ot !== KeyframeInterpolationType.BEZIER) {
+                try { p.setInterpolationTypeAtKey(idx, r.it, r.ot); } catch (e3) {}
+            }
+            try { p.setSelectedAtKey(idx, true); } catch (e4) {}
+        }
+        return plan.length;
+    }
+
+    function ecPasteValue(pair) {
+        var p = pair.dst.prop;
+        var keys = pair.dst.keys;
+        var src = pair.src.keys;
+        var j, idx, r, inE, outE, it, ot;
+        if (pair.src.vt !== p.propertyValueType) { throw new Error("EC_TYPE"); }
+        for (j = 0; j < src.length; j++) { if (src[j].v === null || src[j].v === undefined) { throw new Error("EC_TYPE"); } }
+        for (j = 0; j < keys.length; j++) {
+            idx = keys[j];
+            r = src[j % src.length];
+            // The key keeps its own easing: it is read before the value changes and put back after.
+            inE = p.keyInTemporalEase(idx);
+            outE = p.keyOutTemporalEase(idx);
+            it = p.keyInInterpolationType(idx);
+            ot = p.keyOutInterpolationType(idx);
+            p.setValueAtKey(idx, ecMakeValue(r.v));
+            try { p.setTemporalEaseAtKey(idx, freshEases(inE), freshEases(outE)); } catch (e1) {}
+            try { p.setInterpolationTypeAtKey(idx, it, ot); } catch (e2) {}
+            try { p.setSelectedAtKey(idx, true); } catch (e3) {}
+        }
+        return keys.length;
+    }
+
     function copyValue(v) {
         var r = [];
         var i;
@@ -3791,6 +3972,65 @@ var sayframeHost = (function () {
                         out.placed = "new-comp";
                     } else {
                         out.placed = "project";
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return out;
+            });
+        },
+
+        // Ease copy: remembers easing, interpolation and value of every selected key, property by property.
+        ecCopy: function () {
+            return reply(function () {
+                var comp = activeComp();
+                var groups = ecGroups(comp);
+                var out = { groups: [], keys: 0 };
+                var g, k, p, idx, inE, outE, dims, rec, list;
+                if (!groups.length) { throw new Error("NO_KEYS_SELECTED"); }
+                for (g = 0; g < groups.length; g++) {
+                    p = groups[g].prop;
+                    list = [];
+                    for (k = 0; k < groups[g].keys.length; k++) {
+                        idx = groups[g].keys[k];
+                        inE = p.keyInTemporalEase(idx);
+                        outE = p.keyOutTemporalEase(idx);
+                        dims = inE.length;
+                        rec = {
+                            it: p.keyInInterpolationType(idx), ot: p.keyOutInterpolationType(idx),
+                            i: ecSide(inE, ecSegment(p, idx - 1, idx, dims)),
+                            o: ecSide(outE, ecSegment(p, idx, idx + 1, dims)),
+                            v: ecValue(p.keyValue(idx)), c: false
+                        };
+                        try { rec.c = !!p.keyTemporalContinuous(idx); } catch (e1) {}
+                        list.push(rec);
+                    }
+                    out.groups.push({ name: p.name, vt: p.propertyValueType, keys: list });
+                    out.keys += list.length;
+                }
+                return out;
+            });
+        },
+
+        // Ease copy: mode "ease" puts the copied easing on the selected keys and keeps their values,
+        // "value" puts the copied values and keeps their easing. through: one speed in and out of middle keys.
+        ecPaste: function (clip, mode, through) {
+            return reply(function () {
+                var comp = activeComp();
+                var targets = ecGroups(comp);
+                var pairs, i;
+                var out = { keys: 0, properties: 0 };
+                if (!clip || !clip.groups || !clip.groups.length) { throw new Error("EC_EMPTY"); }
+                if (!targets.length) { throw new Error("NO_KEYS_SELECTED"); }
+                pairs = ecPairs(clip, targets);
+                if (mode === "value") {
+                    for (i = 0; i < pairs.length; i++) { if (pairs[i].src.vt !== pairs[i].dst.prop.propertyValueType) { throw new Error("EC_TYPE"); } }
+                }
+                app.beginUndoGroup(mode === "value" ? "Sayframe: paste values" : "Sayframe: paste easing");
+                try {
+                    for (i = 0; i < pairs.length; i++) {
+                        out.keys += mode === "value" ? ecPasteValue(pairs[i]) : ecPasteEase(pairs[i], !!through);
+                        out.properties++;
                     }
                 } finally {
                     app.endUndoGroup();
