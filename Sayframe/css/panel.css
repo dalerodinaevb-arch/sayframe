@@ -69,6 +69,8 @@ button { cursor: pointer; }
    не растягиваются — в широкой панели их просто больше встаёт в ряд, в узкой они переносятся ниже. */
 #app > #viewMotion { max-width: none; }
 #viewMotion > .status-slot { max-width: calc(var(--panel-w) - 28px); }
+#app > #viewShape { max-width: none; }
+#viewShape > .status-slot { max-width: calc(var(--panel-w) - 28px); }
 
 /* ------------------------------------------------------------ шапка */
 
@@ -1355,3 +1357,15 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .ac-edit-row output { color: var(--text); text-align: right; }
 .ac-edit-row .range { width: 100%; }
 .ac-swap, .sf-curve { grid-column: 2 / 4; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--glass); color: var(--text); padding: 0 8px; font: 600 12.5px/1 var(--round); }
+
+/* «Шейп» → «Копия плавности» */
+.ec-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
+.ec-buttons .paste-do { min-height: 40px; font-size: 12px; padding: 6px 8px; gap: 6px; }
+.ec-buttons .paste-do svg { width: 18px; height: 18px; }
+.ec-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.ec-opts[hidden] { display: none; }
+.ec-switch span.text { font: 600 12px/1.3 var(--round); }
+.ec-switch span.text small { font-size: 11px; }
+#ecClip.has { color: var(--text); }
+[data-tools="small"] .motion-tools .ec-buttons .paste-do { min-height: 30px; font-size: 11px; padding: 4px 6px; }
+[data-tools="small"] .motion-tools .ec-buttons .paste-do svg { width: 15px; height: 15px; }
