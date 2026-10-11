@@ -131,6 +131,7 @@ function Prop(value, clock, opts) {
   this.easeDims = opts.easeDims || 1; this.dimensionsSeparated = !!opts.separated; this.locked = !!opts.locked; this.calls = [];
   this._expression = ""; this.evalExpression = opts.evalExpression || null;
   this.marker = !!opts.marker; this.isSpatial = !!opts.spatial; this.sticky = !!opts.sticky;
+  this.name = opts.name || "Свойство";
 }
 Prop.prototype = {
   get numKeys() { return this.keys.length; },
@@ -138,6 +139,10 @@ Prop.prototype = {
   get expression() { return this._expression; },
   set expression(x) { this._expression = x; },
   get selectedKeys() { const r = []; this.keys.forEach((k, i) => { if (k.selected) r.push(i + 1); }); return r; },
+  // as in After Effects: one value type per kind of property (1D, 2D, 3D…)
+  get propertyValueType() { return Array.isArray(this._v) ? "D" + this._v.length : "D1"; },
+  keyTemporalContinuous(i) { return !!this.keys[i - 1].tCont; }, setTemporalContinuousAtKey(i, on) { this.keys[i - 1].tCont = !!on; },
+  keyTemporalAutoBezier(i) { return !!this.keys[i - 1].tAuto; }, setTemporalAutoBezierAtKey(i, on) { this.keys[i - 1].tAuto = !!on; },
   _check(v) {
     if (this.locked) throw new Error("After Effects error: layer is locked");
     if (this.marker) return;
@@ -2012,7 +2017,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 1000, replies: [msg("Создаю.\n```javascript\napp.__ran('ask');\n```")], settings: { alwaysAsk: true } });
   t = await spans(p);
   check("W2 in a wide panel the fields and buttons do not stretch: they stay in the 380px column on the left", within(t, 14, 366) && (await box(p, ".composer")).split(",")[2] === "352" && (await overflow(p)) <= 0, JSON.stringify(t));
-  check("W2 the header and the tab bar stretch with the panel: gear at the right edge, tabs across the whole width", (await box(p, "#tabs")).split(",")[0] === "14" && (await box(p, "#tabs")).split(",")[2] === "972" && (await box(p, ".top")).split(",")[2] === "972" && (await box(p, "#settingsBtn")).split(",")[0] === "954" && (await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); return r("tabClaude").left < r("tabTools").left && r("tabTools").left < r("tabMotion").left && r("tabMotion").right > 900 && r("tabClaude").width > 150; })), (await box(p, "#tabs")) + " | " + (await box(p, "#settingsBtn")));
+  check("W2 the header and the tab bar stretch with the panel: gear at the right edge, tabs across the whole width", (await box(p, "#tabs")).split(",")[0] === "14" && (await box(p, "#tabs")).split(",")[2] === "972" && (await box(p, ".top")).split(",")[2] === "972" && (await box(p, "#settingsBtn")).split(",")[0] === "954" && (await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); return r("tabClaude").left < r("tabTools").left && r("tabTools").left < r("tabMotion").left && r("tabMotion").left < r("tabShape").left && r("tabShape").right > 900 && r("tabClaude").width > 150; })), (await box(p, "#tabs")) + " | " + (await box(p, "#settingsBtn")));
   c = [await box(p, "#runBtn"), await box(p, "#prompt"), await box(p, ".composer")].join(" | ");
   await p.page.setViewportSize({ width: 1600, height: 900 });
   check("W2 stretching the panel further moves and resizes none of the fields, only the tab bar grows", [await box(p, "#runBtn"), await box(p, "#prompt"), await box(p, ".composer")].join(" | ") === c && (await box(p, "#tabs")).split(",")[2] === "1572" && (await box(p, "#settingsBtn")).split(",")[0] === "1554" && (await overflow(p)) <= 0, c + " tabs " + await box(p, "#tabs"));
@@ -2129,10 +2134,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // Rearranging is switched on by a double click on a tab (the open one unless told otherwise).
   const arrange = async (p, sel) => { await p.page.dblclick(sel || '#tabs .tab[aria-selected="true"]'); await p.page.waitForFunction(() => /arranging/.test(document.body.className)); await p.page.waitForTimeout(350); };
   p = await open({ clip: "png", footage: IMG });
-  check("O1 default order", (await order(p)) === "claude,tools,motion" && (await savedOrder(p)) === null);
+  check("O1 default order", (await order(p)) === "claude,tools,motion,shape" && (await savedOrder(p)) === null);
   check("O1 rearranging is off at first, its bar is hidden", !(await arrangingNow(p)) && !(await vis(p, "#arrangeBar")));
   await dragTab(p, "#tabClaude", "#tabTools");
-  check("O1 without a double click a drag moves nothing and marks nothing", (await order(p)) === "claude,tools,motion" && (await savedOrder(p)) === null && (await p.page.locator(".dragging, .reordering").count()) === 0);
+  check("O1 without a double click a drag moves nothing and marks nothing", (await order(p)) === "claude,tools,motion,shape" && (await savedOrder(p)) === null && (await p.page.locator(".dragging, .reordering").count()) === 0);
   await p.page.waitForTimeout(350);
   await p.page.click("#tabTools");
   check("O1 a single click only switches the tab", (await vis(p, "#viewTools #acGrid")) && !(await arrangingNow(p)));
@@ -2148,8 +2153,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("O2 tab is marked while it is dragged", (await p.page.locator("#tabClaude.dragging").count()) === 1 && (await p.page.locator("#tabs.reordering").count()) === 1);
     await p.page.screenshot({ path: path.join(SHOTS, "19-tab-dragging.png") });
   } });
-  check("O2 dragging Claude onto Tools swaps them", (await order(p)) === "tools,claude,motion", await order(p));
-  check("O2 the new order is saved", (await savedOrder(p)) === '["tools","claude","motion"]', await savedOrder(p));
+  check("O2 dragging Claude onto Tools swaps them", (await order(p)) === "tools,claude,motion,shape", await order(p));
+  check("O2 the new order is saved", (await savedOrder(p)) === '["tools","claude","motion","shape"]', await savedOrder(p));
   check("O2 dragging does not switch tabs or leave marks, rearranging stays on", (await vis(p, "#prompt")) && !(await vis(p, "#viewTools #acGrid")) && (await p.page.locator(".dragging, .reordering").count()) === 0 && (await arrangingNow(p)));
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect().left; return r("tabTools") < r("tabClaude"); });
   check("O2 Tools is now drawn on the left", t === true);
@@ -2158,32 +2163,32 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.tab("tools");
   check("O3 clicking still switches tabs after a drag, also while rearranging", (await vis(p, "#viewTools #acGrid")) && !(await vis(p, "#prompt")) && (await arrangingNow(p)));
   await p.page.click("#arrangeDone");
-  check("O3 'Done' switches rearranging off", !(await arrangingNow(p)) && !(await vis(p, "#arrangeBar")) && (await order(p)) === "tools,claude,motion");
+  check("O3 'Done' switches rearranging off", !(await arrangingNow(p)) && !(await vis(p, "#arrangeBar")) && (await order(p)) === "tools,claude,motion,shape");
   await p.page.waitForTimeout(350);
   await dragTab(p, "#tabTools", "#tabClaude");
-  check("O3 after 'Done' tabs do not move any more", (await order(p)) === "tools,claude,motion");
+  check("O3 after 'Done' tabs do not move any more", (await order(p)) === "tools,claude,motion,shape");
   await p.page.waitForTimeout(350);
   await p.paste(); await p.idle(); await p.modalClick("Оставить как есть");
   check("O3 tools still work in the new order", /^Картинка вставлена/.test(await p.status()), await p.status());
   await p.page.click("#tabTools");
   await p.restart();
-  check("O4 order and open tab survive a restart; rearranging does not", (await order(p)) === "tools,claude,motion" && (await vis(p, "#viewTools #acGrid")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && !(await arrangingNow(p)));
+  check("O4 order and open tab survive a restart; rearranging does not", (await order(p)) === "tools,claude,motion,shape" && (await vis(p, "#viewTools #acGrid")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && !(await arrangingNow(p)));
   await arrange(p);
   await dragTab(p, "#tabTools", "#tabClaude");
-  check("O5 dragging back restores the order", (await order(p)) === "claude,tools,motion" && (await savedOrder(p)) === '["claude","tools","motion"]');
+  check("O5 dragging back restores the order", (await order(p)) === "claude,tools,motion,shape" && (await savedOrder(p)) === '["claude","tools","motion","shape"]');
   await p.page.waitForTimeout(350);
   await dragTab(p, "#tabMotion", "#tabClaude");
-  check("O5 the last tab can be dragged to the front, past the one in between", (await order(p)) === "motion,claude,tools", await order(p));
+  check("O5 the last tab can be dragged to the front, past the one in between", (await order(p)) === "motion,claude,tools,shape", await order(p));
   await p.page.waitForTimeout(350);
   await dragTab(p, "#tabMotion", "#tabTools");
-  check("O5 and back to the end", (await order(p)) === "claude,tools,motion", await order(p));
+  check("O5 and back to the end", (await order(p)) === "claude,tools,motion,shape", await order(p));
   await p.page.waitForTimeout(350);
   c = await center(p, "#tabClaude");
   await p.page.mouse.move(c.x, c.y); await p.page.mouse.down(); await p.page.mouse.move(c.x + 3, c.y + 1); await p.page.mouse.up();
-  check("O6 a click with a tiny hand movement is still a click", (await order(p)) === "claude,tools,motion" && (await vis(p, "#prompt")));
+  check("O6 a click with a tiny hand movement is still a click", (await order(p)) === "claude,tools,motion,shape" && (await vis(p, "#prompt")));
   c = await center(p, "#tabTools");
   await dragTab(p, "#tabClaude", { x: c.x + 400, y: c.y + 200 });
-  check("O7 releasing outside the tabs keeps a valid order", (await order(p)).split(",").sort().join() === "claude,motion,tools" && (await p.page.locator(".dragging, .reordering").count()) === 0, await order(p));
+  check("O7 releasing outside the tabs keeps a valid order", (await order(p)).split(",").sort().join() === "claude,motion,shape,tools" && (await p.page.locator(".dragging, .reordering").count()) === 0, await order(p));
   await p.page.waitForTimeout(350);
   await p.page.keyboard.press("Escape");
   check("O7 Esc switches rearranging off", !(await arrangingNow(p)));
@@ -2197,21 +2202,21 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.evaluate(() => localStorage.setItem("sayframe.tabOrder.v1", '["claude","tools","motion"]')); await p.restart();
   await p.page.waitForTimeout(350);
   await p.page.focus("#tabClaude"); await p.page.keyboard.press("Alt+ArrowRight");
-  check("O8 Alt+Right moves the focused tab right and keeps focus (keyboard needs no double click)", !(await arrangingNow(p)) && (await order(p)) === "tools,claude,motion" && (await p.page.evaluate(() => document.activeElement.id)) === "tabClaude" && (await savedOrder(p)) === '["tools","claude","motion"]');
+  check("O8 Alt+Right moves the focused tab right and keeps focus (keyboard needs no double click)", !(await arrangingNow(p)) && (await order(p)) === "tools,claude,motion,shape" && (await p.page.evaluate(() => document.activeElement.id)) === "tabClaude" && (await savedOrder(p)) === '["tools","claude","motion","shape"]');
+  await p.page.keyboard.press("Alt+ArrowRight"); await p.page.keyboard.press("Alt+ArrowRight");
+  check("O8 Alt+Right again moves it to the end", (await order(p)) === "tools,motion,shape,claude");
   await p.page.keyboard.press("Alt+ArrowRight");
-  check("O8 Alt+Right again moves it to the end", (await order(p)) === "tools,motion,claude");
-  await p.page.keyboard.press("Alt+ArrowRight");
-  check("O8 at the edge nothing happens", (await order(p)) === "tools,motion,claude");
+  check("O8 at the edge nothing happens", (await order(p)) === "tools,motion,shape,claude");
   await p.page.keyboard.press("ArrowLeft");
-  check("O8 plain arrow moves focus, not the tab", (await order(p)) === "tools,motion,claude" && (await p.page.evaluate(() => document.activeElement.id)) === "tabMotion");
+  check("O8 plain arrow moves focus, not the tab", (await order(p)) === "tools,motion,shape,claude" && (await p.page.evaluate(() => document.activeElement.id)) === "tabShape");
   await p.page.focus("#tabTools"); await p.page.keyboard.press("Alt+ArrowLeft");
-  check("O8 Alt+Left at the left edge does nothing", (await order(p)) === "tools,motion,claude");
-  await p.page.focus("#tabClaude"); await p.page.keyboard.press("Alt+ArrowLeft"); await p.page.keyboard.press("Alt+ArrowLeft");
-  check("O8 Alt+Left twice moves the tab back to the front", (await order(p)) === "claude,tools,motion");
+  check("O8 Alt+Left at the left edge does nothing", (await order(p)) === "tools,motion,shape,claude");
+  await p.page.focus("#tabClaude"); await p.page.keyboard.press("Alt+ArrowLeft"); await p.page.keyboard.press("Alt+ArrowLeft"); await p.page.keyboard.press("Alt+ArrowLeft");
+  check("O8 Alt+Left three times moves the tab back to the front", (await order(p)) === "claude,tools,motion,shape");
   check("O8 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
-  for (const [bad, want] of [['not json', "claude,tools,motion"], ['{"a":1}', "claude,tools,motion"], ['["tools"]', "tools,claude,motion"], ['["ghost","tools","tools","claude",5]', "tools,claude,motion"], ['[]', "claude,tools,motion"],
-    ['["tools","claude"]', "tools,claude,motion"] /* order saved by 1.3, before the Animation tab existed */, ['["motion","claude"]', "motion,claude,tools"]]) {
+  for (const [bad, want] of [['not json', "claude,tools,motion,shape"], ['{"a":1}', "claude,tools,motion,shape"], ['["tools"]', "tools,claude,motion,shape"], ['["ghost","tools","tools","claude",5]', "tools,claude,motion,shape"], ['[]', "claude,tools,motion,shape"],
+    ['["tools","claude"]', "tools,claude,motion,shape"] /* order saved by 1.3, before the Animation tab existed */, ['["motion","claude"]', "motion,claude,tools,shape"]]) {
     p = await open({});
     await p.page.evaluate((v) => localStorage.setItem("sayframe.tabOrder.v1", v), bad); await p.restart();
     check("O9 saved order " + bad + " -> " + want, (await order(p)) === want && p.errors.length === 0 && (await vis(p, "#prompt")), await order(p));
@@ -2223,7 +2228,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("O10 the bar and its button fit a 300px panel", t === true);
   await dragTab(p, "#tabTools", "#tabClaude");
   t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  check("O10 reordering works in a 300px panel", (await order(p)) === "tools,claude,motion" && t <= 0);
+  check("O10 reordering works in a 300px panel", (await order(p)) === "tools,claude,motion,shape" && t <= 0);
   check("O10 dragging a tab that is not open does not open it", (await vis(p, "#prompt")) && !(await vis(p, "#viewTools #acGrid")) && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "true");
   await p.close();
 
@@ -2241,7 +2246,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   let clock, prop1, prop2, grp, L, L2, before;
 
   p = await open({});
-  check("M1 three tabs, Animation closed at first", (await order(p)) === "claude,tools,motion" && !(await vis(p, "#easeBothBtn")));
+  check("M1 four tabs, Animation closed at first", (await order(p)) === "claude,tools,motion,shape" && !(await vis(p, "#easeBothBtn")));
   await motionTab(p);
   check("M1 Animation tab shows both tools and nothing from the other tabs", (await vis(p, "#easeBothBtn")) && (await vis(p, "#anchorGrid")) && (await p.page.locator("#anchorGrid button").count()) === 9 && !(await vis(p, "#prompt")) && !(await vis(p, "#viewTools #acGrid")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1);
   t = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -2413,7 +2418,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R3 dragging back restores the order", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && (await savedTools(p)) === "ease,anchor,align,shift,paste,organize", await toolOrder(p));
   await p.page.waitForTimeout(350);
   await dragTab(p, "#tabMotion", "#tabClaude");
-  check("R3 the same mode moves the tabs", (await order(p)) === "motion,claude,tools");
+  check("R3 the same mode moves the tabs", (await order(p)) === "motion,claude,tools,shape");
   await p.page.waitForTimeout(350);
   await p.page.keyboard.press("Escape");
   check("R3 Esc ends it", !(await arrangingNow(p)));
@@ -2749,7 +2754,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.mouse.move((await center(p, edge("anchor"))).x, (await center(p, edge("anchor"))).y); await p.page.mouse.down();
   c = await center(p, edge("anchor"));
   await p.page.mouse.move(c.x + 60, c.y, { steps: 5 });
-  t = [await p.page.locator(".grid-cells").evaluate((el) => getComputedStyle(el).opacity), (await toolRects(p)).anchor.w];
+  t = [await p.page.locator("#gridCells").evaluate((el) => getComputedStyle(el).opacity), (await toolRects(p)).anchor.w];
   await p.page.mouse.move(c.x + 140, c.y, { steps: 5 });
   t.push((await toolRects(p)).anchor.w);
   await p.page.mouse.up();
@@ -2758,7 +2763,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("S2 pulled right by about three cells: 7 cells wide, remembered in cells", t.anchor.w === 300 && (await savedSizes(p)) === "anchor=7x0", t.anchor.w + " " + await savedSizes(p));
   check("S2 a wide block turns horizontal: the list stands beside the buttons", (await shape(p, "anchor")) === "horizontal", await shape(p, "anchor"));
   await p.page.waitForTimeout(250);
-  check("S2 nothing is left marked, the grid hides again, nothing overflows", (await p.page.locator(".resizing, .resizing-x").count()) === 0 && (await p.page.locator(".grid-cells").evaluate((el) => getComputedStyle(el).opacity)) === "0" && (await overflow(p)) <= 0, await box(p, "#motionTools"));
+  check("S2 nothing is left marked, the grid hides again, nothing overflows", (await p.page.locator(".resizing, .resizing-x").count()) === 0 && (await p.page.locator("#gridCells").evaluate((el) => getComputedStyle(el).opacity)) === "0" && (await overflow(p)) <= 0, await box(p, "#motionTools"));
   await p.page.screenshot({ path: path.join(SHOTS, "24-block-wide.png") });
   await dragEdge(p, "anchor", -132);
   check("S2 pulling it back makes it narrow and vertical again", (await shape(p, "anchor")) === "vertical" && (await toolRects(p)).anchor.w === 168 && (await savedSizes(p)) === "");
@@ -3040,7 +3045,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.evaluate(() => { ["pointerdown", "pointermove", "pointerup", "pointercancel", "gotpointercapture", "lostpointercapture"].forEach((n) => window.addEventListener(n, (e) => e.stopImmediatePropagation(), true)); window.__nativeDrags = 0; window.addEventListener("dragstart", (e) => { if (!e.defaultPrevented) window.__nativeDrags++; }); });
   await arrange(p);
   await dragTab(p, "#tabClaude", "#tabTools");
-  check("X1 tabs can be dragged with pointer events swallowed", (await order(p)) === "tools,claude,motion" && (await savedOrder(p)) === '["tools","claude","motion"]', await order(p));
+  check("X1 tabs can be dragged with pointer events swallowed", (await order(p)) === "tools,claude,motion,shape" && (await savedOrder(p)) === '["tools","claude","motion","shape"]', await order(p));
   await p.page.waitForTimeout(350);
   await p.page.click("#tabMotion");
   t = await toolRects(p);
@@ -3744,6 +3749,74 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const stale = spawnSync("python3", ["tools/release.py", "--check"], { cwd: scratch, encoding: "utf8" });
     check("U18 --check notices panel files edited after a release", stale.status === 1 && /css\/panel\.css/.test(stale.stdout), stale.stdout);
     fs.rmSync(scratch, { recursive: true, force: true });
+  }
+
+  // ---------------------------------------------------------------- shape tab: ease copy (like EaseCopy)
+  {
+    const eases2 = (list) => list.map((e) => Math.round(e.speed * 100) / 100 + "/" + e.influence).join();
+    const clock2 = { time: 0 };
+    const sel = (prop, idxs) => prop.keys.forEach((k, i) => { k.selected = idxs.indexOf(i + 1) >= 0; });
+    // Source: opacity 0 -> 100 in 1 s; its first key leaves at half the average speed (50 of 100 per second), influence 70.
+    const SRC = new Prop(0, clock2, { name: "Непрозрачность" }).addKey(0, 0).addKey(1, 100);
+    SRC.keys[0].outEase = [new KeyframeEase(50, 70)]; SRC.keys[0].outType = KIT.BEZIER;
+    SRC.keys[1].inEase = [new KeyframeEase(0, 90)]; SRC.keys[1].inType = KIT.BEZIER;
+    // Target: rotation 0 -> -400 in 2 s (average -200 per second: longer and the other way).
+    const DST = new Prop(0, clock2, { name: "Поворот" }).addKey(0, 0).addKey(2, -400);
+    const SCALE = new Prop([100, 100, 100], clock2, { name: "Масштаб", easeDims: 3 }).addKey(0, [0, 0, 100]).addKey(1, [100, 100, 100]);
+    sel(SRC, [1, 2]); sel(DST, []);
+    p = await open({ selectedProperties: [SRC] });
+    await p.page.click("#tabShape");
+    check("EC1 a 'Шейп' tab with the 'Копия плавности' block on the same kind of grid as Tools", (await p.page.locator("#viewShape .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewShape .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewShape .tool-pin").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
+    await p.page.click("#ecPasteEase");
+    check("EC1 pasting before copying explains what to do and touches nothing", /Сначала выделите ключи/.test(await p.status()) && p.ae.log.undo.length === 0);
+    await p.page.click("#ecCopy"); await p.idle();
+    check("EC2 'Копировать' remembers the selected keys and says so in the block", /^Скопировано: 2 ключа/.test(await p.status()) && (await p.page.locator("#ecClip").innerText()) === "В буфере: 2 ключа · Непрозрачность", await p.status() + " | " + (await p.page.locator("#ecClip").innerText()));
+    sel(SRC, []); sel(DST, [1, 2]); p.ae.comp.selectedProperties = [DST];
+    await p.page.click("#ecPasteEase"); await p.idle();
+    check("EC3 'Вставить плавность' scales the speed to the new move and flips it with the direction; influences are copied", eases2(DST.keys[0].outEase) === "-100/70" && eases2(DST.keys[1].inEase) === "0/90" && DST.keys[0].outType === KIT.BEZIER && DST.keys[1].inType === KIT.BEZIER, eases2(DST.keys[0].outEase) + " | " + eases2(DST.keys[1].inEase));
+    check("EC3 the values stay as they were, one undo step, the result is reported", DST.keys.map((k) => k.value).join() === "0,-400" && p.ae.log.undo.join() === "begin:Sayframe: paste easing,end" && /^Плавность вставлена: 2 ключа/.test(await p.status()), p.ae.log.undo.join() + " | " + await p.status());
+    // A wrong number of keys: 2 were copied, 3 are selected.
+    const LONG = new Prop(0, clock2, { name: "Позиция X" }).addKey(0, 0).addKey(1, 10).addKey(2, 20).addKey(3, 30);
+    sel(DST, []); sel(LONG, [1, 2, 3]); p.ae.comp.selectedProperties = [LONG];
+    await p.page.click("#ecPasteEase"); await p.idle();
+    check("EC4 the number of keys must match or be a multiple, otherwise nothing changes", /Скопировано ключей: 2, выделено: 3/.test(await p.status()) && (await p.statusKind()) === "" && LONG.keys.every((k) => k.outType === KIT.LINEAR), await p.status());
+    sel(LONG, [1, 2, 3, 4]);
+    await p.page.click("#ecPasteEase"); await p.idle();
+    check("EC5 a multiple works: the copied pattern repeats (out, in, out, in)", eases2(LONG.keys[0].outEase) === "5/70" && eases2(LONG.keys[1].inEase) === "0/90" && eases2(LONG.keys[2].outEase) === "5/70" && eases2(LONG.keys[3].inEase) === "0/90", LONG.keys.map((k) => eases2(k.inEase) + ">" + eases2(k.outEase)).join(" "));
+    // Values: from the opacity keys into rotation keys of the same kind; easing stays.
+    sel(LONG, []); sel(DST, [1, 2]); p.ae.comp.selectedProperties = [DST];
+    const before = eases2(DST.keys[0].outEase);
+    await p.page.click("#ecPasteValue"); await p.idle();
+    check("EC6 'Вставить значения' puts the copied values and keeps the keys' own easing", DST.keys.map((k) => k.value).join() === "0,100" && eases2(DST.keys[0].outEase) === before && /^Значения вставлены: 2 ключа/.test(await p.status()), DST.keys.map((k) => k.value).join() + " | " + eases2(DST.keys[0].outEase));
+    sel(DST, []); sel(SCALE, [1, 2]); p.ae.comp.selectedProperties = [SCALE];
+    await p.page.click("#ecPasteValue"); await p.idle();
+    check("EC6 values do not go into a property of another kind; easing does (one ease per dimension)", /того же типа/.test(await p.status()) && SCALE.keys[1].value.join() === "100,100,100", await p.status());
+    await p.page.click("#ecPasteEase"); await p.idle();
+    check("EC6 …and the eases fit the 3 dimensions of Scale, each scaled to its own move (the third one does not move)", SCALE.keys[0].outEase.length === 3 && eases2(SCALE.keys[0].outEase) === "50/70,50/70,0/70" && eases2(SCALE.keys[1].inEase) === "0/90,0/90,0/90", eases2(SCALE.keys[0].outEase));
+    // Pass-through: three keys; the middle one gets one speed in and out.
+    const CH = new Prop(0, clock2, { name: "Позиция Y" }).addKey(0, 0).addKey(1, 100).addKey(2, 300);
+    CH.keys.forEach((k) => { k.selected = true; });
+    SRC.keys.forEach((k) => { k.selected = false; });
+    const SRC3 = new Prop(0, clock2, { name: "Тест" }).addKey(0, 0).addKey(1, 100).addKey(2, 200);
+    SRC3.keys[1].inEase = [new KeyframeEase(20, 40)]; SRC3.keys[1].outEase = [new KeyframeEase(180, 40)];
+    SRC3.keys.forEach((k) => { k.selected = true; });
+    p.ae.comp.selectedProperties = [SRC3];
+    await p.page.click("#ecCopy"); await p.idle();
+    p.ae.comp.selectedProperties = [CH];
+    await p.page.click("#ecPasteEase"); await p.idle();
+    const plain = [eases2(CH.keys[1].inEase), eases2(CH.keys[1].outEase)];
+    await p.page.click("label.ec-switch .track");
+    await p.page.click("#ecPasteEase"); await p.idle();
+    check("EC7 without 'Сквозная скорость' the middle key keeps a jump; with it, one speed in and out (no hiccup)", plain.join() === "20/40,360/40" && eases2(CH.keys[1].inEase) === eases2(CH.keys[1].outEase) && eases2(CH.keys[1].inEase) === "190/40" && CH.keys[1].tCont === true, plain.join() + " | " + eases2(CH.keys[1].inEase) + " " + eases2(CH.keys[1].outEase));
+    await p.page.click("#ecOptsToggle");
+    check("EC8 the minus folds the switch away; the plus tells what is set", (await p.page.locator("#ecOpts").isHidden()) && /сквозная скорость: вкл/.test(await p.page.getAttribute("#ecOptsToggle", "title")));
+    await p.page.click("#viewShape .tool-pin");
+    await p.restart();
+    await p.page.click("#tabShape").catch(() => {});
+    check("EC8 the clipboard, the switch, the fold and the pin survive a restart; the Tools grid is untouched", (await p.page.locator("#ecClip").innerText()) === "В буфере: 3 ключа · Тест" && (await p.page.locator("#ecOpts").isHidden()) &&
+      (await p.page.getAttribute("#viewShape .tool-pin", "aria-pressed")) === "true" && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.shape.v1"))).ecThrough === true && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.motion.v1") || "{}")).pins !== "easecopy" && p.errors.length === 0, p.errors.join(" | "));
+    await p.page.screenshot({ path: path.join(SHOTS, "40-shape-easecopy.png") });
+    await p.close();
   }
 
   // Anonymous install statistics: one "install" signal, then at most one "day" signal a day.
