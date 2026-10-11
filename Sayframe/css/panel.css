@@ -1228,24 +1228,33 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .ac-color input { width: 34px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; }
 .ac-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--ac-size, 112px), 1fr)); gap: 10px; }
 .ac-grid.busy { opacity: 0.55; pointer-events: none; }
+/* Карточка — просто мини-экран и подпись под ним, без рамки (как в Animation Composer). */
 .ac-card {
-  position: relative; display: flex; flex-direction: column; gap: 6px; padding: 6px; border: 1px solid var(--line);
-  border-radius: 12px; background: var(--glass); cursor: pointer; outline: none; min-width: 0;
+  position: relative; display: flex; flex-direction: column; gap: 6px; padding: 0; border: 0;
+  background: transparent; cursor: pointer; outline: none; min-width: 0;
 }
-.ac-card:hover, .ac-card:focus-visible { border-color: rgba(var(--accent-rgb), 0.75); background: rgba(var(--accent-rgb), 0.08); }
 .ac-thumb {
-  position: relative; display: grid; place-items: center; aspect-ratio: 16 / 10; border-radius: 8px; overflow: hidden;
-  background: #07070b; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  position: relative; display: grid; place-items: center; aspect-ratio: 16 / 10; border-radius: 6px; overflow: hidden;
+  background: #000; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06); transition: box-shadow 0.12s ease;
 }
-.ac-name { min-width: 0; padding: 0 22px 0 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 600 12px/1.25 var(--round); }
-.ac-star {
-  position: absolute; right: 4px; bottom: 3px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px;
-  background: transparent; color: var(--muted); font-size: 13px; line-height: 1; cursor: pointer;
+.ac-card:hover .ac-thumb, .ac-card:focus-visible .ac-thumb { box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0.85); }
+.ac-name { min-width: 0; padding: 0 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 600 12px/1.25 var(--round); color: var(--muted); }
+.ac-card:hover .ac-name, .ac-card:focus-visible .ac-name { color: var(--text); }
+/* Булавка и звезда — сверху справа на экране; видны при наведении или если включены. */
+.ac-tools { position: absolute; top: 4px; right: 4px; display: flex; gap: 3px; z-index: 2; }
+.ac-pin, .ac-star {
+  display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55); color: rgba(255, 255, 255, 0.75); font-size: 13px; line-height: 1; cursor: pointer;
+  opacity: 0; transition: opacity 0.12s ease;
 }
-.ac-star:hover { color: var(--text); background: var(--glass-strong); }
+.ac-card:hover .ac-pin, .ac-card:hover .ac-star, .ac-card:focus-within .ac-pin, .ac-card:focus-within .ac-star,
+.ac-pin.on, .ac-star.on { opacity: 1; }
+.ac-pin:hover, .ac-star:hover { color: #fff; background: rgba(0, 0, 0, 0.8); }
+.ac-pin.on { color: var(--accent-hi); }
 .ac-star.on { color: #ffb957; }
+.ac-pin-line { grid-column: 1 / -1; height: 1px; margin: 6px 0; background: rgba(255, 255, 255, 0.16); }
 .ac-play {
-  position: absolute; left: 10px; top: 10px; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%;
+  position: absolute; left: 6px; top: 6px; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%;
   background: rgba(var(--accent-rgb), 0.9); color: #fff; font-size: 11px; line-height: 1; cursor: pointer;
 }
 .ac-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -1278,11 +1287,11 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .trv-wipe-left, .trv-wipe-up { background: #f4f1ff; }
 .trv-circle { background: #f4f1ff; border-radius: 50%; inset: auto; left: 50%; top: 50%; width: 130%; aspect-ratio: 1; margin: -65% 0 0 -65%; transform: scale(0); }
 .ac-badge {
-  position: absolute; left: 10px; top: 10px; padding: 2px 6px; border-radius: 6px; background: rgba(var(--accent-rgb), 0.95);
+  position: absolute; left: 6px; top: 6px; padding: 2px 6px; border-radius: 6px; background: rgba(var(--accent-rgb), 0.95);
   color: #fff; font: 800 10px/1.2 var(--round); letter-spacing: 0.04em; pointer-events: none;
 }
 .ac-badge[hidden] { display: none; }
-.ac-card.applied { border-color: rgba(var(--accent-rgb), 0.85); }
+.ac-card.applied .ac-thumb { box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0.95); }
 .ac-folders { display: flex; flex-wrap: wrap; gap: 4px; }
 .ac-folders[hidden] { display: none; }
 .ac-gr { width: 62%; height: 86%; display: grid; place-items: center; }
