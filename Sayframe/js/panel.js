@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.23.0";
+    var VERSION = "1.23.1";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -663,7 +663,7 @@
         bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
         panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
-        fxBtn: el("fxBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
+        fxBtn: el("fxBtn"), snapBtn: el("snapBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
         acTabs: el("acTabs"), acSearch: el("acSearch"), acFavOnly: el("acFavOnly"), acModeRow: el("acModeRow"), acMode: el("acMode"),
         acDurRow: el("acDurRow"), acDur: el("acDur"), acDurVal: el("acDurVal"), acColorRow: el("acColorRow"), acColor: el("acColor"),
         acGrid: el("acGrid"), acHint: el("acHint"), acSize: el("acSize"), acFoot: el("acFoot"),
@@ -920,6 +920,7 @@
         ui.pasteBtn.disabled = on;
         ui.organizeBtn.disabled = on;
         ui.fxBtn.disabled = on;
+        ui.snapBtn.disabled = on;
         ui.acGrid.classList.toggle("busy", on);
         setMotionDisabled(on);
         ui.settingsBtn.disabled = on;
@@ -3319,6 +3320,7 @@
         out.vol = Math.max(-24, Math.min(6, Math.round(Number(out.vol)) || 0));
         out.tdur = Math.min(3, Math.max(0.2, Math.round(Number(out.tdur) * 10) / 10 || 0.8));
         out.fav = Array.isArray(s.fav) ? s.fav.filter(function (x) { return typeof x === "string"; }) : [];
+        out.pins = Array.isArray(s.pins) ? s.pins.filter(function (x) { return typeof x === "string"; }) : [];
         return out;
     }
 
@@ -3434,7 +3436,17 @@
             ui.acGrid.appendChild(fxNote(acState.favOnly ? "В избранном пусто: нажмите ☆ на карточке, чтобы добавить." : "Ничего не нашлось."));
             return;
         }
-        list.forEach(function (p) { ui.acGrid.appendChild(acCard(p, searching)); });
+        // Закреплённые карточки — первыми, под ними тонкая линия, дальше остальные.
+        var pinned = list.filter(function (p) { return acState.pins.indexOf(p.key) >= 0; });
+        var rest = list.filter(function (p) { return acState.pins.indexOf(p.key) < 0; });
+        pinned.forEach(function (p) { ui.acGrid.appendChild(acCard(p, searching)); });
+        if (pinned.length && rest.length) {
+            var line = document.createElement("div");
+            line.className = "ac-pin-line";
+            line.setAttribute("role", "separator");
+            ui.acGrid.appendChild(line);
+        }
+        rest.forEach(function (p) { ui.acGrid.appendChild(acCard(p, searching)); });
         markSfCards();
     }
 
@@ -3750,6 +3762,23 @@
         name.className = "ac-name";
         name.textContent = p.name;
         card.appendChild(name);
+        // Над экраном — булавка и звезда, как на мини-экранах Animation Composer.
+        var tools = document.createElement("span");
+        var pin = document.createElement("button");
+        var pinned = acState.pins.indexOf(p.key) >= 0;
+        tools.className = "ac-tools";
+        pin.className = "ac-pin" + (pinned ? " on" : "");
+        pin.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M15 3l6 6-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4z" fill="currentColor"/></svg>';
+        pin.title = pinned ? "Открепить" : "Закрепить наверху";
+        pin.setAttribute("aria-label", pin.title);
+        pin.setAttribute("aria-pressed", pinned ? "true" : "false");
+        pin.addEventListener("click", function (e) {
+            var at = acState.pins.indexOf(p.key);
+            e.stopPropagation();
+            if (at >= 0) { acState.pins.splice(at, 1); } else { acState.pins.push(p.key); }
+            storeAcState();
+            renderAc();
+        });
         star.className = "ac-star" + (fav ? " on" : "");
         star.textContent = fav ? "★" : "☆";
         star.title = fav ? "Убрать из избранного" : "В избранное";
@@ -3761,7 +3790,10 @@
             storeAcState();
             renderAc();
         });
-        card.appendChild(star);
+        tools.appendChild(pin);
+        tools.appendChild(star);
+        card.querySelector(".ac-thumb").appendChild(tools);
+        if (pinned) { card.classList.add("pinned"); }
         if (p.sec === "sfx") {
             play = document.createElement("button");
             play.className = "ac-play";
@@ -5023,6 +5055,8 @@
     function hotkeyHint() {
         var combo = parseHotkeys(settings.hotkeys).console;
         ui.fxBtn.title = "Поиск эффектов" + (combo ? " (" + comboLabel(combo) + ")" : "");
+        var snap = parseHotkeys(settings.hotkeys).snapshot;
+        ui.snapBtn.title = "Снимок кадра: PNG рядом с проектом и в буфер обмена" + (snap ? " (" + comboLabel(snap) + ")" : "");
         ui.fxKeysCombo.textContent = combo ? comboLabel(combo) : "не задано";
     }
 
@@ -6113,6 +6147,7 @@
     ui.fxBtn.addEventListener("click", openFxConsole);
     ui.fxClose.addEventListener("click", closeFxConsole);
     ui.fxSnap.addEventListener("click", onSnapshot);
+    ui.snapBtn.addEventListener("click", onSnapshot);
     ui.fxKeys.addEventListener("mousedown", function (e) { e.preventDefault(); });
     ui.fxKeys.addEventListener("click", onFxKeys);
     ui.fxSearch.addEventListener("input", function () { fxActive = 0; renderFx(); });
