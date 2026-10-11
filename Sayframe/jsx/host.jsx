@@ -892,7 +892,7 @@ var sayframeHost = (function () {
 
     var SF_HEAD = [
         "// Sayframe: written by the Sayframe panel. It reads the IN/OUT layer markers and the preset controls in Effect Controls.",
-        "function sfM(t){var m=thisLayer.marker,i;for(i=1;i<=m.numKeys;i++){if(m.key(i).comment.indexOf(t)>=0)return m.key(i);}return null;}",
+        "function sfM(t){var m=thisLayer.marker,i;for(i=1;i<=m.numKeys;i++){if(m.key(i).comment==t)return m.key(i);}return null;}",
         "function sfF(p,c){p=Math.min(1,Math.max(0,p));if(c==\"linear\")return p;" +
             "if(c==\"over\"){var s=1.70158,q=p-1;return 1+(s+1)*q*q*q+s*q*q;}" +
             "if(c==\"bounce\"){var n=7.5625,d=2.75;if(p<1/d)return n*p*p;if(p<2/d){p-=1.5/d;return n*p*p+0.75;}" +
@@ -919,6 +919,10 @@ var sayframeHost = (function () {
 
     function sfMarkerProp(layer) { return layer.property("ADBE Marker"); }
 
+    // Like Animation Composer, the markers carry very short names ("In", "Out"); which presets sit on them
+    // and the names of their controls are kept in the marker's hidden parameters.
+    var SF_MARK = { "in": "In", "out": "Out" };
+
     // The Sayframe marker of one direction: {index, time, dur, presets: [{motion, curve}], names}.
     function sfReadMarker(layer, dir) {
         var mk = sfMarkerProp(layer), i, mv, re, m, out, params;
@@ -926,14 +930,19 @@ var sayframeHost = (function () {
         for (i = 1; i <= mk.numKeys; i++) {
             mv = mk.keyValue(i);
             out = { index: i, time: mk.keyTime(i), dur: mv.duration, presets: [], names: {} };
-            re = /\{sf:([a-z0-9\-]+):(in|out):([a-z]+)\}/g;
-            while ((m = re.exec(String(mv.comment))) !== null) {
-                if (m[2] === dir) { out.presets.push({ motion: m[1], curve: m[3] }); }
+            try { params = mv.getParameters() || {}; } catch (e1) { params = {}; }
+            if (String(mv.comment) === SF_MARK[dir] && params.sfp) {
+                try { out.presets = eval("(" + params.sfp + ")"); } catch (e2) { out.presets = []; }
+            } else {
+                // markers written by earlier versions carry the presets as tags in the comment
+                re = /\{sf:([a-z0-9\-]+):(in|out):([a-z]+)\}/g;
+                while ((m = re.exec(String(mv.comment))) !== null) {
+                    if (m[2] === dir) { out.presets.push({ motion: m[1], curve: m[3] }); }
+                }
             }
-            if (!out.presets.length) { continue; }
+            if (!out.presets || !out.presets.length) { continue; }
             try {
-                params = mv.getParameters();
-                out.names = params && params.sf ? eval("(" + params.sf + ")") : {};
+                out.names = params.sf ? eval("(" + params.sf + ")") : {};
             } catch (e0) { out.names = {}; }
             if (!out.names || typeof out.names !== "object") { out.names = {}; }
             return out;
@@ -953,9 +962,9 @@ var sayframeHost = (function () {
             tags.push("{sf:" + p.motion + ":" + dir + ":" + p.curve + "}");
             keep[p.motion] = n;
         }
-        mv = new MarkerValue((dir === "in" ? "IN: " : "OUT: ") + parts.join(" + ") + " " + tags.join(""));
+        mv = new MarkerValue(SF_MARK[dir]);
         mv.duration = Math.max(data.dur, fd || 0.01);
-        try { mv.setParameters({ sf: toJSON(keep) }); } catch (e0) {}
+        try { mv.setParameters({ sf: toJSON(keep), sfp: toJSON(data.presets) }); } catch (e0) {}
         // Two markers cannot share a time: a marker of the user's own there keeps its place.
         t = data.time;
         for (k = 1; k <= mk.numKeys; k++) {
@@ -1017,7 +1026,7 @@ var sayframeHost = (function () {
             m = SF_MOTIONS[it.motion];
             if (!m) { continue; }
             fx = it.names.fx || {};
-            tag = q("{sf:" + it.motion + ":" + it.dir + ":");
+            tag = q(SF_MARK[it.dir]);
             a = "sfK(" + tag + "," + q(it.dir) + "," + q(it.curve) + ")";
             soft = "sfK(" + tag + "," + q(it.dir) + "," + q(it.curve === "linear" ? "linear" : "ease") + ")";
             if (m.dx || m.dy) { pos.push({ a: a, s: "sfS(" + q(fx.dist || "") + ",0)", dx: m.dx || 0, dy: m.dy || 0 }); }
@@ -1290,7 +1299,7 @@ var sayframeHost = (function () {
             amt = sftAmount(a);
             if (!amt) { continue; }
             curve = anims[i].soft ? (it.curve === "linear" ? "linear" : "ease") : it.curve;
-            sfSetExpr(amt, "var r=0,k=sfM(" + q("{sf:" + it.motion + ":" + it.dir + ":") + ");\n" +
+            sfSetExpr(amt, "var r=0,k=sfM(" + q(SF_MARK[it.dir]) + ");\n" +
                 "if(k){var d=Math.max(k.duration,thisComp.frameDuration),s=" + st + ",n=Math.max(1,textTotal),u=textIndex-1;" +
                 "var st=(n>1?u/(n-1):0)*s*d,w=Math.max(d*(1-s),thisComp.frameDuration),p=(time-k.time-st)/w;" +
                 "r=100*(" + q(it.dir) + "==\"in\"?1-sfF(p," + q(curve) + "):1-sfF(1-p," + q(curve) + "));}\nr", skipped);
@@ -1835,9 +1844,10 @@ var sayframeHost = (function () {
         if (!mk) { return null; }
         for (i = 1; i <= mk.numKeys; i++) {
             mv = mk.keyValue(i);
-            m = /\{sfg:([a-z0-9\-]+)\}/.exec(String(mv.comment));
-            if (!m) { continue; }
             try { params = mv.getParameters() || {}; } catch (e0) { params = {}; }
+            m = /\{sfg:([a-z0-9\-]+)\}/.exec(String(mv.comment));
+            if (params.gid) { m = [0, params.gid]; }
+            if (!m) { continue; }
             return { id: m[1], names: params.sg ? eval("(" + params.sg + ")") : {} };
         }
         return null;
@@ -2052,9 +2062,10 @@ var sayframeHost = (function () {
         if (!mk) { return null; }
         for (i = 1; i <= mk.numKeys; i++) {
             mv = mk.keyValue(i);
-            m = /\{sft:([a-z0-9\-]+)\}/.exec(String(mv.comment));
-            if (!m) { continue; }
             try { params = mv.getParameters() || {}; } catch (e0) { params = {}; }
+            m = /\{sft:([a-z0-9\-]+)\}/.exec(String(mv.comment));
+            if (params.tid) { m = [0, params.tid]; }
+            if (!m) { continue; }
             return { id: m[1], cut: mk.keyTime(i), strength: params.sk || "" };
         }
         return null;
@@ -3069,8 +3080,8 @@ var sayframeHost = (function () {
                         names.text = String(txt.name);
                         try { txt.selected = false; } catch (e5) {}
                     }
-                    mv = new MarkerValue((labels.marker || "Graphic: ") + (labels.title || id) + " {sfg:" + id + "}");
-                    try { mv.setParameters({ sg: toJSON(names) }); } catch (e6) {}
+                    mv = new MarkerValue("GR");
+                    try { mv.setParameters({ sg: toJSON(names), gid: id }); } catch (e6) {}
                     l.property("ADBE Marker").setValueAtTime(t0, mv);
                     try { l.selected = true; } catch (e7) {}
                 } finally {
@@ -3157,8 +3168,8 @@ var sayframeHost = (function () {
                     try { l.moveToBeginning(); } catch (e1) {}
                     sfAddControl(l, "k", k, 100);
                     if (kind === "shape") { trShape(l, comp, k, id, color); } else { TR_BUILD[id](l, k); }
-                    mv = new MarkerValue((labels.marker || "Cut: ") + (labels.title || id) + " {sft:" + id + "}");
-                    try { mv.setParameters({ sk: k }); } catch (e2) {}
+                    mv = new MarkerValue("TR");
+                    try { mv.setParameters({ sk: k, tid: id }); } catch (e2) {}
                     l.property("ADBE Marker").setValueAtTime(cut, mv);
                     try { l.selected = true; } catch (e3) {}
                 } finally {
@@ -3289,6 +3300,7 @@ var sayframeHost = (function () {
                 app.beginUndoGroup("Sayframe: timing");
                 try {
                     sfWriteMarker(e.layer, dir, { time: t, dur: d, presets: mk.presets, names: mk.names }, e.comp.frameDuration);
+                    sfRebuild(e.layer);
                 } finally {
                     app.endUndoGroup();
                 }
