@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.26.0";
+    var VERSION = "1.28.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -554,6 +554,8 @@
         var ec = /^EC_(COUNT|PROPS):(\d+):(\d+)$/.exec(m);
         if (ec && ec[1] === "COUNT") { return "Скопировано ключей: " + ec[2] + ", выделено: " + ec[3] + ". Выделите столько же ключей или кратно больше (" + ec[2] + ", " + (ec[2] * 2) + ", " + (ec[2] * 3) + "…)."; }
         if (ec) { return "Скопированы ключи " + ec[2] + " свойств, а выделены у " + ec[3] + ". Выделите ключи у одного свойства или у стольких же, сколько копировали."; }
+        if (m === "EC_NO_KEYS") { return "Выделите на таймлайне ключи, куда вставить (или слой — тогда вставится в то же свойство у этого слоя)."; }
+        if (m === "EC_NO_TARGET") { return "У выделенного слоя нет ключей в том же свойстве, откуда копировали. Выделите сами ключи на таймлайне — свойство может быть любым."; }
         if (m === "EC_TYPE") { return "Значения можно вставить только в свойство того же типа: позицию — в позицию, цвет — в цвет. Плавность вставляется куда угодно."; }
         if (m === "HOST_UNAVAILABLE") { return "Панель открыта вне After Effects, связи с программой нет."; }
         if (m === "HOST_NOT_LOADED" || m === "HOST_ERROR" || m === "HOST_BAD_REPLY") {
@@ -671,6 +673,7 @@
         bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
         panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), statsOn: el("statsOn"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
+        snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
         fxBtn: el("fxBtn"), snapBtn: el("snapBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
         acTabs: el("acTabs"), acSearch: el("acSearch"), acFavOnly: el("acFavOnly"), acModeRow: el("acModeRow"), acMode: el("acMode"),
         acDurRow: el("acDurRow"), acDur: el("acDur"), acDurVal: el("acDurVal"), acColorRow: el("acColorRow"), acColor: el("acColor"),
@@ -934,6 +937,8 @@
         ui.organizeBtn.disabled = on;
         ui.fxBtn.disabled = on;
         ui.snapBtn.disabled = on;
+        ui.snapSave.disabled = on;
+        ui.snapBrowse.disabled = on;
         ui.ecCopy.disabled = on;
         ui.ecPasteEase.disabled = on;
         ui.ecPasteValue.disabled = on;
@@ -2630,14 +2635,14 @@
     // левый — входящая сторона ключа (in, как движение останавливается перед ключом),
     // правый — исходящая (out, как оно начинается после ключа). Длина ползунка — влияние в процентах.
 
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste,organize", sizes: "", places: "", pins: "", pasteOpts: true, organizeOpts: true, anchorOpts: true, alignOpts: true,
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste,organize,easecopy", sizes: "", places: "", pins: "", ecOpts: true, ecThrough: false, pasteOpts: true, organizeOpts: true, anchorOpts: true, alignOpts: true,
         shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
     var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
     var STAGGER_ORDERS = ["asc", "desc", "selection", "random"];
     var MAX_STEP_FRAMES = 999;
-    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste", "organize"];
-    var SHAPE_TOOL_NAMES = ["easecopy"];
+    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste", "organize", "easecopy"];
+    var SHAPE_TOOL_NAMES = [];
     // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
     // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
     var G = { names: TOOL_NAMES };
@@ -5171,33 +5176,104 @@
     }
 
     // Снимок кадра: PNG кадра под указателем времени — в «Документы/Sayframe Snapshots» и в буфер обмена.
+    // ---- снимок кадра: камера открывает плашку — «Добавить в проект AE» (включено), «Обзор…» и «Сохранить».
+    // Папка и галочка запоминаются. Пока папку не выбирали, снимки ложатся рядом с проектом,
+    // а у несохранённого проекта — в «Документы › Sayframe Snapshots».
+    var SNAP_KEY = "sayframe.snap.v1";
+    var snapState = { folder: "", importIt: true };
+    try {
+        (function () {
+            var v = JSON.parse(window.localStorage.getItem(SNAP_KEY) || "{}") || {};
+            if (typeof v.folder === "string") { snapState.folder = v.folder; }
+            if (typeof v.importIt === "boolean") { snapState.importIt = v.importIt; }
+        })();
+    } catch (e) {}
+    var snapFolderNow = "";
+
+    function storeSnap() { try { window.localStorage.setItem(SNAP_KEY, JSON.stringify(snapState)); } catch (e) {} }
+
+    function snapDefaultFolder() { return platform.join(platform.homedir(), "Documents", "Sayframe Snapshots"); }
+
+    function showSnapFolder(path, auto) {
+        var parts = String(path || "").split(/[\\\/]/).filter(Boolean);
+        snapFolderNow = path;
+        ui.snapFolder.textContent = "Папка: " + (parts.length > 2 ? "…/" : "/") + parts.slice(-2).join("/") + (auto ? " (рядом с проектом)" : "");
+        ui.snapFolder.title = path;
+    }
+
     async function onSnapshot() {
-        var folder, res, copied;
+        var res;
         if (busy) { return; }
         closeFxConsole();
+        // Плашка уже открыта (например, второй раз нажали сочетание клавиш) — это значит «сохранить».
+        if (!ui.snapBar.hidden) { saveSnapshot(); return; }
+        ui.snapImport.checked = snapState.importIt;
+        ui.snapBar.hidden = false;
+        if (snapState.folder) {
+            showSnapFolder(snapState.folder, false);
+        } else {
+            showSnapFolder(snapDefaultFolder(), false);
+            try {
+                res = await host("snapWhere", [snapDefaultFolder()]);
+                if (!snapState.folder && res.folder) { showSnapFolder(res.folder, !!res.project); }
+            } catch (e) {}
+        }
+        try { ui.snapSave.focus(); } catch (e2) {}
+    }
+
+    function closeSnapBar() { ui.snapBar.hidden = true; }
+
+    async function onSnapBrowse() {
+        var res;
+        if (busy) { return; }
+        try {
+            // Окно выбора открывается в текущей папке; папку по умолчанию создаём, чтобы оно открылось именно в ней.
+            if ((snapFolderNow || snapDefaultFolder()) === snapDefaultFolder()) { try { await platform.mkdirp(snapDefaultFolder()); } catch (e1) {} }
+            res = await host("snapPickFolder", [snapFolderNow || snapDefaultFolder(), "Папка для снимков кадра"]);
+            if (res.folder) {
+                snapState.folder = res.folder;
+                storeSnap();
+                showSnapFolder(res.folder, false);
+            }
+        } catch (e) {
+            setStatus("Не удалось выбрать папку: " + humanError(e), "error");
+        }
+    }
+
+    async function saveSnapshot() {
+        var res, copied, folder = snapFolderNow || snapState.folder || snapDefaultFolder(), where;
+        if (busy) { return; }
+        snapState.importIt = ui.snapImport.checked;
+        storeSnap();
         setBusy(true);
         setStatus("Снимаю кадр…", "busy");
         try {
             if (!(await host("info", [])).fileAccess) { throw new Error(FILE_ACCESS_HINT); }
-            // Окно «Сохранить» открывается в папке проекта; у несохранённого проекта — в «Документы › Sayframe Snapshots».
-            folder = platform.join(platform.homedir(), "Documents", "Sayframe Snapshots");
             await platform.mkdirp(folder);
-            setStatus("Выберите, куда сохранить кадр…", "busy");
-            res = await host("snapFrame", [folder, dateStamp(), "Сохранить кадр (PNG)"]);
-            if (!res.snap) {
-                setBusy(false);
-                setStatus("Снимок отменён.", "");
-                return;
-            }
+            res = await host("snapFrame", [folder, dateStamp(), "", snapState.importIt, true]);
             copied = await copyPngToClipboard(res.snap.path);
             setBusy(false);
-            setStatus("Кадр сохранён: " + platform.basename(platform.dirname(res.snap.path)) + " › " + platform.basename(res.snap.path) +
-                (copied ? ". Он же в буфере обмена — можно сразу вставить." : ". В буфер обмена скопировать не получилось."), "done");
+            closeSnapBar();
+            where = platform.basename(platform.dirname(res.snap.path)) + " › " + platform.basename(res.snap.path);
+            setStatus("Кадр сохранён: " + where + "." +
+                (res.imported ? " Добавлен в проект, папка «Sayframe Snapshots»." : (res.importFailed ? " В проект добавить не получилось." : "")) +
+                (copied ? " Он же в буфере обмена — можно сразу вставить." : " В буфер обмена скопировать не получилось."), "done");
         } catch (e) {
             if (e && e.message === "NO_ACTIVE_COMP") { toolFailed(e); return; }
             setBusy(false);
             setStatus("Не удалось снять кадр: " + humanError(e), "error");
         }
+    }
+
+    function enableSnapBar() {
+        ui.snapClose.addEventListener("click", closeSnapBar);
+        ui.snapBrowse.addEventListener("click", onSnapBrowse);
+        ui.snapSave.addEventListener("click", saveSnapshot);
+        ui.snapImport.addEventListener("change", function () { snapState.importIt = ui.snapImport.checked; storeSnap(); });
+        ui.snapBar.addEventListener("keydown", function (e) {
+            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeSnapBar(); }
+            if (e.key === "Enter" && e.target !== ui.snapBrowse && e.target !== ui.snapClose) { e.preventDefault(); saveSnapshot(); }
+        });
     }
 
     async function copyPngToClipboard(path) {
@@ -6321,7 +6397,7 @@
 
     var SHAPE_KEY = "sayframe.shape.v1";
     var EC_KEY = "sayframe.easecopy.v1";
-    var SHAPE_DEFAULTS = { order: "easecopy", sizes: "", places: "", pins: "", ecOpts: true, ecThrough: false };
+    var SHAPE_DEFAULTS = { order: "", sizes: "", places: "", pins: "" };
 
     function loadShape() {
         var m = {}, saved, k, keep = G;
@@ -6368,8 +6444,8 @@
     }
 
     function showEcFold() {
-        var open = shape.ecOpts !== false, label = open ? "Скрыть настройку" : "Показать настройку";
-        if (!open) { label += " (сквозная скорость: " + (shape.ecThrough ? "вкл." : "выкл.") + ")"; }
+        var open = motion.ecOpts !== false, label = open ? "Скрыть настройку" : "Показать настройку";
+        if (!open) { label += " (сквозная скорость: " + (motion.ecThrough ? "вкл." : "выкл.") + ")"; }
         if (open) { ui.ecOpts.removeAttribute("hidden"); } else { ui.ecOpts.setAttribute("hidden", ""); }
         ui.ecOptsToggle.setAttribute("aria-expanded", open ? "true" : "false");
         ui.ecOptsToggle.setAttribute("aria-label", label);
@@ -6401,10 +6477,10 @@
         setBusy(true);
         setStatus(mode === "value" ? "Вставляю значения…" : "Вставляю плавность…", "busy");
         try {
-            res = await host("ecPaste", [ecClip, mode, !!shape.ecThrough]);
+            res = await host("ecPaste", [ecClip, mode, !!motion.ecThrough]);
             setBusy(false);
             setStatus((mode === "value" ? "Значения вставлены: " : "Плавность вставлена: ") + plural(res.keys, "ключ", "ключа", "ключей") +
-                (res.properties > 1 ? " у " + res.properties + " свойств" : "") + ".\nОтменить: Cmd/Ctrl+Z.", "done");
+                (res.properties > 1 ? " у " + res.properties + " свойств" : "") + (res.byLayer ? " (ключи не были выделены — взял то же свойство у выделенного слоя)" : "") + ".\nОтменить: Cmd/Ctrl+Z.", "done");
         } catch (e) {
             var m = e && e.message ? e.message : String(e);
             setBusy(false);
@@ -6420,13 +6496,13 @@
         enablePins(sg);
         watchToolGrid(sg);
         ui.ecOptsToggle.addEventListener("click", function () {
-            shape.ecOpts = shape.ecOpts === false;
+            motion.ecOpts = motion.ecOpts === false;
             showEcFold();
             relayoutTools();
-            storeShape();
+            storeMotion();
         });
-        ui.ecThrough.checked = !!shape.ecThrough;
-        ui.ecThrough.addEventListener("change", function () { shape.ecThrough = ui.ecThrough.checked; storeShape(); showEcFold(); });
+        ui.ecThrough.checked = !!motion.ecThrough;
+        ui.ecThrough.addEventListener("change", function () { motion.ecThrough = ui.ecThrough.checked; storeMotion(); showEcFold(); });
         ui.ecCopy.addEventListener("click", onEcCopy);
         ui.ecPasteEase.addEventListener("click", function () { onEcPaste("ease"); });
         ui.ecPasteValue.addEventListener("click", function () { onEcPaste("value"); });
@@ -6820,6 +6896,7 @@
     ui.fxClose.addEventListener("click", closeFxConsole);
     ui.fxSnap.addEventListener("click", onSnapshot);
     ui.snapBtn.addEventListener("click", onSnapshot);
+    enableSnapBar();
     ui.fxKeys.addEventListener("mousedown", function (e) { e.preventDefault(); });
     ui.fxKeys.addEventListener("click", onFxKeys);
     ui.fxSearch.addEventListener("input", function () { fxActive = 0; renderFx(); });
