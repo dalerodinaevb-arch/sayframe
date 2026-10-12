@@ -428,6 +428,27 @@
       <small id="organizeHint" class="paste-hint">Композиции, прекомпозиции, видео, аудио, картинки и солиды — по своим папкам. Файлы и связи не меняются. Отменить — Cmd/Ctrl+Z</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Порядок в проекте»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
+    <section class="card tool-card decompose-card" data-tool="decompose" data-info="Декомпоз|Выделите в композиции слой-прекомпозицию и нажмите Decompose: всё, что внутри неё, встанет в композицию на её место — в том же порядке, в то же время и там же на экране. Сам слой-прекомпозиция убирается, сама прекомпозиция остаётся в проекте. Отменить — Cmd/Ctrl+Z." aria-label="Декомпоз" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Декомпоз»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="decomposeOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="decomposeHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
+      </button>
+      <div class="tool-head" title="Вытаскивает слои из выделенной прекомпозиции в открытую композицию">
+        <b>Декомпоз</b>
+      </div>
+      <button id="decomposeBtn" class="paste-do" title="Вытащить слои из выделенной прекомпозиции наружу">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="8.5" y="8.5" width="7" height="7" rx="1.6"/>
+          <path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9"/>
+          <path d="M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9"/>
+          <path d="M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15"/>
+          <path d="M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>
+        </svg>
+        <span>Decompose</span>
+      </button>
+      <small id="decomposeHint" class="paste-hint">Выделите слой-прекомпозицию: всё, что внутри, встанет на её место. Отменить — Cmd/Ctrl+Z</small>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Декомпоз»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
+    </section>
     <section class="card tool-card easecopy-card" data-tool="easecopy" data-info="Копия плавности|«Копировать» запоминает плавность, тип и значения выделенных ключей. «Вставить плавность» переносит только характер движения на другие ключи: значения не трогает, скорость подгоняет под новое движение. «Вставить значения» — наоборот. Если у свойства нет ключей, панель создаст их от указателя времени. «Сквозная скорость» убирает рывок на средних ключах цепочки." aria-label="Копия плавности" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Копия плавности»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="ecOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="ecOpts" aria-label="Скрыть настройку" title="Скрыть настройку">
