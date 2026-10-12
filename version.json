@@ -1,5 +1,5 @@
 {
-  "version": "1.26.0",
+  "version": "1.28.0",
   "date": "2026-10-12",
   "notes": [
     "x"
@@ -10,28 +10,28 @@
   "files": [
     {
       "path": "CSXS/manifest.xml",
-      "sha256": "044310269ca7359e8ec39a1e1e857dfac96a80604133db4ec092dab99295c76f",
+      "sha256": "e4db7cbabf318608fbbdba753e337b2076cb11359f7f8ec576c34df0dab05109",
       "size": 1644
     },
     {
       "path": "css/panel.css",
-      "sha256": "166d54023b1731c9f452d7d1a9e262f2cfc43bd8facf38c493c7043bf51508da",
-      "size": 68474
+      "sha256": "c23beff2f41e865e065992d5def34a1a08f6dc53233acebb503047519e9c91f3",
+      "size": 70089
     },
     {
       "path": "index.html",
-      "sha256": "eb37cd541317cc7abf9770aecc1586fc98d32da6944d50bc8feb406f9c250738",
-      "size": 58748
+      "sha256": "629f6c33ba71c03506f563a2394e3fd1a1f491db9468c97b0cfe891c84ba516a",
+      "size": 60328
     },
     {
       "path": "js/panel.js",
-      "sha256": "59e93239ccf88c40af4874677c227584fda298515b022a204d9a9dd64588e79c",
-      "size": 387957
+      "sha256": "5a39412c49bfb729d406d9d285b4bae310e94e7bd76d92cace8010793ffd96b5",
+      "size": 392687
     },
     {
       "path": "jsx/host.jsx",
-      "sha256": "d0b27e518f5b11910a5e03048564a3cc7aaa4172fc5aff01d52f8f13312a11e9",
-      "size": 208073
+      "sha256": "e250b24609905ddc4b2ce1b24fdb6fc8b580fb235e5bd1bed9539bcf2a9ec2c3",
+      "size": 212587
     },
     {
       "path": "sfx/alert.wav",
