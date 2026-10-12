@@ -46,6 +46,24 @@
       </div>
     </section>
 
+    <!-- Снимок кадра: плашка вместо системного окна «Сохранить». -->
+    <section id="snapBar" class="card snap-bar" hidden aria-label="Снимок кадра">
+      <div class="snap-head">
+        <b>Снимок кадра</b>
+        <button id="snapClose" class="icon-btn small" aria-label="Закрыть без сохранения" title="Закрыть (Esc)">&times;</button>
+      </div>
+      <div class="snap-row">
+        <label class="snap-check" title="Добавить снимок в проект After Effects: PNG появится в окне Project, в папке «Sayframe Snapshots»">
+          <input id="snapImport" type="checkbox" checked aria-label="Добавить снимок в проект After Effects">
+          <span class="snap-box" aria-hidden="true"></span>
+          <span>В проект AE</span>
+        </label>
+        <button id="snapBrowse" class="ghost" title="Выбрать папку, куда сохранять снимки">Обзор…</button>
+        <button id="snapSave" class="primary" title="Сохранить кадр под указателем времени (Enter)">Сохранить</button>
+      </div>
+      <small id="snapFolder" class="snap-folder"></small>
+    </section>
+
     <!-- Вкладки и блоки раздела «Инструменты» можно менять местами. Перетаскивание включается двойным щелчком
          по вкладке или по блоку и выключается так же, кнопкой «Готово» или клавишей Esc.
          С клавиатуры вкладку двигает Alt + стрелка влево/вправо. -->
@@ -410,15 +428,6 @@
       <small id="organizeHint" class="paste-hint">Композиции, прекомпозиции, видео, аудио, картинки и солиды — по своим папкам. Файлы и связи не меняются. Отменить — Cmd/Ctrl+Z</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Порядок в проекте»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
-    </div>
-    <div id="statusSlotMotion" class="status-slot"></div>
-    </div>
-
-    <!-- «Шейп»: такая же сетка блоков, как в «Инструментах», но со своими блоками. -->
-    <div id="viewShape" class="view" role="tabpanel" aria-labelledby="tabShape" hidden>
-    <div id="shapeTools" class="motion-tools">
-    <div id="shapeGridCells" class="grid-cells" aria-hidden="true"></div>
-    <div id="shapePinLine" class="pin-line" aria-hidden="true" hidden></div>
     <section class="card tool-card easecopy-card" data-tool="easecopy" aria-label="Копия плавности" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Копия плавности»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="ecOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="ecOpts" aria-label="Скрыть настройку" title="Скрыть настройку">
@@ -453,6 +462,16 @@
       </div>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Копия плавности»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
+    </div>
+    <div id="statusSlotMotion" class="status-slot"></div>
+    </div>
+
+    <!-- «Шейп»: такая же сетка блоков, как в «Инструментах», но со своими блоками. -->
+    <div id="viewShape" class="view" role="tabpanel" aria-labelledby="tabShape" hidden>
+    <div id="shapeTools" class="motion-tools">
+    <div id="shapeGridCells" class="grid-cells" aria-hidden="true"></div>
+    <div id="shapePinLine" class="pin-line" aria-hidden="true" hidden></div>
+    <p class="shape-empty">Здесь будут инструменты для шейп-слоёв: создать фигуру, заливка и обводка, Trim Paths, модификаторы. «Копия плавности» — в «Инструментах».</p>
     </div>
     <div id="statusSlotShape" class="status-slot"></div>
     </div>
