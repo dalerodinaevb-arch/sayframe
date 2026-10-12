@@ -2276,6 +2276,40 @@ var sayframeHost = (function () {
         return out;
     }
 
+    // Match names from the layer down to the property, to find "the same property" on another layer.
+    function ecPath(p) {
+        var out = [], q = p;
+        try {
+            while (q && q.propertyDepth > 0) { out.unshift(String(q.matchName)); q = q.parentProperty; }
+        } catch (e) {}
+        return out;
+    }
+
+    function ecFind(layer, mp) {
+        var q = layer, i;
+        try {
+            for (i = 0; i < mp.length; i++) { q = q.property(mp[i]); if (!q) { return null; } }
+        } catch (e) { return null; }
+        return q && q.propertyType === PropertyType.PROPERTY ? q : null;
+    }
+
+    // Nothing selected on the timeline but layers are: the same property on each selected layer, all its keys.
+    function ecLayerTargets(comp, clip) {
+        var layers = comp.selectedLayers, out = [], i, g, p, k, keys, seen = {};
+        for (i = 0; i < layers.length; i++) {
+            for (g = 0; g < clip.groups.length; g++) {
+                if (!clip.groups[g].mp || !clip.groups[g].mp.length) { continue; }
+                p = ecFind(layers[i], clip.groups[g].mp);
+                if (!p || !p.numKeys || seen[i + ":" + clip.groups[g].mp.join("/")]) { continue; }
+                seen[i + ":" + clip.groups[g].mp.join("/")] = 1;
+                keys = [];
+                for (k = 1; k <= p.numKeys; k++) { keys.push(k); }
+                out.push({ prop: p, keys: keys, group: g });
+            }
+        }
+        return out;
+    }
+
     function ecNums(v) {
         var r = [];
         var i;
@@ -3817,13 +3851,38 @@ var sayframeHost = (function () {
         // Saves the frame at the time indicator of the open comp as a PNG in the given folder.
         // Saves the frame at the time indicator of the open comp as a PNG. A save dialog opens in the
         // project's folder (or fallbackFolder for an unsaved project); returns snap: null on Cancel.
-        snapFrame: function (fallbackFolder, stamp, prompt) {
+        // Where snapshots go by default: next to the saved project, otherwise the fallback folder.
+        snapWhere: function (fallbackFolder) {
+            return reply(function () {
+                var proj = app.project;
+                var inProject = !!(proj.file && proj.file.parent);
+                return { folder: inProject ? proj.file.parent.fsName : fallbackFolder, project: inProject };
+            });
+        },
+
+        // The "Browse" button of the snapshot bar: a folder picker that starts in the current folder.
+        snapPickFolder: function (start, prompt) {
+            return reply(function () {
+                var f = new Folder(start), picked = null;
+                if (!f.exists) { f = Folder.myDocuments; }
+                picked = f.selectDlg(prompt);
+                return { folder: picked ? picked.fsName : null };
+            });
+        },
+
+        // Saves the frame under the time indicator as a PNG. With exact, it goes straight into folder (the
+        // snapshot bar has already chosen it); otherwise a Save window opens, starting next to the project.
+        // importIt: the PNG is also imported into the project, into a "Sayframe Snapshots" bin.
+        snapFrame: function (fallbackFolder, stamp, prompt, importIt, exact) {
             return reply(function () {
                 var comp = activeComp();
                 var proj = app.project;
-                var folder = proj.file && proj.file.parent ? proj.file.parent.fsName : fallbackFolder;
+                var folder = exact ? fallbackFolder : (proj.file && proj.file.parent ? proj.file.parent.fsName : fallbackFolder);
                 var name = String(comp.name).replace(/[\\\/:\*\?"<>\|]/g, "_") + "_" + stamp + ".png";
-                var file = new File(folder + "/" + name);
+                var file, dir, item = null, bin = null, i;
+                dir = new Folder(folder);
+                if (!dir.exists) { try { dir.create(); } catch (e0) {} }
+                file = new File(folder + "/" + name);
                 if (prompt) {
                     file = file.saveDlg(prompt);
                     if (!file) { return { snap: null, folder: folder }; }
@@ -3831,7 +3890,22 @@ var sayframeHost = (function () {
                 }
                 comp.saveFrameToPng(comp.time, file);
                 if (!waitForFile(file.fsName, 20000)) { throw new Error("FRAME_NOT_SAVED"); }
-                return { snap: { path: file.fsName, comp: String(comp.name), time: comp.time }, folder: folder };
+                if (importIt) {
+                    for (i = 1; i <= proj.numItems; i++) {
+                        if (proj.item(i) instanceof FolderItem && String(proj.item(i).name) === "Sayframe Snapshots") { bin = proj.item(i); break; }
+                    }
+                    try {
+                        item = proj.importFile(new ImportOptions(file));
+                        if (!bin) { bin = proj.items.addFolder("Sayframe Snapshots"); }
+                        try { item.parentFolder = bin; } catch (e1) {}
+                    } catch (e2) {
+                        item = null;
+                    }
+                    // Importing makes the picture the active item; the comp stays the one being worked on.
+                    try { comp.openInViewer(); } catch (e3) {}
+                }
+                return { snap: { path: file.fsName, comp: String(comp.name), time: comp.time }, folder: folder,
+                    imported: item ? String(item.name) : "", importFailed: !!importIt && !item };
             });
         },
 
@@ -4007,7 +4081,7 @@ var sayframeHost = (function () {
                         try { rec.c = !!p.keyTemporalContinuous(idx); } catch (e1) {}
                         list.push(rec);
                     }
-                    out.groups.push({ name: p.name, vt: p.propertyValueType, keys: list });
+                    out.groups.push({ name: p.name, vt: p.propertyValueType, mp: ecPath(p), keys: list });
                     out.keys += list.length;
                 }
                 return out;
@@ -4020,11 +4094,23 @@ var sayframeHost = (function () {
             return reply(function () {
                 var comp = activeComp();
                 var targets = ecGroups(comp);
-                var pairs, i;
-                var out = { keys: 0, properties: 0 };
+                var pairs, i, byLayer = false;
+                var out = { keys: 0, properties: 0, byLayer: false };
                 if (!clip || !clip.groups || !clip.groups.length) { throw new Error("EC_EMPTY"); }
-                if (!targets.length) { throw new Error("NO_KEYS_SELECTED"); }
-                pairs = ecPairs(clip, targets);
+                if (!targets.length) {
+                    targets = ecLayerTargets(comp, clip);
+                    byLayer = true;
+                }
+                if (!targets.length) { throw new Error(comp.selectedLayers.length ? "EC_NO_TARGET" : "EC_NO_KEYS"); }
+                if (byLayer) {
+                    // Each found property takes the copied group it was found for. Its keys were not chosen by hand,
+                    // so the count does not have to match: the copied pattern simply repeats over all of them.
+                    pairs = [];
+                    for (i = 0; i < targets.length; i++) { pairs.push({ src: clip.groups[targets[i].group], dst: targets[i] }); }
+                    out.byLayer = true;
+                } else {
+                    pairs = ecPairs(clip, targets);
+                }
                 if (mode === "value") {
                     for (i = 0; i < pairs.length; i++) { if (pairs[i].src.vt !== pairs[i].dst.prop.propertyValueType) { throw new Error("EC_TYPE"); } }
                 }
