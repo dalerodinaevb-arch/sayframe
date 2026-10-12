@@ -384,12 +384,13 @@ textarea:focus, .field:focus {
 
 /* Блоки раздела стоят на сетке из квадратных клеток (размер клетки и колонки задаёт panel.js).
    Ширина панели меняет только число клеток в ряду, сами блоки своих размеров не меняют. */
-.motion-tools { position: relative; display: grid; grid-template-columns: repeat(auto-fill, 36px); grid-auto-rows: 36px; gap: 8px; justify-content: start; -webkit-user-select: none; user-select: none; }
+.motion-tools { position: relative; display: grid; grid-template-columns: repeat(auto-fill, 14px); grid-auto-rows: 14px; gap: 8px; justify-content: start; -webkit-user-select: none; user-select: none; }
 .motion-tools input { -webkit-user-select: text; user-select: text; }
 .motion-tools > .tool-card { position: relative; min-width: 0; margin: 0; overflow: visible;
-  padding: calc(12px * var(--tz, 1)) calc(14px * var(--tz, 1)) calc(14px * var(--tz, 1)); gap: calc(12px * var(--tz, 1)); border-radius: calc(18px * var(--tz, 1)); }
-/* Масштаб блоков (100–50 %): содержимое уменьшается целиком, сетку под него пересчитывает panel.js. */
-.motion-tools > .tool-card > * { zoom: var(--tz, 1); }
+  padding: calc(12px * var(--kz, 1)) calc(14px * var(--kz, 1)) calc(14px * var(--kz, 1)); gap: calc(12px * var(--kz, 1)); border-radius: calc(18px * var(--kz, 1)); }
+/* Масштаб блоков (100–50 %): содержимое уменьшается целиком, сетку под него пересчитывает panel.js.
+   --kz задаёт panel.js у каждого блока: это масштаб из настроек, а у узкого блока ещё меньше — чтобы всё влезло. */
+.motion-tools > .tool-card > * { zoom: var(--kz, 1); }
 /* Клетки сетки видны, пока блоки переставляют или растягивают. */
 .grid-cells { position: absolute; left: 0; top: 0; pointer-events: none; opacity: 0; transition: opacity 0.15s ease; }
 .arranging .grid-cells, .motion-tools.resizing .grid-cells { opacity: 1; }
@@ -497,7 +498,7 @@ textarea:focus, .field:focus {
 .ease-card .tool-head { margin-bottom: 4px; }
 /* Без названий (настройка «Показывать названия блоков») минус и плюс получают сверху свою полоску. */
 [data-titles="off"] .motion-tools .tool-head { display: none; }
-[data-titles="off"] .motion-tools > .tool-card { padding-top: calc(22px * var(--tz, 1)); }
+[data-titles="off"] .motion-tools > .tool-card { padding-top: calc(22px * var(--kz, 1)); }
 
 /* Минус в углу прячет кривую и становится плюсом. */
 .tool-toggle {
@@ -1331,7 +1332,7 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .snap-check input:focus-visible + .snap-box { box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.35); }
 .snap-row .ghost, .snap-row .primary { flex: none; width: auto; min-width: 0; height: 30px; padding: 0 12px; font-size: 12.5px; }
 .snap-folder { color: var(--muted); font: 600 11px/1.3 var(--round); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.shape-empty { grid-column: 1 / -1; grid-row: span 3; align-self: start; margin: 0; padding: 14px 4px; color: var(--muted); font: 600 12.5px/1.45 var(--round); }
+.shape-empty { grid-column: 1 / -1; grid-row: span 6; align-self: start; margin: 0; padding: 14px 4px; color: var(--muted); font: 600 12.5px/1.45 var(--round); }
 
 /* Подсказка при наведении: появляется через секунду над блоком, кнопкой или вкладкой. */
 .info-tip { position: fixed; z-index: 1000; max-width: 270px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px;
@@ -1350,3 +1351,19 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .color-pick { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red); cursor: pointer; overflow: hidden; }
 .color-pick::-webkit-color-swatch-wrapper { padding: 3px; }
 .color-pick::-webkit-color-swatch { border: 0; border-radius: 50%; }
+
+/* Узкие блоки-кнопки («Картинка», «Порядок», «Копия»): только квадратные иконки, как снимок, поиск и настройки
+   в шапке. Название кнопки видно в подсказке при наведении. */
+.motion-tools > .tool-card[data-icons] { justify-content: center; align-items: center; padding: calc(16px * var(--kz, 1)) calc(8px * var(--kz, 1)); }
+.tool-card[data-icons] > .tool-head, .tool-card[data-icons] > .tool-toggle, .tool-card[data-icons] .paste-hint, .tool-card[data-icons] .ec-opts { display: none; }
+.tool-card[data-icons] .ec-buttons { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+/* «Копия» шириной от 7 клеток: три иконки горизонтально, чуть меньше, чтобы поместились. */
+.motion-tools > .tool-card[data-icons="row"] { padding-left: calc(6px * var(--kz, 1)); padding-right: calc(6px * var(--kz, 1)); }
+.tool-card[data-icons="row"] .ec-buttons { flex-direction: row; gap: 6px; }
+.motion-tools .tool-card[data-icons="row"] .ec-buttons .paste-do { width: 40px; height: 40px; }
+.tool-card[data-icons] .paste-do, .tool-card[data-icons] .ec-buttons .paste-do {
+  flex: none; width: 44px; height: 44px; min-height: 0; padding: 0; gap: 0; border-radius: 12px; color: var(--muted); }
+.tool-card[data-icons] .paste-do > span { display: none; }
+.tool-card[data-icons] .paste-do svg, .tool-card[data-icons] .ec-buttons .paste-do svg { width: 20px; height: 20px; color: currentColor; }
+.tool-card[data-icons] .paste-do:hover:not(:disabled) { color: var(--text); background: var(--glass-strong); border-color: var(--line); }
+.tool-card[data-icons] > .tool-pin { top: 2px; right: 2px; }
