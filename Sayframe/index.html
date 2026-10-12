@@ -15,16 +15,16 @@
         <h1>Sayframe</h1>
       </div>
       <div class="top-actions">
-      <button id="snapBtn" class="icon-btn" aria-label="Снимок кадра" title="Снимок кадра: PNG рядом с проектом и в буфер обмена">
+      <button id="snapBtn" data-info="Снимок кадра|Сохраняет кадр под указателем времени в PNG и кладёт в буфер обмена. В плашке можно выбрать папку и добавить снимок в проект After Effects." class="icon-btn" aria-label="Снимок кадра" title="Снимок кадра: PNG рядом с проектом и в буфер обмена">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5a2 2 0 0 1 2-2h2l1.5-2h5L16 6.5h2a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
       </button>
-      <button id="fxBtn" class="icon-btn" aria-label="Поиск эффектов (FX Console)" title="Поиск эффектов">
+      <button id="fxBtn" data-info="Поиск эффектов|FX Console: начните вводить название эффекта или пресета и нажмите Enter — он встанет на выделенный слой." class="icon-btn" aria-label="Поиск эффектов (FX Console)" title="Поиск эффектов">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="10.5" cy="10.5" r="6"/>
           <path d="M15 15l5 5"/>
         </svg>
       </button>
-      <button id="settingsBtn" class="icon-btn" aria-label="Настройки" title="Настройки">
+      <button id="settingsBtn" data-info="Настройки|Ключ API и модель, цвета, ширина и размер блоков, подсказки, горячие клавиши, обновления." class="icon-btn" aria-label="Настройки" title="Настройки">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3.2"/>
           <path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l1.8-1.4-1.9-3.3-2.1.8a7.6 7.6 0 0 0-2.6-1.5L14.2 3h-3.8l-.4 2.1a7.6 7.6 0 0 0-2.6 1.5l-2.1-.8-1.9 3.3 1.8 1.4a7.6 7.6 0 0 0 0 3l-1.8 1.4 1.9 3.3 2.1-.8a7.6 7.6 0 0 0 2.6 1.5l.4 2.1h3.8l.4-2.1a7.6 7.6 0 0 0 2.6-1.5l2.1.8 1.9-3.3z"/>
@@ -68,10 +68,10 @@
          по вкладке или по блоку и выключается так же, кнопкой «Готово» или клавишей Esc.
          С клавиатуры вкладку двигает Alt + стрелка влево/вправо. -->
     <nav id="tabs" class="tabs" role="tablist" aria-label="Разделы панели">
-      <button id="tabClaude" class="tab" role="tab" data-tab="claude" aria-selected="true" aria-controls="viewClaude" title="Двойной щелчок — поменять вкладки местами">AI</button>
-      <button id="tabTools" class="tab" role="tab" data-tab="tools" aria-selected="false" aria-controls="viewTools" title="Двойной щелчок — поменять вкладки местами">Анимация</button>
-      <button id="tabMotion" class="tab" role="tab" data-tab="motion" aria-selected="false" aria-controls="viewMotion" title="Двойной щелчок — поменять вкладки местами">Инструменты</button>
-      <button id="tabShape" class="tab" role="tab" data-tab="shape" aria-selected="false" aria-controls="viewShape" title="Двойной щелчок — поменять вкладки местами">Шейп</button>
+      <button id="tabClaude" data-info="AI|Опишите задачу словами — Claude напишет скрипт и выполнит его в After Effects. Можно приложить референс (картинку или видео) или ссылку, сохранить удачный скрипт и запускать его потом одной кнопкой." class="tab" role="tab" data-tab="claude" aria-selected="true" aria-controls="viewClaude" title="Двойной щелчок — поменять вкладки местами">AI</button>
+      <button id="tabTools" data-info="Анимация|Готовые пресеты, как в Animation Composer: переходы, движения, текст, графика и звуки. Щелчок по карточке применяет пресет к выделенному слою, «✎ Изменить» — настроить то, что уже стоит." class="tab" role="tab" data-tab="tools" aria-selected="false" aria-controls="viewTools" title="Двойной щелчок — поменять вкладки местами">Анимация</button>
+      <button id="tabMotion" data-info="Инструменты|Быстрые инструменты на каждый день: плавность, якорь, выравнивание, сдвиг во времени, картинка из буфера, порядок в проекте, копия плавности. Блоки двигаются (двойной щелчок), закрепляются булавкой и растягиваются за края." class="tab" role="tab" data-tab="motion" aria-selected="false" aria-controls="viewMotion" title="Двойной щелчок — поменять вкладки местами">Инструменты</button>
+      <button id="tabShape" data-info="Шейп|Здесь будут инструменты для шейп-слоёв: создать фигуру, заливка и обводка, Trim Paths, модификаторы." class="tab" role="tab" data-tab="shape" aria-selected="false" aria-controls="viewShape" title="Двойной щелчок — поменять вкладки местами">Шейп</button>
     </nav>
 
     <section id="arrangeBar" class="arrange-bar" hidden aria-live="polite">
@@ -216,10 +216,10 @@
     <div id="motionTools" class="motion-tools">
     <div id="gridCells" class="grid-cells" aria-hidden="true"></div>
     <div id="pinLine" class="pin-line" aria-hidden="true" hidden></div>
-    <section class="card tool-card ease-card" data-tool="ease" aria-label="Плавность ключей" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card ease-card" data-tool="ease" data-info="Плавность ключей|Делает движение мягким: разгон после ключа и торможение перед ним. Выделите ключи на таймлайне и двигайте ползунки — плавность меняется сразу. Левый ползунок — вход в ключ (торможение), правый — выход (разгон), число — влияние в процентах. Цепочка связывает обе стороны, кнопка посередине применяет ещё раз, кривая показывает форму движения." aria-label="Плавность ключей" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Плавность ключей»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <div class="tool-head" title="Задаёт плавность выделенным ключевым кадрам">
-        <b>Плавность ключей</b>
+        <b>Плавность</b>
       </div>
       <button id="easeCurveToggle" class="tool-toggle" aria-expanded="true" aria-controls="easeCurve" aria-label="Скрыть кривую" title="Скрыть кривую">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
@@ -248,13 +248,13 @@
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Плавность ключей»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
 
-    <section class="card tool-card anchor-card" data-tool="anchor" aria-label="Точка привязки" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card anchor-card" data-tool="anchor" data-info="Точка привязки|Переносит Anchor Point выделенных слоёв в угол, на середину края или в центр — картинка при этом остаётся на месте. Список ниже — что делать, если у слоя уже есть ключи: добавить ключ, сдвинуть все ключи или пропустить такой слой." aria-label="Точка привязки" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Точка привязки»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="anchorOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="anchorSide" aria-label="Скрыть настройку" title="Скрыть настройку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
       </button>
       <div class="tool-head" title="Переносит точку привязки выделенных слоёв, сами слои остаются на месте">
-        <b>Точка привязки</b>
+        <b>Якорь</b>
       </div>
       <div class="anchor-wrap">
         <div id="anchorGrid" class="anchor-grid" role="group" aria-label="Куда перенести точку привязки">
@@ -280,13 +280,13 @@
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Точка привязки»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
 
-    <section class="card tool-card align-card" data-tool="align" aria-label="Выравнивание" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card align-card" data-tool="align" data-info="Выравнивание|Верхний ряд выравнивает выделенные слои по левому, правому краю или центру — композиции или самого выделения (список «Выровнять по»). Нижний ряд распределяет слои равномерно по горизонтали или вертикали — нужно от трёх слоёв. Поворот и масштаб учитываются." aria-label="Выравнивание" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Выравнивание»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="alignOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="alignSide distLabel" aria-label="Скрыть подписи" title="Скрыть подписи">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
       </button>
       <div class="tool-head" title="Двигает выделенные слои к краю или к центру и расставляет их через равные промежутки">
-        <b>Выравнивание</b>
+        <b>Выровнять</b>
       </div>
       <div class="align-body">
         <div id="alignSide" class="align-to">
@@ -326,13 +326,13 @@
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Выравнивание»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
 
-    <section class="card tool-card shift-card" data-tool="shift" aria-label="Сдвиг во времени" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card shift-card" data-tool="shift" data-info="Сдвиг во времени|Стрелки сдвигают выбранное — появление, исчезновение или слой целиком — на N кадров. «К указателю» подводит начало или конец к указателю времени. «Лесенкой» расставляет слои один за другим с шагом N кадров: по порядку, обратно, по выделению или случайно." aria-label="Сдвиг во времени" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Сдвиг во времени»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="shiftOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="shiftPick timePick staggerPick" aria-label="Скрыть списки" title="Скрыть списки">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
       </button>
       <div class="tool-head" title="Двигает во времени появление и исчезновение выделенных слоёв или сами слои">
-        <b>Сдвиг во времени</b>
+        <b>Время</b>
       </div>
       <div class="shift-body">
         <div class="shift-part">
@@ -389,13 +389,13 @@
       </div>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Сдвиг во времени»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
-    <section class="card tool-card paste-card" data-tool="paste" aria-label="Картинка из буфера" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card paste-card" data-tool="paste" data-info="Картинка из буфера|Кладёт картинку из буфера обмена — скриншот или копию из браузера — в проект и в отдельную композицию. То же самое делает Cmd/Ctrl+V, когда курсор в панели." aria-label="Картинка из буфера" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Картинка из буфера»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="pasteOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="pasteHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
       </button>
       <div class="tool-head" title="Кладёт картинку из буфера обмена в проект и в отдельную композицию">
-        <b>Картинка из буфера</b>
+        <b>Картинка</b>
       </div>
       <button id="pasteBtn" class="paste-do" title="Вставить картинку из буфера обмена">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -409,13 +409,13 @@
       <small id="pasteHint" class="paste-hint">Или нажмите Cmd/Ctrl+V, когда курсор в этой панели</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Картинка из буфера»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
-    <section class="card tool-card organize-card" data-tool="organize" aria-label="Порядок в проекте" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card organize-card" data-tool="organize" data-info="Порядок в проекте|Organize раскладывает окно Project по папкам: композиции, прекомпозиции, видео, аудио, картинки и солиды. Файлы на диске и связи не меняются. Отменить — Cmd/Ctrl+Z." aria-label="Порядок в проекте" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Порядок в проекте»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="organizeOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="organizeHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
       </button>
       <div class="tool-head" title="Раскладывает всё в окне Project по папкам: композиции, видео, аудио, картинки, солиды">
-        <b>Порядок в проекте</b>
+        <b>Порядок</b>
       </div>
       <button id="organizeBtn" class="paste-do" title="Разложить элементы проекта по папкам">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -423,18 +423,18 @@
           <path d="M8 12.5h8"/>
           <path d="M8 15.5h5"/>
         </svg>
-        <span>Organize After Effects Project</span>
+        <span>Organize</span>
       </button>
       <small id="organizeHint" class="paste-hint">Композиции, прекомпозиции, видео, аудио, картинки и солиды — по своим папкам. Файлы и связи не меняются. Отменить — Cmd/Ctrl+Z</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Порядок в проекте»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
-    <section class="card tool-card easecopy-card" data-tool="easecopy" aria-label="Копия плавности" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card easecopy-card" data-tool="easecopy" data-info="Копия плавности|«Копировать» запоминает плавность, тип и значения выделенных ключей. «Вставить плавность» переносит только характер движения на другие ключи: значения не трогает, скорость подгоняет под новое движение. «Вставить значения» — наоборот. Если у свойства нет ключей, панель создаст их от указателя времени. «Сквозная скорость» убирает рывок на средних ключах цепочки." aria-label="Копия плавности" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Копия плавности»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="ecOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="ecOpts" aria-label="Скрыть настройку" title="Скрыть настройку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
       </button>
       <div class="tool-head" title="Копирует плавность ключей отдельно от их значений, а значения — отдельно от плавности">
-        <b>Копия плавности</b>
+        <b>Копия</b>
       </div>
       <div class="ec-buttons">
         <button id="ecCopy" class="paste-do" title="Запомнить плавность и значения выделенных ключей">
@@ -476,6 +476,7 @@
     <div id="statusSlotShape" class="status-slot"></div>
     </div>
   </main>
+  <div id="infoTip" class="info-tip" role="tooltip" hidden><b id="infoTipTitle"></b><p id="infoTipText"></p><small id="infoTipHint"></small></div>
 
   <!-- Настройки -->
   <div id="settingsSheet" class="sheet" hidden>
@@ -541,15 +542,42 @@
         <div class="group">
           <span class="label">Акцентный цвет</span>
           <div class="swatches" id="accentSwatches">
+            <input id="accentPick" class="color-pick" type="color" aria-label="Акцентный цвет: любой цвет из палитры" title="Любой цвет">
             <input id="accentHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Акцентный цвет, hex">
           </div>
         </div>
 
         <div class="group">
-          <span class="label">Цвет фона</span>
-          <div class="swatches" id="bgSwatches">
-            <input id="bgHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Цвет фона, hex">
+          <span class="label">Фон разделов</span>
+          <div class="sec-color">
+            <span class="sec-name">AI</span>
+            <div class="swatches" id="bgSwatches">
+              <input id="bgPick" class="color-pick" type="color" aria-label="Фон раздела AI: любой цвет из палитры" title="Любой цвет">
+              <input id="bgHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Фон раздела AI, hex">
+            </div>
           </div>
+          <div class="sec-color">
+            <span class="sec-name">Анимация</span>
+            <div class="swatches" id="bgToolsSwatches">
+              <input id="bgToolsPick" class="color-pick" type="color" aria-label="Фон раздела «Анимация»: любой цвет из палитры" title="Любой цвет">
+              <input id="bgToolsHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Фон раздела «Анимация», hex">
+            </div>
+          </div>
+          <div class="sec-color">
+            <span class="sec-name">Инструменты</span>
+            <div class="swatches" id="bgMotionSwatches">
+              <input id="bgMotionPick" class="color-pick" type="color" aria-label="Фон раздела «Инструменты»: любой цвет из палитры" title="Любой цвет">
+              <input id="bgMotionHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Фон раздела «Инструменты», hex">
+            </div>
+          </div>
+          <div class="sec-color">
+            <span class="sec-name">Шейп</span>
+            <div class="swatches" id="bgShapeSwatches">
+              <input id="bgShapePick" class="color-pick" type="color" aria-label="Фон раздела «Шейп»: любой цвет из палитры" title="Любой цвет">
+              <input id="bgShapeHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Фон раздела «Шейп», hex">
+            </div>
+          </div>
+          <p class="hint">У каждого раздела свой фон: открытый раздел красит им панель. Кружок с радугой — палитра, в ней любой цвет; можно и ввести hex-код.</p>
         </div>
 
         <div class="group">
@@ -564,15 +592,29 @@
         <div class="group">
           <span class="label">Блоки в разделе «Инструменты»</span>
           <div id="toolSize" class="frames tool-size">
-            <button data-value="large">Крупные</button>
-            <button data-value="small">Мелкие</button>
+            <button data-value="100">100%</button>
+            <button data-value="90">90%</button>
+            <button data-value="80">80%</button>
+            <button data-value="70">70%</button>
+            <button data-value="60">60%</button>
+            <button data-value="50">50%</button>
           </div>
-          <p class="hint">Мелкие кнопки занимают меньше места: в ряд помещается больше блоков.</p>
+          <p class="hint">Блоки уменьшаются целиком — кнопки, подписи и ползунки: чем меньше, тем больше блоков помещается в ряд.</p>
           <label class="switch">
             <input id="toolTitles" type="checkbox">
             <span class="track"></span>
             <span class="text">Показывать названия блоков
               <small>«Плавность ключей», «Точка привязки», «Выравнивание».</small>
+            </span>
+          </label>
+        </div>
+
+        <div class="group">
+          <label class="switch">
+            <input id="infoTipsOn" type="checkbox">
+            <span class="track"></span>
+            <span class="text">Подсказки при наведении
+              <small>Задержите курсор на блоке или кнопке на секунду — появится окошко с объяснением.</small>
             </span>
           </label>
         </div>
