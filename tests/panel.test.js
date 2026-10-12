@@ -358,6 +358,8 @@ function makeAE(opts, tmpDir) {
   function Folder(p) { this.fsName = p; this.name = encodeURI(path.basename(p)); }
   Object.defineProperty(Folder.prototype, "exists", { get() { return fs.existsSync(this.fsName) && fs.statSync(this.fsName).isDirectory(); } });
   Object.defineProperty(Folder.prototype, "parent", { get() { return new Folder(path.dirname(this.fsName)); } });
+  Folder.prototype.selectDlg = function (prompt) { log.folderDlg.push({ path: this.fsName, prompt }); return opts.pickFolder === null ? null : new Folder(opts.pickFolder || this.fsName); };
+  Folder.prototype.create = function () { fs.mkdirSync(this.fsName, { recursive: true }); return true; };
   Folder.prototype.getFiles = function () { return fs.readdirSync(this.fsName).sort().map((n) => { const f = path.join(this.fsName, n); return fs.statSync(f).isDirectory() ? new Folder(f) : new File(f); }); };
   const aeRoot = path.join(tmpDir, "Applications", "Adobe After Effects 2026");
   const write = (base, files) => Object.keys(files || {}).forEach((rel) => { const f = path.join(base, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, files[rel]); });
@@ -367,7 +369,7 @@ function makeAE(opts, tmpDir) {
   Folder.appPackage = new Folder(path.join(aeRoot, "Adobe After Effects 2026.app"));
   Folder.myDocuments = new Folder(path.join(tmpDir, "Documents"));
   log.acAdds = []; log.acLayers = []; log.acRemoved = []; log.layersRemoved = []; log.addedLayers = [];
-  log.snaps = []; log.saveDlg = []; log.events = []; log.tasks = [];
+  log.snaps = []; log.saveDlg = []; log.events = []; log.tasks = []; log.folderDlg = [];
   File.prototype.saveDlg = function (prompt) { log.saveDlg.push({ path: this.fsName, prompt }); return opts.saveAs === null ? null : new File(opts.saveAs || this.fsName); };
   Object.defineProperty(File.prototype, "parent", { configurable: true, get() { return new Folder(path.dirname(this.fsName)); } });
   const keyboardState = { keyName: "", ctrlKey: false, altKey: false, shiftKey: false, metaKey: false };
@@ -553,7 +555,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       statusKind: async () => ((await page.locator("#statusBox").getAttribute("class")) || "").replace("status", "").trim(),
       // waits until the panel is idle again (Run button enabled) and no dialog is waiting
       async idle() { await page.waitForFunction(() => !document.getElementById("runBtn").disabled || !document.getElementById("modal").hidden, null, { timeout: 15000 }); },
-      async run(text) { await page.fill("#prompt", text); await page.click("#runBtn"); await h.idle(); },
+      // Waits for the task to start (the Run button goes grey) before waiting for it to end: otherwise a quick look
+      // right after the click can find the button still enabled and return while the task is only beginning.
+      async run(text) {
+        await page.fill("#prompt", text); await page.click("#runBtn");
+        await page.waitForFunction(() => document.getElementById("runBtn").disabled || !document.getElementById("modal").hidden, null, { timeout: 2000 }).catch(() => {});
+        await h.idle();
+      },
       // the panel script has finished starting up (it fills in the version last)
       async ready() { await page.waitForFunction(() => { const v = document.getElementById("versionText"); return !!v && v.textContent !== ""; }); },
       // Reopen the panel. The short pause lets the browser store what the panel has just saved:
@@ -1366,41 +1374,60 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("FX8 no comp open -> a hint", /^Откройте композицию/.test(await p.status()), await p.status());
   await p.close();
 
-  // Snapshot: PNG of the frame under the time indicator, saved and copied to the clipboard.
+  // Snapshot: the camera opens a bar — "Add to the AE project" (on), "Browse…" and "Save"; no system Save window.
+  const snapDir = (q) => path.join(q.home, "Documents", "Sayframe Snapshots");
+  const pngs = (d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((n) => /\.png$/.test(n)) : []);
   p = await open({ compTime: 2.5 });
-  await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
-  t = fs.existsSync(path.join(p.home, "Documents", "Sayframe Snapshots")) ? fs.readdirSync(path.join(p.home, "Documents", "Sayframe Snapshots")) : [];
-  check("FX9 'snapshot' saves the current frame as a PNG named after the comp", t.length === 1 && /^Тест_\d{4}-\d{2}-\d{2}_\d{6}\.png$/.test(t[0]) && p.ae.log.snaps[0].t === 2.5, t.join());
-  check("FX9 and copies it to the clipboard", (p.sys.copied || []).length === 1 && p.sys.copied[0].indexOf("«class PNGf»") > 0 && p.sys.copied[0].indexOf(t[0]) > 0, JSON.stringify(p.sys.copied));
-  check("FX9 the status says where it is", (await p.status()) === "Кадр сохранён: Sayframe Snapshots › " + t[0] + ". Он же в буфере обмена — можно сразу вставить." && (await p.page.locator("#fxConsole").isHidden()), await p.status());
-  check("FX9 a 'Save' window asks where to put it, starting in 'Sayframe Snapshots' for an unsaved project", p.ae.log.saveDlg.length === 1 && p.ae.log.saveDlg[0].prompt === "Сохранить кадр (PNG)" && p.ae.log.saveDlg[0].path === path.join(p.home, "Documents", "Sayframe Snapshots", t[0]));
+  await p.page.click("#fxBtn"); await p.page.click("#fxSnap");
+  await p.page.waitForFunction(() => !document.getElementById("snapBar").hidden);
+  check("SN1 the camera opens the snapshot bar: 'Add to the AE project' ticked, 'Browse…' and 'Save' next to it; nothing is saved yet",
+    (await p.page.locator("#snapImport").isChecked()) && (await p.page.locator("#snapBrowse").isVisible()) && (await p.page.locator("#snapSave").isVisible()) &&
+    (await p.page.locator(".snap-row").innerText()).replace(/\s+/g, " ").trim() === "В проект AE Обзор… Сохранить" && (await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); return Math.abs(r("snapImport").top - r("snapSave").top) < 20 && Math.abs(r("snapBrowse").top - r("snapSave").top) < 2; })) && p.ae.log.snaps.length === 0 && p.ae.log.saveDlg.length === 0 && (await p.page.locator("#fxConsole").isHidden()),
+    await p.page.locator(".snap-row").innerText());
+  check("SN1 for an unsaved project the folder is 'Documents › Sayframe Snapshots'", /Sayframe Snapshots$/.test(await p.page.locator("#snapFolder").innerText()) && (await p.page.getAttribute("#snapFolder", "title")) === snapDir(p), await p.page.locator("#snapFolder").innerText());
+  await p.page.screenshot({ path: path.join(SHOTS, "41-snapshot-bar.png") });
+  await p.page.click("#snapSave"); await p.idle();
+  t = pngs(snapDir(p));
+  check("SN2 'Save' writes the frame under the time indicator as a PNG named after the comp, without any Save window", t.length === 1 && /^Тест_\d{4}-\d{2}-\d{2}_\d{6}\.png$/.test(t[0]) && p.ae.log.snaps[0].t === 2.5 && p.ae.log.saveDlg.length === 0, t.join());
+  check("SN2 ticked: the PNG is imported into the project, into a 'Sayframe Snapshots' bin", p.ae.log.imports.length === 1 && p.ae.log.imports[0] === path.join(snapDir(p), t[0]) && p.ae.log.bins.join() === "Sayframe Snapshots", JSON.stringify([p.ae.log.imports, p.ae.log.bins]));
+  check("SN2 it is copied to the clipboard, the bar closes and the status says it all", (p.sys.copied || []).length === 1 && p.sys.copied[0].indexOf(t[0]) > 0 && (await p.page.locator("#snapBar").isHidden()) &&
+    (await p.status()) === "Кадр сохранён: Sayframe Snapshots › " + t[0] + ". Добавлен в проект, папка «Sayframe Snapshots». Он же в буфере обмена — можно сразу вставить.", await p.status());
+  // Untick, choose another folder with Browse; both are remembered.
+  const pick = fs.mkdtempSync(path.join(os.tmpdir(), "snappick-"));
   await p.close();
+  p = await open({ compTime: 1, pickFolder: pick });
+  await p.page.click("#snapBtn"); await p.page.waitForFunction(() => !document.getElementById("snapBar").hidden);
+  await p.page.click(".snap-check"); await p.page.click("#snapBrowse"); await p.page.waitForTimeout(300);
+  check("SN3 'Browse…' asks for a folder (starting in the current one) and shows the choice", p.ae.log.folderDlg.length === 1 && p.ae.log.folderDlg[0].path === snapDir(p) && (await p.page.getAttribute("#snapFolder", "title")) === pick, JSON.stringify(p.ae.log.folderDlg));
+  await p.page.click("#snapSave"); await p.idle();
+  check("SN3 unticked: saved into the chosen folder, not imported", pngs(pick).length === 1 && p.ae.log.imports.length === 0 && !/Добавлен в проект/.test(await p.status()), await p.status());
+  await p.restart();
+  await p.page.click("#snapBtn"); await p.page.waitForFunction(() => !document.getElementById("snapBar").hidden);
+  check("SN3 the folder and the tick are remembered", !(await p.page.locator("#snapImport").isChecked()) && (await p.page.getAttribute("#snapFolder", "title")) === pick);
+  await p.page.keyboard.press("Escape");
+  check("SN4 Esc closes the bar without saving", (await p.page.locator("#snapBar").isHidden()) && pngs(pick).length === 1);
+  await p.close();
+  // A saved project: the frame goes next to it until another folder is chosen.
   const snapProj = fs.mkdtempSync(path.join(os.tmpdir(), "snapproj-"));
   p = await open({ projectFile: path.join(snapProj, "ролик.aep") });
-  await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
-  t = fs.readdirSync(snapProj).filter((n) => /\.png$/.test(n));
-  check("FX10 with a saved project the 'Save' window opens in the project's folder", p.ae.log.saveDlg.length === 1 && path.dirname(p.ae.log.saveDlg[0].path) === snapProj && t.length === 1 && (await p.status()).indexOf("Кадр сохранён: " + path.basename(snapProj) + " › ") === 0, (await p.status()) + " " + JSON.stringify(p.ae.log.saveDlg));
-  await p.close();
-  p = await open({ projectFile: path.join(snapProj, "ролик.aep"), saveAs: path.join(snapProj, "мой кадр") });
-  await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
-  check("FX10 the name and place chosen in the window are used, .png is added if missing", fs.existsSync(path.join(snapProj, "мой кадр.png")) && /› мой кадр\.png\./.test(await p.status()), await p.status());
-  await p.close();
-  p = await open({ projectFile: path.join(snapProj, "ролик.aep"), saveAs: path.join(snapProj, "из шапки") });
-  t = await p.page.evaluate(() => { const b = document.querySelector(".top-actions"); return Array.from(b.children).map((c) => c.id).join(); });
-  await p.page.click("#snapBtn"); await p.idle();
-  check("FX10 the camera is also in the header, next to the search: one click takes the same snapshot", t === "snapBtn,fxBtn,settingsBtn" && fs.existsSync(path.join(snapProj, "из шапки.png")) && (await p.page.locator("#fxConsole").isHidden()), t + " " + await p.status());
-  await p.close();
-  p = await open({ saveAs: null });
-  await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
-  check("FX10 Cancel in the window saves nothing", (await p.status()) === "Снимок отменён." && p.ae.log.snaps.length === 0 && !(p.sys.copied || []).length, await p.status());
+  await p.page.click("#snapBtn"); await p.page.waitForFunction(() => /рядом с проектом/.test(document.getElementById("snapFolder").textContent));
+  await p.page.keyboard.press("Enter"); await p.idle();
+  t = pngs(snapProj);
+  check("SN5 with a saved project the default folder is the project's; Enter saves", t.length === 1 && (await p.status()).indexOf("Кадр сохранён: " + path.basename(snapProj) + " › ") === 0, await p.status());
+  t = await p.page.evaluate(() => Array.from(document.querySelector(".top-actions").children).map((c) => c.id).join());
+  check("SN5 the camera is in the header next to the search, and in FX Console", t === "snapBtn,fxBtn,settingsBtn");
   await p.close();
   p = await open({ copyFails: true });
-  await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
-  check("FX9 if the clipboard refuses, the file is still saved and the status says so", /В буфер обмена скопировать не получилось\.$/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+  await p.page.click("#snapBtn"); await p.page.waitForFunction(() => !document.getElementById("snapBar").hidden); await p.page.click("#snapSave"); await p.idle();
+  check("SN6 if the clipboard refuses, the file is still saved and the status says so", /В буфер обмена скопировать не получилось\.$/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+  await p.close();
+  p = await open({ importThrows: true });
+  await p.page.click("#snapBtn"); await p.page.waitForFunction(() => !document.getElementById("snapBar").hidden); await p.page.click("#snapSave"); await p.idle();
+  check("SN6 if the import fails, the PNG is still saved and the status says so", pngs(snapDir(p)).length === 1 && /В проект добавить не получилось\./.test(await p.status()), await p.status());
   await p.close();
   p = await open({ noActiveComp: true });
-  await p.page.click("#fxBtn"); await p.page.click("#fxSnap"); await p.idle();
-  check("FX9 no comp -> a hint", /^Откройте композицию/.test(await p.status()), await p.status());
+  await p.page.click("#snapBtn"); await p.page.waitForFunction(() => !document.getElementById("snapBar").hidden); await p.page.click("#snapSave"); await p.idle();
+  check("SN6 no comp -> a hint", /^Откройте композицию/.test(await p.status()), await p.status());
   await p.close();
 
   console.log("\n=== hotkeys ===");
@@ -2056,7 +2083,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#tabTools");
   check("W2 the Animation library uses the whole width, the status line stays in the column", (await box(p, "#viewTools .ac")).split(",")[0] === "14" && Number((await box(p, "#viewTools .ac")).split(",")[2]) > 900 && (await overflow(p)) <= 0, await box(p, "#viewTools .ac"));
   await p.page.click("#tabMotion");
-  t = await p.page.evaluate(() => { const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; }; return { tabs: r("#tabs"), top: r(".top"), status: r("#statusBox"), tools: r("#motionTools"), cards: Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width)]; }) }; });
+  t = await p.page.evaluate(() => { const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; }; return { tabs: r("#tabs"), top: r(".top"), status: r("#statusBox"), tools: r("#motionTools"), cards: Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), (c) => { const b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width)]; }) }; });
   check("W2 Animation tab in a wide panel: tabs and blocks get the whole width, the status line stays in the column", t.tabs.join() === "14,986" && t.top.join() === "14,986" && t.status[1] <= 366 && t.tools.join() === "14,986" && (await overflow(p)) <= 0, JSON.stringify(t));
   check("W2 the blocks are not stretched: 4 cells (168px) each, five side by side in one row, the sixth below", t.cards.map((c) => c[2]).join() === "168,168,168,168,168,168" && t.cards.map((c) => c[0]).join() === "14,190,366,542,718,718" && t.cards.slice(0, 5).every((c) => c[1] === t.cards[0][1]) && t.cards[5][1] > t.cards[4][1] && (await box(p, "#easeIn")).split(",")[2] === (await box(p, "#easeOut")).split(",")[2], JSON.stringify(t.cards));
   await p.page.click("#tabClaude");
@@ -2357,9 +2384,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
   // ---------------------------------------------------------------- animation: two blocks side by side, swappable
-  const toolOrder = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), (c) => c.getAttribute("data-tool")).join());
-  const savedTools = (p) => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").order || null);
-  const toolRects = (p) => p.page.evaluate(() => { const o = {}; Array.prototype.forEach.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const r = c.getBoundingClientRect(); o[c.getAttribute("data-tool")] = { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width) }; }); return o; });
+  const toolOrder = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), (c) => c.getAttribute("data-tool")).join());
+  // The layout checks below were written for the six original blocks; "Копия плавности" stands last and has its own checks.
+  const savedTools = (p) => p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").order; return o ? o.split(",").filter((x) => x !== "easecopy").join(",") : null; });
+  const toolRects = (p) => p.page.evaluate(() => { const o = {}; Array.prototype.forEach.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), (c) => { const r = c.getBoundingClientRect(); o[c.getAttribute("data-tool")] = { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width) }; }); return o; });
   const grip = (tool) => '#motionTools [data-tool="' + tool + '"] .tool-grip';
   async function dragFrom(p, from, to) {
     await p.page.mouse.move(from.x, from.y); await p.page.mouse.down();
@@ -2371,7 +2399,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const by = (pt, dx, dy) => ({ x: pt.x + dx, y: pt.y + (dy || 0) });
   const topOf = (r) => ({ x: (r.l + r.r) / 2, y: r.t + 20 });   // a point near the top: tall blocks may end below the window
   // Where each block sits on the grid: "name:column,row,width,height" in cells.
-  const cellsNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const a = /^(\d+) \/ span (\d+)$/.exec(c.style.gridColumn), b = /^(\d+) \/ span (\d+)$/.exec(c.style.gridRow); return c.getAttribute("data-tool") + ":" + (a[1] - 1) + "," + (b[1] - 1) + "," + a[2] + "," + b[2]; }).join(" "));
+  const cellsNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), (c) => { const a = /^(\d+) \/ span (\d+)$/.exec(c.style.gridColumn), b = /^(\d+) \/ span (\d+)$/.exec(c.style.gridRow); return c.getAttribute("data-tool") + ":" + (a[1] - 1) + "," + (b[1] - 1) + "," + a[2] + "," + b[2]; }).join(" "));
   const savedPlaces = (p) => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").places || "");
   const resizeTo = async (p, w) => { await p.page.setViewportSize({ width: w, height: 760 }); await p.page.waitForTimeout(80); };
 
@@ -2381,9 +2409,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R1 at 380px easing and anchor stand side by side, align goes to the row below at the same size", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && t.ease.w === 168 && t.anchor.w === 168 && t.align.w === 168 && t.ease.l === 14 && t.anchor.r === 358 && t.align.t >= t.ease.b && t.align.l === 14, JSON.stringify(t));
   t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.display, cs.gridAutoRows, cs.rowGap, cs.columnGap, g.style.gridTemplateColumns].join("|"); });
   check("R1 the blocks stand on a grid of 36px cells with 8px gaps, 8 cells across at 380px", t === "grid|36px|8px|8px|repeat(8, 36px)", t);
-  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const r = c.getBoundingClientRect(), g = document.getElementById("motionTools").getBoundingClientRect(); return (r.left - g.left) % 44 === 0 && (r.top - g.top) % 44 === 0 && (r.width + 8) % 44 === 0 && (r.height + 8) % 44 === 0; }));
+  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), (c) => { const r = c.getBoundingClientRect(), g = document.getElementById("motionTools").getBoundingClientRect(); return (r.left - g.left) % 44 === 0 && (r.top - g.top) % 44 === 0 && (r.width + 8) % 44 === 0 && (r.height + 8) % 44 === 0; }));
   check("R1 every block starts on a cell and is a whole number of cells wide and tall", t);
-  t = await p.page.evaluate(() => { const inside = (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button, select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5); }); }; return Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), inside).join(); });
+  t = await p.page.evaluate(() => { const inside = (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button, select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5); }); }; return Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), inside).join(); });
   check("R1 nothing sticks out of any block", t === "true,true,true,true,true,true" && (await overflow(p)) <= 0, t);
   t = await p.page.evaluate(() => [document.getElementById("easeIn").getBoundingClientRect().width, document.getElementById("easeOut").getBoundingClientRect().width, document.getElementById("anchorGrid").getBoundingClientRect().width].map(Math.round));
   check("R1 sliders stay usable and the arrow grid keeps its size", t[0] === t[1] && t[0] >= 40 && t[2] >= 118, t.join());
@@ -2495,7 +2523,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     ['"anchor,ease"', "anchor,ease,align,shift,paste,organize"] /* an order saved before the Align block existed */, ['"align,ghost,ease"', "align,ease,anchor,shift,paste,organize"]]) {
     p = await open({});
     await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", '{"order":' + v + "}"), bad); await p.restart(); await motionTab(p);
-    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card").count()) === 6 && p.errors.length === 0, await toolOrder(p));
+    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy])").count()) === 6 && p.errors.length === 0, await toolOrder(p));
     await p.close();
   }
   p = await open({});
@@ -2734,11 +2762,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // ---------------------------------------------------------------- animation: a free panel, fixed blocks
   // Stretching the After Effects panel never resizes a block; it only changes how many stand in a row.
   console.log("\n=== animation: blocks reflow, sizes stay ===");
-  const allInside = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button:not(.tool-grip), select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5); }); }));
-  const sizesNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.getBoundingClientRect(); return Math.round(b.width) + "x" + Math.round(b.height); }).sort().join());
+  const allInside = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button:not(.tool-grip), select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5); }); }));
+  const sizesNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), (c) => { const b = c.getBoundingClientRect(); return Math.round(b.width) + "x" + Math.round(b.height); }).sort().join());
   // How many blocks stand in the first row, and is everything stacked in one column?
-  const firstRow = (p) => p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll("#motionTools .tool-card"), (c) => /^1 \//.test(c.style.gridRow)).length);
-  const oneColumn = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => /^1 \//.test(c.style.gridColumn)));
+  const firstRow = (p) => p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), (c) => /^1 \//.test(c.style.gridRow)).length);
+  const oneColumn = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), (c) => /^1 \//.test(c.style.gridColumn)));
   p = await open({ width: 380 });
   await motionTab(p);
   c = await sizesNow(p);
@@ -2779,7 +2807,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 700, height: 1100, settings: { panelWidth: 640 } });   // blocks area: 672px = 15 cells
   await motionTab(p);
   t = await toolRects(p);
-  check("S1 every block has three handles: right edge (width), bottom edge (height), corner (both)", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const r = c.getBoundingClientRect(); const x = c.querySelector(".tool-resize").getBoundingClientRect(), y = c.querySelector(".tool-resize-y").getBoundingClientRect(), xy = c.querySelector(".tool-resize-xy").getBoundingClientRect(); return x.left < r.right && x.right > r.right && x.height > 30 && getComputedStyle(c.querySelector(".tool-resize")).cursor === "ew-resize" && y.top < r.bottom && y.bottom > r.bottom && y.width > 30 && getComputedStyle(c.querySelector(".tool-resize-y")).cursor === "ns-resize" && xy.right > r.right && xy.bottom > r.bottom && getComputedStyle(c.querySelector(".tool-resize-xy")).cursor === "nwse-resize"; }))));
+  check("S1 every block has three handles: right edge (width), bottom edge (height), corner (both)", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), (c) => { const r = c.getBoundingClientRect(); const x = c.querySelector(".tool-resize").getBoundingClientRect(), y = c.querySelector(".tool-resize-y").getBoundingClientRect(), xy = c.querySelector(".tool-resize-xy").getBoundingClientRect(); return x.left < r.right && x.right > r.right && x.height > 30 && getComputedStyle(c.querySelector(".tool-resize")).cursor === "ew-resize" && y.top < r.bottom && y.bottom > r.bottom && y.width > 30 && getComputedStyle(c.querySelector(".tool-resize-y")).cursor === "ns-resize" && xy.right > r.right && xy.bottom > r.bottom && getComputedStyle(c.querySelector(".tool-resize-xy")).cursor === "nwse-resize"; }))));
   check("S1 (scene) three blocks in one row, lists under the buttons", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await shape(p, "anchor")) === "vertical" && (await shape(p, "align")) === "vertical", JSON.stringify(t));
   await p.page.mouse.move((await center(p, edge("anchor"))).x, (await center(p, edge("anchor"))).y); await p.page.mouse.down();
   c = await center(p, edge("anchor"));
@@ -2901,7 +2929,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const pinOf = (p, name) => p.page.locator('.tool-card[data-tool="' + name + '"] .tool-pin');
   p = await open({});
   await motionTab(p);
-  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const pin = c.querySelector(".tool-pin"), tg = c.querySelector(".tool-toggle"); if (!pin || !tg) return false; const a = pin.getBoundingClientRect(), b = tg.getBoundingClientRect(), r = c.getBoundingClientRect(); return Math.abs(a.top - b.top) < 2 && a.right <= b.left + 1 && a.left > r.left && pin.getAttribute("aria-pressed") === "false"; }));
+  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), (c) => { const pin = c.querySelector(".tool-pin"), tg = c.querySelector(".tool-toggle"); if (!pin || !tg) return false; const a = pin.getBoundingClientRect(), b = tg.getBoundingClientRect(), r = c.getBoundingClientRect(); return Math.abs(a.top - b.top) < 2 && a.right <= b.left + 1 && a.left > r.left && pin.getAttribute("aria-pressed") === "false"; }));
   check("PN1 the pin does not cut the titles short", await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-head b"), (b) => b.scrollWidth <= b.clientWidth + 1)), await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-head b"), (b) => b.textContent + ":" + b.scrollWidth + "/" + b.clientWidth).join(" ")));
   check("PN1 every block has a pin right next to its minus; nothing is pinned at first, no line", t && (await pinLine(p)) === null && (await pinOf(p, "ease").getAttribute("title")) === "Закрепить наверху");
   c = await cellsNow(p);
@@ -2996,11 +3024,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const savedMotion = (p, k) => p.page.evaluate((k) => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}")[k], k);
   const titlesAttr = (p) => p.page.evaluate(() => document.documentElement.getAttribute("data-titles"));
   // Does the corner button overlap anything else in its block?
-  const togglesClear = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-toggle"), (b) => { const r = b.querySelector("svg").getBoundingClientRect(); return Array.prototype.every.call(b.parentNode.querySelectorAll(".tool-head b, .anchor-grid button, .ease-bar > *, .ease-curve, select, .anchor-side label, .align-btn, .align-to label, .align-label, .shift-pick label, .tool-info, .shift-arrow, .shift-do"), (el) => { const q = el.getBoundingClientRect(); if (q.width === 0) return true; const tw = el.nodeName === "B" ? (() => { const g = document.createRange(); g.selectNodeContents(el); const t = g.getBoundingClientRect(); return { left: Math.max(t.left, q.left), right: Math.min(t.right, q.right), top: t.top, bottom: t.bottom }; })() : q; return tw.right <= r.left || tw.left >= r.right || tw.bottom <= r.top || tw.top >= r.bottom; }); }));
+  const togglesClear = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]) .tool-toggle"), (b) => { const r = b.querySelector("svg").getBoundingClientRect(); return Array.prototype.every.call(b.parentNode.querySelectorAll(".tool-head b, .anchor-grid button, .ease-bar > *, .ease-curve, select, .anchor-side label, .align-btn, .align-to label, .align-label, .shift-pick label, .tool-info, .shift-arrow, .shift-do"), (el) => { const q = el.getBoundingClientRect(); if (q.width === 0) return true; const tw = el.nodeName === "B" ? (() => { const g = document.createRange(); g.selectNodeContents(el); const t = g.getBoundingClientRect(); return { left: Math.max(t.left, q.left), right: Math.min(t.right, q.right), top: t.top, bottom: t.bottom }; })() : q; return tw.right <= r.left || tw.left >= r.right || tw.bottom <= r.top || tw.top >= r.bottom; }); }));
 
   p = await open({});
   await motionTab(p);
-  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-toggle").count()) === 6 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "organizeOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
+  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]) .tool-toggle").count()) === 6 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "organizeOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy])"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
   check("F1 the corner buttons do not cover titles or controls", await togglesClear(p));
   c = await cardH(p, "anchor");
   await p.page.click("#anchorOptsToggle");
@@ -3033,7 +3061,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("F5 titles are shown unless switched off", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность ключей,Точка привязки,Выравнивание,Сдвиг во времени,Картинка из буфера,Порядок в проекте");
+  check("F5 titles are shown unless switched off", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность ключей,Точка привязки,Выравнивание,Сдвиг во времени,Картинка из буфера,Порядок в проекте,Копия плавности");
   c = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("F5 settings have the switch, on", await p.page.isChecked("#toolTitles"));
@@ -3781,7 +3809,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     fs.rmSync(scratch, { recursive: true, force: true });
   }
 
-  // ---------------------------------------------------------------- shape tab: ease copy (like EaseCopy)
+  // ---------------------------------------------------------------- Tools: ease copy (like EaseCopy)
   {
     const eases2 = (list) => list.map((e) => Math.round(e.speed * 100) / 100 + "/" + e.influence).join();
     const clock2 = { time: 0 };
@@ -3795,8 +3823,15 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const SCALE = new Prop([100, 100, 100], clock2, { name: "Масштаб", easeDims: 3 }).addKey(0, [0, 0, 100]).addKey(1, [100, 100, 100]);
     sel(SRC, [1, 2]); sel(DST, []);
     p = await open({ selectedProperties: [SRC] });
-    await p.page.click("#tabShape");
-    check("EC1 a 'Шейп' tab with the 'Копия плавности' block on the same kind of grid as Tools", (await p.page.locator("#viewShape .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewShape .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewShape .tool-pin").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
+    await p.page.click("#tabMotion");
+    check("EC1 the 'Копия плавности' block is in Tools, on the grid with the other blocks, with its pin; the Shape tab only has a note for now", (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin").count()) === 1 && (await p.page.locator("#viewShape .tool-card").count()) === 0 && (await p.page.locator("#viewShape .shape-empty").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
+    const ecInside = () => p.page.evaluate(() => { const card = document.querySelector("#motionTools .tool-card[data-tool='easecopy']"), c = card.getBoundingClientRect();
+      return Array.prototype.every.call(card.querySelectorAll("button:not(.tool-pin):not(.tool-toggle):not(.tool-grip), label, small, b"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 1 && r.right <= c.right + 1 && r.top >= c.top - 1 && r.bottom <= c.bottom + 1); }); });
+    check("EC1 nothing sticks out of the block (large blocks)", await ecInside());
+    await p.page.screenshot({ path: path.join(SHOTS, "42-tools-easecopy.png"), fullPage: true });
+    await p.page.evaluate(() => document.documentElement.setAttribute("data-tools", "small")); await p.page.evaluate(() => window.dispatchEvent(new Event("resize"))); await p.page.waitForTimeout(300);
+    check("EC1 …and with small blocks", await ecInside());
+    await p.page.evaluate(() => document.documentElement.setAttribute("data-tools", "large")); await p.page.evaluate(() => window.dispatchEvent(new Event("resize"))); await p.page.waitForTimeout(300);
     await p.page.click("#ecPasteEase");
     check("EC1 pasting before copying explains what to do and touches nothing", /Сначала выделите ключи/.test(await p.status()) && p.ae.log.undo.length === 0);
     await p.page.click("#ecCopy"); await p.idle();
@@ -3808,6 +3843,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     // A wrong number of keys: 2 were copied, 3 are selected.
     const LONG = new Prop(0, clock2, { name: "Позиция X" }).addKey(0, 0).addKey(1, 10).addKey(2, 20).addKey(3, 30);
     sel(DST, []); sel(LONG, [1, 2, 3]); p.ae.comp.selectedProperties = [LONG];
+    await p.page.click("#ecPasteEase"); await p.idle();
+    sel(LONG, []); p.ae.comp.selectedProperties = []; p.ae.comp.selectedLayers = [];
+    await p.page.click("#ecPasteEase"); await p.idle();
+    check("EC4 nothing selected: a hint says to select keys (or a layer)", /Выделите на таймлайне ключи, куда вставить/.test(await p.status()) && (await p.statusKind()) === "", await p.status());
+    sel(LONG, [1, 2, 3]); p.ae.comp.selectedProperties = [LONG];
     await p.page.click("#ecPasteEase"); await p.idle();
     check("EC4 the number of keys must match or be a multiple, otherwise nothing changes", /Скопировано ключей: 2, выделено: 3/.test(await p.status()) && (await p.statusKind()) === "" && LONG.keys.every((k) => k.outType === KIT.LINEAR), await p.status());
     sel(LONG, [1, 2, 3, 4]);
@@ -3838,13 +3878,31 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click("label.ec-switch .track");
     await p.page.click("#ecPasteEase"); await p.idle();
     check("EC7 without 'Сквозная скорость' the middle key keeps a jump; with it, one speed in and out (no hiccup)", plain.join() === "20/40,360/40" && eases2(CH.keys[1].inEase) === eases2(CH.keys[1].outEase) && eases2(CH.keys[1].inEase) === "190/40" && CH.keys[1].tCont === true, plain.join() + " | " + eases2(CH.keys[1].inEase) + " " + eases2(CH.keys[1].outEase));
+    // Keys not selected, only a layer: the same property on that layer takes the easing.
+    const LA = mkLayer(clock2, { name: "A" }), LB = mkLayer(clock2, { name: "B" });
+    const tr = { matchName: "ADBE Transform Group", propertyDepth: 1, parentProperty: null };
+    for (const L of [LA, LB]) { const r = L.props["ADBE Rotate Z"]; r.matchName = "ADBE Rotate Z"; r.propertyDepth = 2; r.parentProperty = tr; r.name = "Rotation"; }
+    LA.props["ADBE Rotate Z"].addKey(0, 0, { selected: true }).addKey(1, 90, { selected: true });
+    LA.props["ADBE Rotate Z"].keys[0].outEase = [new KeyframeEase(45, 66)];
+    LB.props["ADBE Rotate Z"].addKey(0, 0).addKey(2, 180);
+    p.ae.comp.selectedProperties = [LA.props["ADBE Rotate Z"]];
+    await p.page.click("#ecCopy"); await p.idle();
+    p.ae.comp.selectedProperties = []; p.ae.comp.selectedLayers = [LB];
+    await p.page.click("#ecPasteEase"); await p.idle();
+    check("EC9 keys not selected but a layer is: the easing goes onto the same property of that layer, scaled to its move", eases2(LB.props["ADBE Rotate Z"].keys[0].outEase) === "45/66" && /взял то же свойство у выделенного слоя/.test(await p.status()), eases2(LB.props["ADBE Rotate Z"].keys[0].outEase) + " | " + await p.status());
+    p.ae.comp.selectedLayers = [LA]; LA.props["ADBE Rotate Z"].keys.forEach((k) => { k.selected = false; });
+    p.ae.comp.selectedProperties = [SRC3]; SRC3.keys.forEach((k) => { k.selected = true; });
+    await p.page.click("#ecCopy"); await p.idle();
+    p.ae.comp.selectedProperties = []; p.ae.comp.selectedLayers = [LB];
+    await p.page.click("#ecPasteEase"); await p.idle();
+    check("EC9 a layer without that property's keys gets a clear hint", /нет ключей в том же свойстве/.test(await p.status()), await p.status());
     await p.page.click("#ecOptsToggle");
     check("EC8 the minus folds the switch away; the plus tells what is set", (await p.page.locator("#ecOpts").isHidden()) && /сквозная скорость: вкл/.test(await p.page.getAttribute("#ecOptsToggle", "title")));
-    await p.page.click("#viewShape .tool-pin");
+    await p.page.click("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin");
     await p.restart();
-    await p.page.click("#tabShape").catch(() => {});
+    await p.page.click("#tabMotion").catch(() => {});
     check("EC8 the clipboard, the switch, the fold and the pin survive a restart; the Tools grid is untouched", (await p.page.locator("#ecClip").innerText()) === "В буфере: 3 ключа · Тест" && (await p.page.locator("#ecOpts").isHidden()) &&
-      (await p.page.getAttribute("#viewShape .tool-pin", "aria-pressed")) === "true" && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.shape.v1"))).ecThrough === true && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.motion.v1") || "{}")).pins !== "easecopy" && p.errors.length === 0, p.errors.join(" | "));
+      (await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin", "aria-pressed")) === "true" && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.motion.v1"))).ecThrough === true && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.motion.v1"))).pins === "easecopy" && p.errors.length === 0, p.errors.join(" | "));
     await p.page.screenshot({ path: path.join(SHOTS, "40-shape-easecopy.png") });
     await p.close();
   }
