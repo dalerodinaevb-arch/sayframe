@@ -386,7 +386,10 @@ textarea:focus, .field:focus {
    Ширина панели меняет только число клеток в ряду, сами блоки своих размеров не меняют. */
 .motion-tools { position: relative; display: grid; grid-template-columns: repeat(auto-fill, 36px); grid-auto-rows: 36px; gap: 8px; justify-content: start; -webkit-user-select: none; user-select: none; }
 .motion-tools input { -webkit-user-select: text; user-select: text; }
-.motion-tools > .tool-card { position: relative; min-width: 0; margin: 0; overflow: visible; }
+.motion-tools > .tool-card { position: relative; min-width: 0; margin: 0; overflow: visible;
+  padding: calc(12px * var(--tz, 1)) calc(14px * var(--tz, 1)) calc(14px * var(--tz, 1)); gap: calc(12px * var(--tz, 1)); border-radius: calc(18px * var(--tz, 1)); }
+/* Масштаб блоков (100–50 %): содержимое уменьшается целиком, сетку под него пересчитывает panel.js. */
+.motion-tools > .tool-card > * { zoom: var(--tz, 1); }
 /* Клетки сетки видны, пока блоки переставляют или растягивают. */
 .grid-cells { position: absolute; left: 0; top: 0; pointer-events: none; opacity: 0; transition: opacity 0.15s ease; }
 .arranging .grid-cells, .motion-tools.resizing .grid-cells { opacity: 1; }
@@ -494,7 +497,7 @@ textarea:focus, .field:focus {
 .ease-card .tool-head { margin-bottom: 4px; }
 /* Без названий (настройка «Показывать названия блоков») минус и плюс получают сверху свою полоску. */
 [data-titles="off"] .motion-tools .tool-head { display: none; }
-[data-titles="off"] .motion-tools > .tool-card { padding-top: 22px; }
+[data-titles="off"] .motion-tools > .tool-card { padding-top: calc(22px * var(--tz, 1)); }
 
 /* Минус в углу прячет кривую и становится плюсом. */
 .tool-toggle {
@@ -736,67 +739,11 @@ textarea:focus, .field:focus {
 
 /* Мелкие блоки (настройка «Блоки в разделе „Анимация“»): кнопки, отступы и подписи меньше,
    поэтому в ряд встаёт больше блоков. Меняется только размер, все функции те же. */
-[data-tools="small"] .motion-tools > .tool-card { padding: 9px 10px 10px; gap: 8px; border-radius: 14px; }
-[data-tools="small"] .motion-tools .tool-head::before { width: 30px; height: 12px; }
-[data-tools="small"] .motion-tools .tool-head b { font-size: 11px; }
-[data-tools="small"] .motion-tools .anchor-wrap { gap: 8px; }
-[data-tools="small"] .motion-tools .anchor-grid { grid-template-columns: repeat(3, 26px); grid-auto-rows: 26px; gap: 2px; }
-[data-tools="small"] .motion-tools .anchor-cell { border-radius: 7px; }
-[data-tools="small"] .motion-tools .anchor-cell svg { width: 14px; height: 14px; }
-[data-tools="small"] .motion-tools .anchor-side { flex-basis: 110px; gap: 4px; }
-[data-tools="small"] .motion-tools .anchor-side label { font-size: 11px; }
-[data-tools="small"] .motion-tools .select { height: 28px; padding: 0 22px 0 8px; font-size: 11.5px; border-radius: 9px; background-position: calc(100% - 13px) 11px, calc(100% - 8px) 11px; }
-[data-tools="small"] .motion-tools .align-body { gap: 6px; }
-[data-tools="small"] .motion-tools .align-to { gap: 4px 6px; }
-[data-tools="small"] .motion-tools .align-to label, [data-tools="small"] .motion-tools .align-label { font-size: 11px; }
-[data-tools="small"] .motion-tools .align-to .select { flex-basis: 80px; }
-[data-tools="small"] .motion-tools .align-row { gap: 2px 4px; }
-[data-tools="small"] .motion-tools .align-trio { min-width: 46px; max-width: 96px; }
-[data-tools="small"] .motion-tools .align-btn { height: 24px; border-radius: 6px; }
-[data-tools="small"] .motion-tools .align-btn svg { width: 14px; height: 14px; }
-[data-tools="small"] .motion-tools .shift-body { gap: 6px; }
-[data-tools="small"] .motion-tools .shift-part { gap: 5px; }
-[data-tools="small"] .motion-tools .shift-pick { gap: 4px 5px; }
-[data-tools="small"] .motion-tools .shift-pick label, [data-tools="small"] .motion-tools .shift-unit { font-size: 11px; }
-[data-tools="small"] .motion-tools .shift-pick .select { flex-basis: 64px; height: 24px; background-position: calc(100% - 13px) 9px, calc(100% - 8px) 9px; }
-[data-tools="small"] .motion-tools .tool-info { width: 15px; height: 15px; font-size: 11px; line-height: 15px; }
-[data-tools="small"] .motion-tools .shift-row { gap: 4px; }
-[data-tools="small"] .motion-tools .shift-arrow { width: 24px; height: 24px; border-radius: 6px; }
-[data-tools="small"] .motion-tools .shift-arrow svg { width: 14px; height: 14px; }
-[data-tools="small"] .motion-tools .shift-num { width: 26px; height: 20px; font-size: 12px; }
 /* В мелком блоке между стрелками остаётся только число: слово «кадр.» туда не помещается. */
-[data-tools="small"] .motion-tools .shift-row-step .shift-unit { display: none; }
-[data-tools="small"] .motion-tools .shift-row-step .shift-num { text-align: center; }
-[data-tools="small"] .motion-tools .shift-row .select { flex-basis: 64px; height: 24px; background-position: calc(100% - 13px) 9px, calc(100% - 8px) 9px; }
-[data-tools="small"] .motion-tools .shift-do { height: 24px; padding: 0 6px; font-size: 11px; border-radius: 7px; }
-[data-tools="small"] .motion-tools .paste-do { min-height: 32px; padding: 5px 6px; gap: 5px; font-size: 11.5px; border-radius: 8px; }
-[data-tools="small"] .motion-tools .paste-do svg { width: 16px; height: 16px; }
-[data-tools="small"] .motion-tools .paste-hint { font-size: 10.5px; }
-[data-tools="small"] .motion-tools .ease-card { gap: 4px; padding-bottom: 8px; }
-[data-tools="small"] .motion-tools .ease-card .tool-head { margin-bottom: 2px; }
-[data-tools="small"] .motion-tools .ease-curve { height: 56px; border-radius: 9px; margin-bottom: 4px; }
-[data-tools="small"] .motion-tools .ease-bar { gap: 5px; }
-[data-tools="small"] .motion-tools .ease-slider { --thumb: 12px; height: 18px; }
-[data-tools="small"] .motion-tools .ease-slider::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -4.5px; }
-[data-tools="small"] .motion-tools .ease-apply { width: 26px; height: 26px; border-radius: 7px; }
-[data-tools="small"] .motion-tools .ease-apply svg { width: 14px; height: 14px; }
-[data-tools="small"] .motion-tools .ease-nums { gap: 4px; }
-[data-tools="small"] .motion-tools .ease-num { width: 30px; height: 20px; font-size: 12px; }
-[data-tools="small"] .motion-tools .ease-link { width: 26px; height: 20px; }
-[data-tools="small"] .motion-tools .ease-link svg { width: 14px; height: 14px; }
-[data-tools="small"] .motion-tools .tool-toggle { top: 1px; right: 2px; width: 18px; height: 18px; }
-[data-tools="small"] .motion-tools .tool-toggle svg { width: 10px; height: 10px; }
-[data-tools="small"] .motion-tools .tool-pin { top: 1px; right: 20px; width: 18px; height: 18px; }
-[data-tools="small"] .motion-tools .tool-pin svg { width: 11px; height: 11px; }
-[data-tools="small"] .motion-tools .tool-resize { top: 10px; bottom: 10px; right: -5px; width: 10px; }
-[data-tools="small"] .motion-tools .tool-resize::after { left: 4px; }
-[data-tools="small"] .motion-tools .tool-resize-y { left: 10px; right: 10px; bottom: -5px; height: 10px; }
-[data-tools="small"] .motion-tools .tool-resize-y::after { top: 4px; }
-[data-tools="small"] .motion-tools .tool-resize-xy { right: -5px; bottom: -5px; width: 12px; height: 12px; }
-[data-tools="small"] .motion-tools .tool-resize-xy::after { right: 3px; bottom: 3px; width: 6px; height: 6px; }
-[data-titles="off"][data-tools="small"] .motion-tools > .tool-card { padding-top: 19px; }
 
-.tool-size button, .provider button { min-width: 84px; padding: 0 12px; }
+.provider button { min-width: 84px; padding: 0 12px; }
+.tool-size { flex-wrap: wrap; }
+.tool-size button { flex: 1 1 0; min-width: 44px; padding: 0 6px; }
 
 /* --------------------------------------------------------- обновление */
 
@@ -1369,8 +1316,6 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .ec-switch span.text { font: 600 12px/1.3 var(--round); }
 .ec-switch span.text small { font-size: 11px; }
 #ecClip.has { color: var(--text); }
-[data-tools="small"] .motion-tools .ec-buttons .paste-do { min-height: 30px; font-size: 11px; padding: 4px 6px; }
-[data-tools="small"] .motion-tools .ec-buttons .paste-do svg { width: 15px; height: 15px; }
 
 /* Снимок кадра: плашка под шапкой */
 .snap-bar { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
@@ -1386,4 +1331,22 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .snap-check input:focus-visible + .snap-box { box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.35); }
 .snap-row .ghost, .snap-row .primary { flex: none; width: auto; min-width: 0; height: 30px; padding: 0 12px; font-size: 12.5px; }
 .snap-folder { color: var(--muted); font: 600 11px/1.3 var(--round); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.shape-empty { grid-column: 1 / -1; margin: 0; padding: 14px 4px; color: var(--muted); font: 600 12.5px/1.45 var(--round); }
+.shape-empty { grid-column: 1 / -1; grid-row: span 3; align-self: start; margin: 0; padding: 14px 4px; color: var(--muted); font: 600 12.5px/1.45 var(--round); }
+
+/* Подсказка при наведении: появляется через секунду над блоком, кнопкой или вкладкой. */
+.info-tip { position: fixed; z-index: 1000; max-width: 270px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px;
+  background: rgba(22, 22, 30, 0.97); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); pointer-events: none; display: flex; flex-direction: column; gap: 5px; }
+.info-tip[hidden] { display: none; }
+.info-tip b { color: var(--text); font: 700 12.5px/1.3 var(--round); }
+.info-tip b:empty { display: none; }
+.info-tip p { margin: 0; color: var(--text); font: 500 12px/1.45 var(--round); opacity: 0.92; }
+.info-tip small { color: var(--muted); font: 600 11px/1.35 var(--round); }
+.info-tip small:empty { display: none; }
+
+/* Фон разделов: строка на каждый раздел; кружок с радугой — палитра с любым цветом. */
+.sec-color { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
+.sec-color + .sec-color { border-top: 1px solid var(--line); }
+.sec-name { font: 700 12px/1.2 var(--round); color: var(--text); }
+.color-pick { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red); cursor: pointer; overflow: hidden; }
+.color-pick::-webkit-color-swatch-wrapper { padding: 3px; }
+.color-pick::-webkit-color-swatch { border: 0; border-radius: 50%; }
