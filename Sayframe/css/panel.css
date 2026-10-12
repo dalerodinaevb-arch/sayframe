@@ -1353,17 +1353,15 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .color-pick::-webkit-color-swatch { border: 0; border-radius: 50%; }
 
 /* Узкие блоки-кнопки («Картинка», «Порядок», «Копия»): только квадратные иконки, как снимок, поиск и настройки
-   в шапке. Название кнопки видно в подсказке при наведении. */
-.motion-tools > .tool-card[data-icons] { justify-content: center; align-items: center; padding: calc(16px * var(--kz, 1)) calc(8px * var(--kz, 1)); }
+   в шапке. Все иконки одинаковые — 40 px, в ряд и столбиком; название кнопки видно в подсказке при наведении. */
+.motion-tools > .tool-card[data-icons] { justify-content: center; align-items: center; padding: calc(19px * var(--kz, 1)) calc(5px * var(--kz, 1)); }
 .tool-card[data-icons] > .tool-head, .tool-card[data-icons] > .tool-toggle, .tool-card[data-icons] .paste-hint, .tool-card[data-icons] .ec-opts { display: none; }
 .tool-card[data-icons] .ec-buttons { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-/* «Копия» шириной от 7 клеток: три иконки горизонтально, чуть меньше, чтобы поместились. */
-.motion-tools > .tool-card[data-icons="row"] { padding-left: calc(6px * var(--kz, 1)); padding-right: calc(6px * var(--kz, 1)); }
-.tool-card[data-icons="row"] .ec-buttons { flex-direction: row; gap: 6px; }
-.motion-tools .tool-card[data-icons="row"] .ec-buttons .paste-do { width: 40px; height: 40px; }
-.tool-card[data-icons] .paste-do, .tool-card[data-icons] .ec-buttons .paste-do {
-  flex: none; width: 44px; height: 44px; min-height: 0; padding: 0; gap: 0; border-radius: 12px; color: var(--muted); }
-.tool-card[data-icons] .paste-do > span { display: none; }
-.tool-card[data-icons] .paste-do svg, .tool-card[data-icons] .ec-buttons .paste-do svg { width: 20px; height: 20px; color: currentColor; }
-.tool-card[data-icons] .paste-do:hover:not(:disabled) { color: var(--text); background: var(--glass-strong); border-color: var(--line); }
-.tool-card[data-icons] > .tool-pin { top: 2px; right: 2px; }
+.tool-card[data-icons="row"] .ec-buttons { flex-direction: row; }
+.motion-tools .tool-card[data-icons] .paste-do {
+  flex: none; width: 40px; height: 40px; min-height: 0; padding: 0; gap: 0; margin: 0;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--glass); color: var(--muted); font-size: 0; }
+.motion-tools .tool-card[data-icons] .paste-do > span { display: none; }
+.motion-tools .tool-card[data-icons] .paste-do svg { width: 20px; height: 20px; color: currentColor; }
+.motion-tools .tool-card[data-icons] .paste-do:hover:not(:disabled) { color: var(--text); background: var(--glass-strong); border-color: var(--line); }
+.tool-card[data-icons] > .tool-pin { top: 0; right: 2px; height: 18px; }
