@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.33.0";
+    var VERSION = "1.34.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -2684,7 +2684,8 @@
     // левый — входящая сторона ключа (in, как движение останавливается перед ключом),
     // правый — исходящая (out, как оно начинается после ключа). Длина ползунка — влияние в процентах.
 
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste,organize,easecopy", sizes: "", places: "", pins: "", ecOpts: true, ecThrough: false, pasteOpts: true, organizeOpts: true, anchorOpts: true, alignOpts: true,
+    var GRID_VERSION = 2;         // 2 — мелкая сетка (шаг 22 px)
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste,organize,easecopy", sizes: "", places: "", pins: "", grid: GRID_VERSION, ecOpts: true, ecThrough: false, pasteOpts: true, organizeOpts: true, anchorOpts: true, alignOpts: true,
         shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
     var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
@@ -2697,20 +2698,34 @@
     var G = { names: TOOL_NAMES };
 
     // ---- сетка раздела «Инструменты»: блоки стоят по клеткам, двигаются и растягиваются по ним.
-    // Клетка квадратная: у крупных блоков 36 px и 8 px между клетками, у мелких 22 и 6 (кратно 2 и 4,
-    // как советуют сетки iOS и Android). Ширина и высота блока — в клетках.
-    var GRID_LARGE = { cell: 36, gap: 8 };
+    // Клетка квадратная: 14 px и 8 px между клетками, шаг сетки 22 px (до 1.34.0 был 44: клетка 36 px).
+    // Промежуток между блоками прежний, а шаг вдвое мельче — блоки тянутся точнее и сужаются сильнее.
+    // Ширина и высота блока — в клетках.
+    var GRID_LARGE = { cell: 14, gap: 8 };
 
-    var TOOL_MIN_COLS = 4;        // уже блок не делается: в него перестают помещаться три кнопки в ряд
-    var TOOL_DEFAULT_COLS = 4;
+    var TOOL_MIN_COLS = 4;        // самый узкий блок: 4 клетки
+    var TOOL_DEFAULT_COLS = 8;
     var TOOL_FULL = 99;           // «на всю ширину»: столько клеток, сколько есть в панели
-    var TOOL_MAX_ROWS = 40;
+    var TOOL_MAX_ROWS = 80;
+
+    // Масштаб содержимого блока шириной w клеток. Всё содержимое помещается в блок обычной ширины
+    // (TOOL_DEFAULT_COLS клеток); блок уже этого не обрезает кнопки, а уменьшает их целиком —
+    // так блок можно сузить до TOOL_MIN_COLS клеток.
+    // Блоки, в которых только кнопки: суженными они показывают одни иконки.
+    var ICON_TOOLS = ["paste", "organize", "easecopy"];
+    var ICON_ROW_PX = 144;        // три иконки по 40 px в ряд с промежутками и полями
+    function blockZoom(w, m) {
+        var k = Number(document.documentElement.getAttribute("data-tools")) / 100;
+        if (!(k > 0 && k <= 1)) { k = 1; }
+        return Math.round(k * Math.min(1, (w * (m.cell + m.gap) - m.gap) / (TOOL_DEFAULT_COLS * (m.cell + m.gap) - m.gap)) * 1000) / 1000;
+    }
 
     function gridModule() {
         // Клетка и промежуток — в том же масштабе, что и содержимое блоков (--tz в CSS).
         var k = Number(document.documentElement.getAttribute("data-tools")) / 100;
         if (!(k > 0 && k <= 1)) { k = 1; }
-        return { cell: Math.round(GRID_LARGE.cell * k), gap: Math.max(3, Math.round(GRID_LARGE.gap * k)) };
+        // Клетка округляется вверх: блок обычной ширины не бывает уже своего содержимого.
+        return { cell: Math.ceil(GRID_LARGE.cell * k - 0.001), gap: Math.max(3, Math.round(GRID_LARGE.gap * k)) };
     }
 
     // Размеры блоков: "ease=6x0;anchor=99x9" — ширина и высота в клетках. Высота 0 — по содержимому,
@@ -2730,7 +2745,7 @@
                 w = TOOL_FULL;
                 h = 0;
             } else if (/^\d{1,4}$/.test(pair[1]) && Number(pair[1]) >= 100) {
-                w = Math.round((Number(pair[1]) + GRID_LARGE.gap) / (GRID_LARGE.cell + GRID_LARGE.gap));
+                w = Math.round((Number(pair[1]) + 8) / 44) * 2;
                 h = 0;
             } else {
                 continue;
@@ -2797,6 +2812,21 @@
         }
         return out.join(",");
     }
+    // Раскладки, сохранённые на прежней крупной сетке (клетка вдвое больше), переводятся в новые клетки:
+    // размеры и места умножаются на 2, «на всю ширину» и «по содержимому» остаются как есть.
+    function upgradeGrid(saved) {
+        if (!saved || saved.grid === GRID_VERSION) { return; }
+        if (typeof saved.sizes === "string") {
+            saved.sizes = saved.sizes.replace(/=(\d{1,2})x(\d{1,2})/g, function (all, w, h) {
+                // Прежние пределы: не уже 4 крупных клеток и не выше 40.
+                return "=" + (Number(w) === TOOL_FULL ? w : Math.max(4, Number(w)) * 2) + "x" + Math.min(40, Number(h)) * 2;
+            });
+        }
+        if (typeof saved.places === "string") {
+            saved.places = saved.places.replace(/=(\d{1,2}),(\d{1,3})/g, function (all, x, y) { return "=" + Number(x) * 2 + "," + Number(y) * 2; });
+        }
+        saved.grid = GRID_VERSION;
+    }
     var TOOL_DRAG_START_PX = 6;  // сдвиг мыши, после которого нажатие на блок считается перетаскиванием
 
     function loadMotion() {
@@ -2805,6 +2835,7 @@
         for (k in MOTION_DEFAULTS) { if (MOTION_DEFAULTS.hasOwnProperty(k)) { m[k] = MOTION_DEFAULTS[k]; } }
         try { saved = JSON.parse(window.localStorage.getItem(MOTION_KEY) || "{}"); } catch (e) { saved = null; }
         if (saved && typeof saved === "object") {
+            upgradeGrid(saved);
             for (k in MOTION_DEFAULTS) {
                 if (MOTION_DEFAULTS.hasOwnProperty(k) && typeof saved[k] === typeof MOTION_DEFAULTS[k]) { m[k] = saved[k]; }
             }
@@ -6115,6 +6146,15 @@
             cards[names[i]] = card;
             z = sizeOf(names[i]);
             it = { name: names[i], index: i, w: Math.min(Math.max(z.w, Math.min(TOOL_MIN_COLS, cols)), cols), h: z.h };
+            // Блоки-кнопки, суженные меньше обычного, становятся квадратными иконками, как в шапке панели.
+            if (ICON_TOOLS.indexOf(names[i]) >= 0 && it.w < TOOL_DEFAULT_COLS) {
+                // Несколько иконок: в ряд, если блок для этого достаточно широкий (7 клеток), иначе столбиком.
+                card.setAttribute("data-icons", it.w * (m.cell + m.gap) - m.gap >= ICON_ROW_PX * blockZoom(TOOL_DEFAULT_COLS, m) ? "row" : "col");
+                card.style.setProperty("--kz", String(blockZoom(TOOL_DEFAULT_COLS, m)));
+            } else {
+                card.removeAttribute("data-icons");
+                card.style.setProperty("--kz", String(blockZoom(it.w, m)));
+            }
             card.style.gridColumn = "1 / span " + it.w;
             card.style.gridRow = "1 / span 1";
             card.style.alignSelf = "start";
@@ -6131,8 +6171,8 @@
         rest = items.filter(function (x) { return pins.indexOf(x.name) < 0; });
         base = placeGroup(pinned, 0);
         if (!pinned.length) { base = 0; }
-        // Под закреплёнными — один пустой ряд, посередине которого линия: так она не липнет к блокам.
-        placeGroup(rest, pinned.length && rest.length ? base + 1 : base);
+        // Под закреплёнными — два пустых ряда мелкой сетки, посередине линия: так она не липнет к блокам.
+        placeGroup(rest, pinned.length && rest.length ? base + 2 : base);
 
         // Блоки на свои клетки; в документе — в порядке чтения, чтобы Tab шёл по ним так же.
         sorted = items.slice().sort(function (a, b) {
@@ -6159,7 +6199,7 @@
             '" height="' + (m.cell - 1) + '" rx="' + Math.round(m.cell / 5) + '" fill="rgba(255,255,255,0.035)" stroke="rgba(255,255,255,0.13)" stroke-dasharray="3 3"/></svg>') + '")';
         if (pinned.length && rest.length) {
             G.line.hidden = false;
-            G.line.style.top = Math.round(base * step + m.cell / 2) + "px";
+            G.line.style.top = Math.round(base * step + step - m.gap / 2) + "px";
             G.line.style.width = (cols * step - m.gap) + "px";
         } else {
             G.line.hidden = true;
@@ -6229,7 +6269,7 @@
 
     // Ставит блок на клетку (x, y) и раскладывает остальные. Блок, на чьё место он встал,
     // переходит на освободившееся место — блоки меняются местами. Возвращает, где блок оказался.
-    function moveToolTo(name, x, y, base) {
+    function moveToolTo(name, x, y, base, swap) {
         var places = {};
         var me = base[name];
         var k, o;
@@ -6240,7 +6280,7 @@
             o = base[k];
             places[k] = { x: o.x, y: o.y };
             if (k !== name && me && x < o.x + o.w && o.x < x + me.w && y < o.y + o.h && o.y < y + me.h) {
-                places[k] = { x: me.x, y: me.y };
+                places[k] = swap ? { x: swap.x, y: swap.y } : { x: me.x, y: me.y };
             }
         }
         places[name] = { x: x, y: y };
@@ -6251,7 +6291,7 @@
     // Клавиатура: блок на клетку в любую сторону; если там другой блок — они меняются местами.
     function nudgeTool(card, dx, dy) {
         var name = card.getAttribute("data-tool");
-        var base, me, tx, ty, k, o, now;
+        var base, me, tx, ty, k, o, now, swap = null;
         if (!G.last) { return false; }
         base = currentPlaces();
         me = base[name];
@@ -6262,13 +6302,15 @@
             if (!base.hasOwnProperty(k) || k === name) { continue; }
             o = base[k];
             if (tx < o.x + o.w && o.x < tx + me.w && ty < o.y + o.h && o.y < ty + me.h) {
-                if (dx < 0) { tx = o.x; }
-                if (dx > 0) { tx = Math.max(0, o.x + o.w - me.w); }
-                if (dy) { ty = o.y; }
+                // Соседи меняются местами вплотную, даже если они разного размера: без щели между ними.
+                if (dx < 0) { tx = o.x; swap = { x: o.x + me.w, y: o.y }; }
+                if (dx > 0) { tx = Math.min(me.x + o.w, G.last.cols - me.w); swap = { x: me.x, y: o.y }; }
+                if (dy < 0) { ty = o.y; swap = { x: o.x, y: o.y + me.h }; }
+                if (dy > 0) { ty = me.y + o.h; swap = { x: o.x, y: me.y }; }
                 break;
             }
         }
-        now = moveToolTo(name, tx, ty, base);
+        now = moveToolTo(name, tx, ty, base, swap);
         storeLayout(true);
         return now.x !== me.x || now.y !== me.y;
     }
@@ -6512,13 +6554,14 @@
 
     var SHAPE_KEY = "sayframe.shape.v1";
     var EC_KEY = "sayframe.easecopy.v1";
-    var SHAPE_DEFAULTS = { order: "", sizes: "", places: "", pins: "" };
+    var SHAPE_DEFAULTS = { order: "", sizes: "", places: "", pins: "", grid: GRID_VERSION };
 
     function loadShape() {
         var m = {}, saved, k, keep = G;
         for (k in SHAPE_DEFAULTS) { if (SHAPE_DEFAULTS.hasOwnProperty(k)) { m[k] = SHAPE_DEFAULTS[k]; } }
         try { saved = JSON.parse(window.localStorage.getItem(SHAPE_KEY) || "{}"); } catch (e) { saved = null; }
         if (saved && typeof saved === "object") {
+            upgradeGrid(saved);
             for (k in SHAPE_DEFAULTS) {
                 if (SHAPE_DEFAULTS.hasOwnProperty(k) && typeof saved[k] === typeof SHAPE_DEFAULTS[k]) { m[k] = saved[k]; }
             }
