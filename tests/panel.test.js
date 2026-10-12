@@ -141,6 +141,7 @@ Prop.prototype = {
   get selectedKeys() { const r = []; this.keys.forEach((k, i) => { if (k.selected) r.push(i + 1); }); return r; },
   // as in After Effects: one value type per kind of property (1D, 2D, 3D…)
   get propertyValueType() { return Array.isArray(this._v) ? "D" + this._v.length : "D1"; },
+  get canVaryOverTime() { return !this.marker; },
   keyTemporalContinuous(i) { return !!this.keys[i - 1].tCont; }, setTemporalContinuousAtKey(i, on) { this.keys[i - 1].tCont = !!on; },
   keyTemporalAutoBezier(i) { return !!this.keys[i - 1].tAuto; }, setTemporalAutoBezierAtKey(i, on) { this.keys[i - 1].tAuto = !!on; },
   _check(v) {
@@ -502,7 +503,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       throw new Error("unknown platform call " + name);
     });
 
-    const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false }, opts.settings || {});
+    const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false }, opts.settings || {});
     await page.addInitScript(({ stored, tmpDir, home, hostPath, withSystemPath, updateUrl, updateState, updateEveryMs, statsUrl }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
       if (statsUrl) window.__SAYFRAME_STATS_URL__ = statsUrl;
@@ -1282,7 +1283,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     { comp: "Logo Anim", layers: ["logo.png"] }, { comp: "Main", layers: ["Logo Anim", "intro.mp4", "music.mp3"] }, { comp: "Unused idea", layers: [] }
   ];
   p = await open({ org: MESSY });
-  check("J1 a 'Project order' block on the Tools tab with the button 'Organize After Effects Project'", (await p.page.locator("#viewMotion .organize-card #organizeBtn").count()) === 1 && (await p.page.locator("#organizeBtn").innerText()).trim() === "Organize After Effects Project");
+  check("J1 a 'Project order' block on the Tools tab with the button 'Organize After Effects Project'", (await p.page.locator("#viewMotion .organize-card #organizeBtn").count()) === 1 && (await p.page.locator("#organizeBtn").innerText()).trim() === "Organize");
   await organize(p);
   check("J1 short message: Project organized successfully", /^Project organized successfully\n/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
   const expect = { "intro.mp4": "Videos", "Clip 02": "Videos", "seq_[0001-0120].png": "Videos", "music.mp3": "Audio", "voice.wav": "Audio", "logo.png": "images", "photo.jpg": "images", "art.ai": "images",
@@ -1448,7 +1449,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsClose");
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   t = await p.page.locator("#hotkeys .hotkey-row span").allInnerTexts();
-  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Organize After Effects Project,Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—", t.join());
+  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Organize (папки проекта),Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—", t.join());
   await p.page.locator("#hotkeys").scrollIntoViewIfNeeded();
   await p.page.screenshot({ path: path.join(SHOTS, "25-hotkeys-settings.png") });
   await p.page.click('#hotkeys [data-action="console"]');
@@ -2310,7 +2311,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("M1 no horizontal overflow at 380px", t <= 0, t);
   await p.page.screenshot({ path: path.join(SHOTS, "21-tab-motion.png") });
   check("M2 sliders start linked at 60", (await p.page.inputValue("#easeIn")) === "60" && (await p.page.inputValue("#easeOut")) === "60" && (await p.page.isChecked("#easeLink")) && (await p.page.inputValue("#easeInVal")) === "60" && (await p.page.inputValue("#easeOutVal")) === "60");
-  check("M2 the easing block: a title, the apply button, the curve toggle and the keyboard handle, no slider labels", (await p.page.locator("#viewMotion .ease-card button").count()) === 4 && (await p.page.locator("#viewMotion .ease-card .tool-pin").count()) === 1 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link)").count()) === 0 && (await p.page.locator(".ease-card .tool-head b").innerText()) === "Плавность ключей" && (await p.page.locator("#showCurve").count()) === 0);
+  check("M2 the easing block: a title, the apply button, the curve toggle and the keyboard handle, no slider labels", (await p.page.locator("#viewMotion .ease-card button").count()) === 4 && (await p.page.locator("#viewMotion .ease-card .tool-pin").count()) === 1 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link)").count()) === 0 && (await p.page.locator(".ease-card .tool-head b").innerText()) === "Плавность" && (await p.page.locator("#showCurve").count()) === 0);
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); const a = r("easeIn"), b = r("easeBothBtn"), c = r("easeOut"), n1 = r("easeInVal"), l = document.querySelector(".ease-link").getBoundingClientRect(), n2 = r("easeOutVal"); return { row: a.right <= b.left && b.right <= c.left && Math.abs((a.top + a.bottom) - (c.top + c.bottom)) < 2, equal: Math.abs(a.width - c.width) < 2, nums: n1.right <= l.left && l.right <= n2.left && n1.top >= b.bottom - 1, centered: Math.abs((l.left + l.right) / 2 - (b.left + b.right) / 2) < 2, rtl: getComputedStyle(document.getElementById("easeIn")).direction }; });
   check("M2 layout: slider, button, slider in one row; numbers and link centred under the button", t.row && t.equal && t.nums && t.centered, JSON.stringify(t));
   check("M2 the left slider grows away from the button", t.rtl === "rtl" && (await fillOf(p, "easeIn")) === "0.6" && (await fillOf(p, "easeOut")) === "0.6", t.rtl);
@@ -2770,8 +2771,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 380 });
   await motionTab(p);
   c = await sizesNow(p);
-  check("E1 at 380px (8 cells): two blocks in the first row, the rest below", (await firstRow(p)) === 2 && (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:0,6,4,6 shift:4,7,4,11 paste:0,12,4,5 organize:0,17,4,7", await cellsNow(p));
-  check("E1 (scene) block sizes", c === "168x212,168x256,168x256,168x300,168x300,168x476", c);
+  check("E1 at 380px (8 cells): two blocks in the first row, the rest below", (await firstRow(p)) === 2 && (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:0,6,4,6 shift:4,7,4,11 paste:0,12,4,4 organize:0,16,4,6", await cellsNow(p));
+  check("E1 (scene) block sizes", c === "168x168,168x256,168x256,168x256,168x300,168x476", c);
   await resizeTo(p, 600);
   check("E1 stretched to 600px: three in the first row, every block exactly the same size as before", (await firstRow(p)) === 3 && (await sizesNow(p)) === c, (await firstRow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 800);
@@ -2782,14 +2783,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await resizeTo(p, 300);
   check("E1 squeezed to 300px: one under another, same sizes again", (await oneColumn(p)) && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await cellsNow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 380);
-  check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:0,6,4,6 shift:4,7,4,11 paste:0,12,4,5 organize:0,17,4,7" && (await sizesNow(p)) === c);
+  check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:0,6,4,6 shift:4,7,4,11 paste:0,12,4,4 organize:0,16,4,6" && (await sizesNow(p)) === c);
   await p.page.click("#settingsBtn"); await setWidth(p, 640); await p.page.click("#saveSettings");
   check("E2 the width setting is for fields and buttons: it changes neither the blocks nor the tab bar", (await box(p, "#tabs")).split(",")[2] === "352" && (await sizesNow(p)) === c && (await firstRow(p)) === 2);
   await resizeTo(p, 1000);
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="small"]'); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#saveSettings");
   c = await sizesNow(p);
   t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.gridAutoRows, cs.columnGap].join("|"); });
-  check("E3 small blocks: a finer grid (22px cells, 6px gaps), blocks 4 cells = 106px wide, all in a row", t === "22px|6px" && (await firstRow(p)) === 6 && c.split(",").every((x) => x.indexOf("106x") === 0), t + " " + c);
+  check("E3 at 60%: a finer grid (22px cells, 5px gaps), blocks 4 cells = 103px wide, all in a row", t === "22px|5px" && (await firstRow(p)) === 6 && c.split(",").every((x) => x.indexOf("103x") === 0), t + " " + c);
   await resizeTo(p, 270);
   check("E3 and wrap without changing size when the panel is narrow", (await firstRow(p)) === 2 && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await cellsNow(p)) + " " + (await sizesNow(p)));
   check("E3 no page errors", p.errors.length === 0, p.errors.join(" | "));
@@ -2920,7 +2921,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await resizeTo(p, 900);
   check("G2 widened again, they go back to their cells", /shift:0,0,4,/.test(await cellsNow(p)) && /ease:12,0/.test(await cellsNow(p)), await cellsNow(p));
   await p.page.click("#arrangeReset");
-  check("G3 'Reset' returns the usual sizes and order, blocks follow each other again", (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:8,0,4,6 shift:12,0,4,11 paste:16,0,4,5 organize:16,5,4,7" && (await savedPlaces(p)) === "" && (await savedSizes(p)) === "", await cellsNow(p));
+  check("G3 'Reset' returns the usual sizes and order, blocks follow each other again", (await cellsNow(p)) === "ease:0,0,4,6 anchor:4,0,4,7 align:8,0,4,6 shift:12,0,4,11 paste:16,0,4,4 organize:16,4,4,6" && (await savedPlaces(p)) === "" && (await savedSizes(p)) === "", await cellsNow(p));
   check("G3 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
@@ -2949,7 +2950,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await pinOf(p, "organize").click();
   check("PN6 nothing pinned: no line, the usual layout is back", (await pinLine(p)) === null && (await cellsNow(p)) === c, await cellsNow(p));
   await pinOf(p, "shift").click();
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="small"]'); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#saveSettings");
   await motionTab(p);
   t = await p.page.evaluate(() => { const c = document.querySelector('.tool-card[data-tool="shift"]'), a = c.querySelector(".tool-pin").getBoundingClientRect(), r = c.getBoundingClientRect(); return a.left > r.left && a.right < r.right && a.top >= r.top; });
   check("PN7 small blocks: the pin fits too, the pinned block stays on top", t && (await toolOrder(p)).split(",")[0] === "shift" && (await pinLine(p)) !== null && p.errors.length === 0, p.errors.join(" | "));
@@ -2964,23 +2965,23 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("Z1 blocks are large unless chosen otherwise", (await toolsAttr(p)) === "large" && (await gridBox(p, "anchorGrid")) === "122,122,38,38" && (await rowShape(p, "alignGrid")) === "6 30 20" && (await rowShape(p, "distGrid")) === "6 30 20", await gridBox(p, "anchorGrid") + " | " + await rowShape(p, "alignGrid"));
+  check("Z1 blocks are large unless chosen otherwise", (await toolsAttr(p)) === "100" && (await gridBox(p, "anchorGrid")) === "122,122,38,38" && (await rowShape(p, "alignGrid")) === "6 30 20" && (await rowShape(p, "distGrid")) === "6 30 20", await gridBox(p, "anchorGrid") + " | " + await rowShape(p, "alignGrid"));
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
-  check("Z1 settings offer two sizes, large is marked", (await p.page.locator("#toolSize button").count()) === 2 && (await pressedSize(p)) === "large" && (await p.page.locator("#toolSize button").allInnerTexts()).join() === "Крупные,Мелкие");
-  await p.page.click('#toolSize button[data-value="small"]');
-  check("Z2 choosing small shows at once", (await toolsAttr(p)) === "small" && (await pressedSize(p)) === "small");
+  check("Z1 settings offer six sizes in percent, 100% is marked", (await p.page.locator("#toolSize button").count()) === 6 && (await pressedSize(p)) === "100" && (await p.page.locator("#toolSize button").allInnerTexts()).join() === "100%,90%,80%,70%,60%,50%");
+  await p.page.click('#toolSize button[data-value="60"]');
+  check("Z2 choosing small shows at once", (await toolsAttr(p)) === "60" && (await pressedSize(p)) === "60");
   await p.page.click("#settingsClose");
-  check("Z2 closing without saving returns large", (await toolsAttr(p)) === "large" && (await gridBox(p, "anchorGrid")) === "122,122,38,38");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="small"]'); await p.page.click("#saveSettings");
-  check("Z3 saved: the buttons are small now", (await toolsAttr(p)) === "small" && (await gridBox(p, "anchorGrid")) === "82,82,26,26" && (await rowShape(p, "alignGrid")) === "3+3 24 14" && (await rowShape(p, "distGrid")) === "3+3 24 14" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).toolSize)) === "small", await gridBox(p, "anchorGrid") + " " + await rowShape(p, "alignGrid"));
+  check("Z2 closing without saving returns large", (await toolsAttr(p)) === "100" && (await gridBox(p, "anchorGrid")) === "122,122,38,38");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#saveSettings");
+  check("Z3 saved: the buttons are small now", (await toolsAttr(p)) === "60" && (await gridBox(p, "anchorGrid")) === "73,73,23,23" && (await rowShape(p, "alignGrid")) === "6 18 12" && (await rowShape(p, "distGrid")) === "6 18 12" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).toolSize)) === "60", await gridBox(p, "anchorGrid") + " " + await rowShape(p, "alignGrid"));
   t = await toolRects(p);
-  check("Z3 at 380px three small blocks stand in one row", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.ease.l === 14 && t.align.r === 344 && Math.abs(t.ease.w - t.anchor.w) <= 1, JSON.stringify(t));
+  check("Z3 at 380px three blocks at 60% stand in one row", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.ease.l === 14 && t.align.r === 333 && Math.abs(t.ease.w - t.anchor.w) <= 1, JSON.stringify(t));
   check("Z3 nothing sticks out of a small block or the panel", (await allInside(p)) && (await overflow(p)) <= 0);
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); return [r("easeIn").width, r("easeOut").width, r("easeBothBtn").width, r("anchorKeys").height, document.querySelector("#motionTools .ease-card").getBoundingClientRect().height].map(Math.round); });
-  check("Z3 the easing block shrinks too and keeps equal sliders", t[0] === t[1] && t[0] >= 20 && t[2] === 26 && t[3] === 28, t.join());
+  check("Z3 the easing block shrinks as a whole (60% of every size) and keeps equal sliders", t[0] === t[1] && t[0] >= 20 && t[2] === 20 && t[3] === 22, t.join());
   await p.page.screenshot({ path: path.join(SHOTS, "26-tools-small.png") });
   await setSlider(p, "easeOut", 100);
-  check("Z3 slider fill follows the smaller thumb", (await fillOf(p, "easeOut")) === "1" && (await p.page.locator("#easeOut").evaluate((el) => getComputedStyle(el).getPropertyValue("--thumb").trim())) === "12px");
+  check("Z3 slider fill still reaches the end at the smaller size", (await fillOf(p, "easeOut")) === "1");
   await setSlider(p, "easeOut", 60);
   await p.page.click("#easeBothBtn"); await p.idle();
   c = await p.status();
@@ -2990,16 +2991,16 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("Z4 every tool still works at the small size", c === "Выделите ключевые кадры на таймлайне и нажмите ещё раз." && t === "Выделите слой в композиции и нажмите ещё раз." && (await p.status()) === "Выделите слой в композиции и нажмите ещё раз.", c + " | " + t);
   await dragEdge(p, "anchor", -300);
   t = await toolRects(p);
-  check("Z5 a small block is at least 4 small cells (106px) wide", t.anchor.w === 106 && (await savedSizes(p)) === "" && (await allInside(p)), JSON.stringify(t.anchor));
-  await dragEdge(p, "anchor", 3 * 28 + 4);
-  check("Z5 and grows by small cells", (await toolRects(p)).anchor.w === 190 && (await savedSizes(p)) === "anchor=7x0", (await toolRects(p)).anchor.w + " " + await savedSizes(p));
+  check("Z5 a block at 60% is at least 4 of its cells (103px) wide", t.anchor.w === 103 && (await savedSizes(p)) === "" && (await allInside(p)), JSON.stringify(t.anchor));
+  await dragEdge(p, "anchor", 3 * 27 + 4);
+  check("Z5 and grows by its cells", (await toolRects(p)).anchor.w === 184 && (await savedSizes(p)) === "anchor=7x0", (await toolRects(p)).anchor.w + " " + await savedSizes(p));
   await p.restart();
-  check("Z5 the size and the widths survive a restart", (await toolsAttr(p)) === "small" && (await toolRects(p)).anchor.w === 190 && (await gridBox(p, "anchorGrid")) === "82,82,26,26");
+  check("Z5 the size and the widths survive a restart", (await toolsAttr(p)) === "60" && (await toolRects(p)).anchor.w === 184 && (await gridBox(p, "anchorGrid")) === "73,73,23,23");
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
-  check("Z5 settings show the saved size", (await pressedSize(p)) === "small");
-  await p.page.click('#toolSize button[data-value="large"]'); await p.page.click("#saveSettings");
+  check("Z5 settings show the saved size", (await pressedSize(p)) === "60");
+  await p.page.click('#toolSize button[data-value="100"]'); await p.page.click("#saveSettings");
   t = await toolRects(p);
-  check("Z6 back to large: big buttons again, the same 7 cells are now large cells", (await toolsAttr(p)) === "large" && (await gridBox(p, "anchorGrid")) === "122,122,38,38" && t.anchor.w === 300 && (await allInside(p)) && (await overflow(p)) <= 0, JSON.stringify(t.anchor));
+  check("Z6 back to large: big buttons again, the same 7 cells are now large cells", (await toolsAttr(p)) === "100" && (await gridBox(p, "anchorGrid")) === "122,122,38,38" && t.anchor.w === 300 && (await allInside(p)) && (await overflow(p)) <= 0, JSON.stringify(t.anchor));
   check("Z6 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
   p = await open({ width: 280, settings: { toolSize: "small", panelWidth: 280 } });
@@ -3011,9 +3012,21 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await dragFrom(p, middle(t.align), by(middle(t.align), 0, t.ease.t - t.align.t));
   check("Z7 small blocks can still be rearranged", (await toolOrder(p)).indexOf("align,anchor,") === 0 && /align:0,0/.test(await cellsNow(p)), await toolOrder(p) + " " + await cellsNow(p));
   await p.close();
+  // Every one of the six sizes: the grid and the contents shrink together, nothing sticks out.
+  for (const z of ["100", "90", "80", "70", "60", "50"]) {
+    p = await open({ settings: { toolSize: z } });
+    await motionTab(p);
+    t = await p.page.evaluate(() => { const g = getComputedStyle(document.getElementById("motionTools")); return [g.gridAutoRows, g.rowGap, Math.round(document.querySelector('#motionTools [data-tool="anchor"]').getBoundingClientRect().width), Math.round(document.querySelector("#anchorGrid").getBoundingClientRect().width)].join(); });
+    const k = Number(z) / 100, cell = Math.round(36 * k), gap = Math.max(3, Math.round(8 * k));
+    check("Z9 " + z + "%: cells " + cell + "px, gaps " + gap + "px, a block is 4 cells wide, the buttons shrink by the same share, nothing sticks out", t === [cell + "px", gap + "px", 4 * cell + 3 * gap, Math.round(122 * k)].join() && (await allInside(p)) && (await overflow(p)) <= 0, t);
+    await p.close();
+  }
+  p = await open({ settings: { toolSize: "large" } });
+  check("Z9 the old 'large' setting becomes 100%, the old 'small' (above) 60%", (await toolsAttr(p)) === "100");
+  await p.close();
   for (const bad of ["tiny", 5, null, "SMALL"]) {
     p = await open({ settings: { toolSize: bad } });
-    check("Z8 a broken saved size (" + JSON.stringify(bad) + ") means large", (await toolsAttr(p)) === "large" && p.errors.length === 0, await toolsAttr(p));
+    check("Z8 a broken saved size (" + JSON.stringify(bad) + ") means 100%", (await toolsAttr(p)) === "100" && p.errors.length === 0, await toolsAttr(p));
     await p.close();
   }
 
@@ -3061,7 +3074,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("F5 titles are shown unless switched off", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность ключей,Точка привязки,Выравнивание,Сдвиг во времени,Картинка из буфера,Порядок в проекте,Копия плавности");
+  check("F5 titles are shown unless switched off, one short word each", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность,Якорь,Выровнять,Время,Картинка,Порядок,Копия");
   c = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("F5 settings have the switch, on", await p.page.isChecked("#toolTitles"));
@@ -3078,7 +3091,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("F6 everything folded, no titles: just the buttons, and the tools work", (await togglesClear(p)) && (await allInside(p)) && (await cardH(p, "anchor")) < 170);
   await p.page.click("#easeBothBtn"); await p.idle();
   check("F6 easing still runs", (await p.status()) === "Выделите ключевые кадры на таймлайне и нажмите ещё раз.");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="small"]'); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#saveSettings");
   t = await toolRects(p);
   check("F7 small, no titles, folded: three blocks in a row, nothing overlaps", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0 && (await cardH(p, "anchor")) <= 134, JSON.stringify(t) + " h=" + await cardH(p, "anchor"));
   await p.page.screenshot({ path: path.join(SHOTS, "29-tools-small-bare.png") });
@@ -3087,7 +3100,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("F7 small with titles and everything open: titles do not run under the corner buttons", (await titlesAttr(p)) === "on" && (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0);
   await p.page.screenshot({ path: path.join(SHOTS, "26-tools-small.png") });
   await p.restart();
-  check("F7 the titles choice survives a restart", (await titlesAttr(p)) === "on" && (await toolsAttr(p)) === "small" && p.errors.length === 0, p.errors.join(" | "));
+  check("F7 the titles choice survives a restart", (await titlesAttr(p)) === "on" && (await toolsAttr(p)) === "60" && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
   for (const bad of ["no", 0, null]) {
     p = await open({ settings: { toolTitles: bad } });
@@ -3139,7 +3152,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("G1 the Align block: six buttons and a target list, composition first", (await p.page.locator("#alignGrid button").count()) === 6 && (await p.page.locator("#alignGrid button").evaluateAll((list) => list.map((b) => b.getAttribute("data-edge")).join())) === "left,hcenter,right,top,vcenter,bottom" && (await p.page.inputValue("#alignTo")) === "comp" && (await p.page.locator("#motionTools .align-card .tool-head b").innerText()) === "Выравнивание");
+  check("G1 the Align block: six buttons and a target list, composition first", (await p.page.locator("#alignGrid button").count()) === 6 && (await p.page.locator("#alignGrid button").evaluateAll((list) => list.map((b) => b.getAttribute("data-edge")).join())) === "left,hcenter,right,top,vcenter,bottom" && (await p.page.inputValue("#alignTo")) === "comp" && (await p.page.locator("#motionTools .align-card .tool-head b").innerText()) === "Выровнять");
   t = await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#alignGrid button"), (b) => { const r = b.getBoundingClientRect(), s = b.querySelector("svg").getBoundingClientRect(); return r.width >= 20 && r.height >= 28 && s.width > 10 && !!b.title && b.title === b.getAttribute("aria-label"); }).join());
   check("G1 every button has a visible icon and a name", t === "true,true,true,true,true,true", t);
   await edgeBtn(p, "left");
@@ -3366,7 +3379,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("T1 a fourth block, 'Shift in time', with three parts", (await p.page.locator('#motionTools [data-tool="shift"] .tool-head b').innerText()) === "Сдвиг во времени" && (await p.page.locator(".shift-card .shift-part").count()) === 3 && (await p.page.locator(".shift-card .align-sep").count()) === 2 && (await p.page.locator(".shift-card .shift-pick label").allInnerTexts()).join() === "Сдвинуть:,Подвести:,Расставить:");
+  check("T1 a fourth block, 'Shift in time', with three parts", (await p.page.locator('#motionTools [data-tool="shift"] .tool-head b').innerText()) === "Время" && (await p.page.locator(".shift-card .shift-part").count()) === 3 && (await p.page.locator(".shift-card .align-sep").count()) === 2 && (await p.page.locator(".shift-card .shift-pick label").allInnerTexts()).join() === "Сдвинуть:,Подвести:,Расставить:");
   check("T1 the lists", (await opt(p, "shiftWhat")) === "in,out,layer" && (await opt(p, "timeAlign")) === "inStart,inEnd,outStart,outEnd" && (await opt(p, "staggerWhat")) === "layer,in,out" && (await opt(p, "staggerOrder")) === "asc,desc,selection,random");
   check("T1 defaults: in-animation, one frame, start of the in-animation, layers, top to bottom", [await p.page.inputValue("#shiftWhat"), await p.page.inputValue("#shiftStep"), await p.page.inputValue("#timeAlign"), await p.page.inputValue("#staggerWhat"), await p.page.inputValue("#staggerStep"), await p.page.inputValue("#staggerOrder")].join() === "in,1,inStart,layer,1,asc");
   check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".shift-card button:not(.tool-grip), .shift-card select, .shift-card input"), (el) => { const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
@@ -3829,9 +3842,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       return Array.prototype.every.call(card.querySelectorAll("button:not(.tool-pin):not(.tool-toggle):not(.tool-grip), label, small, b"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 1 && r.right <= c.right + 1 && r.top >= c.top - 1 && r.bottom <= c.bottom + 1); }); });
     check("EC1 nothing sticks out of the block (large blocks)", await ecInside());
     await p.page.screenshot({ path: path.join(SHOTS, "42-tools-easecopy.png"), fullPage: true });
-    await p.page.evaluate(() => document.documentElement.setAttribute("data-tools", "small")); await p.page.evaluate(() => window.dispatchEvent(new Event("resize"))); await p.page.waitForTimeout(300);
+    await p.page.evaluate(() => { document.documentElement.setAttribute("data-tools", "50"); document.documentElement.style.setProperty("--tz", "0.5"); }); await p.page.evaluate(() => window.dispatchEvent(new Event("resize"))); await p.page.waitForTimeout(300);
     check("EC1 …and with small blocks", await ecInside());
-    await p.page.evaluate(() => document.documentElement.setAttribute("data-tools", "large")); await p.page.evaluate(() => window.dispatchEvent(new Event("resize"))); await p.page.waitForTimeout(300);
+    await p.page.evaluate(() => { document.documentElement.setAttribute("data-tools", "100"); document.documentElement.style.setProperty("--tz", "1"); }); await p.page.evaluate(() => window.dispatchEvent(new Event("resize"))); await p.page.waitForTimeout(300);
     await p.page.click("#ecPasteEase");
     check("EC1 pasting before copying explains what to do and touches nothing", /Сначала выделите ключи/.test(await p.status()) && p.ae.log.undo.length === 0);
     await p.page.click("#ecCopy"); await p.idle();
@@ -3895,15 +3908,105 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click("#ecCopy"); await p.idle();
     p.ae.comp.selectedProperties = []; p.ae.comp.selectedLayers = [LB];
     await p.page.click("#ecPasteEase"); await p.idle();
-    check("EC9 a layer without that property's keys gets a clear hint", /нет ключей в том же свойстве/.test(await p.status()), await p.status());
+    check("EC9 copied from a property the layer does not have: a clear hint", /нет такого свойства/.test(await p.status()), await p.status());
+    const LC = mkLayer(clock2, { name: "C" }); { const r = LC.props["ADBE Rotate Z"]; r.matchName = "ADBE Rotate Z"; r.propertyDepth = 2; r.parentProperty = tr; r.name = "Rotation"; }
+    LA.props["ADBE Rotate Z"].keys.forEach((k) => { k.selected = true; });
+    p.ae.comp.selectedProperties = [LA.props["ADBE Rotate Z"]]; p.ae.comp.selectedLayers = [];
+    await p.page.click("#ecCopy"); await p.idle();
+    p.ae.comp.selectedProperties = []; p.ae.comp.selectedLayers = [LC];
+    await p.page.click("#ecPasteEase"); await p.idle();
+    check("EC9 a layer whose property has no keys gets them created from the time indicator, with the easing", LC.props["ADBE Rotate Z"].keys.length === 2 && /не было ключей — создал 2 ключа/.test(await p.status()), await p.status());
+    // A selected property with no keys (stopwatch off): "Вставить значения" brings the whole animation, "Вставить плавность" makes keys with the current value.
+    const SRCP = new Prop(0, clock2, { name: "Rotation" }).addKey(0, 10).addKey(1, 50);
+    SRCP.keys.forEach((k) => { k.selected = true; }); SRCP.keys[0].outEase = [new KeyframeEase(20, 70)];
+    p.ae.comp.selectedProperties = [SRCP]; p.ae.comp.selectedLayers = [];
+    await p.page.click("#ecCopy"); await p.idle();
+    p.ae.comp.time = 3;
+    const EMPTY = new Prop(5, clock2, { name: "Opacity" });
+    p.ae.comp.selectedProperties = [EMPTY];
+    await p.page.click("#ecPasteValue"); await p.idle();
+    check("EC10 values onto a property without keys: keys appear from the time indicator, at the copied spacing, with the copied values and easing", EMPTY.keys.map((k) => k.time + ":" + k.value).join() === "3:10,4:50" && eases2(EMPTY.keys[0].outEase) === "20/70" && /не было ключей — создал 2 ключа от указателя времени со скопированными значениями/.test(await p.status()), EMPTY.keys.map((k) => k.time + ":" + k.value).join() + " | " + await p.status());
+    const EMPTY2 = new Prop(7, clock2, { name: "Scale" });
+    p.ae.comp.selectedProperties = [EMPTY2];
+    await p.page.click("#ecPasteEase"); await p.idle();
+    check("EC10 easing onto a property without keys: keys with its current value, the copied influence on them, and a hint to set the values", EMPTY2.keys.map((k) => k.time + ":" + k.value).join() === "3:7,4:7" && EMPTY2.keys[0].outEase[0].influence === 70 && /задайте значения ключей/.test(await p.status()), EMPTY2.keys.map((k) => k.time + ":" + k.value).join() + " | " + await p.status());
+    p.ae.comp.time = 0;
     await p.page.click("#ecOptsToggle");
     check("EC8 the minus folds the switch away; the plus tells what is set", (await p.page.locator("#ecOpts").isHidden()) && /сквозная скорость: вкл/.test(await p.page.getAttribute("#ecOptsToggle", "title")));
     await p.page.click("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin");
     await p.restart();
     await p.page.click("#tabMotion").catch(() => {});
-    check("EC8 the clipboard, the switch, the fold and the pin survive a restart; the Tools grid is untouched", (await p.page.locator("#ecClip").innerText()) === "В буфере: 3 ключа · Тест" && (await p.page.locator("#ecOpts").isHidden()) &&
+    check("EC8 the clipboard, the switch, the fold and the pin survive a restart; the Tools grid is untouched", (await p.page.locator("#ecClip").innerText()) === "В буфере: 2 ключа · Rotation" && (await p.page.locator("#ecOpts").isHidden()) &&
       (await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin", "aria-pressed")) === "true" && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.motion.v1"))).ecThrough === true && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.motion.v1"))).pins === "easecopy" && p.errors.length === 0, p.errors.join(" | "));
     await p.page.screenshot({ path: path.join(SHOTS, "40-shape-easecopy.png") });
+    await p.close();
+  }
+
+  // Hover info: the cursor rests for a second on a block, a tab or a button -> a small window explains it.
+  {
+    p = await open({ settings: { infoTips: true } });
+    await p.page.click("#tabMotion");
+    const tip = () => p.page.evaluate(() => { const t = document.getElementById("infoTip"); return t.hidden ? "" : document.getElementById("infoTipTitle").textContent + "|" + document.getElementById("infoTipText").textContent + "|" + document.getElementById("infoTipHint").textContent; });
+    const box = await p.page.locator('#motionTools .tool-card[data-tool="anchor"] .tool-head').boundingBox();
+    await p.page.mouse.move(box.x + 10, box.y + box.height / 2);
+    await p.page.waitForTimeout(500);
+    check("IT1 nothing shows before a second has passed", (await tip()) === "");
+    await p.page.waitForTimeout(800);
+    t = await tip();
+    check("IT1 after a second a window explains the block in detail, with its full name", /^Точка привязки\|Переносит Anchor Point/.test(t) && /Двойной щелчок/.test(t), t);
+    t = await p.page.evaluate(() => { const r = document.getElementById("infoTip").getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight; });
+    check("IT1 the window stays inside the panel", t === true);
+    await p.page.screenshot({ path: path.join(SHOTS, "43-info-tip.png") });
+    await p.page.mouse.move(2, 2); await p.page.waitForTimeout(100);
+    check("IT2 moving away hides it, and the element keeps its own tooltip text", (await tip()) === "" && (await p.page.getAttribute('#motionTools .tool-card[data-tool="anchor"]', "title")) !== null);
+    await p.page.locator("#organizeBtn").scrollIntoViewIfNeeded();
+    const b2 = await p.page.locator("#organizeBtn").boundingBox();
+    await p.page.mouse.move(b2.x + 20, b2.y + 10); await p.page.waitForTimeout(1300);
+    check("IT3 any button with a tooltip gets it in the same window", /^\|Разложить элементы проекта по папкам/.test(await tip()), await tip());
+    await p.page.locator("#tabTools").scrollIntoViewIfNeeded();
+    const b3 = await p.page.locator("#tabTools").boundingBox();
+    await p.page.mouse.move(b3.x + 20, b3.y + 10); await p.page.waitForTimeout(1300);
+    check("IT3 tabs explain what they hold", /^Анимация\|Готовые пресеты/.test(await tip()), await tip());
+    await p.page.mouse.down(); await p.page.mouse.up();
+    check("IT4 a click hides it at once", (await tip()) === "");
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+    check("IT5 Settings → General has a switch for it, on", await p.page.locator("#infoTipsOn").isChecked());
+    await p.page.locator("label.switch", { has: p.page.locator("#infoTipsOn") }).click(); await p.page.click("#saveSettings");
+    await p.page.mouse.move(b3.x + 20, b3.y + 10); await p.page.waitForTimeout(1300);
+    check("IT5 switched off: no window", (await tip()) === "" && p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
+  }
+
+  // Each section has its own background; any colour can be chosen per section in Settings.
+  {
+    p = await open({});
+    const css = (v) => p.page.evaluate((v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim(), v);
+    const bgNow = () => css("--bg");
+    const seen = [], acc = [];
+    for (const id of ["tabClaude", "tabTools", "tabMotion", "tabShape"]) { await p.page.click("#" + id); seen.push(await bgNow()); acc.push(await css("--accent")); }
+    check("SC1 every section paints the panel background in its own colour", seen.join() === "#0b0c12,#17110b,#0b1510,#0b1219", seen.join());
+    check("SC1 the accent colour stays the same in every section", acc.every((c) => c === "#9d7bff"), acc.join());
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+    check("SC2 Settings → General → «Фон разделов»: four section rows, each with ready colours, a palette for any colour and a hex field", (await p.page.locator(".sec-color").count()) === 4 && (await p.page.locator(".sec-color .color-pick").count()) === 4 && (await p.page.locator(".sec-color .hex").count()) === 4 && (await p.page.locator(".sec-color .sec-name").allInnerTexts()).join() === "AI,Анимация,Инструменты,Шейп");
+    check("SC2 the accent colour also has a palette", (await p.page.locator("#accentSwatches .color-pick").count()) === 1);
+    await p.page.fill("#bgShapeHex", "#12ab34");
+    await p.page.locator("#bgMotionPick").evaluate((el) => { el.value = "#a1b2c3"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+    await p.page.click("#saveSettings");
+    await p.page.click("#tabMotion"); const m = await bgNow();
+    await p.page.click("#tabShape"); const sh = await bgNow();
+    await p.page.click("#tabClaude"); const ai = await bgNow();
+    check("SC3 saved: Tools background is #a1b2c3 (from the palette), Shape #12ab34 (typed), AI untouched", m === "#a1b2c3" && sh === "#12ab34" && ai === "#0b0c12", m + " " + sh + " " + ai);
+    await p.page.click("#tabShape");
+    await p.restart();
+    check("SC3 the backgrounds survive a restart", (await bgNow()) === "#12ab34" && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.settings.v1"))).bgMotion === "#a1b2c3" && p.errors.length === 0, (await bgNow()) + " " + p.errors.join(" | "));
+    await p.page.screenshot({ path: path.join(SHOTS, "44-section-colours.png") });
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+    await p.page.locator(".sec-color").first().scrollIntoViewIfNeeded();
+    await p.page.screenshot({ path: path.join(SHOTS, "45-section-colours-settings.png") });
+    await p.close();
+    p = await open({ settings: { bgTools: "nonsense" } });
+    await p.page.click("#tabTools");
+    check("SC4 a broken saved background falls back to the section's own", (await bgNow()) === "#17110b");
     await p.close();
   }
 
