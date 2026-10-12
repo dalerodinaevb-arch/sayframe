@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.25.0";
+    var VERSION = "1.26.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -3416,6 +3416,11 @@
             obj.className = "ac-obj ac-gr";
             obj.style.color = acState.color;
             obj.innerHTML = grIcon(p.id);
+            // Сама анимация — на холсте поверх всего мини-экрана; значок остаётся, если холст не работает.
+            bar = document.createElement("canvas");
+            bar.className = "ac-grc";
+            if (bar.getContext && bar.getContext("2d")) { thumb.classList.add("gr-live"); }
+            thumb.appendChild(bar);
         }
         if (p.sec === "sfx") {
             for (i = 0; i < 5; i++) { bar = document.createElement("i"); obj.appendChild(bar); }
@@ -3429,6 +3434,8 @@
         var searching = !!ui.acSearch.value.replace(/\s/g, "") || acState.favOnly;
         var sec = acState.sec;
         var editing = sec === "edit" && !searching;
+        if (acSeen) { acSeen.disconnect(); }
+        grLive = [];
         ui.acGrid.innerHTML = "";
         ui.acGrid.style.setProperty("--ac-size", acState.size + "px");
         Array.prototype.forEach.call(ui.acTabs.querySelectorAll("button"), function (b) {
@@ -3578,19 +3585,507 @@
         ];
     }
 
-    // Превью графики: значок появляется, как слой — с перелётом, держится и уходит.
-    function grPreview(card, p) {
-        var svg = card.querySelector(".ac-gr svg"), f = GR_BY_ID[p.id] ? GR_BY_ID[p.id].folder : "shapes";
-        if (!svg || !svg.animate) { return; }
-        grStop(card);
-        card.grAnim = svg.animate(f === "bg" || f === "overlay" ?
-            [{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }] :
-            [{ transform: "scale(0) rotate(-20deg)", opacity: 0 }, { transform: "scale(1.15) rotate(4deg)", opacity: 1, offset: 0.2 },
-                { transform: "scale(1) rotate(0deg)", opacity: 1, offset: 0.3 }, { transform: "scale(1)", opacity: 1, offset: 0.8 }, { transform: "scale(0.6)", opacity: 0 }],
-            { duration: 1800, iterations: Infinity, easing: "ease-out" });
+    // ---- Превью графики: каждая карточка рисует свою графику на холсте по тем же формулам, что стоят
+    // в выражениях её слоя (host.jsx, GR_BUILD): та же длина, те же кривые, те же повторы и обрезки.
+    // Размер и толщина — по умолчанию (100 % и 8 px), цвет — «Цвет графики».
+
+    // Сколько пикселей композиции 1920×1080 видно по ширине мини-экрана и где его центр.
+    var GR_VIEW = { "speed-lines": [1920, 0, 0], "lightning": [1250, 0, 0], "sunburst": [1100, 0, 0], "confetti": [1150, 0, 120],
+        "lower-third": [1150, 330, -10], "callout": [1150, 300, -90], "progress": [900, 0, 0], "zigzag": [820, 0, 0], "underline": [880, 0, 0],
+        "circle-scribble": [900, 0, 0], "arrow": [860, 0, 0], "bracket": [900, 0, 0], "highlight": [880, 0, 0], "shockwave": [960, 0, 0],
+        "smoke-puff": [700, 0, -30], "glitch-blocks": [1100, 0, 0], "explosion-burst": [720, 0, 0], "label": [760, 0, 0] };
+
+    function grRng(seed) {
+        var a = (seed * 2654435761) >>> 0;
+        return function () {
+            a = (a + 0x6D2B79F5) >>> 0;
+            var t = a;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
     }
 
-    function grStop(card) { if (card.grAnim) { card.grAnim.cancel(); card.grAnim = null; } }
+    function grHex(hex, m, a) {
+        var n = parseInt(String(hex || "#ffffff").replace("#", ""), 16);
+        if (isNaN(n)) { n = 0xffffff; }
+        m = m === undefined ? 1 : m;
+        return "rgba(" + Math.round(((n >> 16) & 255) * m) + "," + Math.round(((n >> 8) & 255) * m) + "," + Math.round((n & 255) * m) + "," + (a === undefined ? 1 : a) + ")";
+    }
+
+    // Точки контуров — как в слоях-фигурах: эллипс и звезда начинаются сверху и идут по часовой стрелке.
+    function grEllipse(d, at) {
+        var out = [], i, a, r = d / 2;
+        at = at || [0, 0];
+        for (i = 0; i < 72; i++) { a = -Math.PI / 2 + i * 2 * Math.PI / 72; out.push([at[0] + Math.cos(a) * r, at[1] + Math.sin(a) * r]); }
+        return out;
+    }
+
+    function grRectPts(w, h, round, at) {
+        var out = [], r = Math.min(round || 0, w / 2, h / 2), x0, y0, k, a;
+        at = at || [0, 0];
+        x0 = at[0] - w / 2; y0 = at[1] - h / 2;
+        if (!r) { return [[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]; }
+        [[x0 + w - r, y0 + r, -90], [x0 + w - r, y0 + h - r, 0], [x0 + r, y0 + h - r, 90], [x0 + r, y0 + r, 180]].forEach(function (c) {
+            for (k = 0; k <= 6; k++) { a = (c[2] + k * 15) * Math.PI / 180; out.push([c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r]); }
+        });
+        return out;
+    }
+
+    function grStarPts(n, outer, inner, polygon, at) {
+        var out = [], k, a, r, m = polygon ? n : n * 2;
+        at = at || [0, 0];
+        for (k = 0; k < m; k++) {
+            a = -Math.PI / 2 + k * 2 * Math.PI / m;
+            r = polygon || k % 2 === 0 ? outer : inner;
+            out.push([at[0] + Math.cos(a) * r, at[1] + Math.sin(a) * r]);
+        }
+        return out;
+    }
+
+    // Часть контура от start до end процентов длины (как Trim Paths).
+    function grTrim(pts, closed, s, e) {
+        var seg = [], total = 0, i, a, b, l, from, to, out = [], acc = 0, u;
+        var list = closed ? pts.concat([pts[0]]) : pts;
+        s = Math.max(0, Math.min(100, s)); e = Math.max(0, Math.min(100, e));
+        if (s > e) { u = s; s = e; e = u; }
+        if (e - s < 0.01) { return []; }
+        for (i = 1; i < list.length; i++) {
+            a = list[i - 1]; b = list[i]; l = Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]));
+            seg.push(l); total += l;
+        }
+        from = total * s / 100; to = total * e / 100;
+        for (i = 1; i < list.length; i++) {
+            a = list[i - 1]; b = list[i]; l = seg[i - 1];
+            if (acc + l >= from && acc <= to && l > 0) {
+                u = Math.max(0, (from - acc) / l);
+                if (!out.length) { out.push([a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]); }
+                u = Math.min(1, (to - acc) / l);
+                out.push([a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]);
+            }
+            acc += l;
+        }
+        return out;
+    }
+
+    // Рисовальщик одного кадра: t — секунды от начала слоя, L — длина слоя.
+    function grPainter(ctx, t, L, color) {
+        var g = {};
+        var clamp = function (x) { return Math.min(1, Math.max(0, x)); };
+        g.t = t; g.L = L;
+        g.P = clamp(t / L);
+        g.E = function (x) { x = clamp(x); return 1 - Math.pow(1 - x, 3); };
+        g.B = function (x) { x = clamp(x); var s = 1.70158, q = x - 1; return 1 + (s + 1) * q * q * q + s * q * q; };
+        g.In = function (d) { return g.E(t / d); };
+        g.Out = function (d) { return g.E((L - t) / d); };
+        g.W = 8;
+        g.K = function (m, a) { return grHex(color, m, a); };
+        g.rnd = function (seed, timeless) { var r = grRng(timeless ? seed : seed * 7919 + Math.floor(t * 12) + 1); return function (a, b) { var x = r(); return a === undefined ? x : a + x * (b - a); }; };
+        // Группа: позиция, масштаб (в процентах), поворот, точка привязки, прозрачность — как Transform группы.
+        g.grp = function (o, fn) {
+            var sc = o.scale === undefined ? [100, 100] : (typeof o.scale === "number" ? [o.scale, o.scale] : o.scale);
+            ctx.save();
+            if (o.pos) { ctx.translate(o.pos[0], o.pos[1]); }
+            if (o.rot) { ctx.rotate(o.rot * Math.PI / 180); }
+            ctx.scale(Math.max(0.0001, sc[0] / 100), Math.max(0.0001, sc[1] / 100));
+            if (sc[0] <= 0 || sc[1] <= 0) { ctx.restore(); return; }
+            if (o.anchor) { ctx.translate(-o.anchor[0], -o.anchor[1]); }
+            if (o.op !== undefined) { ctx.globalAlpha *= clamp(o.op / 100); }
+            fn();
+            ctx.restore();
+        };
+        // Repeater: копия i сдвинута на pos·i и повёрнута на rot·i вокруг начала координат группы.
+        g.rep = function (n, rot, pos, fn) {
+            var i;
+            for (i = n - 1; i >= 0; i--) {
+                ctx.save();
+                if (pos) { ctx.translate(pos[0] * i, pos[1] * i); }
+                if (rot) { ctx.rotate(rot * i * Math.PI / 180); }
+                fn(i);
+                ctx.restore();
+            }
+        };
+        function trace(pts, closed) {
+            var i;
+            ctx.beginPath();
+            for (i = 0; i < pts.length; i++) { if (i) { ctx.lineTo(pts[i][0], pts[i][1]); } else { ctx.moveTo(pts[i][0], pts[i][1]); } }
+            if (closed) { ctx.closePath(); }
+        }
+        g.stroke = function (pts, closed, width, col, s, e) {
+            if (width <= 0) { return; }
+            if (s !== undefined) { pts = grTrim(pts, closed, s, e); closed = false; }
+            if (pts.length < 2) { return; }
+            trace(pts, closed);
+            ctx.lineWidth = width; ctx.lineCap = "round"; ctx.lineJoin = "round";
+            ctx.strokeStyle = col || g.K();
+            ctx.stroke();
+        };
+        g.fill = function (pts, col) {
+            if (pts.length < 3) { return; }
+            trace(pts, true);
+            ctx.fillStyle = col || g.K();
+            ctx.fill();
+        };
+        g.text = function (str, x, y, size, align, alpha, col) {
+            ctx.save();
+            ctx.globalAlpha *= clamp(alpha);
+            ctx.font = "700 " + size + "px Inter, 'Segoe UI', sans-serif";
+            ctx.textAlign = align || "left";
+            ctx.textBaseline = "alphabetic";
+            ctx.fillStyle = col || "#fff";
+            ctx.fillText(str, x, y);
+            ctx.restore();
+        };
+        g.ctx = ctx;
+        return g;
+    }
+
+    // Подпись к плашкам: появляется через 0,25 с за 0,3 с и уходит за 0,3 с до конца — как у текстового слоя.
+    function grTextAlpha(g) { return Math.min(1, Math.max(0, (g.t - 0.25) / 0.3)) * Math.min(1, Math.max(0, (g.L - g.t) / 0.3)); }
+
+    var GR_DRAW = {
+        "ring-burst": function (g) {
+            g.grp({ scale: g.E(g.P * 1.2) * 120 }, function () { g.stroke(grEllipse(200), true, g.W * (1 - g.E(g.P)) * 2); });
+        },
+        "ring-double": function (g) {
+            g.grp({ scale: g.E(g.P * 1.2 - 0.18) * 90 }, function () { g.stroke(grEllipse(200), true, g.W * (1 - g.E(g.P - 0.15)) * 1.4); });
+            g.grp({ scale: g.E(g.P * 1.2) * 120 }, function () { g.stroke(grEllipse(200), true, g.W * (1 - g.E(g.P)) * 2); });
+        },
+        "lines-burst": function (g) {
+            g.rep(12, 30, null, function () { g.stroke([[0, -60], [0, -150]], false, g.W, null, 100 * g.E(g.P * 1.6 - 0.3), 100 * g.E(g.P * 1.6)); });
+        },
+        "dots-burst": function (g) {
+            g.grp({ scale: 100 * (1 - g.E(g.P * 1.3 - 0.4)) }, function () {
+                g.rep(10, 36, null, function () { g.fill(grEllipse(22, [0, -g.E(g.P * 1.3) * 170])); });
+            });
+        },
+        "star-burst": function (g) {
+            g.grp({ rot: g.P * 180, op: 100 * (1 - g.E(g.P * 1.3 - 0.5)) }, function () {
+                g.rep(8, 45, null, function () { g.fill(grStarPts(5, 18, 8, false, [0, -g.E(g.P * 1.3) * 170])); });
+            });
+        },
+        "circle-pop": function (g) {
+            g.grp({ scale: 100 * g.B(g.t / 0.4) * g.Out(0.3) }, function () { g.fill(grEllipse(160)); });
+        },
+        "square-spin": function (g) {
+            g.grp({ scale: 100 * g.B(g.t / 0.5) * g.Out(0.3), rot: g.E(g.P) * 180 }, function () { g.stroke(grRectPts(140, 140, 18), true, g.W); });
+        },
+        "triangle-burst": function (g) {
+            g.grp({ rot: g.P * 240, op: 100 * (1 - g.E(g.P * 1.3 - 0.5)) }, function () {
+                g.rep(6, 60, null, function () { g.fill(grStarPts(3, 16, 0, true, [0, -g.E(g.P * 1.3) * 160])); });
+            });
+        },
+        "plus-burst": function (g) {
+            var y = -g.E(g.P * 1.3) * 150, w = g.W * 0.7;
+            g.grp({ op: 100 * (1 - g.E(g.P * 1.3 - 0.5)) }, function () {
+                g.rep(6, 60, null, function () { g.fill(grRectPts(24, w, 0, [0, y])); g.fill(grRectPts(w, 24, 0, [0, y])); });
+            });
+        },
+        "zigzag": function (g) {
+            var pts = [], i;
+            for (i = 0; i <= 8; i++) { pts.push([-240 + 60 * i, i % 2 ? -30 : 30]); }
+            g.stroke(pts, false, g.W, null, 100 * g.E(g.P * 1.5 - 0.5), 100 * g.E(g.P * 1.5));
+        },
+        "ripples": function (g) {
+            var i, q;
+            for (i = 2; i >= 0; i--) {
+                q = (g.t / 1.2 + i / 3) % 1;
+                g.grp({ scale: q * 130 }, function () { g.stroke(grEllipse(200), true, g.W * (1 - q)); });
+            }
+        },
+        "sparkle": function (g) {
+            g.grp({ scale: 100 * g.B(g.t / 0.35) * g.Out(0.3) * (1 + 0.12 * Math.sin(g.t * 12)), rot: g.t * 40 }, function () { g.fill(grStarPts(4, 70, 14)); });
+        },
+        "confetti": function (g) {
+            var i, r, m, a, v;
+            for (i = 17; i >= 0; i--) {
+                r = g.rnd(i + 1, true); m = 0.55 + r() * 0.45;
+                r = g.rnd(i + 1, true); a = r(-Math.PI, 0); v = r(250, 520);
+                var pos = [Math.cos(a) * v * g.t * 0.9, Math.sin(a) * v * g.t + 500 * g.t * g.t];
+                r = g.rnd(i + 1, true);
+                g.grp({ pos: pos, rot: r(-1, 1) * 720 * g.t, op: 100 * g.Out(0.25) }, function () { g.fill(grRectPts(14, 22, 2), g.K(m)); });
+            }
+        },
+        "speed-lines": function (g) {
+            var i, s, e;
+            for (i = 19; i >= 0; i--) {
+                s = g.rnd(i + 1, false)(0, 40); e = g.rnd(i + 1, false)(50, 100);
+                g.grp({ rot: i * 18, op: 100 * g.In(0.15) * g.Out(0.2) }, function () { g.stroke([[0, -520], [0, -900]], false, g.W * 0.6, null, s, e); });
+            }
+        },
+        "smoke-puff": function (g) {
+            var i, r, a, rr, s;
+            for (i = 6; i >= 0; i--) {
+                r = g.rnd(i + 1, true); a = r(0, Math.PI * 2); rr = g.E(g.P) * r(60, 140);
+                r = g.rnd(i + 1, true); s = (0.4 + g.E(g.P) * r(0.8, 1.4)) * 100;
+                g.grp({ pos: [Math.cos(a) * rr, Math.sin(a) * rr - g.P * 60], scale: s, op: 80 * (1 - g.P) }, function () { g.fill(grEllipse(90), g.K(0.8)); });
+            }
+        },
+        "explosion-burst": function (g) {
+            g.grp({ scale: 100 * g.E(g.t / 0.25) * (1 - g.E(g.P * 1.2 - 0.2)) }, function () { g.fill(grEllipse(140), "#fff"); });
+            g.grp({ scale: 100 * g.B(g.t / 0.3) * (1 - g.E(g.P * 1.2 - 0.3)) }, function () { g.fill(grStarPts(12, 180, 90)); });
+        },
+        "lightning": function (g) {
+            var on = g.rnd(1, false)() < 0.75;
+            g.grp({ op: on ? 100 * g.Out(0.2) : 0 }, function () { g.stroke([[-20, -320], [30, -120], [-30, -40], [40, 140], [-10, 320]], false, g.W * 1.2); });
+        },
+        "sunburst": function (g) {
+            g.grp({ rot: g.t * 25, scale: 100 * g.E(g.t / 0.5) * g.Out(0.4), op: 70 }, function () {
+                g.rep(12, 30, null, function () { g.fill([[0, 0], [-40, -400], [40, -400]]); });
+            });
+        },
+        "glitch-blocks": function (g) {
+            var i, r, at, on;
+            for (i = 9; i >= 0; i--) {
+                r = g.rnd(i + 1, false); at = [r(-400, 400), r(-220, 220)];
+                on = g.rnd(i + 20, false)() < 0.5;
+                g.grp({ op: on ? 100 * g.Out(0.15) : 0 }, function () { g.fill(grRectPts(120, 24, 0, at)); });
+            }
+        },
+        "shockwave": function (g) {
+            g.grp({ scale: g.E(g.P * 1.1 - 0.1) * 320 }, function () { g.stroke(grEllipse(200), true, g.W * 0.5 * (1 - g.E(g.P))); });
+            g.grp({ scale: g.E(g.P * 1.1) * 250 }, function () { g.stroke(grEllipse(200), true, g.W * 3 * (1 - g.E(g.P))); });
+        },
+        "swirl": function (g) {
+            var pts = [], i, u, a, r;
+            for (i = 0; i <= 60; i++) { u = i / 60; a = u * Math.PI * 5; r = 10 + 160 * u; pts.push([Math.cos(a) * r, Math.sin(a) * r]); }
+            g.grp({ rot: g.t * 120 }, function () { g.stroke(pts, false, g.W, null, 100 * g.E(g.P * 1.4 - 0.4), 100 * g.E(g.P * 1.4)); });
+        },
+        "underline": function (g) {
+            var pts = [], i, u;
+            for (i = 0; i <= 30; i++) { u = i / 30; pts.push([-300 + 600 * u, Math.sin(u * Math.PI * 3) * 10]); }
+            g.stroke(pts, false, g.W, null, 100 * (1 - g.Out(0.4)), 100 * g.In(0.6));
+        },
+        "circle-scribble": function (g) {
+            var pts = [], i, u, a, k;
+            for (i = 0; i <= 70; i++) { u = i / 70; a = -Math.PI / 2 + u * Math.PI * 2.3; k = 1 + 0.06 * u; pts.push([Math.cos(a) * 280 * k, Math.sin(a) * 130 * k]); }
+            g.stroke(pts, false, g.W, null, 100 * (1 - g.Out(0.4)), 100 * g.In(0.7));
+        },
+        "arrow": function (g) {
+            var pts = [], i, u;
+            for (i = 0; i <= 20; i++) { u = i / 20; pts.push([-260 + 500 * u, -120 * Math.sin(u * Math.PI) + 40 * u]); }
+            g.stroke([[200, 0], [240, 40], [190, 70]], false, g.W, null, 100 * (1 - g.Out(0.4)), 100 * g.E((g.t - 0.5) / 0.25));
+            g.stroke(pts, false, g.W, null, 100 * (1 - g.Out(0.4)), 100 * g.In(0.6));
+        },
+        "cross-out": function (g) {
+            g.stroke([[200, -120], [-200, 120]], false, g.W, null, 100 * (1 - g.Out(0.3)), 100 * g.E((g.t - 0.3) / 0.35));
+            g.stroke([[-200, -120], [200, 120]], false, g.W, null, 100 * (1 - g.Out(0.3)), 100 * g.In(0.35));
+        },
+        "check": function (g) {
+            g.stroke([[-120, 0], [-40, 90], [140, -120]], false, g.W * 1.4, null, 100 * (1 - g.Out(0.3)), 100 * g.In(0.5));
+        },
+        "highlight": function (g) {
+            g.grp({ op: 55 }, function () { g.stroke([[-300, 0], [300, -6]], false, g.W * 6, null, 100 * (1 - g.Out(0.3)), 100 * g.In(0.5)); });
+        },
+        "bracket": function (g) {
+            g.stroke([[260, -140], [300, -140], [300, 140], [260, 140]], false, g.W, null, 100 * (1 - g.Out(0.3)), 100 * g.In(0.5));
+            g.stroke([[-260, -140], [-300, -140], [-300, 140], [-260, 140]], false, g.W, null, 100 * (1 - g.Out(0.3)), 100 * g.In(0.5));
+        },
+        "star-doodle": function (g) {
+            var pts = [], i;
+            for (i = 0; i <= 5; i++) { pts.push([Math.cos(-Math.PI / 2 + i * 4 * Math.PI / 5) * 150, Math.sin(-Math.PI / 2 + i * 4 * Math.PI / 5) * 150]); }
+            g.stroke(pts, false, g.W, null, 100 * (1 - g.Out(0.3)), 100 * g.In(0.7));
+        },
+        "exclaim": function (g) {
+            g.grp({ rot: -60 }, function () { g.rep(5, 30, null, function () { g.stroke([[0, -70], [0, -130]], false, g.W, null, 100 * (1 - g.Out(0.3)), 100 * g.In(0.3)); }); });
+        },
+        "bg-gradient": function (g, W, H) {
+            var c = g.ctx, pts = [[0.1 * W + Math.sin(g.t * 0.7) * W * 0.2, 0.1 * H + Math.cos(g.t * 0.5) * H * 0.2], [0.9 * W, 0.1 * H], [0.1 * W, 0.9 * H],
+                [0.9 * W + Math.cos(g.t * 0.6) * W * 0.2, 0.9 * H + Math.sin(g.t * 0.8) * H * 0.2]];
+            var n = parseInt(String(acState.color).replace("#", ""), 16) || 0xffffff, r = (n >> 16) & 255, gg = (n >> 8) & 255, b = n & 255;
+            var cols = [[r, gg, b], [r * 0.3, gg * 0.3, b * 0.45], [b, r, gg], [8, 8, 15]];
+            c.save();
+            c.globalAlpha *= g.In(0.5) * g.Out(0.5);
+            c.fillStyle = "rgb(8,8,15)"; c.fillRect(-W / 2, -H / 2, W, H);
+            pts.forEach(function (p, i) {
+                var gr = c.createRadialGradient(p[0] - W / 2, p[1] - H / 2, 0, p[0] - W / 2, p[1] - H / 2, W * 0.75);
+                gr.addColorStop(0, "rgba(" + Math.round(cols[i][0]) + "," + Math.round(cols[i][1]) + "," + Math.round(cols[i][2]) + ",0.95)");
+                gr.addColorStop(1, "rgba(" + Math.round(cols[i][0]) + "," + Math.round(cols[i][1]) + "," + Math.round(cols[i][2]) + ",0)");
+                c.fillStyle = gr; c.fillRect(-W / 2, -H / 2, W, H);
+            });
+            c.restore();
+        },
+        "bg-grid": function (g, W, H) {
+            g.grp({ op: 60 * g.In(0.5) * g.Out(0.5) }, function () {
+                g.grp({ pos: [(g.t * 30) % 80, 0] }, function () { g.rep(Math.ceil(W / 80) + 3, 0, [80, 0], function () { g.stroke([[-W / 2 - 80, -H], [-W / 2 - 80, H]], false, g.W * 0.25); }); });
+                g.grp({ pos: [0, (g.t * 30) % 80] }, function () { g.rep(Math.ceil(H / 80) + 3, 0, [0, 80], function () { g.stroke([[-W, -H / 2 - 80], [W, -H / 2 - 80]], false, g.W * 0.25); }); });
+            });
+        },
+        "bg-dots": function (g, W, H) {
+            g.grp({ op: 50 * g.In(0.5) * g.Out(0.5) }, function () {
+                g.grp({ scale: 100 + 20 * Math.sin(g.t * 3) }, function () {
+                    g.rep(Math.ceil(H / 60) + 1, 0, [0, 60], function () { g.rep(Math.ceil(W / 60) + 1, 0, [60, 0], function () { g.fill(grEllipse(10, [-W / 2, -H / 2])); }); });
+                });
+            });
+        },
+        "bg-stripes": function (g, W, H) {
+            g.grp({ op: 35 * g.In(0.5) * g.Out(0.5) }, function () {
+                g.grp({ pos: [(g.t * 60) % 100, 0], rot: 30 }, function () { g.rep(Math.ceil(W * 2.4 / 100) + 2, 0, [100, 0], function () { g.fill(grRectPts(40, H * 3, 0, [-W * 1.2, 0])); }); });
+            });
+        },
+        "bg-rays": function (g, W, H) {
+            var r = Math.ceil(Math.sqrt(W * W + H * H));
+            g.grp({ op: 40 * g.In(0.5) * g.Out(0.5) }, function () {
+                g.grp({ rot: g.t * 8 }, function () { g.rep(16, 22.5, null, function () { g.fill([[0, 0], [-r * 0.09, -r], [r * 0.09, -r]]); }); });
+            });
+        },
+        "bg-circles": function (g) {
+            var i, q;
+            g.grp({ op: 70 * g.In(0.5) * g.Out(0.5) }, function () {
+                for (i = 5; i >= 0; i--) {
+                    q = (g.t / 4 + i / 6) % 1;
+                    g.grp({ scale: q * 700, op: 100 * (1 - q) }, function () { g.stroke(grEllipse(300), true, g.W * 0.5); });
+                }
+            });
+        },
+        "vignette": function (g, W, H) {
+            var c = g.ctx, gr = c.createRadialGradient(0, 0, 0, 0, 0, Math.sqrt(W * W + H * H) / 2);
+            gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(0.45, "rgba(0,0,0,0.05)"); gr.addColorStop(1, "rgba(0,0,0,0.95)");
+            c.save(); c.globalAlpha *= g.In(0.5) * g.Out(0.5); c.fillStyle = gr; c.fillRect(-W / 2, -H / 2, W, H); c.restore();
+        },
+        "grain": function (g, W, H) {
+            var c = g.ctx, r = grRng(Math.floor(g.t * 24) + 1), i, a = 0.12 * g.In(0.3) * g.Out(0.3) / 0.12, s = W / 160;
+            c.save();
+            for (i = 0; i < 700; i++) {
+                c.fillStyle = r() < 0.5 ? "rgba(255,255,255," + (0.35 * a) + ")" : "rgba(0,0,0," + (0.45 * a) + ")";
+                c.fillRect(-W / 2 + r() * W, -H / 2 + r() * H, s, s);
+            }
+            c.restore();
+        },
+        "flicker": function (g, W, H) {
+            var c = g.ctx, r = g.rnd(1, false), v = r() < 0.3 ? r(10, 35) : r(0, 6);
+            c.save(); c.globalCompositeOperation = "lighter"; c.globalAlpha *= v / 100 * g.In(0.2) * g.Out(0.2);
+            c.fillStyle = "#fff"; c.fillRect(-W / 2, -H / 2, W, H); c.restore();
+        },
+        "letterbox": function (g, W, H) {
+            var k = (1 - g.In(0.6) * g.Out(0.6)) * H * 0.13;
+            g.fill(grRectPts(W + 20, H * 0.12, 0, [0, -H / 2 + H * 0.06 - k]), "#000");
+            g.fill(grRectPts(W + 20, H * 0.12, 0, [0, H / 2 - H * 0.06 + k]), "#000");
+        },
+        "frame": function (g, W, H) {
+            g.stroke(grRectPts(W * 0.9, H * 0.86, 12), true, g.W * 0.6, null, 0, 100 * g.In(0.8) * g.Out(0.5));
+        },
+        "scanlines": function (g, W, H) {
+            var i, y0 = (g.t * 12) % 6, step = 18;   // в мини-экране каждая третья строка, иначе их не видно
+            g.grp({ op: 35 * g.In(0.3) * g.Out(0.3) * 2.2 }, function () {
+                for (i = 0; i * step < H + 20; i++) { g.stroke([[-W, -H / 2 - 8 + y0 + i * step], [W, -H / 2 - 8 + y0 + i * step]], false, 6, "#000"); }
+            });
+        },
+        "lower-third": function (g, W, H) {
+            g.grp({ scale: [100, 100 * g.B(g.t / 0.4) * g.Out(0.3)] }, function () { g.fill(grRectPts(12, 110, 0, [0, 0])); });
+            g.grp({ scale: [100 * g.E(g.t / 0.5) * g.Out(0.4), 100] }, function () { g.fill(grRectPts(640, 110, 6, [320, 0]), "rgba(20,20,26,0.9)"); });
+            g.text(GR_TEXT_DEFAULT["lower-third"], 50, -12, Math.round(H / 22), "left", grTextAlpha(g));
+        },
+        "callout": function (g, W, H) {
+            g.stroke([[0, 0], [120, -120], [420, -120]], false, g.W * 0.5, null, 100 * (1 - g.Out(0.4)), 100 * g.E((g.t - 0.15) / 0.5));
+            g.grp({ scale: 100 * g.B(g.t / 0.3) * g.Out(0.3) }, function () { g.fill(grEllipse(24)); });
+            g.text(GR_TEXT_DEFAULT.callout, 440, -150, Math.round(H / 22), "left", grTextAlpha(g));
+        },
+        "label": function (g, W, H) {
+            g.grp({ scale: 100 * g.B(g.t / 0.4) * g.Out(0.3) }, function () { g.fill(grRectPts(360, 90, 45)); });
+            g.text(GR_TEXT_DEFAULT.label, 0, H / 60, Math.round(H / 22), "center", grTextAlpha(g) * g.B(g.t / 0.4), acState.color.toLowerCase() === "#ffffff" ? "#111" : "#fff");
+        },
+        "progress": function (g) {
+            g.grp({ op: 100 * g.In(0.3) * g.Out(0.3) }, function () {
+                g.stroke([[-282, 0], [282, 0]], false, 22, null, 0, 100 * g.E(g.P));
+                g.stroke(grRectPts(600, 36, 18), true, g.W * 0.4);
+            });
+        },
+        "counter": function (g, W, H) {
+            g.text(Math.round(100 * g.E(g.P / 0.9)) + "%", 0, H / 22, Math.round(H / 8), "center", g.In(0.2) * g.Out(0.2), g.K());
+        },
+        "timer": function (g, W, H) {
+            var s = Math.max(0, Math.ceil(g.L - g.t)), m = Math.floor(s / 60), r = s % 60;
+            g.text((m < 10 ? "0" : "") + m + ":" + (r < 10 ? "0" : "") + r, 0, H / 22, Math.round(H / 8), "center", g.In(0.2) * g.Out(0.2), g.K());
+        }
+    };
+
+    // Под оверлеями — условная картинка: иначе чёрные полосы и виньетку на чёрном экране не видно.
+    function grBackdrop(ctx, W, H) {
+        var gr = ctx.createLinearGradient(-W / 2, -H / 2, W / 2, H / 2);
+        gr.addColorStop(0, "#3b4a6b"); gr.addColorStop(0.55, "#7a5c8f"); gr.addColorStop(1, "#d39b6a");
+        ctx.fillStyle = gr; ctx.fillRect(-W / 2, -H / 2, W, H);
+        ctx.fillStyle = "rgba(255,255,255,0.18)";
+        ctx.beginPath(); ctx.arc(W * 0.18, -H * 0.12, H * 0.22, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // Один кадр графики id в момент t (секунды от начала слоя) на холст canvas.
+    function grDrawFrame(canvas, id, t) {
+        var ctx = canvas.getContext && canvas.getContext("2d");
+        var info = GR_BY_ID[id], folder = info ? info.folder : "shapes", L = GR_DUR[folder] || 1.2;
+        var full = folder === "bg" || folder === "overlay", Wc = canvas.width, Hc = canvas.height, view, k, g;
+        var CW = 1920, CH = 1080;
+        if (!ctx || !GR_DRAW[id]) { return; }
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, Wc, Hc);
+        view = GR_VIEW[id] || [760, 0, 0];
+        // Фоны и оверлеи — на весь кадр (композиция заполняет мини-экран), остальное — крупно, как в Animation Composer.
+        k = full ? Math.max(Wc / CW, Hc / CH) : Wc / view[0];
+        if (full) { view = [CW, 0, 0]; }
+        ctx.translate(Wc / 2 - view[1] * k, Hc / 2 - view[2] * k);
+        ctx.scale(k, k);
+        if (folder === "overlay") { grBackdrop(ctx, CW, CH); }
+        g = grPainter(ctx, Math.max(0, Math.min(t, L)), L, acState.color);
+        if (t > L) { return; }
+        GR_DRAW[id](g, CW, CH);
+    }
+
+    // ---- Все превью играют сами и по кругу, пока карточка видна на экране (как в Animation Composer).
+    // Невидимые карточки стоят: их не видно, а After Effects не тратит на них время.
+    var grLive = [];
+    var grRaf = 0;
+
+    function grLoop() {
+        var now = Date.now();
+        grRaf = 0;
+        grLive = grLive.filter(function (card) { return card.isConnected !== false && document.documentElement.contains(card); });
+        grLive.forEach(function (card) {
+            var info = GR_BY_ID[card.grId], L = GR_DUR[info ? info.folder : "shapes"] || 1.2, period = L + 0.6;
+            grFit(card);
+            grDrawFrame(card.grCanvas, card.grId, ((now - card.grStart) / 1000) % period);
+        });
+        if (grLive.length) { grRaf = window.requestAnimationFrame(grLoop); }
+    }
+
+    function grFit(card) {
+        var th = card.querySelector(".ac-thumb"), dpr = window.devicePixelRatio || 1, w, h;
+        if (!th || !card.grCanvas) { return; }
+        w = Math.max(1, Math.round(th.clientWidth * dpr)); h = Math.max(1, Math.round(th.clientHeight * dpr));
+        if (card.grCanvas.width !== w || card.grCanvas.height !== h) { card.grCanvas.width = w; card.grCanvas.height = h; }
+    }
+
+    function grPreview(card, p) {
+        if (!card.grCanvas || !card.grCanvas.getContext) { return; }
+        grFit(card);
+        card.grId = p.id;
+        if (grLive.indexOf(card) < 0) { card.grStart = Date.now(); grLive.push(card); }
+        if (!grRaf) { grRaf = window.requestAnimationFrame(grLoop); }
+    }
+
+    function grStop(card) {
+        var at = grLive.indexOf(card), info;
+        if (at >= 0) { grLive.splice(at, 1); }
+        if (card.grCanvas) {
+            grFit(card);
+            info = GR_BY_ID[card.grId];
+            grDrawFrame(card.grCanvas, card.grId, (GR_DUR[info ? info.folder : "shapes"] || 1.2) * 0.45);
+        }
+    }
+
+    var acSeen = typeof window.IntersectionObserver === "function" ? new window.IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+            var card = e.target;
+            if (!card.acPlay) { return; }
+            if (e.isIntersecting) { card.acPlay(); } else { card.acStop(); }
+        });
+    }, { threshold: 0.05 }) : null;
+
+    // Карточке с превью — запуск и остановка; играет, пока видна.
+    function acAutoplay(card, play, stop) {
+        card.acPlay = play;
+        card.acStop = stop;
+        if (acSeen) { acSeen.observe(card); } else { play(); }
+    }
 
     function stopTrPreview(card) {
         if (card.trAnims) { card.trAnims.forEach(function (a) { a.cancel(); }); card.trAnims = null; }
@@ -3834,26 +4329,18 @@
             card.setAttribute("data-motion", p.motion);
             card.setAttribute("data-curve", p.curve);
             if (p.sec === "text") {
-                card.addEventListener("mouseenter", function () { txPreview(card, p); });
-                card.addEventListener("focus", function () { txPreview(card, p); });
-                card.addEventListener("mouseleave", function () { txStop(card); });
-                card.addEventListener("blur", function () { txStop(card); });
+                acAutoplay(card, function () { txPreview(card, p); }, function () { txStop(card); });
             } else {
-                card.addEventListener("mouseenter", function () { sfPreview(card.querySelector(".ac-obj"), p); });
-                card.addEventListener("focus", function () { sfPreview(card.querySelector(".ac-obj"), p); });
-                card.addEventListener("mouseleave", function () { stopSfPreview(card.querySelector(".ac-obj")); });
-                card.addEventListener("blur", function () { stopSfPreview(card.querySelector(".ac-obj")); });
+                acAutoplay(card, function () { sfPreview(card.querySelector(".ac-obj"), p); }, function () { stopSfPreview(card.querySelector(".ac-obj")); });
             }
         }
         if (p.sec === "graphic") {
-            card.addEventListener("mouseenter", function () { grPreview(card, p); });
-            card.addEventListener("mouseleave", function () { grStop(card); });
+            card.grCanvas = card.querySelector(".ac-grc");
+            card.grId = p.id;
+            acAutoplay(card, function () { grPreview(card, p); }, function () { grStop(card); });
         }
         if (p.sec === "trans") {
-            card.addEventListener("mouseenter", function () { trPreview(card, p); });
-            card.addEventListener("focus", function () { trPreview(card, p); });
-            card.addEventListener("mouseleave", function () { stopTrPreview(card); });
-            card.addEventListener("blur", function () { stopTrPreview(card); });
+            acAutoplay(card, function () { trPreview(card, p); }, function () { stopTrPreview(card); });
         }
         card.addEventListener("click", function () { applyAc(p); });
         card.addEventListener("keydown", function (e) {
