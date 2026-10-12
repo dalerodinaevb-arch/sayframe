@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.28.0";
+    var VERSION = "1.33.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -90,7 +90,7 @@
             hint: "Создаётся на platform.openai.com, в разделе API keys. Оплата там отдельная: подписка ChatGPT Plus для API не подходит. Хранится только на этом компьютере." }
     };
     var ACCENTS = ["#9d7bff", "#62c8ff", "#ff7ac3", "#ffb957", "#b8f25a", "#f4f4f8"];
-    var BACKGROUNDS = ["#0b0c12", "#101014", "#0d1117", "#140d17", "#0c1311"];
+    var BACKGROUNDS = ["#0b0c12", "#17110b", "#0b1510", "#0b1219", "#140d17", "#101014"];
 
     var DEFAULTS = {
         apiKey: "",
@@ -99,14 +99,18 @@
         openaiKey: "",
         openaiModel: OPENAI_MODELS[0].id,
         accent: ACCENTS[0],
-        bg: BACKGROUNDS[0],
+        bg: BACKGROUNDS[0],          // фон раздела AI (и прежний общий «цвет фона»)
+        bgTools: "#17110b",          // фон раздела «Анимация»
+        bgMotion: "#0b1510",         // фон раздела «Инструменты»
+        bgShape: "#0b1219",          // фон раздела «Шейп»
         selfCheck: true,
         alwaysAsk: false,
         refFrames: 8,
         panelWidth: 380,    // ширина содержимого в пикселях; сама панель After Effects может быть шире
-        toolSize: "large",  // размер блоков раздела «Инструменты»: "large" или "small"
+        toolSize: "100",    // масштаб блоков раздела «Инструменты» в процентах: "100", "90", "80", "70", "60" или "50"
         toolTitles: true,   // показывать ли названия блоков раздела «Инструменты»
         stats: true,        // отправлять ли автору анонимный сигнал «установлено» и «открыто сегодня»
+        infoTips: true,     // подсказки-окошки при наведении курсора на секунду
         hotkeys: ""         // горячие клавиши: "console=Ctrl+Space;snapshot=;…"; пусто — стандартные
     };
     var PANEL_WIDTH_MIN = 280;
@@ -554,8 +558,8 @@
         var ec = /^EC_(COUNT|PROPS):(\d+):(\d+)$/.exec(m);
         if (ec && ec[1] === "COUNT") { return "Скопировано ключей: " + ec[2] + ", выделено: " + ec[3] + ". Выделите столько же ключей или кратно больше (" + ec[2] + ", " + (ec[2] * 2) + ", " + (ec[2] * 3) + "…)."; }
         if (ec) { return "Скопированы ключи " + ec[2] + " свойств, а выделены у " + ec[3] + ". Выделите ключи у одного свойства или у стольких же, сколько копировали."; }
-        if (m === "EC_NO_KEYS") { return "Выделите на таймлайне ключи, куда вставить (или слой — тогда вставится в то же свойство у этого слоя)."; }
-        if (m === "EC_NO_TARGET") { return "У выделенного слоя нет ключей в том же свойстве, откуда копировали. Выделите сами ключи на таймлайне — свойство может быть любым."; }
+        if (m === "EC_NO_KEYS") { return "Выделите на таймлайне ключи, куда вставить, или само свойство (у свойства без ключей панель их создаст), или слой — тогда вставится в то же свойство этого слоя."; }
+        if (m === "EC_NO_TARGET") { return "У выделенного слоя нет такого свойства, откуда копировали. Выделите на таймлайне ключи или само свойство (Position, Scale…), куда вставить."; }
         if (m === "EC_TYPE") { return "Значения можно вставить только в свойство того же типа: позицию — в позицию, цвет — в цвет. Плавность вставляется куда угодно."; }
         if (m === "HOST_UNAVAILABLE") { return "Панель открыта вне After Effects, связи с программой нет."; }
         if (m === "HOST_NOT_LOADED" || m === "HOST_ERROR" || m === "HOST_BAD_REPLY") {
@@ -601,10 +605,19 @@
             }
         } catch (e) {}
         s.panelWidth = clampPanelWidth(s.panelWidth);
-        if (s.toolSize !== "small") { s.toolSize = "large"; }
+        s.toolSize = cleanToolSize(s.toolSize);
+        ["accent", "bg", "bgTools", "bgMotion", "bgShape"].forEach(function (k) { var c = parseHex(s[k]); s[k] = c ? c.hex : DEFAULTS[k]; });
         if (!PROVIDERS.hasOwnProperty(s.provider)) { s.provider = "claude"; }
         if (!knownModel(OPENAI_MODELS, s.openaiModel)) { s.openaiModel = OPENAI_MODELS[0].id; }
         return s;
+    }
+
+    // Масштаб блоков. Прежние «Крупные» — это 100 %, «Мелкие» — 60 %.
+    var TOOL_SIZES = ["100", "90", "80", "70", "60", "50"];
+    function cleanToolSize(v) {
+        if (v === "small") { return "60"; }
+        v = String(v);
+        return TOOL_SIZES.indexOf(v) >= 0 ? v : "100";
     }
 
     function knownModel(list, id) {
@@ -634,9 +647,14 @@
         return "#" + h(r) + h(g) + h(b);
     }
 
+    // У каждого раздела свой фон: открытый раздел красит фон панели своим цветом.
+    var SECTION_BG = { claude: "bg", tools: "bgTools", motion: "bgMotion", shape: "bgShape" };
+    var currentTab = "claude";
+
     function applyTheme(s) {
         var a = parseHex(s.accent) || parseHex(DEFAULTS.accent);
-        var bg = parseHex(s.bg) || parseHex(DEFAULTS.bg);
+        var key = SECTION_BG[currentTab] || "bg";
+        var bg = parseHex(s[key]) || parseHex(DEFAULTS[key]);
         var lum = (0.299 * a.r + 0.587 * a.g + 0.114 * a.b) / 255;
         var root = document.documentElement.style;
         root.setProperty("--accent", a.hex);
@@ -645,7 +663,8 @@
         root.setProperty("--on-accent", lum > 0.5 ? "#0b0c12" : "#ffffff");
         root.setProperty("--bg", bg.hex);
         root.setProperty("--panel-w", clampPanelWidth(s.panelWidth) + "px");
-        document.documentElement.setAttribute("data-tools", s.toolSize === "small" ? "small" : "large");
+        document.documentElement.setAttribute("data-tools", cleanToolSize(s.toolSize));
+        root.setProperty("--tz", String(Number(cleanToolSize(s.toolSize)) / 100));
         document.documentElement.setAttribute("data-titles", s.toolTitles === false ? "off" : "on");
         relayoutTools();
     }
@@ -670,8 +689,12 @@
         pinLine: el("pinLine"), pasteBtn: el("pasteBtn"), settingsBtn: el("settingsBtn"),
         sheet: el("settingsSheet"), settingsClose: el("settingsClose"), apiKey: el("apiKey"), testKey: el("testKey"),
         keyHint: el("keyHint"), models: el("models"), provider: el("provider"), apiKeyLabel: el("apiKeyLabel"), accentSwatches: el("accentSwatches"), accentHex: el("accentHex"),
-        bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), statsOn: el("statsOn"),
+        bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), bgPick: el("bgPick"), accentPick: el("accentPick"),
+        bgToolsSwatches: el("bgToolsSwatches"), bgToolsHex: el("bgToolsHex"), bgToolsPick: el("bgToolsPick"),
+        bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
+        bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
+        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
+        infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
         fxBtn: el("fxBtn"), snapBtn: el("snapBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
@@ -740,6 +763,8 @@
             }
         }
         TABS[name].slot.appendChild(ui.statusBox);
+        currentTab = name;
+        applyTheme(draft || settings);
         if (name === "motion" || name === "shape") { relayoutTools(); }
         try { window.localStorage.setItem(TAB_KEY, name); } catch (e) {}
     }
@@ -2485,7 +2510,7 @@
             showProvider();
         });
 
-        function swatches(container, input, colors, key) {
+        function swatches(container, input, colors, key, pick) {
             colors.forEach(function (c) {
                 var b = document.createElement("button");
                 b.className = "swatch";
@@ -2496,27 +2521,43 @@
                 b.addEventListener("click", function () {
                     draft[key] = c;
                     input.value = c;
+                    if (pick) { pick.value = c; }
                     pressGroup(container, c);
                     applyTheme(draft);
                 });
-                container.insertBefore(b, input);
+                container.insertBefore(b, pick || input);
             });
             input.addEventListener("input", function () {
                 var p = parseHex(input.value);
                 if (p) {
                     draft[key] = p.hex;
+                    if (pick) { pick.value = p.hex; }
                     pressGroup(container, p.hex);
                     applyTheme(draft);
                 }
             });
+            // Палитра: любой цвет, не только готовые.
+            if (pick) {
+                pick.addEventListener("input", function () {
+                    var p = parseHex(pick.value);
+                    if (!p || !draft) { return; }
+                    draft[key] = p.hex;
+                    input.value = p.hex;
+                    pressGroup(container, p.hex);
+                    applyTheme(draft);
+                });
+            }
         }
-        swatches(ui.accentSwatches, ui.accentHex, ACCENTS, "accent");
-        swatches(ui.bgSwatches, ui.bgHex, BACKGROUNDS, "bg");
+        swatches(ui.accentSwatches, ui.accentHex, ACCENTS, "accent", ui.accentPick);
+        swatches(ui.bgSwatches, ui.bgHex, BACKGROUNDS, "bg", ui.bgPick);
+        swatches(ui.bgToolsSwatches, ui.bgToolsHex, BACKGROUNDS, "bgTools", ui.bgToolsPick);
+        swatches(ui.bgMotionSwatches, ui.bgMotionHex, BACKGROUNDS, "bgMotion", ui.bgMotionPick);
+        swatches(ui.bgShapeSwatches, ui.bgShapeHex, BACKGROUNDS, "bgShape", ui.bgShapePick);
 
         // Размер блоков тоже виден сразу и тоже возвращается, если настройки закрыть без сохранения.
         ui.toolSize.addEventListener("click", function (e) {
             var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
-            if (!draft || (v !== "large" && v !== "small")) { return; }
+            if (!draft || TOOL_SIZES.indexOf(v) < 0) { return; }
             draft.toolSize = v;
             pressGroup(ui.toolSize, v);
             applyTheme(draft);
@@ -2565,18 +2606,25 @@
         draft = {};
         for (k in settings) { if (settings.hasOwnProperty(k)) { draft[k] = settings[k]; } }
         ui.accentHex.value = draft.accent;
-        ui.bgHex.value = draft.bg;
+        ui.accentPick.value = draft.accent;
+        [["bg", ui.bgSwatches, ui.bgHex, ui.bgPick], ["bgTools", ui.bgToolsSwatches, ui.bgToolsHex, ui.bgToolsPick],
+            ["bgMotion", ui.bgMotionSwatches, ui.bgMotionHex, ui.bgMotionPick],
+            ["bgShape", ui.bgShapeSwatches, ui.bgShapeHex, ui.bgShapePick]].forEach(function (r) {
+            r[2].value = draft[r[0]];
+            r[3].value = draft[r[0]];
+            pressGroup(r[1], draft[r[0]]);
+        });
         ui.selfCheck.checked = draft.selfCheck;
         ui.alwaysAsk.checked = draft.alwaysAsk;
         ui.panelWidth.value = String(draft.panelWidth);
         ui.panelWidthVal.textContent = draft.panelWidth + " px";
         showProvider();
         pressGroup(ui.accentSwatches, draft.accent);
-        pressGroup(ui.bgSwatches, draft.bg);
         pressGroup(ui.frames, draft.refFrames);
         pressGroup(ui.toolSize, draft.toolSize);
         ui.toolTitles.checked = draft.toolTitles;
         ui.statsOn.checked = draft.stats !== false;
+        ui.infoTipsOn.checked = draft.infoTips !== false;
         closeFxConsole();
         hotkeyEdit = null;
         ui.hotkeyNote.textContent = "";
@@ -2593,6 +2641,7 @@
             draft.alwaysAsk = ui.alwaysAsk.checked;
             draft.toolTitles = ui.toolTitles.checked;
             draft.stats = ui.statsOn.checked;
+            draft.infoTips = ui.infoTipsOn.checked;
             settings = draft;
             storeSettings(settings);
             registerHotkeys();
@@ -2651,14 +2700,17 @@
     // Клетка квадратная: у крупных блоков 36 px и 8 px между клетками, у мелких 22 и 6 (кратно 2 и 4,
     // как советуют сетки iOS и Android). Ширина и высота блока — в клетках.
     var GRID_LARGE = { cell: 36, gap: 8 };
-    var GRID_SMALL = { cell: 22, gap: 6 };
+
     var TOOL_MIN_COLS = 4;        // уже блок не делается: в него перестают помещаться три кнопки в ряд
     var TOOL_DEFAULT_COLS = 4;
     var TOOL_FULL = 99;           // «на всю ширину»: столько клеток, сколько есть в панели
     var TOOL_MAX_ROWS = 40;
 
     function gridModule() {
-        return document.documentElement.getAttribute("data-tools") === "small" ? GRID_SMALL : GRID_LARGE;
+        // Клетка и промежуток — в том же масштабе, что и содержимое блоков (--tz в CSS).
+        var k = Number(document.documentElement.getAttribute("data-tools")) / 100;
+        if (!(k > 0 && k <= 1)) { k = 1; }
+        return { cell: Math.round(GRID_LARGE.cell * k), gap: Math.max(3, Math.round(GRID_LARGE.gap * k)) };
     }
 
     // Размеры блоков: "ease=6x0;anchor=99x9" — ширина и высота в клетках. Высота 0 — по содержимому,
@@ -5294,12 +5346,75 @@
         }
     }
 
+    // ---- подсказки при наведении: курсор задержался на секунду — окошко с объяснением.
+    // У блоков, вкладок и кнопок шапки — подробный текст (data-info="Заголовок|Текст"), у остального — его title.
+    // На время показа title убирается, чтобы не всплывала ещё и подсказка браузера, и сразу возвращается.
+    var INFO_DELAY_MS = 1000;
+
+    function enableInfoTips() {
+        var timer = null, shown = null, x = 0, y = 0;
+
+        function source(node) {
+            var card;
+            while (node && node !== document.body && node.getAttribute) {
+                // Заголовок блока объясняет весь блок.
+                if (node.classList && node.classList.contains("tool-head")) {
+                    card = node.closest ? node.closest(".tool-card[data-info]") : null;
+                    if (card) { return card; }
+                }
+                if (node.getAttribute("data-info") || node.getAttribute("title")) { return node; }
+                node = node.parentNode;
+            }
+            return null;
+        }
+
+        function hide() {
+            if (timer) { clearTimeout(timer); timer = null; }
+            if (shown) {
+                if (shown.sfTitle !== undefined && !shown.getAttribute("title")) { shown.setAttribute("title", shown.sfTitle); }
+                shown.sfTitle = undefined;
+                shown = null;
+            }
+            ui.infoTip.hidden = true;
+        }
+
+        function show(el) {
+            var info = el.getAttribute("data-info") || "", title = el.getAttribute("title") || "", at = info.indexOf("|"), r, w, h, left, top;
+            if (!info && !title) { return; }
+            ui.infoTipTitle.textContent = info ? (at >= 0 ? info.slice(0, at) : "") : "";
+            ui.infoTipText.textContent = info ? (at >= 0 ? info.slice(at + 1) : info) : title;
+            ui.infoTipHint.textContent = info && title ? title : "";
+            if (title) { el.sfTitle = title; el.removeAttribute("title"); }
+            shown = el;
+            ui.infoTip.hidden = false;
+            r = ui.infoTip.getBoundingClientRect(); w = window.innerWidth; h = window.innerHeight;
+            left = Math.min(Math.max(8, x + 14), w - r.width - 8);
+            top = y + 18 + r.height > h - 8 ? Math.max(8, y - r.height - 12) : y + 18;
+            ui.infoTip.style.left = Math.round(left) + "px";
+            ui.infoTip.style.top = Math.round(top) + "px";
+        }
+
+        document.addEventListener("mouseover", function (e) {
+            var el = settings.infoTips === false ? null : source(e.target);
+            if (shown && el === shown) { return; }
+            hide();
+            if (!el || arranging) { return; }
+            timer = setTimeout(function () { timer = null; show(el); }, INFO_DELAY_MS);
+        });
+        document.addEventListener("mousemove", function (e) { x = e.clientX; y = e.clientY; if (timer) { /* курсор ещё движется: ждём, пока он замрёт */ clearTimeout(timer); timer = setTimeout(function () { var el = source(document.elementFromPoint(x, y)); timer = null; if (el && settings.infoTips !== false && !arranging) { show(el); } }, INFO_DELAY_MS); } });
+        document.addEventListener("mouseleave", hide);
+        document.addEventListener("mousedown", hide, true);
+        document.addEventListener("keydown", hide, true);
+        document.addEventListener("wheel", hide, { passive: true, capture: true });
+        window.addEventListener("blur", hide);
+    }
+
     // ---- горячие клавиши. Хранятся строкой в настройках: "console=Ctrl+Space;snapshot=;…".
 
     var HOTKEY_ACTIONS = [
         { id: "console", label: "Поиск эффектов (FX Console)", def: "Ctrl+Space" },
         { id: "snapshot", label: "Снимок кадра", def: "" },
-        { id: "organize", label: "Organize After Effects Project", def: "" },
+        { id: "organize", label: "Organize (папки проекта)", def: "" },
         { id: "paste", label: "Вставить картинку из буфера", def: "" },
         { id: "tabAI", label: "Вкладка AI", def: "" },
         { id: "tabAnim", label: "Вкладка «Анимация»", def: "" },
@@ -6479,6 +6594,12 @@
         try {
             res = await host("ecPaste", [ecClip, mode, !!motion.ecThrough]);
             setBusy(false);
+            if (res.created) {
+                setStatus("У «" + (res.names || []).join("», «") + "» не было ключей — создал " + plural(res.created, "ключ", "ключа", "ключей") + " от указателя времени " +
+                    (mode === "value" ? "со скопированными значениями и плавностью." : "с текущим значением и скопированной плавностью: задайте значения ключей, плавность уже стоит.") +
+                    "\nОтменить: Cmd/Ctrl+Z.", "done");
+                return;
+            }
             setStatus((mode === "value" ? "Значения вставлены: " : "Плавность вставлена: ") + plural(res.keys, "ключ", "ключа", "ключей") +
                 (res.properties > 1 ? " у " + res.properties + " свойств" : "") + (res.byLayer ? " (ключи не были выделены — взял то же свойство у выделенного слоя)" : "") + ".\nОтменить: Cmd/Ctrl+Z.", "done");
         } catch (e) {
@@ -6897,6 +7018,7 @@
     ui.fxSnap.addEventListener("click", onSnapshot);
     ui.snapBtn.addEventListener("click", onSnapshot);
     enableSnapBar();
+    enableInfoTips();
     ui.fxKeys.addEventListener("mousedown", function (e) { e.preventDefault(); });
     ui.fxKeys.addEventListener("click", onFxKeys);
     ui.fxSearch.addEventListener("input", function () { fxActive = 0; renderFx(); });
