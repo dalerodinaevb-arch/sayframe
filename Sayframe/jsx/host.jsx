@@ -2106,6 +2106,109 @@ var sayframeHost = (function () {
         }
     }
 
+    // ---- decompose helpers
+
+    function dcNote(res, what) {
+        var i;
+        for (i = 0; i < res.notes.length; i++) { if (res.notes[i] === what) { return; } }
+        res.notes.push(what);
+    }
+
+    // True when the precomp layer shows its comp exactly as it is: nothing moved, scaled, turned or faded,
+    // no parent, not 3D. Then the inner layers need no parent to look the same outside.
+    function dcPlain(P) {
+        var tr = P.property("ADBE Transform Group");
+        var names = ["ADBE Anchor Point", "ADBE Position", "ADBE Scale", "ADBE Rotate Z", "ADBE Opacity"];
+        var v = {}, i, pr;
+        if (P.threeDLayer || P.parent) { return false; }
+        if (!tr) { return true; }
+        for (i = 0; i < names.length; i++) {
+            pr = tr.property(names[i]);
+            if (!pr) { continue; }
+            if (pr.numKeys > 0 || (pr.expressionEnabled && pr.expression)) { return false; }
+            v[names[i]] = pr.value;
+        }
+        if (v["ADBE Anchor Point"] && v["ADBE Position"] && (Math.abs(v["ADBE Anchor Point"][0] - v["ADBE Position"][0]) > 0.001 || Math.abs(v["ADBE Anchor Point"][1] - v["ADBE Position"][1]) > 0.001)) { return false; }
+        if (v["ADBE Scale"] && (Math.abs(v["ADBE Scale"][0] - 100) > 0.001 || Math.abs(v["ADBE Scale"][1] - 100) > 0.001)) { return false; }
+        if (v["ADBE Rotate Z"] && Math.abs(v["ADBE Rotate Z"]) > 0.001) { return false; }
+        if (v["ADBE Opacity"] !== undefined && Math.abs(v["ADBE Opacity"] - 100) > 0.001) { return false; }
+        return true;
+    }
+
+    function dcJump(child, parent) {
+        if (typeof child.setParentWithJump === "function") { child.setParentWithJump(parent); return true; }
+        return false;
+    }
+
+    function dcCount(P, group) {
+        var g = P.property(group);
+        return g && g.numProperties ? g.numProperties : 0;
+    }
+
+    function dcOne(comp, P, res) {
+        var S = P.source, n = S.numLayers, src = [], copies = [], locked = [];
+        var off = P.startTime, pin = P.inPoint, pout = P.outPoint, T = null;
+        var i, c, o, k, tm, op;
+        if (P.timeRemapEnabled || Math.abs(P.stretch - 100) > 0.001) { res.skipped.push(P.name); return; }
+        if (!n) { res.empty.push(P.name); return; }
+        for (i = 1; i <= n; i++) { src.push(S.layer(i)); }
+        // Every copy lands on top of the comp; copying from the bottom up keeps the order.
+        for (i = n; i >= 1; i--) {
+            src[i - 1].copyToComp(comp);
+            copies[i - 1] = comp.layer(1);
+        }
+        for (i = 0; i < n; i++) {
+            c = copies[i];
+            locked[i] = c.locked;
+            if (c.locked) { c.locked = false; }
+            c.moveBefore(P);
+        }
+        // Times inside the precomp count from its start; outside only what the precomp showed stays visible.
+        for (i = 0; i < n; i++) {
+            c = copies[i];
+            if (off) { c.startTime = c.startTime + off; }
+            if (c.outPoint > pin && c.inPoint < pout) {
+                o = c.outPoint;
+                if (c.inPoint < pin) { c.inPoint = pin; }
+                c.outPoint = Math.min(o, pout);
+            }
+        }
+        // Parents and track mattes point at the copies, not at the layers left inside.
+        for (i = 0; i < n; i++) {
+            if (src[i].parent) {
+                k = src[i].parent.index;
+                if (!dcJump(copies[i], copies[k - 1])) { dcNote(res, "parents"); }
+            }
+            if (typeof copies[i].setTrackMatte === "function" && src[i].hasTrackMatte && src[i].trackMatteLayer) {
+                tm = src[i].trackMatteLayer.index;
+                copies[i].setTrackMatte(copies[tm - 1], src[i].trackMatteType);
+            }
+        }
+        // Moved, scaled or turned precomp: its copy stays as an invisible parent so everything keeps its place.
+        if (!dcPlain(P)) {
+            T = P.duplicate();
+            T.name = P.name + " [transform]";
+            T.enabled = false;
+            if (T.hasAudio) { T.audioEnabled = false; }
+            for (i = 0; i < n; i++) {
+                if (!src[i].parent && !dcJump(copies[i], T)) { dcNote(res, "parents"); }
+            }
+            op = P.property("ADBE Transform Group") ? P.property("ADBE Transform Group").property("ADBE Opacity") : null;
+            if (op && (op.numKeys > 0 || Math.abs(op.value - 100) > 0.001)) { dcNote(res, "opacity"); }
+        }
+        if (dcCount(P, "ADBE Effect Parade")) { dcNote(res, "effects"); }
+        if (dcCount(P, "ADBE Mask Parade")) { dcNote(res, "masks"); }
+        for (i = 0; i < n; i++) {
+            if (locked[i]) { copies[i].locked = true; }
+        }
+        res.names.push(P.name);
+        P.remove();
+        for (i = 0; i < n; i++) { try { copies[i].selected = true; } catch (eSel) {} }
+        res.precomps++;
+        res.layers += n;
+        if (T) { res.transform = (res.transform || 0) + 1; }
+    }
+
     // ---- project organizer helpers
 
     var ORG_FOLDERS = {
@@ -4035,6 +4138,29 @@ var sayframeHost = (function () {
                     }
                 }
                 return { organized: { total: total, moved: moved, counts: counts, created: made } };
+            });
+        },
+
+        // Decompose: the layers inside each selected precomp come out into the open comp, in the
+        // precomp's place and at the same times; the precomp layer is removed. One undo step.
+        decompose: function () {
+            return reply(function () {
+                var comp = activeComp();
+                var sel = comp.selectedLayers;
+                var pre = [], res = { precomps: 0, layers: 0, names: [], skipped: [], empty: [], notes: [] };
+                var i;
+                if (!sel.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                for (i = 0; i < sel.length; i++) {
+                    if (sel[i].source && sel[i].source instanceof CompItem) { pre.push(sel[i]); }
+                }
+                if (!pre.length) { throw new Error("DC_NO_PRECOMP"); }
+                app.beginUndoGroup("Sayframe: decompose");
+                try {
+                    for (i = 0; i < pre.length; i++) { dcOne(comp, pre[i], res); }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { decomposed: res };
             });
         },
 
