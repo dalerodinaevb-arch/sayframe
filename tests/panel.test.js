@@ -1540,13 +1540,17 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.waitForTimeout(400);
   await p.page.screenshot({ path: path.join(SHOTS, "28-animation-library.png") });
   t = await p.page.evaluate(() => document.querySelector("#acGrid .ac-card .ac-trv").getAnimations().length);
-  check("AC1 hovering a transition plays clip A into clip B", t === 1, t);
+  check("AC1 a transition plays clip A into clip B", t === 1, t);
+  t = await p.page.evaluate(() => Array.prototype.slice.call(document.querySelectorAll("#acGrid .ac-card .ac-trv")).slice(0, 6).filter((x) => x.getAnimations().length === 1).length);
+  check("AP1 all visible transitions play by themselves, without hovering, on repeat", t === 6 && (await p.page.evaluate(() => document.querySelector("#acGrid .ac-card .ac-trv").getAnimations()[0].effect.getTiming().iterations)) === Infinity, t);
   await acSec(p, "Движения");
   check("AC2 'Motions': folders like Motion Presets, 35 presets, each motion in its own curves", (await p.page.locator("#acFolders button").allInnerTexts()).join() === "Все,Прозрачность,Сдвиг,Масштаб,Поворот,Размытие,Комбо" && (await acCards(p)).length === 35 && (await acCards(p))[2] === "Снизу · плавно", (await acCards(p)).slice(0, 4).join());
   await p.page.click('#acFolders button[data-folder="move"]');
   check("AC2 a folder shows only its presets", (await acCards(p)).length === 12 && (await p.page.locator('#acFolders button[aria-pressed="true"]').innerText()) === "Сдвиг");
   await p.page.locator("#acGrid .ac-card").nth(1).hover(); await p.page.waitForTimeout(300);
   check("AC2 hovering a card plays its motion", await p.page.evaluate(() => document.querySelectorAll("#acGrid .ac-card")[1].querySelector(".ac-obj").getAnimations().length === 1));
+  await p.page.mouse.move(1, 1); await p.page.waitForTimeout(200);
+  check("AP2 motions play by themselves too, every visible card, on repeat", await p.page.evaluate(() => Array.prototype.slice.call(document.querySelectorAll("#acGrid .ac-card")).slice(0, 6).every((c) => c.querySelector(".ac-obj").getAnimations().length === 1 && c.querySelector(".ac-obj").getAnimations()[0].effect.getTiming().iterations === Infinity)));
   await p.page.screenshot({ path: path.join(SHOTS, "28b-motions.png") });
   AL.property("ADBE Transform Group").property("ADBE Position").setValueAtTime(3, [100, 100, 0]);
   await acClick(p, "Снизу · с перелётом");
@@ -1674,6 +1678,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click('#acFolders button[data-unit="c"]');
   check("AC9 the unit chips narrow it to one unit", (await acCards(p)).join() === "Снизу по буквам,Снизу по буквам · с перелётом,Сверху по буквам,Слева по буквам,Справа по буквам", (await acCards(p)).join());
   await p.page.locator("#acGrid .ac-card").first().hover(); await p.page.waitForTimeout(300);
+  check("AP3 text presets play by themselves too", await p.page.evaluate(() => Array.prototype.slice.call(document.querySelectorAll("#acGrid .ac-card")).slice(0, 4).every((c) => c.querySelector(".txs").getAnimations().length === 1)));
   check("AC9 hovering a text preset moves its letters one after another", await p.page.evaluate(() => document.querySelectorAll("#acGrid .ac-card")[0].querySelectorAll(".txs").length === 9 && document.querySelectorAll("#acGrid .ac-card")[0].querySelector(".txs").getAnimations().length === 1));
   await acClick(p, "Снизу по буквам");
   t = p.ae.log.acLayers[0];
@@ -1703,6 +1708,31 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ compTime: 2, selectedLayers: [GBG] });
   await p.tab("tools"); await acSec(p, "Графика");
   check("AC11 'Graphics': 48 graphics in folders like Graphic Components; colour picker, no timing buttons", (await acCards(p)).length === 48 && (await p.page.locator("#acFolders button").allInnerTexts()).join() === "Все,Элементы,Спецэффекты,Рисованные,Фоны,Оверлеи,Плашки" && (await p.page.locator("#acColorRow").isVisible()) && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acDurRow").isHidden()) && (await p.page.locator("#acGrid .ac-gr svg").count()) === 48);
+  // Each graphic plays its own animation on its own, round and round, without hovering.
+  {
+    const snap = () => p.page.evaluate(() => Array.prototype.slice.call(document.querySelectorAll("#acGrid .ac-card")).slice(0, 8).map((c) => {
+      const cv = c.querySelector("canvas.ac-grc"); if (!cv || !cv.width) return "none";
+      const d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data; let lit = 0, sx = 0, sy = 0;
+      for (let k = 0; k < d.length; k += 4) if (d[k + 3] > 40) { lit++; const n = k / 4; sx += n % cv.width; sy += Math.floor(n / cv.width); }
+      return lit ? lit + "@" + Math.round(sx / lit) + "," + Math.round(sy / lit) : "0";
+    }));
+    await p.page.mouse.move(1, 1);
+    await p.page.waitForTimeout(500);
+    const a = await snap();
+    await p.page.waitForTimeout(420);
+    const b = await snap();
+    check("AG1 every graphic card draws its animation on a canvas without hovering, and it moves", a.every((x) => x !== "none") && a.filter((x, k) => x !== b[k]).length >= 6 && (await p.page.locator("#acGrid .ac-thumb.gr-live").count()) === 48, a.join(" ") + " | " + b.join(" "));
+    check("AG1 the cards are not all the same picture", new Set(a).size >= 6, a.join(" "));
+    await p.page.waitForTimeout(1400);
+    const seen = [0, 0, 0, 0, 0, 0, 0, 0];
+    for (let k = 0; k < 12; k++) { (await snap()).forEach((x, j) => { if (x !== "0" && x !== "none") seen[j]++; }); await p.page.waitForTimeout(150); }
+    check("AG1 it plays round and round (every card still draws after its layer length has passed)", seen.every((x) => x >= 2), seen.join());
+    await p.tab("claude"); await p.page.waitForTimeout(200);
+    const idle = await p.page.evaluate(() => { const a1 = document.querySelector("#acGrid .ac-card canvas").getContext("2d").getImageData(0, 0, 40, 40).data.join(); return new Promise((r) => setTimeout(() => r(a1 === document.querySelector("#acGrid .ac-card canvas").getContext("2d").getImageData(0, 0, 40, 40).data.join()), 400)); });
+    check("AG1 hidden previews stop (nothing is drawn while another tab is open)", idle === true);
+    await p.tab("tools");
+  }
+
   await p.page.evaluate(() => { const c = document.getElementById("acColor"); c.value = "#ff0000"; c.dispatchEvent(new Event("input", { bubbles: true })); });
   await acClick(p, /^Кольцо$/);
   t = p.ae.log.acLayers[0];
@@ -3572,7 +3602,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("U7 no banner after updating", !(await barVisible(p)));
   check("U7 no temp files left", fs.readdirSync(p.tmpDir).filter((f) => /^sayframe-update-/.test(f)).every((d) => fs.readdirSync(path.join(p.tmpDir, d)).length === 0) && !fs.existsSync(path.join(p.extDir, ".sayframe-write-test")));
   await p.run("задача");
-  check("U7 updated panel still runs tasks", p.ae.log.ran.join() === "still works" && p.errors.length === 0, p.errors.join(" | "));
+  check("U7 updated panel still runs tasks", p.ae.log.ran.join() === "still works" && p.errors.length === 0, p.errors.join(" | ") + " ran=" + p.ae.log.ran.join() + " status=" + (await p.status()));
   await p.page.reload(); await settle(p);
   check("U7 'updated' message not repeated on next start", !/обновлён/.test(await p.status()));
   await p.close();
