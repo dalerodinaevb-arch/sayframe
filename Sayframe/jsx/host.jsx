@@ -2300,14 +2300,44 @@ var sayframeHost = (function () {
             for (g = 0; g < clip.groups.length; g++) {
                 if (!clip.groups[g].mp || !clip.groups[g].mp.length) { continue; }
                 p = ecFind(layers[i], clip.groups[g].mp);
-                if (!p || !p.numKeys || seen[i + ":" + clip.groups[g].mp.join("/")]) { continue; }
+                if (!p || seen[i + ":" + clip.groups[g].mp.join("/")]) { continue; }
                 seen[i + ":" + clip.groups[g].mp.join("/")] = 1;
                 keys = [];
                 for (k = 1; k <= p.numKeys; k++) { keys.push(k); }
-                out.push({ prop: p, keys: keys, group: g });
+                out.push({ prop: p, keys: keys, group: g, empty: !p.numKeys });
             }
         }
         return out;
+    }
+
+    // Selected properties that have no keys yet (the stopwatch is off): the paste creates the keys.
+    function ecEmptySelected(comp) {
+        var props = comp.selectedProperties, out = [], i, p;
+        for (i = 0; i < props.length; i++) {
+            p = props[i];
+            if (p.propertyType !== PropertyType.PROPERTY || p.numKeys) { continue; }
+            try { if (!p.canVaryOverTime) { continue; } } catch (e) {}
+            out.push({ prop: p, keys: [], empty: true });
+        }
+        return out;
+    }
+
+    // Creates keys on a property that had none, from the time indicator, at the copied spacing.
+    // mode "value": the copied values; "ease": the property's current value (the easing is what was asked for).
+    function ecCreateKeys(comp, pair, mode) {
+        var p = pair.dst.prop, src = pair.src.keys, now = p.value, times = [], j, t, keys = [];
+        if (mode === "value") {
+            if (pair.src.vt !== p.propertyValueType) { throw new Error("EC_TYPE"); }
+            for (j = 0; j < src.length; j++) { if (src[j].v === null || src[j].v === undefined) { throw new Error("EC_TYPE"); } }
+        }
+        for (j = 0; j < src.length; j++) {
+            t = comp.time + (typeof src[j].t === "number" ? src[j].t : j * 0.5);
+            times.push(t);
+            p.setValueAtTime(t, mode === "value" ? ecMakeValue(src[j].v) : now);
+        }
+        for (j = 0; j < times.length; j++) { keys.push(p.nearestKeyIndex(times[j])); }
+        pair.dst.keys = keys;
+        return keys.length;
     }
 
     function ecNums(v) {
@@ -4073,6 +4103,7 @@ var sayframeHost = (function () {
                         outE = p.keyOutTemporalEase(idx);
                         dims = inE.length;
                         rec = {
+                            t: p.keyTime(idx) - p.keyTime(groups[g].keys[0]),
                             it: p.keyInInterpolationType(idx), ot: p.keyOutInterpolationType(idx),
                             i: ecSide(inE, ecSegment(p, idx - 1, idx, dims)),
                             o: ecSide(outE, ecSegment(p, idx, idx + 1, dims)),
@@ -4098,8 +4129,11 @@ var sayframeHost = (function () {
                 var out = { keys: 0, properties: 0, byLayer: false };
                 if (!clip || !clip.groups || !clip.groups.length) { throw new Error("EC_EMPTY"); }
                 if (!targets.length) {
-                    targets = ecLayerTargets(comp, clip);
-                    byLayer = true;
+                    targets = ecEmptySelected(comp);
+                    if (!targets.length) {
+                        targets = ecLayerTargets(comp, clip);
+                        byLayer = true;
+                    }
                 }
                 if (!targets.length) { throw new Error(comp.selectedLayers.length ? "EC_NO_TARGET" : "EC_NO_KEYS"); }
                 if (byLayer) {
@@ -4108,16 +4142,28 @@ var sayframeHost = (function () {
                     pairs = [];
                     for (i = 0; i < targets.length; i++) { pairs.push({ src: clip.groups[targets[i].group], dst: targets[i] }); }
                     out.byLayer = true;
+                } else if (targets[0].empty) {
+                    pairs = [];
+                    for (i = 0; i < targets.length; i++) { pairs.push({ src: clip.groups[clip.groups.length === 1 ? 0 : Math.min(i, clip.groups.length - 1)], dst: targets[i] }); }
                 } else {
                     pairs = ecPairs(clip, targets);
                 }
                 if (mode === "value") {
                     for (i = 0; i < pairs.length; i++) { if (pairs[i].src.vt !== pairs[i].dst.prop.propertyValueType) { throw new Error("EC_TYPE"); } }
                 }
+                out.created = 0;
+                out.names = [];
                 app.beginUndoGroup(mode === "value" ? "Sayframe: paste values" : "Sayframe: paste easing");
                 try {
                     for (i = 0; i < pairs.length; i++) {
-                        out.keys += mode === "value" ? ecPasteValue(pairs[i]) : ecPasteEase(pairs[i], !!through);
+                        if (pairs[i].dst.empty) {
+                            // No keys there yet: make them, then put the easing on them (values too, in "value" mode).
+                            out.created += ecCreateKeys(comp, pairs[i], mode);
+                            out.keys += ecPasteEase(pairs[i], !!through);
+                        } else {
+                            out.keys += mode === "value" ? ecPasteValue(pairs[i]) : ecPasteEase(pairs[i], !!through);
+                        }
+                        out.names.push(String(pairs[i].dst.prop.name));
                         out.properties++;
                     }
                 } finally {
