@@ -1510,11 +1510,13 @@ var sayframeHost = (function () {
             c.repeat(gi, 10, 36);
             c.t(gi, "scale", "var s=100*(1-gE(gP()*1.3-0.4));[s,s]");
         },
+        // The shape itself flies out (its own Position), so the Repeater after it fans the copies into a ring;
+        // moving the whole group instead would stack every copy in one place.
         "star-burst": function (c) {
             var gi = c.g("Stars");
-            c.star(gi, 5, 18, 8);
+            var si = c.star(gi, 5, 18, 8);
+            c.x(c.p(gi, ["ADBE Vectors Group", si, "ADBE Vector Star Position"]), "[0,-gE(gP()*1.3)*170]");
             c.fill(gi);
-            c.t(gi, "anchor", "[0,gE(gP()*1.3)*170]");
             c.t(gi, "rot", "gP()*180");
             c.repeat(gi, 8, 45);
             c.t(gi, "op", "100*(1-gE(gP()*1.3-0.5))");
@@ -1532,21 +1534,20 @@ var sayframeHost = (function () {
         },
         "triangle-burst": function (c) {
             var gi = c.g("Triangles");
-            c.star(gi, 3, 16, 0, true); c.fill(gi);
-            c.t(gi, "anchor", "[0,gE(gP()*1.3)*160]");
+            var si = c.star(gi, 3, 16, 0, true); c.fill(gi);
+            c.x(c.p(gi, ["ADBE Vectors Group", si, "ADBE Vector Star Position"]), "[0,-gE(gP()*1.3)*160]");
             c.t(gi, "rot", "gP()*240");
             c.repeat(gi, 6, 60);
             c.t(gi, "op", "100*(1-gE(gP()*1.3-0.5))");
         },
         "plus-burst": function (c) {
-            var gi = c.g("Plus");
-            c.path(gi, [[-12, 0], [12, 0]], false);
-            var g2 = c.g("Plus vertical");
-            c.path(g2, [[0, -12], [0, 12]], false);
-            c.stroke(gi, "gW()*0.7"); c.stroke(g2, "gW()*0.7");
-            c.t(gi, "anchor", "[0,gE(gP()*1.3)*150]"); c.t(g2, "anchor", "[0,gE(gP()*1.3)*150]");
-            c.repeat(gi, 6, 60); c.repeat(g2, 6, 60);
-            c.t(gi, "op", "100*(1-gE(gP()*1.3-0.5))"); c.t(g2, "op", "100*(1-gE(gP()*1.3-0.5))");
+            var gi = c.g("Plus"), at = "[0,-gE(gP()*1.3)*150]";
+            var h = c.rect(gi, 24, 6, 0, at), v = c.rect(gi, 6, 24, 0, at);
+            c.x(c.p(gi, ["ADBE Vectors Group", h, "ADBE Vector Rect Size"]), "[24,gW()*0.7]");
+            c.x(c.p(gi, ["ADBE Vectors Group", v, "ADBE Vector Rect Size"]), "[gW()*0.7,24]");
+            c.fill(gi);
+            c.repeat(gi, 6, 60);
+            c.t(gi, "op", "100*(1-gE(gP()*1.3-0.5))");
         },
         "zigzag": function (c) {
             var gi = c.g("Zigzag");
@@ -1722,7 +1723,8 @@ var sayframeHost = (function () {
         },
         "bg-rays": function (c) {
             var gi = c.g("Rays"), r = Math.ceil(Math.sqrt(c.comp.width * c.comp.width + c.comp.height * c.comp.height));
-            c.path(gi, [[0, 0], [-r * 0.2, -r], [r * 0.2, -r]], true); c.fill(gi);
+            // 16 rays every 22.5 degrees, each about 10 degrees wide: gaps between them stay visible.
+            c.path(gi, [[0, 0], [-r * 0.09, -r], [r * 0.09, -r]], true); c.fill(gi);
             c.repeat(gi, 16, 22.5);
             c.t(gi, "rot", "gT()*8");
             c.lt("op", "40*gIn(0.5)*gOut(0.5)");
