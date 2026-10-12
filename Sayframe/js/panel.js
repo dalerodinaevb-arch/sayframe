@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.34.0";
+    var VERSION = "1.35.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -584,6 +584,7 @@
         if (m === "NO_ACTIVE_COMP") { return "Откройте композицию: инструмент работает с открытой композицией."; }
         if (m === "NO_KEYS_SELECTED") { return "Выделите ключевые кадры на таймлайне и нажмите ещё раз."; }
         if (m === "NO_LAYERS_SELECTED") { return "Выделите слой в композиции и нажмите ещё раз."; }
+        if (m === "DC_NO_PRECOMP") { return "Выделите слой-прекомпозицию (слой, внутри которого другая композиция) и нажмите ещё раз."; }
         if (m === "STAGGER_NEEDS_TWO") { return "Для лесенки выделите хотя бы два слоя."; }
         if (m === "STAGGER_NO_KEYS") { return "Для лесенки нужно хотя бы два слоя с ключами в этой половине слоя. Чтобы сдвинуть слои целиком, выберите «Слои»."; }
         if (m === "DISTRIBUTE_NEEDS_THREE") { return "Чтобы распределить слои, выделите три или больше: крайние останутся на месте, остальные встанут между ними через равные промежутки."; }
@@ -705,6 +706,7 @@
         setTabAI: el("setTabAI"), setTabOther: el("setTabOther"), setPaneAI: el("setPaneAI"), setPaneOther: el("setPaneOther"),
         hotkeys: el("hotkeys"), hotkeysReset: el("hotkeysReset"), hotkeyNote: el("hotkeyNote"),
         organizeBtn: el("organizeBtn"), organizeOptsToggle: el("organizeOptsToggle"), organizeHint: el("organizeHint"),
+        decomposeBtn: el("decomposeBtn"), decomposeOptsToggle: el("decomposeOptsToggle"), decomposeHint: el("decomposeHint"),
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
         shiftOptsToggle: el("shiftOptsToggle"), shiftPick: el("shiftPick"), timePick: el("timePick"), staggerPick: el("staggerPick"),
         shiftWhat: el("shiftWhat"), shiftStep: el("shiftStep"), shiftBack: el("shiftBack"), shiftFwd: el("shiftFwd"),
@@ -960,6 +962,7 @@
         ui.refLink.disabled = on;
         ui.pasteBtn.disabled = on;
         ui.organizeBtn.disabled = on;
+        ui.decomposeBtn.disabled = on;
         ui.fxBtn.disabled = on;
         ui.snapBtn.disabled = on;
         ui.snapSave.disabled = on;
@@ -2685,13 +2688,13 @@
     // правый — исходящая (out, как оно начинается после ключа). Длина ползунка — влияние в процентах.
 
     var GRID_VERSION = 2;         // 2 — мелкая сетка (шаг 22 px)
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste,organize,easecopy", sizes: "", places: "", pins: "", grid: GRID_VERSION, ecOpts: true, ecThrough: false, pasteOpts: true, organizeOpts: true, anchorOpts: true, alignOpts: true,
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste,organize,easecopy,decompose", sizes: "", places: "", pins: "", grid: GRID_VERSION, ecOpts: true, ecThrough: false, pasteOpts: true, organizeOpts: true, decomposeOpts: true, anchorOpts: true, alignOpts: true,
         shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
     var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
     var STAGGER_ORDERS = ["asc", "desc", "selection", "random"];
     var MAX_STEP_FRAMES = 999;
-    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste", "organize", "easecopy"];
+    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste", "organize", "easecopy", "decompose"];
     var SHAPE_TOOL_NAMES = [];
     // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
     // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
@@ -2712,8 +2715,8 @@
     // (TOOL_DEFAULT_COLS клеток); блок уже этого не обрезает кнопки, а уменьшает их целиком —
     // так блок можно сузить до TOOL_MIN_COLS клеток.
     // Блоки, в которых только кнопки: суженными они показывают одни иконки.
-    var ICON_TOOLS = ["paste", "organize", "easecopy"];
-    var ICON_ROW_PX = 144;        // три иконки по 40 px в ряд с промежутками и полями
+    var ICON_TOOLS = ["paste", "organize", "easecopy", "decompose"];
+    var ICON_ROW_PX = 146;        // три иконки по 40 px в ряд, промежутки 8 px и поля по 5 px
     function blockZoom(w, m) {
         var k = Number(document.documentElement.getAttribute("data-tools")) / 100;
         if (!(k > 0 && k <= 1)) { k = 1; }
@@ -2895,6 +2898,7 @@
             { key: "alignOpts", button: ui.alignOptsToggle, part: ui.alignSide, more: [ui.distLabel], hide: "Скрыть подписи", show: "Показать подписи", select: ui.alignTo },
             { key: "pasteOpts", button: ui.pasteOptsToggle, part: ui.pasteHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "organizeOpts", button: ui.organizeOptsToggle, part: ui.organizeHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
+            { key: "decomposeOpts", button: ui.decomposeOptsToggle, part: ui.decomposeHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "shiftOpts", button: ui.shiftOptsToggle, part: ui.shiftPick, more: [ui.timePick, ui.staggerPick, ui.staggerOrder], hide: "Скрыть списки", show: "Показать списки",
                 selects: [ui.shiftWhat, ui.timeAlign, ui.staggerWhat, ui.staggerOrder] }
         ];
@@ -5446,6 +5450,7 @@
         { id: "console", label: "Поиск эффектов (FX Console)", def: "Ctrl+Space" },
         { id: "snapshot", label: "Снимок кадра", def: "" },
         { id: "organize", label: "Organize (папки проекта)", def: "" },
+        { id: "decompose", label: "Decompose (слои из прекомпозиции)", def: "" },
         { id: "paste", label: "Вставить картинку из буфера", def: "" },
         { id: "tabAI", label: "Вкладка AI", def: "" },
         { id: "tabAnim", label: "Вкладка «Анимация»", def: "" },
@@ -5533,6 +5538,7 @@
         if (id === "snapshot") { onSnapshot(); return; }
         closeFxConsole();
         if (id === "organize") { onOrganize(); }
+        else if (id === "decompose") { onDecompose(); }
         else if (id === "paste") { pasteImage(null); }
         else if (id === "tabAI") { showTab("claude"); }
         else if (id === "tabAnim") { showTab("tools"); }
@@ -5847,10 +5853,47 @@
         }
     }
 
+    // Декомпоз: что вытащено и о чём стоит знать.
+    var DC_NOTES = {
+        opacity: "прозрачность прекомпозиции не перенесена — у слоёв своя",
+        effects: "эффекты слоя-прекомпозиции не перенесены",
+        masks: "маски слоя-прекомпозиции не перенесены",
+        parents: "этот After Effects не умеет ставить родителя без сдвига — проверьте положение слоёв"
+    };
+
+    function decomposeReport(r) {
+        var out = [], notes = [];
+        var i;
+        if (r.precomps) {
+            out.push("Decompose: " + (r.precomps === 1 ? "из «" + r.names[0] + "»" : "из " + r.precomps + " прекомпозиций") + " вытащено слоёв: " + r.layers + ".");
+            if (r.transform) { out.push("Прекомпозиция была сдвинута, увеличена или повёрнута, поэтому слои привязаны к невидимому слою «… [transform]» — так всё осталось на своих местах."); }
+        }
+        if (r.skipped.length) { out.push("Пропущено (растяжение или ремап времени): " + r.skipped.join(", ") + "."); }
+        if (r.empty.length) { out.push("Пустые, вытаскивать нечего: " + r.empty.join(", ") + "."); }
+        for (i = 0; i < r.notes.length; i++) { if (DC_NOTES[r.notes[i]]) { notes.push(DC_NOTES[r.notes[i]]); } }
+        if (notes.length) { out.push("Учтите: " + notes.join("; ") + "."); }
+        if (r.precomps) { out.push("Отменить — Cmd/Ctrl+Z."); }
+        return out.join("\n");
+    }
+
+    async function onDecompose() {
+        var res;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Вытаскиваю слои из прекомпозиции…", "busy");
+        try {
+            res = await host("decompose", []);
+            setBusy(false);
+            setStatus(decomposeReport(res.decomposed), res.decomposed.precomps ? "done" : "");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
     // Замечания вроде «ничего не выделено» — подсказка, а не ошибка.
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -7056,6 +7099,7 @@
     ui.refClear.addEventListener("click", onClearReference);
     ui.pasteBtn.addEventListener("click", function () { pasteImage(null); });
     ui.organizeBtn.addEventListener("click", onOrganize);
+    ui.decomposeBtn.addEventListener("click", onDecompose);
     ui.fxBtn.addEventListener("click", openFxConsole);
     ui.fxClose.addEventListener("click", closeFxConsole);
     ui.fxSnap.addEventListener("click", onSnapshot);
