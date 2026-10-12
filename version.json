@@ -1,8 +1,13 @@
 {
-  "version": "1.28.0",
+  "version": "1.33.0",
   "date": "2026-10-12",
   "notes": [
-    "x"
+    "У каждого раздела свой фон: AI, Анимация, Инструменты и Шейп. В Настройках → «Общие» → «Фон разделов» любой цвет для каждого раздела: готовые оттенки, палитра или hex-код",
+    "У акцентного цвета тоже появилась палитра с любым цветом",
+    "Масштаб блоков — шесть вариантов в процентах (100–50 %)",
+    "«Копия плавности» создаёт ключи и там, где их ещё нет",
+    "Короткие названия блоков, кнопка «Organize»",
+    "Подсказка о блоке или кнопке, если задержать на нём курсор на секунду (выключается в Настройках)"
   ],
   "download": "https://github.com/dalerodinaevb-arch/sayframe#readme",
   "moved": "",
@@ -10,28 +15,28 @@
   "files": [
     {
       "path": "CSXS/manifest.xml",
-      "sha256": "e4db7cbabf318608fbbdba753e337b2076cb11359f7f8ec576c34df0dab05109",
+      "sha256": "f6bb4cb8564103d9aed381a6e1ffdb8ed4c2cc251733e6da97f54055928a3b15",
       "size": 1644
     },
     {
       "path": "css/panel.css",
-      "sha256": "c23beff2f41e865e065992d5def34a1a08f6dc53233acebb503047519e9c91f3",
-      "size": 70089
+      "sha256": "cf34a63a82c7817d6dc2a87d41436cbd8fc3f54015cd35fced7abafb29c09334",
+      "size": 66643
     },
     {
       "path": "index.html",
-      "sha256": "629f6c33ba71c03506f563a2394e3fd1a1f491db9468c97b0cfe891c84ba516a",
-      "size": 60328
+      "sha256": "8be27c66a370e1a74d613934cc872fa8088b640e04d163413dba98a29e1d2cd5",
+      "size": 68877
     },
     {
       "path": "js/panel.js",
-      "sha256": "5a39412c49bfb729d406d9d285b4bae310e94e7bd76d92cace8010793ffd96b5",
-      "size": 392687
+      "sha256": "d778d3d9b3066fb13c6ee5fbfcfb34d873e145f91cb60ec19022d0364033bfaa",
+      "size": 400816
     },
     {
       "path": "jsx/host.jsx",
-      "sha256": "e250b24609905ddc4b2ce1b24fdb6fc8b580fb235e5bd1bed9539bcf2a9ec2c3",
-      "size": 212587
+      "sha256": "f9f2eff3af6006aa65f0424ddf8b993b2d8b7183c95454099ad5f3cc41712cd9",
+      "size": 215102
     },
     {
       "path": "sfx/alert.wav",
