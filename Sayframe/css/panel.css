@@ -1298,6 +1298,8 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .ac-folders[hidden] { display: none; }
 .ac-gr { width: 62%; height: 86%; display: grid; place-items: center; }
 .ac-gr svg { width: 100%; height: 100%; overflow: visible; }
+.ac-grc { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ac-thumb.gr-live > .ac-gr { visibility: hidden; }
 .gr-color { grid-column: 2 / 4; width: 100%; height: 30px; padding: 0 2px; border: 1px solid var(--line); border-radius: 8px; background: transparent; }
 .ac-folder-break { flex-basis: 100%; height: 0; }
 .ac-text.ac-txt { display: block; text-align: center; line-height: 1.15; white-space: nowrap; font-weight: 800; letter-spacing: 0.01em; font-size: clamp(9px, calc(var(--ac-w, 150px) * 0.078), 22px); }
