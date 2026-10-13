@@ -2106,6 +2106,108 @@ var sayframeHost = (function () {
         }
     }
 
+    // ---- brand helpers
+
+    var BR_RIG = "Brand Colors";
+
+    function brHex(hex) {
+        var m = /^#?([0-9a-fA-F]{6})$/.exec(String(hex));
+        var n = m ? parseInt(m[1], 16) : 0;
+        return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+    }
+
+    function brRigLayer(comp) {
+        var i, l;
+        for (i = 1; i <= comp.numLayers; i++) {
+            l = comp.layer(i);
+            if (l && l.name === BR_RIG) { return l; }
+        }
+        return null;
+    }
+
+    // The expression that reads this color from the Brand Colors layer, or "" when there is none.
+    function brLink(comp, name) {
+        var rig = brRigLayer(comp), fx, j;
+        if (!rig) { return ""; }
+        fx = rig.property("ADBE Effect Parade");
+        for (j = 1; fx && j <= fx.numProperties; j++) {
+            if (fx.property(j).name === name && fx.property(j).matchName === "ADBE Color Control") {
+                return "thisComp.layer(\"" + BR_RIG + "\").effect(\"" + String(name).replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\")(1)";
+            }
+        }
+        return "";
+    }
+
+    function brSet(prop, rgb, link) {
+        if (link && prop.canSetExpression) {
+            prop.expression = link;
+        } else {
+            if (prop.numKeys > 0) {
+                for (var k = 1; k <= prop.numKeys; k++) { prop.setValueAtKey(k, rgb); }
+            } else {
+                prop.setValue(rgb);
+            }
+        }
+    }
+
+    function brFills(group, out) {
+        var i, p;
+        for (i = 1; i <= group.numProperties; i++) {
+            p = group.property(i);
+            if (p.matchName === "ADBE Vector Graphic - Fill") { out.push(p.property("ADBE Vector Fill Color")); }
+            else if (p.numProperties) { brFills(p, out); }
+        }
+        return out;
+    }
+
+    function brFillEffect(l) {
+        var fx = l.property("ADBE Effect Parade"), i, ef;
+        for (i = 1; i <= fx.numProperties; i++) {
+            if (fx.property(i).matchName === "ADBE Fill" && fx.property(i).name === "Brand Fill") { return fx.property(i); }
+        }
+        ef = fx.addProperty("ADBE Fill");
+        ef.name = "Brand Fill";
+        return ef;
+    }
+
+    // Text: fill color (or a Fill effect when linked - text color takes no expression); shapes: every fill;
+    // solids: the solid color; anything else: a Fill effect.
+    function brPaint(l, rgb, link) {
+        var prop, td, fills, i, locked = l.locked;
+        if (locked) { l.locked = false; }
+        try {
+            if (l instanceof TextLayer && !link) {
+                prop = l.property("ADBE Text Properties").property("ADBE Text Document");
+                td = prop.value;
+                td.applyFill = true;
+                td.fillColor = rgb;
+                prop.setValue(td);
+            } else if (l instanceof ShapeLayer && (fills = brFills(l.property("ADBE Root Vectors Group"), [])).length) {
+                for (i = 0; i < fills.length; i++) { brSet(fills[i], rgb, link); }
+            } else if (!link && l.source && l.source.mainSource && l.source.mainSource instanceof SolidSource) {
+                l.source.mainSource.color = rgb;
+            } else if (l.property("ADBE Effect Parade")) {
+                brSet(brFillEffect(l).property("ADBE Fill-0002"), rgb, link);
+            } else {
+                return false;
+            }
+        } finally {
+            if (locked) { l.locked = true; }
+        }
+        return true;
+    }
+
+    function brFontMissing(font) {
+        var list;
+        try {
+            if (app.fonts && app.fonts.getFontsByPostScriptName) {
+                list = app.fonts.getFontsByPostScriptName(font);
+                return !list || !list.length;
+            }
+        } catch (e) {}
+        return false;
+    }
+
     // ---- null / parent helpers
 
     function npChildren(comp, L) {
@@ -4212,6 +4314,171 @@ var sayframeHost = (function () {
                     }
                 }
                 return { organized: { total: total, moved: moved, counts: counts, created: made } };
+            });
+        },
+
+        // ---- Projects (brand books): logos, colors, fonts, texts and formats of one brand.
+
+        // A logo file into the project (folder binName) and, when a comp is open, into the comp.
+        brandLogo: function (path, binName) {
+            return reply(function () {
+                var proj = app.project;
+                var comp = proj.activeItem && proj.activeItem instanceof CompItem ? proj.activeItem : null;
+                var file = new File(path);
+                var item = null, i, it, reused;
+                if (!file.exists) { throw new Error("LOGO_NOT_FOUND"); }
+                for (i = 1; i <= proj.numItems; i++) {
+                    it = proj.item(i);
+                    try {
+                        if (it.mainSource && it.mainSource.file && it.mainSource.file.fsName === file.fsName) { item = it; break; }
+                    } catch (e0) {}
+                }
+                reused = !!item;
+                app.beginUndoGroup("Sayframe: brand logo");
+                try {
+                    if (!item) {
+                        item = proj.importFile(new ImportOptions(file));
+                        try { item.parentFolder = projectBin(binName); } catch (e1) {}
+                    }
+                    if (comp) {
+                        comp.layers.add(item);
+                        restoreActive(comp);
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { name: String(item.name), comp: comp ? comp.name : "", reused: reused };
+            });
+        },
+
+        // Paints the selected layers. With a "Brand Colors" layer in the comp that has this color,
+        // the color is linked to it by an expression, so changing it there changes it everywhere.
+        brandColor: function (hex, name) {
+            return reply(function () {
+                var comp = activeComp();
+                var sel = comp.selectedLayers;
+                var rgb = brHex(hex), link = brLink(comp, name), i, n = 0;
+                if (!sel.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                app.beginUndoGroup("Sayframe: brand color");
+                try {
+                    for (i = 0; i < sel.length; i++) {
+                        if (brPaint(sel[i], rgb, link)) { n++; }
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { count: n, linked: !!link };
+            });
+        },
+
+        // A "Brand Colors" null with one Color Control per brand color; an existing one is updated.
+        brandRig: function (colors) {
+            return reply(function () {
+                var comp = activeComp();
+                var rig = brRigLayer(comp), created = false, fx, ef, i, j, c;
+                app.beginUndoGroup("Sayframe: brand colors");
+                try {
+                    if (!rig) {
+                        rig = comp.layers.addNull(comp.duration);
+                        rig.name = BR_RIG;
+                        created = true;
+                    }
+                    fx = rig.property("ADBE Effect Parade");
+                    for (i = 0; i < colors.length; i++) {
+                        c = colors[i];
+                        ef = null;
+                        for (j = 1; j <= fx.numProperties; j++) {
+                            if (fx.property(j).name === c.name && fx.property(j).matchName === "ADBE Color Control") { ef = fx.property(j); break; }
+                        }
+                        if (!ef) {
+                            ef = fx.addProperty("ADBE Color Control");
+                            ef.name = c.name;
+                        }
+                        ef.property(1).setValue(brHex(c.hex));
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { comp: comp.name, created: created, count: colors.length };
+            });
+        },
+
+        // Sets the font of the selected text layers.
+        brandFont: function (font) {
+            return reply(function () {
+                var comp = activeComp();
+                var sel = comp.selectedLayers, n = 0, i, prop, td;
+                app.beginUndoGroup("Sayframe: brand font");
+                try {
+                    for (i = 0; i < sel.length; i++) {
+                        if (!(sel[i] instanceof TextLayer)) { continue; }
+                        prop = sel[i].property("ADBE Text Properties").property("ADBE Text Document");
+                        td = prop.value;
+                        td.font = font;
+                        prop.setValue(td);
+                        n++;
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                if (!n) { throw new Error("BR_NO_TEXT"); }
+                return { count: n, missing: brFontMissing(font) };
+            });
+        },
+
+        // A text layer with a brand text, in the brand font and color, in the middle of the comp.
+        brandText: function (text, font, hex) {
+            return reply(function () {
+                var comp = activeComp();
+                var l, prop, td;
+                app.beginUndoGroup("Sayframe: brand text");
+                try {
+                    l = comp.layers.addText(text);
+                    prop = l.property("ADBE Text Properties").property("ADBE Text Document");
+                    td = prop.value;
+                    if (font) { td.font = font; }
+                    if (hex) { td.applyFill = true; td.fillColor = brHex(hex); }
+                    try { td.justification = ParagraphJustification.CENTER_JUSTIFY; } catch (eJ) {}
+                    prop.setValue(td);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { name: String(l.name), comp: comp.name, missing: font ? brFontMissing(font) : false };
+            });
+        },
+
+        // A new comp of a brand format, with a background of the brand "background" color, opened.
+        brandComp: function (name, w, h, fps, dur, bgHex, binName) {
+            return reply(function () {
+                var proj = app.project;
+                var comp, bg;
+                app.beginUndoGroup("Sayframe: brand comp");
+                try {
+                    comp = proj.items.addComp(name, w, h, 1, dur, fps);
+                    try { comp.parentFolder = projectBin(binName); } catch (e1) {}
+                    if (bgHex) {
+                        bg = comp.layers.addSolid(brHex(bgHex), "Background", w, h, 1, dur);
+                        try { comp.bgColor = brHex(bgHex); } catch (e2) {}
+                    }
+                    comp.openInViewer();
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { name: comp.name, bg: !!bg };
+            });
+        },
+
+        // Installed fonts (PostScript names), for the hint while typing. Older After Effects: none.
+        brandFonts: function () {
+            return reply(function () {
+                var out = [], groups, i, j;
+                try { groups = app.fonts.allFonts; } catch (e) { groups = null; }
+                for (i = 0; groups && i < groups.length && out.length < 6000; i++) {
+                    for (j = 0; j < groups[i].length; j++) {
+                        try { out.push(String(groups[i][j].postScriptName)); } catch (e2) {}
+                    }
+                }
+                return { fonts: out };
             });
         },
 
