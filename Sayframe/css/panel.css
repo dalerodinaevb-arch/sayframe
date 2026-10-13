@@ -1352,16 +1352,16 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .color-pick::-webkit-color-swatch-wrapper { padding: 3px; }
 .color-pick::-webkit-color-swatch { border: 0; border-radius: 50%; }
 
-/* Узкие блоки-кнопки («Картинка», «Порядок», «Копия»): только квадратные иконки, как снимок, поиск и настройки
-   в шапке. Все иконки одинаковые — 40 px, в ряд и столбиком; название кнопки видно в подсказке при наведении. */
-.motion-tools > .tool-card[data-icons] { justify-content: center; align-items: center; padding: calc(19px * var(--kz, 1)) calc(5px * var(--kz, 1)); }
+/* Узкие блоки-кнопки («Картинка», «Порядок», «Копия», «Декомпоз»): только квадратные иконки, как снимок,
+   поиск и настройки в шапке. Все иконки одного размера — 42 px, в столбике и в ряду; название — в подсказке. */
+.motion-tools > .tool-card[data-icons] { justify-content: center; align-items: center; padding: calc(18px * var(--kz, 1)) calc(3px * var(--kz, 1)); }
 .tool-card[data-icons] > .tool-head, .tool-card[data-icons] > .tool-toggle, .tool-card[data-icons] .paste-hint, .tool-card[data-icons] .ec-opts { display: none; }
-.tool-card[data-icons] .ec-buttons { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.tool-card[data-icons] .ec-buttons { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
 .tool-card[data-icons="row"] .ec-buttons { flex-direction: row; }
 .motion-tools .tool-card[data-icons] .paste-do {
-  flex: none; width: 40px; height: 40px; min-height: 0; padding: 0; gap: 0; margin: 0;
+  flex: none; width: 42px; height: 42px; min-height: 0; padding: 0; gap: 0; margin: 0;
   border: 1px solid var(--line); border-radius: 12px; background: var(--glass); color: var(--muted); font-size: 0; }
 .motion-tools .tool-card[data-icons] .paste-do > span { display: none; }
-.motion-tools .tool-card[data-icons] .paste-do svg { width: 20px; height: 20px; color: currentColor; }
+.motion-tools .tool-card[data-icons] .paste-do svg { width: 22px; height: 22px; color: currentColor; }
 .motion-tools .tool-card[data-icons] .paste-do:hover:not(:disabled) { color: var(--text); background: var(--glass-strong); border-color: var(--line); }
 .tool-card[data-icons] > .tool-pin { top: 0; right: 2px; height: 18px; }
