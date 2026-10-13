@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.38.0";
+    var VERSION = "1.40.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -103,6 +103,7 @@
         bgTools: "#17110b",          // фон раздела «Анимация»
         bgMotion: "#0b1510",         // фон раздела «Инструменты»
         bgShape: "#0b1219",          // фон раздела «Шейп»
+        bgBrand: "#130f17",          // фон раздела «Проекты»
         selfCheck: true,
         alwaysAsk: false,
         refFrames: 8,
@@ -584,6 +585,8 @@
         if (m === "NO_ACTIVE_COMP") { return "Откройте композицию: инструмент работает с открытой композицией."; }
         if (m === "NO_KEYS_SELECTED") { return "Выделите ключевые кадры на таймлайне и нажмите ещё раз."; }
         if (m === "NO_LAYERS_SELECTED") { return "Выделите слой в композиции и нажмите ещё раз."; }
+        if (m === "LOGO_NOT_FOUND") { return "Файл логотипа не найден. Удалите его из проекта и добавьте снова."; }
+        if (m === "BR_NO_TEXT") { return "Выделите текстовый слой в композиции и нажмите ещё раз."; }
         if (m === "DC_NO_PRECOMP") { return "Выделите слой-прекомпозицию (слой, внутри которого другая композиция) и нажмите ещё раз."; }
         if (m === "STAGGER_NEEDS_TWO") { return "Для лесенки выделите хотя бы два слоя."; }
         if (m === "STAGGER_NO_KEYS") { return "Для лесенки нужно хотя бы два слоя с ключами в этой половине слоя. Чтобы сдвинуть слои целиком, выберите «Слои»."; }
@@ -607,7 +610,7 @@
         } catch (e) {}
         s.panelWidth = clampPanelWidth(s.panelWidth);
         s.toolSize = cleanToolSize(s.toolSize);
-        ["accent", "bg", "bgTools", "bgMotion", "bgShape"].forEach(function (k) { var c = parseHex(s[k]); s[k] = c ? c.hex : DEFAULTS[k]; });
+        ["accent", "bg", "bgTools", "bgMotion", "bgShape", "bgBrand"].forEach(function (k) { var c = parseHex(s[k]); s[k] = c ? c.hex : DEFAULTS[k]; });
         if (!PROVIDERS.hasOwnProperty(s.provider)) { s.provider = "claude"; }
         if (!knownModel(OPENAI_MODELS, s.openaiModel)) { s.openaiModel = OPENAI_MODELS[0].id; }
         return s;
@@ -649,7 +652,7 @@
     }
 
     // У каждого раздела свой фон: открытый раздел красит фон панели своим цветом.
-    var SECTION_BG = { claude: "bg", tools: "bgTools", motion: "bgMotion", shape: "bgShape" };
+    var SECTION_BG = { claude: "bg", tools: "bgTools", motion: "bgMotion", shape: "bgShape", brand: "bgBrand" };
     var currentTab = "claude";
 
     function applyTheme(s) {
@@ -693,7 +696,8 @@
         bgSwatches: el("bgSwatches"), bgHex: el("bgHex"), bgPick: el("bgPick"), accentPick: el("accentPick"),
         bgToolsSwatches: el("bgToolsSwatches"), bgToolsHex: el("bgToolsHex"), bgToolsPick: el("bgToolsPick"),
         bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
-        bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
+        bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"),
+        bgBrandSwatches: el("bgBrandSwatches"), bgBrandHex: el("bgBrandHex"), bgBrandPick: el("bgBrandPick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
         panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
@@ -727,6 +731,15 @@
         statusSlotClaude: el("statusSlotClaude"), statusSlotTools: el("statusSlotTools"),
         tabMotion: el("tabMotion"), viewMotion: el("viewMotion"), statusSlotMotion: el("statusSlotMotion"),
         tabShape: el("tabShape"), viewShape: el("viewShape"), statusSlotShape: el("statusSlotShape"),
+        tabBrand: el("tabBrand"), viewBrand: el("viewBrand"), statusSlotBrand: el("statusSlotBrand"),
+        brandSelect: el("brandSelect"), brandRename: el("brandRename"), brandDelete: el("brandDelete"), brandNew: el("brandNew"),
+        brandPickRow: el("brandPickRow"), brandNameRow: el("brandNameRow"), brandName: el("brandName"), brandNameOk: el("brandNameOk"),
+        brandNameCancel: el("brandNameCancel"), brandDeleteNote: el("brandDeleteNote"), brandEmpty: el("brandEmpty"), brandFirst: el("brandFirst"),
+        brandBody: el("brandBody"), brandLogos: el("brandLogos"), brandLogoAdd: el("brandLogoAdd"), brandColors: el("brandColors"),
+        brandColorPick: el("brandColorPick"), brandColorHex: el("brandColorHex"), brandColorName: el("brandColorName"), brandColorAdd: el("brandColorAdd"),
+        brandRigBtn: el("brandRigBtn"), brandFontList: el("brandFontList"), brandFontHead: el("brandFontHead"), brandFontBody: el("brandFontBody"),
+        brandFontHeadApply: el("brandFontHeadApply"), brandFontBodyApply: el("brandFontBodyApply"), brandTexts: el("brandTexts"),
+        brandTextName: el("brandTextName"), brandTextValue: el("brandTextValue"), brandTextAdd: el("brandTextAdd"), brandFormats: el("brandFormats"),
         shapeTools: el("shapeTools"), shapeGridCells: el("shapeGridCells"), shapePinLine: el("shapePinLine"),
         ecOptsToggle: el("ecOptsToggle"), ecOpts: el("ecOpts"), ecCopy: el("ecCopy"), ecPasteEase: el("ecPasteEase"), ecPasteValue: el("ecPasteValue"),
         ecThrough: el("ecThrough"), ecClip: el("ecClip"),
@@ -755,7 +768,8 @@
         claude: { tab: ui.tabClaude, view: ui.viewClaude, slot: ui.statusSlotClaude },
         tools: { tab: ui.tabTools, view: ui.viewTools, slot: ui.statusSlotTools },
         motion: { tab: ui.tabMotion, view: ui.viewMotion, slot: ui.statusSlotMotion },
-        shape: { tab: ui.tabShape, view: ui.viewShape, slot: ui.statusSlotShape }
+        shape: { tab: ui.tabShape, view: ui.viewShape, slot: ui.statusSlotShape },
+        brand: { tab: ui.tabBrand, view: ui.viewBrand, slot: ui.statusSlotBrand }
     };
 
     function showTab(name) {
@@ -777,8 +791,11 @@
     function savedTab() {
         var name;
         try { name = window.localStorage.getItem(TAB_KEY); } catch (e) { name = null; }
-        return typeof name === "string" && TABS.hasOwnProperty(name) ? name : "claude";
+        return typeof name === "string" && TABS.hasOwnProperty(name) ? name : DEFAULT_TAB_ORDER[0];
     }
+
+    // Новая установка: вкладки в таком порядке, открыта первая — «Инструменты».
+    var DEFAULT_TAB_ORDER = ["motion", "tools", "shape", "claude", "brand"];
 
     // ---- порядок вкладок: его можно менять перетаскиванием или Alt + стрелка, он запоминается
 
@@ -809,7 +826,8 @@
         var byName = {};
         var placed = {};
         var saved, i, name;
-        try { saved = JSON.parse(window.localStorage.getItem(TAB_ORDER_KEY) || "null"); } catch (e) { saved = null; }
+        try { saved = JSON.parse(window.localStorage.getItem(TAB_ORDER_KEY) || "null"); } catch (e) { saved = undefined; }
+        if (saved === null) { saved = DEFAULT_TAB_ORDER; }
         if (Object.prototype.toString.call(saved) !== "[object Array]") { return; }
         for (i = 0; i < buttons.length; i++) { byName[buttons[i].getAttribute("data-tab")] = buttons[i]; }
         for (i = 0; i < saved.length; i++) {
@@ -1407,7 +1425,7 @@
             setStatus(humanError(e), "error");
             return;
         }
-        body = "[Project state]\n" + info.snapshot + "\n\n[Request]\n" + text;
+        body = "[Project state]\n" + info.snapshot + (brandNote() ? "\n\n" + brandNote() : "") + "\n\n[Request]\n" + text;
         sent = pendingRef;
         if (sent) {
             history.push({ role: "user", content: framesContent(sent.frames, referenceNote(sent) + "\n\n" + body) });
@@ -2562,6 +2580,7 @@
         swatches(ui.bgToolsSwatches, ui.bgToolsHex, BACKGROUNDS, "bgTools", ui.bgToolsPick);
         swatches(ui.bgMotionSwatches, ui.bgMotionHex, BACKGROUNDS, "bgMotion", ui.bgMotionPick);
         swatches(ui.bgShapeSwatches, ui.bgShapeHex, BACKGROUNDS, "bgShape", ui.bgShapePick);
+        swatches(ui.bgBrandSwatches, ui.bgBrandHex, BACKGROUNDS, "bgBrand", ui.bgBrandPick);
 
         // Размер блоков тоже виден сразу и тоже возвращается, если настройки закрыть без сохранения.
         ui.toolSize.addEventListener("click", function (e) {
@@ -2618,7 +2637,7 @@
         ui.accentPick.value = draft.accent;
         [["bg", ui.bgSwatches, ui.bgHex, ui.bgPick], ["bgTools", ui.bgToolsSwatches, ui.bgToolsHex, ui.bgToolsPick],
             ["bgMotion", ui.bgMotionSwatches, ui.bgMotionHex, ui.bgMotionPick],
-            ["bgShape", ui.bgShapeSwatches, ui.bgShapeHex, ui.bgShapePick]].forEach(function (r) {
+            ["bgShape", ui.bgShapeSwatches, ui.bgShapeHex, ui.bgShapePick], ["bgBrand", ui.bgBrandSwatches, ui.bgBrandHex, ui.bgBrandPick]].forEach(function (r) {
             r[2].value = draft[r[0]];
             r[3].value = draft[r[0]];
             pressGroup(r[1], draft[r[0]]);
@@ -2694,7 +2713,20 @@
     // правый — исходящая (out, как оно начинается после ключа). Длина ползунка — влияние в процентах.
 
     var GRID_VERSION = 2;         // 2 — мелкая сетка (шаг 22 px)
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste,organize,easecopy,decompose,cache,nullp,unused", sizes: "", places: "", pins: "", grid: GRID_VERSION, ecOpts: true, ecThrough: false, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, anchorOpts: true, alignOpts: true,
+    // Так было до 1.40.0: блоки по порядку, без мест и булавок, всё развёрнуто.
+    var MOTION_LEGACY = { curve: true, order: "ease,anchor,align,shift,paste,organize,easecopy,decompose,cache,nullp,unused", sizes: "", places: "", pins: "",
+        ecOpts: true, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, anchorOpts: true, alignOpts: true };
+
+    // Так «Инструменты» выглядят после новой установки: блоки-кнопки закреплены сверху, под линией — «Время»,
+    // «Якорь», «Выровнять» и «Плавность»; подсказки и списки свёрнуты (их открывает плюс в углу блока).
+    // У тех, кто уже настроил панель, сохранённое не меняется; новые блоки встают сверху, ближе к середине.
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: false, anchorKeys: "key", alignTo: "comp",
+        order: "paste,unused,easecopy,decompose,organize,cache,nullp,shift,anchor,align,ease",
+        sizes: "ease=14x0;shift=12x0;easecopy=17x0",
+        places: "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12",
+        pins: "paste,unused,easecopy,decompose,organize,cache,nullp", grid: GRID_VERSION,
+        ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false,
+        anchorOpts: false, alignOpts: false,
         shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
     var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
@@ -2854,7 +2886,11 @@
         var m = {};
         var saved, k;
         for (k in MOTION_DEFAULTS) { if (MOTION_DEFAULTS.hasOwnProperty(k)) { m[k] = MOTION_DEFAULTS[k]; } }
-        try { saved = JSON.parse(window.localStorage.getItem(MOTION_KEY) || "{}"); } catch (e) { saved = null; }
+        try { saved = JSON.parse(window.localStorage.getItem(MOTION_KEY) || "null"); } catch (e) { saved = {}; }
+        // Панель уже настраивали (что-то сохранено): чего нет в сохранённом, берётся по-старому, а не из новой раскладки.
+        if (saved && typeof saved === "object") {
+            for (k in MOTION_LEGACY) { if (MOTION_LEGACY.hasOwnProperty(k)) { m[k] = MOTION_LEGACY[k]; } }
+        }
         if (saved && typeof saved === "object") {
             upgradeGrid(saved);
             for (k in MOTION_DEFAULTS) {
@@ -5974,10 +6010,437 @@
         }
     }
 
+    // ------------------------------------------------------------ проекты (брендбуки)
+    // Проект — бренд клиента или компании: логотипы (файлы копируются в «Документы / Sayframe Brands»),
+    // цвета, шрифты, тексты. Хранится в localStorage; выбранный проект знает и AI.
+
+    var BRAND_KEY = "sayframe.brands.v1";
+    var LOGO_VARIANTS = [["main", "Основной"], ["white", "Белый"], ["dark", "Тёмный"], ["icon", "Значок"]];
+    var LOGO_EXT = /\.(png|jpe?g|svg|ai|eps|psd|pdf|tiff?|gif|webp)$/i;
+    var LOGO_PREVIEW = /\.(png|jpe?g|svg|gif|webp)$/i;
+    var BRAND_MAX = { colors: 24, texts: 30, logos: 30 };
+    var brandNaming = null;      // "new" или "rename", пока открыта строка названия
+    var brandDelAt = 0;          // время первого нажатия «удалить»: второе в течение 4 с удаляет
+    var brandFontsLoaded = false;
+
+    function brandStr(v, max) { return typeof v === "string" ? v.replace(/^\s+|\s+$/g, "").substring(0, max) : ""; }
+
+    function cleanBrand(b) {
+        var out, i, c, t, l;
+        if (!b || typeof b !== "object" || typeof b.id !== "string" || !b.id) { return null; }
+        out = { id: b.id.substring(0, 40), name: brandStr(b.name, 60) || "Без названия", colors: [], fonts: { head: "", body: "" }, texts: [], logos: [] };
+        for (i = 0; b.colors instanceof Array && i < b.colors.length && out.colors.length < BRAND_MAX.colors; i++) {
+            c = b.colors[i];
+            if (c && parseHex(c.hex)) { out.colors.push({ name: brandStr(c.name, 30) || "Цвет", hex: parseHex(c.hex).hex }); }
+        }
+        if (b.fonts && typeof b.fonts === "object") { out.fonts.head = brandStr(b.fonts.head, 120); out.fonts.body = brandStr(b.fonts.body, 120); }
+        for (i = 0; b.texts instanceof Array && i < b.texts.length && out.texts.length < BRAND_MAX.texts; i++) {
+            t = b.texts[i];
+            if (t && brandStr(t.text, 300)) { out.texts.push({ name: brandStr(t.name, 30), text: brandStr(t.text, 300) }); }
+        }
+        for (i = 0; b.logos instanceof Array && i < b.logos.length && out.logos.length < BRAND_MAX.logos; i++) {
+            l = b.logos[i];
+            if (l && typeof l.file === "string" && l.file) {
+                out.logos.push({ id: brandStr(l.id, 40) || brandNewId("l"), name: brandStr(l.name, 80) || platform.basename(l.file), file: l.file,
+                    variant: LOGO_VARIANTS.some(function (v) { return v[0] === l.variant; }) ? l.variant : "main" });
+            }
+        }
+        return out;
+    }
+
+    function brandNewId(prefix) { return prefix + Date.now().toString(36) + Math.floor(Math.random() * 1000); }
+
+    function loadBrands() {
+        var saved, out = { active: "", items: [] }, i, b;
+        try { saved = JSON.parse(window.localStorage.getItem(BRAND_KEY) || "null"); } catch (e) { saved = null; }
+        if (saved && saved.items instanceof Array) {
+            for (i = 0; i < saved.items.length && out.items.length < 100; i++) {
+                b = cleanBrand(saved.items[i]);
+                if (b && !out.items.some(function (x) { return x.id === b.id; })) { out.items.push(b); }
+            }
+            out.active = typeof saved.active === "string" ? saved.active : "";
+        }
+        if (!out.items.some(function (x) { return x.id === out.active; })) { out.active = out.items.length ? out.items[0].id : ""; }
+        return out;
+    }
+
+    var brands = loadBrands();
+
+    function storeBrands() {
+        try { window.localStorage.setItem(BRAND_KEY, JSON.stringify(brands)); } catch (e) {}
+    }
+
+    function activeBrand() {
+        var i;
+        for (i = 0; i < brands.items.length; i++) { if (brands.items[i].id === brands.active) { return brands.items[i]; } }
+        return null;
+    }
+
+    function brandFolder(b) { return platform.join(platform.homedir(), "Documents", "Sayframe Brands", b.id); }
+    function brandBin(b) { return "Brand — " + b.name; }
+
+    function fileUrl(p) {
+        var norm = String(p).replace(/\\/g, "/");
+        return "file://" + (norm.charAt(0) === "/" ? "" : "/") + encodeURI(norm).replace(/#/g, "%23").replace(/\?/g, "%3F");
+    }
+
+    function brandBgHex(b) {
+        var i;
+        for (i = 0; i < b.colors.length; i++) { if (/^(фон|background|bg)([^a-zа-яё]|$)/i.test(b.colors[i].name)) { return b.colors[i].hex; } }
+        return "";
+    }
+
+    function mkEl(tag, cls, text) {
+        var e = document.createElement(tag);
+        if (cls) { e.className = cls; }
+        if (text !== undefined) { e.textContent = text; }
+        return e;
+    }
+
+    function renderBrand() {
+        var b = activeBrand();
+        var i, o;
+        ui.brandSelect.innerHTML = "";
+        for (i = 0; i < brands.items.length; i++) {
+            o = mkEl("option", "", brands.items[i].name);
+            o.value = brands.items[i].id;
+            ui.brandSelect.appendChild(o);
+        }
+        ui.brandSelect.value = brands.active;
+        ui.brandPickRow.hidden = !brands.items.length || brandNaming !== null;
+        ui.brandNameRow.hidden = brandNaming === null;
+        ui.brandEmpty.hidden = !!brands.items.length || brandNaming !== null;
+        ui.brandBody.hidden = !b;
+        ui.brandDeleteNote.hidden = !brandDelAt;
+        if (!b) { return; }
+        renderBrandLogos(b);
+        renderBrandColors(b);
+        if (document.activeElement !== ui.brandFontHead) { ui.brandFontHead.value = b.fonts.head; }
+        if (document.activeElement !== ui.brandFontBody) { ui.brandFontBody.value = b.fonts.body; }
+        renderBrandTexts(b);
+    }
+
+    function brandX(label, onClick) {
+        var x = mkEl("button", "brand-x", "×");
+        x.setAttribute("aria-label", label);
+        x.title = label;
+        x.addEventListener("click", function (e) { e.stopPropagation(); onClick(); });
+        return x;
+    }
+
+    function renderBrandLogos(b) {
+        var box = ui.brandLogos;
+        box.innerHTML = "";
+        box.setAttribute("data-empty", "Пока пусто: нажмите «+ Добавить» и выберите файл логотипа.");
+        b.logos.forEach(function (l) {
+            var tile = mkEl("div", "brand-logo");
+            var pic = mkEl("button", "brand-logo-img");
+            var sel = mkEl("select", "field");
+            var img;
+            tile.setAttribute("data-logo", l.id);
+            pic.title = "Вставить «" + l.name + "» в открытую композицию";
+            pic.setAttribute("aria-label", pic.title);
+            if (LOGO_PREVIEW.test(l.file)) {
+                img = mkEl("img");
+                img.alt = "";
+                img.src = fileUrl(l.file);
+                pic.appendChild(img);
+            } else {
+                pic.appendChild(mkEl("span", "", (l.file.match(/\.([a-z0-9]+)$/i) || ["", "file"])[1]));
+            }
+            pic.addEventListener("click", function () { brandPlaceLogo(l); });
+            LOGO_VARIANTS.forEach(function (v) {
+                var o = mkEl("option", "", v[1]);
+                o.value = v[0];
+                sel.appendChild(o);
+            });
+            sel.value = l.variant;
+            sel.setAttribute("aria-label", "Вариант логотипа «" + l.name + "»");
+            sel.addEventListener("change", function () { l.variant = sel.value; storeBrands(); });
+            tile.appendChild(pic);
+            tile.appendChild(mkEl("small", "", l.name));
+            tile.appendChild(sel);
+            tile.appendChild(brandX("Убрать логотип «" + l.name + "» из проекта", function () { brandRemoveLogo(b, l); }));
+            box.appendChild(tile);
+        });
+    }
+
+    function renderBrandColors(b) {
+        var box = ui.brandColors;
+        box.innerHTML = "";
+        box.setAttribute("data-empty", "Добавьте цвета бренда ниже: палитра или hex-код и название.");
+        b.colors.forEach(function (c, i) {
+            var chip = mkEl("button", "brand-chip");
+            var sw = mkEl("i");
+            var txt = mkEl("span", "", c.name);
+            sw.style.background = c.hex;
+            txt.appendChild(mkEl("small", "", c.hex));
+            chip.appendChild(sw);
+            chip.appendChild(txt);
+            chip.setAttribute("data-hex", c.hex);
+            chip.title = "Покрасить выделенные слои в «" + c.name + "» " + c.hex;
+            chip.addEventListener("click", function () { brandPaint(c); });
+            chip.appendChild(brandX("Убрать цвет «" + c.name + "»", function () { b.colors.splice(i, 1); storeBrands(); renderBrand(); }));
+            box.appendChild(chip);
+        });
+    }
+
+    function renderBrandTexts(b) {
+        var box = ui.brandTexts;
+        box.innerHTML = "";
+        box.setAttribute("data-empty", "Слоган, сайт, телефон, соцсети — добавьте ниже.");
+        b.texts.forEach(function (t, i) {
+            var row = mkEl("button", "brand-text");
+            if (t.name) { row.appendChild(mkEl("small", "", t.name)); }
+            row.appendChild(mkEl("span", "", t.text));
+            row.title = "Создать текстовый слой с этим текстом";
+            row.addEventListener("click", function () { brandMakeText(t); });
+            row.appendChild(brandX("Убрать текст", function () { b.texts.splice(i, 1); storeBrands(); renderBrand(); }));
+            box.appendChild(row);
+        });
+    }
+
+    // Название проекта: новая строка для «+ Новый» и «Переименовать».
+    function brandAskName(mode) {
+        var b = activeBrand();
+        brandNaming = mode;
+        brandDelAt = 0;
+        ui.brandName.value = mode === "rename" && b ? b.name : "";
+        renderBrand();
+        ui.brandName.focus();
+    }
+
+    function brandNameDone(ok) {
+        var name = brandStr(ui.brandName.value, 60);
+        var mode = brandNaming;
+        var b;
+        if (ok && !name) { ui.brandName.focus(); return; }
+        if (ok && mode === "rename" && activeBrand()) {
+            activeBrand().name = name;
+        } else if (ok) {
+            b = cleanBrand({ id: brandNewId("b"), name: name });
+            brands.items.push(b);
+            brands.active = b.id;
+        }
+        brandNaming = null;
+        storeBrands();
+        renderBrand();
+        if (ok) { setStatus(mode === "rename" ? "Проект переименован: «" + name + "»." : "Проект «" + name + "» готов. Добавьте логотипы, цвета, шрифты и тексты.", ""); }
+    }
+
+    function brandDelete() {
+        var b = activeBrand();
+        var now = Date.now();
+        if (!b) { return; }
+        if (!brandDelAt || now - brandDelAt > 4000) {
+            brandDelAt = now;
+            ui.brandDeleteNote.textContent = "Нажмите корзину ещё раз, чтобы удалить «" + b.name + "» вместе с его логотипами.";
+            renderBrand();
+            setTimeout(function () { if (brandDelAt === now) { brandDelAt = 0; renderBrand(); } }, 4000);
+            return;
+        }
+        brandDelAt = 0;
+        b.logos.forEach(function (l) { if (l.file.indexOf(brandFolder(b)) === 0) { platform.remove(l.file); } });
+        brands.items = brands.items.filter(function (x) { return x.id !== b.id; });
+        brands.active = brands.items.length ? brands.items[0].id : "";
+        storeBrands();
+        renderBrand();
+        setStatus("Проект «" + b.name + "» удалён.", "");
+    }
+
+    function b64Bytes(b64) {
+        var bin = atob(b64), out = new Uint8Array(bin.length), i;
+        for (i = 0; i < bin.length; i++) { out[i] = bin.charCodeAt(i); }
+        return out;
+    }
+
+    async function brandAddLogo() {
+        var b = activeBrand();
+        var src, id, dest, name;
+        if (!b || busy) { return; }
+        if (b.logos.length >= BRAND_MAX.logos) { setStatus("В проекте уже " + BRAND_MAX.logos + " логотипов — уберите лишние.", ""); return; }
+        src = await platform.pickFile("Выберите файл логотипа");
+        if (!src) { return; }
+        if (!LOGO_EXT.test(src)) { setStatus("Это не логотип: подойдут PNG, SVG, AI, EPS, PSD, PDF, JPG, TIFF, GIF или WebP.", "error"); return; }
+        id = brandNewId("l");
+        name = platform.basename(src).replace(/\.[^.]+$/, "");
+        dest = src;
+        // Копия в папку проекта: логотип не потеряется, даже если оригинал переместят.
+        try {
+            await platform.mkdirp(brandFolder(b));
+            dest = platform.join(brandFolder(b), id + "-" + platform.basename(src).replace(/[^\w.\-]+/g, "_"));
+            await platform.writeBytes(dest, b64Bytes(await platform.readBase64(src)));
+        } catch (e) {
+            dest = src;
+        }
+        b.logos.push({ id: id, name: name, file: dest, variant: "main" });
+        storeBrands();
+        renderBrand();
+        setStatus("Логотип «" + name + "» добавлен в проект «" + b.name + "». Щелчок по нему вставит его в композицию.", "done");
+    }
+
+    function brandRemoveLogo(b, l) {
+        b.logos = b.logos.filter(function (x) { return x.id !== l.id; });
+        if (l.file.indexOf(brandFolder(b)) === 0) { platform.remove(l.file); }
+        storeBrands();
+        renderBrand();
+    }
+
+    // Общий вызов хоста для кнопок раздела: занятость, статус, подсказка вместо ошибки на «ничего не выделено».
+    async function brandCall(fn, args, report) {
+        var res;
+        if (busy) { return null; }
+        setBusy(true);
+        try {
+            res = await host(fn, args);
+            setBusy(false);
+            setStatus(report(res), "done");
+            return res;
+        } catch (e) {
+            toolFailed(e);
+            return null;
+        }
+    }
+
+    function brandPlaceLogo(l) {
+        var b = activeBrand();
+        if (!b) { return; }
+        brandCall("brandLogo", [l.file, brandBin(b)], function (r) {
+            return r.comp ? "Логотип «" + l.name + "» вставлен в «" + r.comp + "»" + (r.reused ? " (он уже был в проекте)." : " и лежит в папке «" + brandBin(b) + "».")
+                : "Логотип «" + l.name + "» добавлен в проект, в папку «" + brandBin(b) + "». Откройте композицию — и щелчок вставит его в неё.";
+        });
+    }
+
+    function brandPaint(c) {
+        brandCall("brandColor", [c.hex, c.name], function (r) {
+            return "«" + c.name + "» " + c.hex + ": покрашено слоёв — " + r.count + "." + (r.linked ? " Цвет привязан к слою Brand Colors." : "") + " Отменить — Cmd/Ctrl+Z.";
+        });
+    }
+
+    function brandRig() {
+        var b = activeBrand();
+        if (!b) { return; }
+        if (!b.colors.length) { setStatus("Сначала добавьте цвета бренда.", ""); return; }
+        brandCall("brandRig", [b.colors], function (r) {
+            return "Слой Brand Colors " + (r.created ? "создан" : "обновлён") + " в «" + r.comp + "»: цветов — " + r.count +
+                ". Теперь щелчок по цвету привязывает слой к нему: поменяете цвет в Brand Colors — он сменится везде.";
+        });
+    }
+
+    function brandApplyFont(which) {
+        var b = activeBrand();
+        var font = brandStr((which === "head" ? ui.brandFontHead : ui.brandFontBody).value, 120);
+        if (!b) { return; }
+        if (!font) { setStatus("Впишите название шрифта, например Montserrat-Bold.", ""); return; }
+        brandCall("brandFont", [font], function (r) {
+            return r.missing ? "Шрифта «" + font + "» нет на этом компьютере — After Effects поставил замену. Установите шрифт или впишите его точное имя (PostScript)."
+                : "Шрифт «" + font + "» поставлен текстовым слоям: " + r.count + ".";
+        });
+    }
+
+    function brandMakeText(t) {
+        var b = activeBrand();
+        if (!b) { return; }
+        brandCall("brandText", [t.text, b.fonts.head || b.fonts.body || "", b.colors.length ? b.colors[0].hex : ""], function (r) {
+            return "Текстовый слой «" + r.name + "» создан в «" + r.comp + "»" + (r.missing ? ", но шрифта бренда нет на этом компьютере — стоит замена." : ".");
+        });
+    }
+
+    function brandMakeComp(w, h) {
+        var b = activeBrand();
+        if (!b) { return; }
+        brandCall("brandComp", [b.name + " " + w + "x" + h, w, h, 30, 10, brandBgHex(b), brandBin(b)], function (r) {
+            return "Композиция «" + r.name + "» " + w + "×" + h + " создана и открыта" + (r.bg ? ", фон — цвет «Фон»." : ".");
+        });
+    }
+
+    // Список шрифтов для подсказки при вводе (After Effects 2024 и новее умеет его отдать).
+    async function brandLoadFonts() {
+        var r;
+        if (brandFontsLoaded) { return; }
+        brandFontsLoaded = true;
+        try { r = await host("brandFonts", []); } catch (e) { return; }
+        (r && r.fonts instanceof Array ? r.fonts : []).slice(0, 4000).forEach(function (f) {
+            var o = document.createElement("option");
+            o.value = f;
+            ui.brandFontList.appendChild(o);
+        });
+    }
+
+    // Что знает AI о выбранном проекте.
+    function brandNote() {
+        var b = activeBrand();
+        var lines = [];
+        if (!b || (!b.colors.length && !b.logos.length && !b.fonts.head && !b.fonts.body && !b.texts.length)) { return ""; }
+        lines.push("[Brand: " + b.name + "] Use this brand when the request mentions the brand, logo, brand colors or fonts, or asks for something \"in our style\".");
+        if (b.colors.length) { lines.push("Colors: " + b.colors.map(function (c) { return c.name + " " + c.hex; }).join(", ")); }
+        if (b.fonts.head || b.fonts.body) { lines.push("Fonts (PostScript names): headings " + (b.fonts.head || "-") + ", body text " + (b.fonts.body || b.fonts.head || "-")); }
+        if (b.logos.length) {
+            lines.push("Logo files (import with app.project.importFile; reuse an item already in the project if its file matches): " +
+                b.logos.map(function (l) { return l.name + " (" + l.variant + "): " + l.file; }).join("; "));
+        }
+        if (b.texts.length) { lines.push("Brand texts: " + b.texts.map(function (t) { return (t.name ? t.name + ": " : "") + t.text; }).join(" | ")); }
+        return lines.join("\n");
+    }
+
+    function initBrand() {
+        ui.brandNew.addEventListener("click", function () { brandAskName("new"); });
+        ui.brandFirst.addEventListener("click", function () { brandAskName("new"); });
+        ui.brandRename.addEventListener("click", function () { if (activeBrand()) { brandAskName("rename"); } });
+        ui.brandDelete.addEventListener("click", brandDelete);
+        ui.brandNameOk.addEventListener("click", function () { brandNameDone(true); });
+        ui.brandNameCancel.addEventListener("click", function () { brandNaming = null; renderBrand(); });
+        ui.brandName.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") { e.preventDefault(); brandNameDone(true); }
+            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); brandNaming = null; renderBrand(); }
+        });
+        ui.brandSelect.addEventListener("change", function () { brands.active = ui.brandSelect.value; brandDelAt = 0; storeBrands(); renderBrand(); });
+        ui.brandLogoAdd.addEventListener("click", brandAddLogo);
+        ui.brandColorPick.addEventListener("input", function () { ui.brandColorHex.value = ui.brandColorPick.value; });
+        ui.brandColorHex.addEventListener("input", function () { var c = parseHex(ui.brandColorHex.value); if (c) { ui.brandColorPick.value = c.hex; } });
+        ui.brandColorAdd.addEventListener("click", function () {
+            var b = activeBrand();
+            var c = parseHex(ui.brandColorHex.value);
+            if (!b) { return; }
+            if (!c) { setStatus("Цвет нужен в виде hex-кода, например #ff5a1f.", ""); ui.brandColorHex.focus(); return; }
+            if (b.colors.length >= BRAND_MAX.colors) { setStatus("В проекте уже " + BRAND_MAX.colors + " цветов.", ""); return; }
+            b.colors.push({ name: brandStr(ui.brandColorName.value, 30) || "Цвет " + (b.colors.length + 1), hex: c.hex });
+            ui.brandColorName.value = "";
+            storeBrands();
+            renderBrand();
+        });
+        ui.brandColorName.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); ui.brandColorAdd.click(); } });
+        ui.brandRigBtn.addEventListener("click", brandRig);
+        [["head", ui.brandFontHead], ["body", ui.brandFontBody]].forEach(function (f) {
+            f[1].addEventListener("change", function () { var b = activeBrand(); if (b) { b.fonts[f[0]] = brandStr(f[1].value, 120); storeBrands(); } });
+            f[1].addEventListener("focus", brandLoadFonts);
+        });
+        ui.brandFontHeadApply.addEventListener("click", function (e) { e.preventDefault(); brandApplyFont("head"); });
+        ui.brandFontBodyApply.addEventListener("click", function (e) { e.preventDefault(); brandApplyFont("body"); });
+        ui.brandTextAdd.addEventListener("click", function () {
+            var b = activeBrand();
+            var text = brandStr(ui.brandTextValue.value, 300);
+            if (!b) { return; }
+            if (!text) { ui.brandTextValue.focus(); return; }
+            if (b.texts.length >= BRAND_MAX.texts) { setStatus("В проекте уже " + BRAND_MAX.texts + " текстов.", ""); return; }
+            b.texts.push({ name: brandStr(ui.brandTextName.value, 30), text: text });
+            ui.brandTextName.value = "";
+            ui.brandTextValue.value = "";
+            storeBrands();
+            renderBrand();
+        });
+        ui.brandTextValue.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); ui.brandTextAdd.click(); } });
+        ui.brandFormats.addEventListener("click", function (e) {
+            var btn = e.target && e.target.closest ? e.target.closest("button[data-w]") : null;
+            if (btn) { brandMakeComp(Number(btn.getAttribute("data-w")), Number(btn.getAttribute("data-h"))); }
+        });
+        renderBrand();
+    }
+
     // Замечания вроде «ничего не выделено» — подсказка, а не ошибка.
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -6221,9 +6684,34 @@
             pos[name] = { x: c0, y: r0, w: w, h: hh };
         }
         // Раскладывает группу блоков не выше ряда top; возвращает ряд под самым нижним из них.
+        function freeSpot(top, w, h) {
+            var mid = Math.max(0, Math.round((cols - w) / 2));
+            var r, d, c;
+            for (r = top; r < top + 2000; r++) {
+                for (d = 0; d <= cols; d++) {
+                    c = mid - d;
+                    if (c >= 0 && c + w <= cols && free(r, c, w, h)) { return { r: r, c: c }; }
+                    c = mid + d;
+                    if (d && c + w <= cols && free(r, c, w, h)) { return { r: r, c: c }; }
+                }
+            }
+            return { r: top, c: 0 };
+        }
+
         function placeGroup(group, top) {
-            var r, c, j, g, q, list, bottom = top;
-            if (!places) {
+            var r, c, j, g, q, list, spot, bottom = top;
+            var flow = !places;
+            // Панель уже, чем раскладка: блоки идут рядами в том же порядке (сверху вниз, слева направо),
+            // без дыр. Места не забываются — в широкой панели всё встанет как было.
+            if (places && group.some(function (x) { var p = places[x.name]; return p && p.x + x.w > cols; })) {
+                flow = true;
+                group = group.slice().sort(function (a, b) {
+                    var p = places[a.name], q2 = places[b.name];
+                    if (!p || !q2) { return p ? -1 : q2 ? 1 : a.index - b.index; }
+                    return p.y !== q2.y ? p.y - q2.y : p.x - q2.x;
+                });
+            }
+            if (flow) {
                 // По порядку, как текст: блок встаёт правее предыдущего, а если не влезает — в начало следующего ряда.
                 r = top;
                 c = 0;
@@ -6254,7 +6742,14 @@
                 });
                 for (j = 0; j < list.length; j++) {
                     g = list[j];
-                    r = Math.max(top, g.free ? 0 : Math.min(g.y, 999));
+                    if (g.free) {
+                        // Новый блок (появился в новой версии): обычного размера, в первом свободном месте сверху,
+                        // как можно ближе к середине панели.
+                        spot = freeSpot(top, g.w, g.h);
+                        take(g.name, spot.r, spot.c, g.w, g.h);
+                        continue;
+                    }
+                    r = Math.max(top, Math.min(g.y, 999));
                     while (!free(r, g.x, g.w, g.h)) { r++; }
                     take(g.name, r, g.x, g.w, g.h);
                 }
@@ -6668,8 +7163,10 @@
             var keep = G;
             GRIDS.forEach(function (g) {
                 G = g;
-                G.st.places = "";
-                G.st.sizes = "";
+                // Как после новой установки.
+                G.st.places = G.defPlaces || "";
+                G.st.sizes = G.defSizes || "";
+                G.st.pins = G.defPins || "";
                 G.st.order = G.defOrder;
                 G.store();
             });
@@ -6804,7 +7301,8 @@
     }
 
     function enableMotion() {
-        var mg = { name: "motion", el: ui.motionTools, cells: ui.gridCells, line: ui.pinLine, names: TOOL_NAMES, st: motion, store: storeMotion, defOrder: MOTION_DEFAULTS.order, last: null };
+        var mg = { name: "motion", el: ui.motionTools, cells: ui.gridCells, line: ui.pinLine, names: TOOL_NAMES, st: motion, store: storeMotion, defOrder: MOTION_DEFAULTS.order,
+            defPlaces: MOTION_DEFAULTS.places, defSizes: MOTION_DEFAULTS.sizes, defPins: MOTION_DEFAULTS.pins, last: null };
         GRIDS.push(mg);
         G = mg;
         enableToolReordering(mg);
@@ -7189,6 +7687,7 @@
     ui.cacheBtn.addEventListener("click", onClearCache);
     ui.nullpBtn.addEventListener("click", onNullParent);
     ui.unusedBtn.addEventListener("click", onRemoveUnused);
+    initBrand();
     ui.fxBtn.addEventListener("click", openFxConsole);
     ui.fxClose.addEventListener("click", closeFxConsole);
     ui.fxSnap.addEventListener("click", onSnapshot);
