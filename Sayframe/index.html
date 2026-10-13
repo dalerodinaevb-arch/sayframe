@@ -449,6 +449,66 @@
       <small id="decomposeHint" class="paste-hint">Выделите слой-прекомпозицию: всё, что внутри, встанет на её место. Отменить — Cmd/Ctrl+Z</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Декомпоз»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
+    <section class="card tool-card cache-card" data-tool="cache" data-info="Кэш|Clear cache одним щелчком очищает память After Effects: кадры RAM-превью, кэш изображений, снимки и историю отмены — то же, что Edit > Purge > All Memory. Помогает, когда After Effects тормозит или пишет, что не хватает памяти. Проект и файлы не меняются, но Cmd/Ctrl+Z после этого не вернёт прежние шаги." aria-label="Кэш" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Кэш»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="cacheOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="cacheHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
+      </button>
+      <div class="tool-head" title="Очищает память After Effects одним щелчком">
+        <b>Кэш</b>
+      </div>
+      <button id="cacheBtn" class="paste-do" title="Очистить память After Effects: RAM-превью, кэш изображений, снимки и историю отмены">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M19.5 3.5l-6.2 6.2"/>
+          <path d="M11.3 8.6l4.1 4.1-2.1 6.1a1 1 0 0 1-1.5.5l-7.3-5.2a1 1 0 0 1-.2-1.5z"/>
+          <path d="M7.6 15.9l2.6-2.6"/>
+          <path d="M10.4 17.9l1.6-1.6"/>
+        </svg>
+        <span>Clear cache</span>
+      </button>
+      <small id="cacheHint" class="paste-hint">Очищает память After Effects. Проект не меняется, но прежние шаги Cmd/Ctrl+Z уже не вернёт</small>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Кэш»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
+    </section>
+    <section class="card tool-card nullp-card" data-tool="nullp" data-info="Null / Parent|Одна кнопка, действие зависит от выделения. Ничего не выделено — новый Null Object в центре композиции. Выделено несколько слоёв — новый Null встаёт посередине между ними и становится их родителем (Parent). Выделен один слой или Null — выделяются и перечисляются все его дочерние слои." aria-label="Null / Parent" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Null / Parent»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="nullpOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="nullpHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
+      </button>
+      <div class="tool-head" title="Null и Parent по выделению: создать, привязать или показать детей">
+        <b>Null</b>
+      </div>
+      <button id="nullpBtn" class="paste-do" title="Ничего не выделено — новый Null; несколько слоёв — Null станет их родителем; один слой — показать его детей">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3.5" y="3.5" width="9" height="9" rx="1.6"/>
+          <path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/>
+          <path d="M8 12.5v3a2 2 0 0 0 2 2h4.5"/>
+          <rect x="14.5" y="14.5" width="6" height="6" rx="1.4"/>
+        </svg>
+        <span>Null</span>
+      </button>
+      <small id="nullpHint" class="paste-hint">Ничего не выделено — новый Null. Несколько слоёв — Null станет их родителем. Один слой — покажу его детей</small>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Null / Parent»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
+    </section>
+    <section class="card tool-card unused-card" data-tool="unused" data-info="Чистка|Remove unused убирает из проекта все файлы, которые не используются ни в одной композиции: видео, картинки, звук, солиды. То же, что File > Dependencies > Remove Unused Footage. С диска ничего не удаляется — только из окна Project. Отменить — Cmd/Ctrl+Z." aria-label="Чистка" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Чистка»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="unusedOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="unusedHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
+      </button>
+      <div class="tool-head" title="Убирает из проекта неиспользуемые файлы">
+        <b>Чистка</b>
+      </div>
+      <button id="unusedBtn" class="paste-do" title="Убрать из проекта файлы, которые нигде не используются (с диска они не удаляются)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4.5 7h15"/>
+          <path d="M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/>
+          <path d="M6.5 7l.9 11.6a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/>
+          <path d="M10 11v5M14 11v5"/>
+        </svg>
+        <span>Remove unused</span>
+      </button>
+      <small id="unusedHint" class="paste-hint">Убирает из проекта файлы, которые нигде не используются. С диска ничего не удаляется. Отменить — Cmd/Ctrl+Z</small>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Чистка»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
+    </section>
     <section class="card tool-card easecopy-card" data-tool="easecopy" data-info="Копия плавности|«Копировать» запоминает плавность, тип и значения выделенных ключей. «Вставить плавность» переносит только характер движения на другие ключи: значения не трогает, скорость подгоняет под новое движение. «Вставить значения» — наоборот. Если у свойства нет ключей, панель создаст их от указателя времени. «Сквозная скорость» убирает рывок на средних ключах цепочки." aria-label="Копия плавности" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Копия плавности»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="ecOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="ecOpts" aria-label="Скрыть настройку" title="Скрыть настройку">
