@@ -2106,6 +2106,80 @@ var sayframeHost = (function () {
         }
     }
 
+    // ---- null / parent helpers
+
+    function npChildren(comp, L) {
+        var names = [], kids = [], i, c, nul = false;
+        for (i = 1; i <= comp.numLayers; i++) {
+            c = comp.layer(i);
+            if (c && c.parent && c.parent.index === L.index) { kids.push(c); names.push(c.name); }
+        }
+        try { nul = L.nullLayer === true; } catch (eN) {}
+        if (kids.length) {
+            L.selected = false;
+            for (i = 0; i < kids.length; i++) { try { kids[i].selected = true; } catch (eS) {} }
+        }
+        return { name: L.name, isNull: nul, names: names };
+    }
+
+    function npPos(L) {
+        var tr = L.property("ADBE Transform Group");
+        var p = tr ? tr.property("ADBE Position") : null;
+        return p ? p.value : null;
+    }
+
+    function npCreate(comp, sel) {
+        var roots = [], i, j, L, inSel, top = null, minIn = null, maxOut = null, threeD = false;
+        var common, sameParent = true, sum = [0, 0, 0], cnt = 0, v, n, pos, locked;
+        // Only the top of each chain inside the selection gets the null: links between selected layers stay.
+        for (i = 0; i < sel.length; i++) {
+            L = sel[i];
+            inSel = false;
+            for (j = 0; j < sel.length; j++) { if (L.parent && sel[j].index === L.parent.index) { inSel = true; } }
+            if (!inSel) { roots.push(L); }
+            if (top === null || L.index < top.index) { top = L; }
+            if (minIn === null || L.inPoint < minIn) { minIn = L.inPoint; }
+            if (maxOut === null || L.outPoint > maxOut) { maxOut = L.outPoint; }
+            if (L.threeDLayer) { threeD = true; }
+        }
+        common = roots.length ? roots[0].parent : null;
+        for (i = 0; i < roots.length; i++) {
+            if ((roots[i].parent ? roots[i].parent.index : 0) !== (common ? common.index : 0)) { sameParent = false; }
+        }
+        if (!sameParent) { common = null; }
+        n = comp.layers.addNull(comp.duration);
+        n.name = sel.length ? "Parent Null" : "Null";
+        if (!sel.length) {
+            n.selected = true;
+            return { name: n.name, count: 0, parentOf: "" };
+        }
+        if (threeD) { n.threeDLayer = true; }
+        if (common) { n.parent = common; }
+        // In the middle of the layers it will carry, when they share one space.
+        if (sameParent) {
+            for (i = 0; i < roots.length; i++) {
+                v = npPos(roots[i]);
+                if (v) { sum[0] += v[0]; sum[1] += v[1]; sum[2] += v[2] || 0; cnt++; }
+            }
+            if (cnt) {
+                pos = n.property("ADBE Transform Group").property("ADBE Position");
+                pos.setValue(threeD ? [sum[0] / cnt, sum[1] / cnt, sum[2] / cnt] : [sum[0] / cnt, sum[1] / cnt]);
+            }
+        }
+        n.moveBefore(top);
+        n.inPoint = minIn;
+        n.outPoint = maxOut;
+        for (i = 0; i < roots.length; i++) {
+            locked = roots[i].locked;
+            if (locked) { roots[i].locked = false; }
+            roots[i].parent = n;
+            if (locked) { roots[i].locked = true; }
+        }
+        for (i = 0; i < sel.length; i++) { try { sel[i].selected = false; } catch (eD) {} }
+        n.selected = true;
+        return { name: n.name, count: roots.length, parentOf: common ? common.name : "" };
+    }
+
     // ---- decompose helpers
 
     function dcNote(res, what) {
@@ -4138,6 +4212,57 @@ var sayframeHost = (function () {
                     }
                 }
                 return { organized: { total: total, moved: moved, counts: counts, created: made } };
+            });
+        },
+
+        // Remove unused: footage that no comp uses leaves the project (File > Dependencies > Remove Unused Footage).
+        // Files on disk stay where they are. One undo step.
+        removeUnused: function () {
+            return reply(function () {
+                var proj = app.project;
+                var names = [], i, it, n;
+                for (i = 1; i <= proj.numItems; i++) {
+                    it = proj.item(i);
+                    if (it instanceof FootageItem && it.usedIn && it.usedIn.length === 0) { names.push(it.name); }
+                }
+                if (!names.length) { return { removed: 0, names: [] }; }
+                app.beginUndoGroup("Sayframe: remove unused footage");
+                try {
+                    n = proj.removeUnusedFootage();
+                } finally {
+                    app.endUndoGroup();
+                }
+                if (typeof n !== "number") { n = names.length; }
+                return { removed: n, names: names };
+            });
+        },
+
+        // Null / Parent, chosen by the selection: nothing selected - a new null; several layers - a new null
+        // becomes their parent; one layer - its children (layers parented to it) get selected and listed.
+        nullParent: function () {
+            return reply(function () {
+                var comp = activeComp();
+                var sel = comp.selectedLayers;
+                var made;
+                if (sel.length === 1) { return { children: npChildren(comp, sel[0]) }; }
+                app.beginUndoGroup("Sayframe: null parent");
+                try {
+                    made = npCreate(comp, sel);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { created: made };
+            });
+        },
+
+        // Clear cache: everything After Effects keeps in memory (RAM preview frames, image cache,
+        // snapshots, undo history) is dropped at once, like Edit > Purge > All Memory.
+        clearCache: function () {
+            return reply(function () {
+                var target = typeof PurgeTarget !== "undefined" && PurgeTarget.ALL_CACHES !== undefined ? PurgeTarget.ALL_CACHES : null;
+                if (target === null) { throw new Error("PURGE_UNAVAILABLE"); }
+                app.purge(target);
+                return { purged: true };
             });
         },
 
