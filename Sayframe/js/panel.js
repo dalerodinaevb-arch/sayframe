@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.35.0";
+    var VERSION = "1.38.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -707,6 +707,9 @@
         hotkeys: el("hotkeys"), hotkeysReset: el("hotkeysReset"), hotkeyNote: el("hotkeyNote"),
         organizeBtn: el("organizeBtn"), organizeOptsToggle: el("organizeOptsToggle"), organizeHint: el("organizeHint"),
         decomposeBtn: el("decomposeBtn"), decomposeOptsToggle: el("decomposeOptsToggle"), decomposeHint: el("decomposeHint"),
+        cacheBtn: el("cacheBtn"), cacheOptsToggle: el("cacheOptsToggle"), cacheHint: el("cacheHint"),
+        nullpBtn: el("nullpBtn"), nullpOptsToggle: el("nullpOptsToggle"), nullpHint: el("nullpHint"),
+        unusedBtn: el("unusedBtn"), unusedOptsToggle: el("unusedOptsToggle"), unusedHint: el("unusedHint"),
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
         shiftOptsToggle: el("shiftOptsToggle"), shiftPick: el("shiftPick"), timePick: el("timePick"), staggerPick: el("staggerPick"),
         shiftWhat: el("shiftWhat"), shiftStep: el("shiftStep"), shiftBack: el("shiftBack"), shiftFwd: el("shiftFwd"),
@@ -963,6 +966,9 @@
         ui.pasteBtn.disabled = on;
         ui.organizeBtn.disabled = on;
         ui.decomposeBtn.disabled = on;
+        ui.cacheBtn.disabled = on;
+        ui.nullpBtn.disabled = on;
+        ui.unusedBtn.disabled = on;
         ui.fxBtn.disabled = on;
         ui.snapBtn.disabled = on;
         ui.snapSave.disabled = on;
@@ -2688,13 +2694,13 @@
     // правый — исходящая (out, как оно начинается после ключа). Длина ползунка — влияние в процентах.
 
     var GRID_VERSION = 2;         // 2 — мелкая сетка (шаг 22 px)
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste,organize,easecopy,decompose", sizes: "", places: "", pins: "", grid: GRID_VERSION, ecOpts: true, ecThrough: false, pasteOpts: true, organizeOpts: true, decomposeOpts: true, anchorOpts: true, alignOpts: true,
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: true, anchorKeys: "key", alignTo: "comp", order: "ease,anchor,align,shift,paste,organize,easecopy,decompose,cache,nullp,unused", sizes: "", places: "", pins: "", grid: GRID_VERSION, ecOpts: true, ecThrough: false, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, anchorOpts: true, alignOpts: true,
         shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
     var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
     var STAGGER_ORDERS = ["asc", "desc", "selection", "random"];
     var MAX_STEP_FRAMES = 999;
-    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste", "organize", "easecopy", "decompose"];
+    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused"];
     var SHAPE_TOOL_NAMES = [];
     // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
     // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
@@ -2715,8 +2721,20 @@
     // (TOOL_DEFAULT_COLS клеток); блок уже этого не обрезает кнопки, а уменьшает их целиком —
     // так блок можно сузить до TOOL_MIN_COLS клеток.
     // Блоки, в которых только кнопки: суженными они показывают одни иконки.
-    var ICON_TOOLS = ["paste", "organize", "easecopy", "decompose"];
-    var ICON_ROW_PX = 146;        // три иконки по 40 px в ряд, промежутки 8 px и поля по 5 px
+    var ICON_TOOLS = ["paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused"];
+    var ICON_ROW_COLS = 7;        // «Копия» иконками в ряд — ровно 7 клеток; уже — столбик в 4 клетки
+    // Ширина блока-иконок: столбик (4 клетки) или ряд (7 клеток, если в блоке несколько кнопок). Промежуточной нет.
+    // Шаг клавиатурой у блока-иконок: столбик → ряд → обычный блок и обратно, без застревания на месте.
+    function iconBump(name, w, was) {
+        var to = iconCols(name, w);
+        if (to !== was || w === was || w >= TOOL_FULL) { return to; }
+        if (w > was) { return name === "easecopy" && was < ICON_ROW_COLS ? ICON_ROW_COLS : TOOL_DEFAULT_COLS; }
+        return was > ICON_ROW_COLS && name === "easecopy" ? ICON_ROW_COLS : TOOL_MIN_COLS;
+    }
+    function iconCols(name, w) {
+        if (ICON_TOOLS.indexOf(name) < 0 || w >= TOOL_DEFAULT_COLS) { return w; }
+        return name === "easecopy" && w >= ICON_ROW_COLS ? ICON_ROW_COLS : TOOL_MIN_COLS;
+    }
     function blockZoom(w, m) {
         var k = Number(document.documentElement.getAttribute("data-tools")) / 100;
         if (!(k > 0 && k <= 1)) { k = 1; }
@@ -2899,6 +2917,9 @@
             { key: "pasteOpts", button: ui.pasteOptsToggle, part: ui.pasteHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "organizeOpts", button: ui.organizeOptsToggle, part: ui.organizeHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "decomposeOpts", button: ui.decomposeOptsToggle, part: ui.decomposeHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
+            { key: "cacheOpts", button: ui.cacheOptsToggle, part: ui.cacheHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
+            { key: "nullpOpts", button: ui.nullpOptsToggle, part: ui.nullpHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
+            { key: "unusedOpts", button: ui.unusedOptsToggle, part: ui.unusedHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "shiftOpts", button: ui.shiftOptsToggle, part: ui.shiftPick, more: [ui.timePick, ui.staggerPick, ui.staggerOrder], hide: "Скрыть списки", show: "Показать списки",
                 selects: [ui.shiftWhat, ui.timeAlign, ui.staggerWhat, ui.staggerOrder] }
         ];
@@ -5451,6 +5472,9 @@
         { id: "snapshot", label: "Снимок кадра", def: "" },
         { id: "organize", label: "Organize (папки проекта)", def: "" },
         { id: "decompose", label: "Decompose (слои из прекомпозиции)", def: "" },
+        { id: "cache", label: "Clear cache (память After Effects)", def: "" },
+        { id: "nullp", label: "Null / Parent", def: "" },
+        { id: "unused", label: "Remove unused (лишние файлы)", def: "" },
         { id: "paste", label: "Вставить картинку из буфера", def: "" },
         { id: "tabAI", label: "Вкладка AI", def: "" },
         { id: "tabAnim", label: "Вкладка «Анимация»", def: "" },
@@ -5539,6 +5563,9 @@
         closeFxConsole();
         if (id === "organize") { onOrganize(); }
         else if (id === "decompose") { onDecompose(); }
+        else if (id === "cache") { onClearCache(); }
+        else if (id === "nullp") { onNullParent(); }
+        else if (id === "unused") { onRemoveUnused(); }
         else if (id === "paste") { pasteImage(null); }
         else if (id === "tabAI") { showTab("claude"); }
         else if (id === "tabAnim") { showTab("tools"); }
@@ -5890,6 +5917,63 @@
         }
     }
 
+    // Null / Parent: что сделала кнопка — зависит от выделения.
+    function nullReport(r) {
+        var c = r.children, m = r.created, list;
+        if (c) {
+            if (!c.names.length) { return "У «" + c.name + "» нет дочерних слоёв: к нему ничего не привязано через Parent."; }
+            list = c.names.length > 12 ? c.names.slice(0, 12).join(", ") + " и ещё " + (c.names.length - 12) : c.names.join(", ");
+            return "Дочерние слои «" + c.name + "» (" + c.names.length + "): " + list + ". Они выделены на таймлайне.";
+        }
+        if (!m.count) { return "Null: создан новый Null Object в центре композиции. Отменить — Cmd/Ctrl+Z."; }
+        return "Null: «" + m.name + "» стал родителем для слоёв: " + m.count + "." +
+            (m.parentOf ? " Сам он привязан к «" + m.parentOf + "», как были эти слои." : "") + " Отменить — Cmd/Ctrl+Z.";
+    }
+
+    async function onNullParent() {
+        var res;
+        if (busy) { return; }
+        setBusy(true);
+        try {
+            res = await host("nullParent", []);
+            setBusy(false);
+            setStatus(nullReport(res), res.children && !res.children.names.length ? "" : "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    async function onRemoveUnused() {
+        var r, list;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Ищу неиспользуемые файлы…", "busy");
+        try {
+            r = await host("removeUnused", []);
+            setBusy(false);
+            if (!r.removed) { setStatus("Remove unused: лишних файлов нет — всё в проекте где-то используется.", ""); return; }
+            list = r.names.length > 10 ? r.names.slice(0, 10).join(", ") + " и ещё " + (r.names.length - 10) : r.names.join(", ");
+            setStatus("Remove unused: убрано из проекта файлов: " + r.removed + " (" + list + "). С диска ничего не удалено. Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            setBusy(false);
+            setStatus("Не удалось убрать лишние файлы: " + humanError(e), "error");
+        }
+    }
+
+    async function onClearCache() {
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Очищаю память After Effects…", "busy");
+        try {
+            await host("clearCache", []);
+            setBusy(false);
+            setStatus("Clear cache: память After Effects очищена — RAM-превью, кэш изображений, снимки и история отмены.", "done");
+        } catch (e) {
+            setBusy(false);
+            setStatus(e && e.message === "PURGE_UNAVAILABLE" ? "Этот After Effects не даёт очистить память из панели. Очистите её в меню Edit > Purge > All Memory." : "Не удалось очистить память: " + humanError(e), "error");
+        }
+    }
+
     // Замечания вроде «ничего не выделено» — подсказка, а не ошибка.
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
@@ -6192,7 +6276,8 @@
             // Блоки-кнопки, суженные меньше обычного, становятся квадратными иконками, как в шапке панели.
             if (ICON_TOOLS.indexOf(names[i]) >= 0 && it.w < TOOL_DEFAULT_COLS) {
                 // Несколько иконок: в ряд, если блок для этого достаточно широкий (7 клеток), иначе столбиком.
-                card.setAttribute("data-icons", it.w * (m.cell + m.gap) - m.gap >= ICON_ROW_PX * blockZoom(TOOL_DEFAULT_COLS, m) ? "row" : "col");
+                it.w = Math.min(iconCols(names[i], it.w), cols);
+                card.setAttribute("data-icons", it.w >= ICON_ROW_COLS ? "row" : "col");
                 card.style.setProperty("--kz", String(blockZoom(TOOL_DEFAULT_COLS, m)));
             } else {
                 card.removeAttribute("data-icons");
@@ -6366,6 +6451,7 @@
         var need = G.last && G.last.need[name] ? G.last.need[name] : 0;
         if (w >= cols) { w = TOOL_FULL; }
         if (w < TOOL_MIN_COLS) { w = TOOL_MIN_COLS; }
+        w = iconBump(name, w, G.last && G.last.pos[name] ? G.last.pos[name].w : w);
         if (h <= need) { h = 0; }
         if (h > TOOL_MAX_ROWS) { h = TOOL_MAX_ROWS; }
         sizes[name] = { w: w, h: h };
@@ -7100,6 +7186,9 @@
     ui.pasteBtn.addEventListener("click", function () { pasteImage(null); });
     ui.organizeBtn.addEventListener("click", onOrganize);
     ui.decomposeBtn.addEventListener("click", onDecompose);
+    ui.cacheBtn.addEventListener("click", onClearCache);
+    ui.nullpBtn.addEventListener("click", onNullParent);
+    ui.unusedBtn.addEventListener("click", onRemoveUnused);
     ui.fxBtn.addEventListener("click", openFxConsole);
     ui.fxClose.addEventListener("click", closeFxConsole);
     ui.fxSnap.addEventListener("click", onSnapshot);
