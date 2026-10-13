@@ -72,11 +72,12 @@
       <button id="tabTools" data-info="Анимация|Готовые пресеты, как в Animation Composer: переходы, движения, текст, графика и звуки. Щелчок по карточке применяет пресет к выделенному слою, «✎ Изменить» — настроить то, что уже стоит." class="tab" role="tab" data-tab="tools" aria-selected="false" aria-controls="viewTools" title="Двойной щелчок — поменять вкладки местами">Анимация</button>
       <button id="tabMotion" data-info="Инструменты|Быстрые инструменты на каждый день: плавность, якорь, выравнивание, сдвиг во времени, картинка из буфера, порядок в проекте, копия плавности. Блоки двигаются (двойной щелчок), закрепляются булавкой и растягиваются за края." class="tab" role="tab" data-tab="motion" aria-selected="false" aria-controls="viewMotion" title="Двойной щелчок — поменять вкладки местами">Инструменты</button>
       <button id="tabShape" data-info="Шейп|Здесь будут инструменты для шейп-слоёв: создать фигуру, заливка и обводка, Trim Paths, модификаторы." class="tab" role="tab" data-tab="shape" aria-selected="false" aria-controls="viewShape" title="Двойной щелчок — поменять вкладки местами">Шейп</button>
+      <button id="tabBrand" data-info="Проекты|Брендбуки клиентов и компаний: логотипы, цвета, шрифты, тексты и форматы. Щелчок вставляет логотип, красит слой цветом бренда, ставит шрифт или создаёт композицию нужного размера. AI тоже знает бренд выбранного проекта." class="tab" role="tab" data-tab="brand" aria-selected="false" aria-controls="viewBrand" title="Двойной щелчок — поменять вкладки местами">Проекты</button>
     </nav>
 
     <section id="arrangeBar" class="arrange-bar" hidden aria-live="polite">
       <span>Перетащите вкладки или блоки: блоки встают по клеткам сетки, за края растягиваются по клеткам</span>
-      <button id="arrangeReset" class="ghost" title="Вернуть блокам обычный размер и расстановку">Сбросить</button>
+      <button id="arrangeReset" class="ghost" title="Вернуть блокам размеры, места и булавки, как после установки">Сбросить</button>
       <button id="arrangeDone" class="ghost">Готово</button>
     </section>
 
@@ -556,6 +557,91 @@
     </div>
     <div id="statusSlotShape" class="status-slot"></div>
     </div>
+
+    <!-- «Проекты»: брендбуки. У каждого проекта (клиента, компании) свои логотипы, цвета, шрифты, тексты и форматы. -->
+    <div id="viewBrand" class="view" role="tabpanel" aria-labelledby="tabBrand" hidden>
+      <section class="card brand-top">
+        <div class="brand-row" id="brandPickRow">
+          <select id="brandSelect" class="field" aria-label="Текущий проект"></select>
+          <button id="brandRename" class="icon-btn" aria-label="Переименовать проект" title="Переименовать проект">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>
+          </button>
+          <button id="brandDelete" class="icon-btn" aria-label="Удалить проект" title="Удалить проект (нажмите дважды)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 7h15"/><path d="M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7l.9 11.6a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/></svg>
+          </button>
+          <button id="brandNew" class="ghost brand-new" title="Создать новый проект">+ Новый</button>
+        </div>
+        <div class="brand-row" id="brandNameRow" hidden>
+          <input id="brandName" class="field" maxlength="60" spellcheck="false" placeholder="Название: клиент или компания" aria-label="Название проекта">
+          <button id="brandNameOk" class="primary">Сохранить</button>
+          <button id="brandNameCancel" class="ghost">Отмена</button>
+        </div>
+        <small id="brandDeleteNote" class="hint" hidden></small>
+      </section>
+
+      <section id="brandEmpty" class="card brand-empty">
+        <b>Брендбук в панели</b>
+        <p>Соберите в проект логотипы, цвета, шрифты и тексты клиента или компании — и вставляйте их в After Effects одним щелчком. AI тоже будет делать всё в стиле бренда.</p>
+        <button id="brandFirst" class="primary">Создать первый проект</button>
+      </section>
+
+      <div id="brandBody" hidden>
+        <section class="card brand-sec">
+          <div class="brand-h"><b>Логотипы</b><button id="brandLogoAdd" class="ghost brand-add" title="Добавить файл логотипа: PNG, SVG, AI, PSD, JPG">+ Добавить</button></div>
+          <div id="brandLogos" class="brand-logos"></div>
+          <small class="hint">Щелчок по логотипу — вставить в открытую композицию (и в папку проекта «Brand — …»). Файлы копируются в «Документы / Sayframe Brands».</small>
+        </section>
+
+        <section class="card brand-sec">
+          <div class="brand-h"><b>Цвета</b></div>
+          <div id="brandColors" class="brand-colors"></div>
+          <div class="brand-row brand-addrow">
+            <input id="brandColorPick" class="color-pick" type="color" value="#9d7bff" aria-label="Цвет: любой из палитры" title="Любой цвет">
+            <input id="brandColorHex" class="field hex" maxlength="7" spellcheck="false" value="#9d7bff" aria-label="Цвет, hex">
+            <input id="brandColorName" class="field" maxlength="30" spellcheck="false" placeholder="Название цвета" title="Например: Основной, Акцент, Фон. Цвет с названием «Фон» станет фоном новых композиций" aria-label="Название цвета">
+            <button id="brandColorAdd" class="ghost brand-add" title="Добавить цвет">+</button>
+          </div>
+          <button id="brandRigBtn" class="ghost brand-wide" title="Создать в открытой композиции слой Brand Colors с цветами бренда: слои, покрашенные из панели, берут цвет из него">Цвета бренда в композицию</button>
+          <small class="hint">Щелчок по цвету красит выделенные слои: текст, шейп, солид или любой слой (эффектом Fill). Если в композиции есть слой Brand Colors, цвет привязывается к нему: поменяете цвет там — он сменится везде.</small>
+        </section>
+
+        <section class="card brand-sec">
+          <div class="brand-h"><b>Шрифты</b></div>
+          <datalist id="brandFontList"></datalist>
+          <label class="brand-font"><span>Заголовки</span>
+            <input id="brandFontHead" class="field" list="brandFontList" spellcheck="false" placeholder="Например, Montserrat-Bold" aria-label="Шрифт заголовков">
+            <button id="brandFontHeadApply" class="ghost" title="Поставить этот шрифт выделенным текстовым слоям">Применить</button>
+          </label>
+          <label class="brand-font"><span>Текст</span>
+            <input id="brandFontBody" class="field" list="brandFontList" spellcheck="false" placeholder="Например, Inter-Regular" aria-label="Шрифт текста">
+            <button id="brandFontBodyApply" class="ghost" title="Поставить этот шрифт выделенным текстовым слоям">Применить</button>
+          </label>
+        </section>
+
+        <section class="card brand-sec">
+          <div class="brand-h"><b>Тексты</b></div>
+          <div id="brandTexts" class="brand-texts"></div>
+          <div class="brand-row brand-addrow">
+            <input id="brandTextName" class="field brand-tname" maxlength="30" spellcheck="false" placeholder="Слоган, сайт…" aria-label="Что это за текст">
+            <input id="brandTextValue" class="field" maxlength="300" spellcheck="false" placeholder="Сам текст" aria-label="Текст">
+            <button id="brandTextAdd" class="ghost brand-add" title="Добавить текст">+</button>
+          </div>
+          <small class="hint">Щелчок по тексту — текстовый слой в открытой композиции, сразу в шрифте заголовков и первом цвете бренда.</small>
+        </section>
+
+        <section class="card brand-sec">
+          <div class="brand-h"><b>Форматы</b></div>
+          <div id="brandFormats" class="brand-formats">
+            <button class="ghost" data-w="1920" data-h="1080" title="Горизонтальное видео">16:9<small>1920×1080</small></button>
+            <button class="ghost" data-w="1080" data-h="1920" title="Reels, Shorts, Stories, TikTok">9:16<small>1080×1920</small></button>
+            <button class="ghost" data-w="1080" data-h="1080" title="Квадрат">1:1<small>1080×1080</small></button>
+            <button class="ghost" data-w="1080" data-h="1350" title="Пост в ленту">4:5<small>1080×1350</small></button>
+          </div>
+          <small class="hint">Новая композиция нужного размера, 30 кадров/с, 10 секунд, с фоном цвета «Фон» (если такой цвет есть).</small>
+        </section>
+      </div>
+      <div id="statusSlotBrand" class="status-slot"></div>
+    </div>
   </main>
   <div id="infoTip" class="info-tip" role="tooltip" hidden><b id="infoTipTitle"></b><p id="infoTipText"></p><small id="infoTipHint"></small></div>
 
@@ -656,6 +742,13 @@
             <div class="swatches" id="bgShapeSwatches">
               <input id="bgShapePick" class="color-pick" type="color" aria-label="Фон раздела «Шейп»: любой цвет из палитры" title="Любой цвет">
               <input id="bgShapeHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Фон раздела «Шейп», hex">
+            </div>
+          </div>
+          <div class="sec-color">
+            <span class="sec-name">Проекты</span>
+            <div class="swatches" id="bgBrandSwatches">
+              <input id="bgBrandPick" class="color-pick" type="color" aria-label="Фон раздела «Проекты»: любой цвет из палитры" title="Любой цвет">
+              <input id="bgBrandHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Фон раздела «Проекты», hex">
             </div>
           </div>
           <p class="hint">У каждого раздела свой фон: открытый раздел красит им панель. Кружок с радугой — палитра, в ней любой цвет; можно и ввести hex-код.</p>
