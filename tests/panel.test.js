@@ -312,6 +312,51 @@ function mkDcLayer(comp, sp, log) {
   L.setParentWithJump = (p) => { parentRef = p; L.jumps++; };
   return L;
 }
+// --- Projects (brand books): a comp with a text, a shape, a solid and a plain layer, as the brand tools see them.
+function mkBrColor(v) { const p = { value: v, numKeys: 0, canSetExpression: true, expression: "", setValue(x) { p.value = x; }, setValueAtKey(k, x) { p.value = x; } }; return p; }
+function mkBrFx(log) {
+  const list = [];
+  return { list, get numProperties() { return list.length; }, property: (i) => (typeof i === "number" ? list[i - 1] : list.find((e) => e.name === i || e.matchName === i)) || null,
+    addProperty(match) {
+      const color = mkBrColor([1, 1, 1]);
+      const e = { matchName: match, name: match === "ADBE Fill" ? "Fill" : "Color Control", color,
+        property: (k) => (k === 1 || k === "ADBE Fill-0002" ? color : null) };
+      list.push(e); log.brFx = (log.brFx || 0) + 1; return e;
+    } };
+}
+function mkBrComp(log, layers) {
+  const c = Object.assign(new CompItem(), { name: "Main", width: 1920, height: 1080, duration: 10, list: [] });
+  Object.defineProperty(c, "numLayers", { get: () => c.list.length });
+  Object.defineProperty(c, "selectedLayers", { get: () => c.list.filter((l) => l.selected) });
+  c.layer = (i) => c.list[i - 1] || null;
+  const mk = (kind, name, selected) => {
+    const L = Object.create(kind === "text" ? TextLayer.prototype : kind === "shape" ? ShapeLayer.prototype : Object.prototype);
+    const fx = mkBrFx(log);
+    Object.assign(L, { name, kind, selected: !!selected, locked: false, fx });
+    if (kind === "text") {
+      L.td = { text: name, font: "ArialMT", fillColor: [1, 1, 1], applyFill: true };
+      const doc = { get value() { return Object.assign({}, L.td); }, setValue(v) { L.td = Object.assign({}, v); } };
+      L.property = (n) => (n === "ADBE Text Properties" ? { property: () => doc } : n === "ADBE Effect Parade" ? fx : null);
+    } else if (kind === "shape") {
+      L.fillColors = [mkBrColor([0, 0, 0]), mkBrColor([0, 0, 0])];
+      const grp = (kids) => ({ numProperties: kids.length, property: (i) => kids[i - 1] });
+      const fill = (col) => ({ matchName: "ADBE Vector Graphic - Fill", numProperties: 1, property: () => col });
+      const root = grp([Object.assign(grp([fill(L.fillColors[0])]), { matchName: "ADBE Vector Group" }), fill(L.fillColors[1])]);
+      L.property = (n) => (n === "ADBE Root Vectors Group" ? root : n === "ADBE Effect Parade" ? fx : null);
+    } else {
+      if (kind === "solid") { L.source = { mainSource: Object.assign(new SolidSource(), { color: [0, 0, 0] }) }; }
+      L.property = (n) => (n === "ADBE Effect Parade" ? fx : null);
+    }
+    return L;
+  };
+  (layers || []).forEach((l) => c.list.push(mk(l.kind, l.name, l.selected)));
+  c.layers = {
+    addNull() { const n = mk("null", "Null 1"); c.list.unshift(n); return n; },
+    addText(t) { const n = mk("text", String(t)); n.added = true; c.list.unshift(n); log.brTexts = (log.brTexts || []).concat([n]); return n; },
+    add(item) { log.brAdded = (log.brAdded || []).concat([item.name]); return { name: item.name }; }
+  };
+  return c;
+}
 function makeAE(opts, tmpDir) {
   const log = { undo: [], removed: [], opened: 0, imports: [], layerAdds: [], precomposes: [], bins: [], ran: [], refComps: [], nullsAdded: 0, nullsRemoved: 0, nullSourcesRemoved: 0, nulls: [], nullExpressions: [] };
   function File(p) { this.fsName = p; this.name = encodeURI(path.basename(p)); }
@@ -389,6 +434,7 @@ function makeAE(opts, tmpDir) {
     log.dcInner = inner;
   }
   if (opts.np) { dcMain = mkDcComp("Main", opts.np, log); }
+  if (opts.br) { dcMain = mkBrComp(log, opts.br); dcMain.openInViewer = () => { project.activeItem = dcMain; }; }
   log.dcMain = dcMain;
   // opts.unused: [{ name, used }] — footage in the project, used in a comp or not.
   (opts.unused || []).forEach((u) => projItems.push(Object.assign(new FootageItem(), { name: u.name, usedIn: u.used ? [comp] : [], parentFolder: rootFolder })));
@@ -406,7 +452,8 @@ function makeAE(opts, tmpDir) {
       addComp(name, w, h, par, dur, fps) {
         const c = Object.assign(new CompItem(), { name, width: w, height: h, duration: dur, frameRate: fps, saved: [], scaleSet: null,
           openInViewer() { log.opened++; project.activeItem = c; },
-          layers: { add(it) { c.added = it; return { property() { return { property() { return { setValue(v) { c.scaleSet = v; } }; } }; } }; } },
+          layers: { add(it) { c.added = it; return { property() { return { property() { return { setValue(v) { c.scaleSet = v; } }; } }; } }; },
+            addSolid(color, nm, sw, sh) { c.solid = { color, name: nm, w: sw, h: sh }; return c.solid; } },
           saveFrameToPng(t, file) { c.saved.push(t); fs.writeFileSync(file.fsName, fakePng(c.saved.length - 1)); },
           remove() { log.removed.push("comp"); } });
         log.refComps.push(c); return c;
@@ -437,7 +484,9 @@ function makeAE(opts, tmpDir) {
     scheduleTask: (code, ms, repeat) => { log.tasks.push({ code, ms, repeat }); return log.tasks.length; }, cancelTask: (id) => { log.tasks[id - 1].cancelled = true; },
     preferences: { getPrefAsLong: () => (opts.fileAccessOff ? 0 : 1) },
     beginUndoGroup: (n) => log.undo.push("begin:" + n), endUndoGroup: () => log.undo.push("end"), __ran: (x) => log.ran.push(x),
-    purge: (t) => { log.purges = (log.purges || []).concat([t]); } };
+    purge: (t) => { log.purges = (log.purges || []).concat([t]); },
+    fonts: opts.noFonts ? undefined : { allFonts: [[{ postScriptName: "Inter-Regular" }, { postScriptName: "Inter-Bold" }], [{ postScriptName: "Montserrat-Bold" }]],
+      getFontsByPostScriptName: (n) => (/^(Inter|Montserrat|ArialMT)/.test(n) ? [{ postScriptName: n }] : []) } };
   const ctx = vm.createContext({ app, PurgeTarget: opts.noPurge ? undefined : { ALL_CACHES: 1012, UNDO_CACHES: 1013, SNAPSHOT_CACHES: 1014, IMAGE_CACHES: 1015 }, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   ctx.$.global = ctx;
@@ -561,7 +610,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     });
 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false }, opts.settings || {});
-    await page.addInitScript(({ stored, tmpDir, home, hostPath, withSystemPath, updateUrl, updateState, updateEveryMs, statsUrl }) => {
+    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateState, updateEveryMs, statsUrl }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
       if (statsUrl) window.__SAYFRAME_STATS_URL__ = statsUrl;
       window.__SAYFRAME_TEST_UPDATE_EVERY_MS__ = updateEveryMs || 0;
@@ -571,6 +620,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       const firstOpen = window.name !== "sayframe-test-seeded";
       window.name = "sayframe-test-seeded";
       if (firstOpen) { if (stored) localStorage.setItem("sayframe.settings.v1", JSON.stringify(stored)); else localStorage.removeItem("sayframe.settings.v1"); }
+      // Most scenarios were written for a panel that was already in use: AI tab first and open, blocks in a row.
+      // A new install (opts.fresh) gets the layout of 1.40.0 instead.
+      if (firstOpen && !fresh) {
+        localStorage.setItem("sayframe.tabOrder.v1", JSON.stringify(["claude", "tools", "motion", "shape", "brand"]));
+        localStorage.setItem("sayframe.tab.v1", "claude");
+        localStorage.setItem("sayframe.motion.v1", JSON.stringify({ order: "ease,anchor,align,shift,paste,organize,easecopy,decompose,cache,nullp,unused", sizes: "", places: "", pins: "", grid: 2, curve: true,
+          anchorOpts: true, alignOpts: true, shiftOpts: true, pasteOpts: true, organizeOpts: true, ecOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true }));
+      }
       if (updateState && firstOpen) localStorage.setItem("sayframe.update.v1", JSON.stringify(updateState));
       window.__keyInterest = [];
       window.__cepListeners = {};
@@ -593,7 +650,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         openExternal: (u) => { window.__opened.push(u); return true; },
         reload: () => { window.__plat("reloaded", []).then(() => window.location.reload()); }
       };
-    }, { stored, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "" });
+    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "" });
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
     // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
@@ -2132,7 +2189,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 1000, replies: [msg("Создаю.\n```javascript\napp.__ran('ask');\n```")], settings: { alwaysAsk: true } });
   t = await spans(p);
   check("W2 in a wide panel the fields and buttons do not stretch: they stay in the 380px column on the left", within(t, 14, 366) && (await box(p, ".composer")).split(",")[2] === "352" && (await overflow(p)) <= 0, JSON.stringify(t));
-  check("W2 the header and the tab bar stretch with the panel: gear at the right edge, tabs across the whole width", (await box(p, "#tabs")).split(",")[0] === "14" && (await box(p, "#tabs")).split(",")[2] === "972" && (await box(p, ".top")).split(",")[2] === "972" && (await box(p, "#settingsBtn")).split(",")[0] === "954" && (await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); return r("tabClaude").left < r("tabTools").left && r("tabTools").left < r("tabMotion").left && r("tabMotion").left < r("tabShape").left && r("tabShape").right > 900 && r("tabClaude").width > 150; })), (await box(p, "#tabs")) + " | " + (await box(p, "#settingsBtn")));
+  check("W2 the header and the tab bar stretch with the panel: gear at the right edge, tabs across the whole width", (await box(p, "#tabs")).split(",")[0] === "14" && (await box(p, "#tabs")).split(",")[2] === "972" && (await box(p, ".top")).split(",")[2] === "972" && (await box(p, "#settingsBtn")).split(",")[0] === "954" && (await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); return r("tabClaude").left < r("tabTools").left && r("tabTools").left < r("tabMotion").left && r("tabMotion").left < r("tabShape").left && r("tabShape").left < r("tabBrand").left && r("tabBrand").right > 900 && r("tabClaude").width > 120; })), (await box(p, "#tabs")) + " | " + (await box(p, "#settingsBtn")) + " | " + (await p.page.evaluate(() => ["tabClaude", "tabTools", "tabMotion", "tabShape", "tabBrand"].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return Math.round(r.left) + "-" + Math.round(r.right); }).join(" "))));
   c = [await box(p, "#runBtn"), await box(p, "#prompt"), await box(p, ".composer")].join(" | ");
   await p.page.setViewportSize({ width: 1600, height: 900 });
   check("W2 stretching the panel further moves and resizes none of the fields, only the tab bar grows", [await box(p, "#runBtn"), await box(p, "#prompt"), await box(p, ".composer")].join(" | ") === c && (await box(p, "#tabs")).split(",")[2] === "1572" && (await box(p, "#settingsBtn")).split(",")[0] === "1554" && (await overflow(p)) <= 0, c + " tabs " + await box(p, "#tabs"));
@@ -2231,9 +2288,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   // ------------------------------------------------------------ tab reordering
   console.log("\n=== tab order ===");
-  const order = (p) => p.page.evaluate(() => Array.from(document.querySelectorAll("#tabs .tab")).map((b) => b.getAttribute("data-tab")).join());
+  // The order of the first four tabs; «Проекты» (brand), added later, is checked on its own.
+  const order = (p) => p.page.evaluate(() => Array.from(document.querySelectorAll("#tabs .tab")).map((b) => b.getAttribute("data-tab")).filter((n) => n !== "brand").join());
   const overflow0 = (p) => p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  const savedOrder = (p) => p.page.evaluate(() => localStorage.getItem("sayframe.tabOrder.v1"));
+  const savedOrder = (p) => p.page.evaluate(() => { const v = localStorage.getItem("sayframe.tabOrder.v1"); try { const a = JSON.parse(v); return a instanceof Array ? JSON.stringify(a.filter((n) => n !== "brand")) : v; } catch (e) { return v; } });
   const center = async (p, sel) => { const b = await p.page.locator(sel).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
   async function dragTab(p, from, to, opts) {
     const a = await center(p, from), b = typeof to === "string" ? await center(p, to) : to;
@@ -2249,10 +2307,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // Rearranging is switched on by a double click on a tab (the open one unless told otherwise).
   const arrange = async (p, sel) => { await p.page.dblclick(sel || '#tabs .tab[aria-selected="true"]'); await p.page.waitForFunction(() => /arranging/.test(document.body.className)); await p.page.waitForTimeout(350); };
   p = await open({ clip: "png", footage: IMG });
-  check("O1 default order", (await order(p)) === "claude,tools,motion,shape" && (await savedOrder(p)) === null);
+  check("O1 the order of a panel already in use", (await order(p)) === "claude,tools,motion,shape");
   check("O1 rearranging is off at first, its bar is hidden", !(await arrangingNow(p)) && !(await vis(p, "#arrangeBar")));
   await dragTab(p, "#tabClaude", "#tabTools");
-  check("O1 without a double click a drag moves nothing and marks nothing", (await order(p)) === "claude,tools,motion,shape" && (await savedOrder(p)) === null && (await p.page.locator(".dragging, .reordering").count()) === 0);
+  check("O1 without a double click a drag moves nothing and marks nothing", (await order(p)) === "claude,tools,motion,shape" && (await savedOrder(p)) === '["claude","tools","motion","shape"]' && (await p.page.locator(".dragging, .reordering").count()) === 0);
   await p.page.waitForTimeout(350);
   await p.page.click("#tabTools");
   check("O1 a single click only switches the tab", (await vis(p, "#viewTools #acGrid")) && !(await arrangingNow(p)));
@@ -2323,11 +2381,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.keyboard.press("Alt+ArrowRight");
   check("O8 at the edge nothing happens", (await order(p)) === "tools,motion,shape,claude");
   await p.page.keyboard.press("ArrowLeft");
-  check("O8 plain arrow moves focus, not the tab", (await order(p)) === "tools,motion,shape,claude" && (await p.page.evaluate(() => document.activeElement.id)) === "tabShape");
+  check("O8 plain arrow moves focus, not the tab", (await order(p)) === "tools,motion,shape,claude" && (await p.page.evaluate(() => document.activeElement.id)) === "tabBrand");
   await p.page.focus("#tabTools"); await p.page.keyboard.press("Alt+ArrowLeft");
   check("O8 Alt+Left at the left edge does nothing", (await order(p)) === "tools,motion,shape,claude");
-  await p.page.focus("#tabClaude"); await p.page.keyboard.press("Alt+ArrowLeft"); await p.page.keyboard.press("Alt+ArrowLeft"); await p.page.keyboard.press("Alt+ArrowLeft");
-  check("O8 Alt+Left three times moves the tab back to the front", (await order(p)) === "claude,tools,motion,shape");
+  await p.page.focus("#tabClaude"); await p.page.keyboard.press("Alt+ArrowLeft"); await p.page.keyboard.press("Alt+ArrowLeft"); await p.page.keyboard.press("Alt+ArrowLeft"); await p.page.keyboard.press("Alt+ArrowLeft");
+  check("O8 Alt+Left four times moves the tab back to the front", (await order(p)) === "claude,tools,motion,shape");
   check("O8 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
   for (const [bad, want] of [['not json', "claude,tools,motion,shape"], ['{"a":1}', "claude,tools,motion,shape"], ['["tools"]', "tools,claude,motion,shape"], ['["ghost","tools","tools","claude",5]', "tools,claude,motion,shape"], ['[]', "claude,tools,motion,shape"],
@@ -2549,7 +2607,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R4 down moves it a cell down", /ease:0,1,/.test(await cellsNow(p)), await cellsNow(p));
   await p.page.keyboard.press("ArrowUp");
   check("R4 up brings it back", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && /ease:0,0/.test(await cellsNow(p)), await cellsNow(p));
-  await arrange(p); await p.page.click("#arrangeReset"); await p.page.waitForTimeout(350); await p.page.keyboard.press("Escape");
+  // back to the blocks in a row, as a panel that was in use before 1.40.0
+  await p.page.evaluate(() => { const m = JSON.parse(localStorage.getItem("sayframe.motion.v1")); m.places = ""; m.sizes = ""; m.order = "ease,anchor,align,shift,paste,organize,easecopy,decompose,cache,nullp,unused"; localStorage.setItem("sayframe.motion.v1", JSON.stringify(m)); });
+  await p.restart(); await motionTab(p);
   await p.page.focus(grip("ease")); await p.page.keyboard.press("ArrowDown");
   check("R4 with a block right underneath, down swaps them", (await toolOrder(p)).split(",").slice(0, 2).join() === "align,anchor" && /ease:0,11,/.test(await cellsNow(p)) && /align:0,0,/.test(await cellsNow(p)), await cellsNow(p));
   await p.page.keyboard.press("ArrowUp");
@@ -2982,7 +3042,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await resizeTo(p, 900);
   check("G2 widened again, they go back to their cells", /shift:0,0,8,/.test(await cellsNow(p)) && /ease:24,0/.test(await cellsNow(p)), await cellsNow(p));
   await p.page.click("#arrangeReset");
-  check("G3 'Reset' returns the usual sizes and order, blocks follow each other again", (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:16,0,8,11 shift:24,0,8,21 paste:32,0,8,8 organize:32,8,8,12" && (await savedPlaces(p)) === "" && (await savedSizes(p)) === "", await cellsNow(p));
+  t = await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1")));
+  check("G3 'Reset' returns the layout of a new install: places, sizes and pins", t.places === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12".split(";").sort((a, b) => a.localeCompare(b)).join(";") || t.places.split(";").sort().join(";") === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12".split(";").sort().join(";"), t.places);
+  check("G3 … with the sizes and the pinned blocks on top", t.sizes.split(";").sort().join(";") === "ease=14x0;easecopy=17x0;shift=12x0" && t.pins === "paste,unused,easecopy,decompose,organize,cache,nullp", t.sizes + " | " + t.pins);
   check("G3 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
@@ -4077,6 +4139,122 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
+  // Projects: brand books with logos, colors, fonts, texts and formats.
+  {
+    const logoSrc = path.join(os.tmpdir(), "sayframe-test-logo.png");
+    fs.writeFileSync(logoSrc, fakePng(0));
+    const brLayers = () => [{ kind: "text", name: "Title", selected: true }, { kind: "shape", name: "Box", selected: true }, { kind: "solid", name: "Plate", selected: true }, { kind: "plain", name: "Photo", selected: true }];
+    p = await open({ br: brLayers(), pickFile: logoSrc, footage: { width: 500, height: 200 } });
+    const L = (n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const stored = () => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.brands.v1") || "null"));
+    const near = (a, b) => a.every((x, i) => Math.abs(x - b[i]) < 0.002);
+    t = await p.page.evaluate(() => { const tabs = Array.from(document.querySelectorAll("#tabs .tab")); const bar = document.getElementById("tabs").getBoundingClientRect(); return tabs.map((b) => b.textContent).join() + "|" + tabs.every((b) => { const r = b.getBoundingClientRect(); return r.right <= bar.right + 0.5 && b.scrollWidth <= b.clientWidth + 1; }); });
+    check("BR1 a fifth tab «Проекты»; at 380px all five fit, no name is cut", t === "AI,Анимация,Инструменты,Шейп,Проекты|true", t);
+    await p.page.click("#tabBrand");
+    check("BR1 at first: a short explanation and «Создать первый проект», nothing else", (await vis(p, "#brandEmpty")) && !(await vis(p, "#brandBody")) && !(await vis(p, "#brandPickRow")));
+    await p.page.screenshot({ path: path.join(SHOTS, "48-projects-empty.png") });
+    await p.page.click("#brandFirst");
+    await p.page.fill("#brandName", "Acme");
+    await p.page.press("#brandName", "Enter");
+    check("BR2 the first project is created and chosen; its sections show", (await p.page.inputValue("#brandSelect")) !== "" && (await p.page.locator("#brandSelect option").allInnerTexts()).join() === "Acme" && (await vis(p, "#brandBody")) && !(await vis(p, "#brandEmpty")) && (await stored()).items[0].name === "Acme", JSON.stringify(await stored()));
+    await p.page.fill("#brandColorHex", "#ff5a1f"); await p.page.fill("#brandColorName", "Основной"); await p.page.click("#brandColorAdd");
+    await p.page.fill("#brandColorHex", "#101820"); await p.page.fill("#brandColorName", "Фон"); await p.page.press("#brandColorName", "Enter");
+    check("BR3 colors are added with their names and saved", (await p.page.locator("#brandColors .brand-chip").count()) === 2 && (await stored()).items[0].colors.map((c) => c.name + c.hex).join() === "Основной#ff5a1f,Фон#101820");
+    await p.page.click('#brandColors .brand-chip[data-hex="#ff5a1f"]'); await p.idle();
+    const orange = [1, 0x5a / 255, 0x1f / 255];
+    check("BR3 a click paints the selected layers: text fill, every shape fill, the solid, a Fill effect on the rest", near(L("Title").td.fillColor, orange) && L("Box").fillColors.every((c) => near(c.value, orange)) && near(L("Plate").source.mainSource.color, orange) && near(L("Photo").fx.list[0].color.value, orange) && L("Photo").fx.list[0].name === "Brand Fill", await p.status());
+    check("BR3 the report and one undo step", (await p.status()) === "«Основной» #ff5a1f: покрашено слоёв — 4. Отменить — Cmd/Ctrl+Z." && p.ae.log.undo.join() === "begin:Sayframe: brand color,end", await p.status());
+    await p.page.click("#brandRigBtn"); await p.idle();
+    t = p.ae.log.dcMain.list[0];
+    check("BR4 «Цвета бренда в композицию»: a Brand Colors layer on top with a Color Control per color", t.name === "Brand Colors" && t.fx.list.map((e) => e.name + ":" + e.matchName).join() === "Основной:ADBE Color Control,Фон:ADBE Color Control" && near(t.fx.list[1].color.value, [0x10 / 255, 0x18 / 255, 0x20 / 255]), t.name);
+    await p.page.click('#brandColors .brand-chip[data-hex="#ff5a1f"]'); await p.idle();
+    check("BR4 with it, painting links the color by expression: change it in Brand Colors — it changes everywhere", L("Box").fillColors.every((c) => c.expression === 'thisComp.layer("Brand Colors").effect("Основной")(1)') && L("Title").fx.list.some((e) => e.name === "Brand Fill" && e.color.expression === 'thisComp.layer("Brand Colors").effect("Основной")(1)') && /привязан к слою Brand Colors/.test(await p.status()), await p.status());
+    await p.page.click("#brandRigBtn"); await p.idle();
+    check("BR4 pressed again it updates the same layer, no second one", p.ae.log.dcMain.list.filter((l) => l.name === "Brand Colors").length === 1 && p.ae.log.dcMain.list[0].fx.list.length === 2 && /обновлён/.test(await p.status()), await p.status());
+
+    await p.page.fill("#brandFontHead", "Montserrat-Bold"); await p.page.press("#brandFontHead", "Tab");
+    await p.page.click("#brandFontHeadApply"); await p.idle();
+    check("BR5 the heading font goes on the selected text layers only, and is remembered", L("Title").td.font === "Montserrat-Bold" && (await p.status()) === "Шрифт «Montserrat-Bold» поставлен текстовым слоям: 1." && (await stored()).items[0].fonts.head === "Montserrat-Bold", await p.status());
+    check("BR5 the installed fonts are offered while typing", (await p.page.locator("#brandFontList option").count()) === 3);
+    await p.page.fill("#brandFontBody", "Nope-Font"); await p.page.click("#brandFontBodyApply"); await p.idle();
+    check("BR5 a font that is not installed: says so", /нет на этом компьютере/.test(await p.status()), await p.status());
+
+    await p.page.fill("#brandTextName", "Слоган"); await p.page.fill("#brandTextValue", "Делаем быстро"); await p.page.click("#brandTextAdd");
+    await p.page.click("#brandTexts .brand-text"); await p.idle();
+    t = (p.ae.log.brTexts || [])[0];
+    check("BR6 a click on a text makes a text layer in the heading font and the first brand color", t && t.td.text === "Делаем быстро" && t.td.font === "Montserrat-Bold" && near(t.td.fillColor, orange) && /Текстовый слой «Делаем быстро» создан в «Main»/.test(await p.status()), await p.status());
+
+    await p.page.click('#brandFormats button[data-w="1080"][data-h="1920"]'); await p.idle();
+    t = p.ae.log.refComps[p.ae.log.refComps.length - 1];
+    check("BR7 a format makes a new comp of that size with the «Фон» color as background, in the brand folder, and opens it", t && t.name === "Acme 1080x1920" && t.width === 1080 && t.height === 1920 && t.solid && near(t.solid.color, [0x10 / 255, 0x18 / 255, 0x20 / 255]) && t.parentFolder && t.parentFolder.name === "Brand — Acme" && p.ae.project.activeItem === t, t && JSON.stringify({ n: t.name, w: t.width, h: t.height, s: t.solid, f: t.parentFolder && t.parentFolder.name, a: p.ae.project.activeItem === t }));
+    await p.page.click("#tabBrand");
+    p.ae.project.activeItem = p.ae.log.dcMain;
+
+    await p.page.click("#brandLogoAdd"); await p.idle();
+    t = (await stored()).items[0].logos[0];
+    check("BR8 a logo is copied into Documents / Sayframe Brands and shown", t && t.name === "sayframe-test-logo" && /Documents\/Sayframe Brands\//.test(t.file) && fs.existsSync(t.file) && (await p.page.locator("#brandLogos .brand-logo").count()) === 1, JSON.stringify(t));
+    await p.page.click("#brandLogos .brand-logo-img"); await p.idle();
+    check("BR8 a click puts it into the open comp", (p.ae.log.brAdded || []).length === 1 && /^Логотип «sayframe-test-logo» вставлен в «Main»/.test(await p.status()), await p.status());
+    await p.page.screenshot({ path: path.join(SHOTS, "49-projects.png") });
+    await p.page.locator("#brandFormats").scrollIntoViewIfNeeded();
+    await p.page.screenshot({ path: path.join(SHOTS, "50-projects-bottom.png") });
+
+    await p.restart(); await p.page.click("#tabBrand");
+    check("BR9 everything survives a restart", (await p.page.locator("#brandColors .brand-chip").count()) === 2 && (await p.page.locator("#brandLogos .brand-logo").count()) === 1 && (await p.page.inputValue("#brandFontHead")) === "Montserrat-Bold" && (await p.page.locator("#brandTexts .brand-text").count()) === 1);
+    await p.page.click("#brandNew"); await p.page.fill("#brandName", "Beta"); await p.page.click("#brandNameOk");
+    check("BR9 a second project starts empty and becomes the current one", (await p.page.locator("#brandSelect option").allInnerTexts()).join() === "Acme,Beta" && (await p.page.locator("#brandColors .brand-chip").count()) === 0);
+    await p.page.click("#brandDelete");
+    check("BR9 the bin asks once more before deleting", (await vis(p, "#brandDeleteNote")) && (await p.page.locator("#brandSelect option").count()) === 2);
+    await p.page.click("#brandDelete");
+    check("BR9 the second press deletes it; Acme is current again", (await p.page.locator("#brandSelect option").allInnerTexts()).join() === "Acme" && (await p.page.locator("#brandColors .brand-chip").count()) === 2 && p.errors.filter((e) => !/Not allowed to load local resource/.test(e)).length === 0, p.errors.join(" | "));
+    await p.close();
+  }
+
+  // The AI knows the current project's brand.
+  {
+    p = await open({ replies: [msg("Готово.\n```javascript\napp.__ran('brand');\n```")] });
+    await p.page.evaluate(() => localStorage.setItem("sayframe.brands.v1", JSON.stringify({ active: "b1", items: [{ id: "b1", name: "Acme", colors: [{ name: "Основной", hex: "#ff5a1f" }], fonts: { head: "Montserrat-Bold", body: "" }, texts: [{ name: "Сайт", text: "acme.tj" }], logos: [{ id: "l1", name: "logo", file: "/brands/logo.png", variant: "main" }] }] })));
+    await p.restart();
+    await p.page.fill("#prompt", "сделай заставку с логотипом");
+    await p.page.click("#runBtn"); await p.idle();
+    t = JSON.stringify(p.net.requests[0] ? p.net.requests[0].body.messages[0].content : "");
+    check("BR10 the request to the AI carries the brand: colors, fonts, logo files, texts", /\[Brand: Acme\]/.test(t) && /Основной #ff5a1f/.test(t) && /headings Montserrat-Bold/.test(t) && /logo \(main\): \/brands\/logo.png/.test(t) && /Сайт: acme.tj/.test(t), t.slice(0, 600));
+    await p.close();
+    p = await open({ replies: [msg("Готово.\n```javascript\napp.__ran('plain');\n```")] });
+    await p.page.fill("#prompt", "сделай заставку"); await p.page.click("#runBtn"); await p.idle();
+    t = JSON.stringify(p.net.requests[0] ? p.net.requests[0].body.messages[0].content : "");
+    check("BR10 without a project nothing is added", !/\[Brand:/.test(t) && /\[Request\]/.test(t), t.slice(0, 300));
+    await p.close();
+  }
+
+  // A new install opens on Tools, laid out like the author's panel; a panel in use keeps its layout,
+  // and a block new to it appears at the usual size near the top middle.
+  {
+    p = await open({ fresh: true, width: 960, height: 1000 });
+    const cards = () => p.page.evaluate(() => { const o = {}; document.querySelectorAll("#motionTools .tool-card").forEach((c) => { const a = /^(\d+) \/ span (\d+)$/.exec(c.style.gridColumn), b = /^(\d+) \/ span (\d+)$/.exec(c.style.gridRow); o[c.getAttribute("data-tool")] = (a[1] - 1) + "," + (b[1] - 1) + "," + a[2]; }); return o; });
+    t = await p.page.evaluate(() => Array.from(document.querySelectorAll("#tabs .tab")).map((b) => b.textContent + (b.getAttribute("aria-selected") === "true" ? "*" : "")).join());
+    check("FI1 a new install: tabs Инструменты, Анимация, Шейп, AI, Проекты; Tools is open", t === "Инструменты*,Анимация,Шейп,AI,Проекты", t);
+    t = await cards();
+    check("FI1 the button blocks are pinned on top as in the author's panel", ["paste:0,0,8", "unused:8,0,8", "easecopy:17,0,17", "decompose:34,0,8", "organize:0,5,8", "nullp:17,5,8"].every((x) => t[x.split(":")[0]] === x.split(":")[1]) && /^8,[56],8$/.test(t.cache), JSON.stringify(t));
+    check("FI1 under the line: Время, Якорь, Выровнять, Плавность in one row", ["shift:0,", "anchor:12,", "align:20,", "ease:28,"].every((x) => t[x.split(":")[0]].indexOf(x.split(":")[1]) === 0) && new Set(["shift", "anchor", "align", "ease"].map((n) => t[n].split(",")[1])).size === 1 && Number(t.shift.split(",")[1]) >= 12, JSON.stringify(t));
+    check("FI1 hints and lists are folded, Время is open", !(await vis(p, "#pasteHint")) && !(await vis(p, "#anchorKeys")) && !(await vis(p, "#easeCurve")) && (await vis(p, "#shiftWhat")) && p.errors.length === 0, p.errors.join(" | "));
+    await p.page.screenshot({ path: path.join(SHOTS, "51-new-install.png") });
+    await p.close();
+    p = await open({ fresh: true, width: 380, height: 900 });
+    t = await p.page.evaluate(() => { const g = document.getElementById("motionTools").getBoundingClientRect(); return Array.from(document.querySelectorAll("#motionTools .tool-card")).every((c) => c.getBoundingClientRect().right <= g.right + 1); });
+    check("FI2 in a narrow panel the same blocks go row by row in the same order, nothing sticks out", t && (await overflow(p)) <= 0);
+    await p.close();
+    p = await open({ width: 960 });
+    await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ grid: 2, order: "ease,anchor,align,shift,paste,organize", sizes: "", pins: "", places: "ease=0,0;anchor=8,0;align=16,0;shift=0,13;paste=8,13;organize=16,13" })));
+    await p.restart(); await motionTab(p);
+    t = await p.page.evaluate(() => { const o = {}; document.querySelectorAll("#motionTools .tool-card").forEach((c) => { const r = c.getBoundingClientRect(); o[c.getAttribute("data-tool")] = Math.round(r.width) + "@" + Math.round(r.top); }); return o; });
+    check("NB1 a panel in use keeps its blocks where they were", /^168@/.test(t.ease) && t.ease.split("@")[1] === t.anchor.split("@")[1], JSON.stringify(t));
+    t = await p.page.evaluate(() => { const g = document.getElementById("motionTools").getBoundingClientRect(); const o = {}; ["decompose", "cache", "nullp", "unused"].forEach((n) => { const r = document.querySelector('#motionTools [data-tool="' + n + '"]').getBoundingClientRect(); o[n] = { w: Math.round(r.width), x: Math.round(r.left - g.left), y: Math.round(r.top - g.top), mid: Math.abs((r.left + r.right) / 2 - (g.left + g.right) / 2) }; }); return o; });
+    check("NB1 blocks new to it appear at the usual size, in the free room on top (here on the right of the first row)", Object.keys(t).every((n) => t[n].w === 168) && t.decompose.y === 0 && t.decompose.x > 500, JSON.stringify(t));
+    await p.page.screenshot({ path: path.join(SHOTS, "52-new-blocks-in-use.png") });
+    await p.close();
+  }
+
   // Remove unused: footage no comp uses leaves the project, nothing on disk is touched.
   {
     p = await open({ unused: [{ name: "intro.mp4", used: true }, { name: "old.png", used: false }, { name: "music.wav", used: false }, { name: "logo.ai", used: true }] });
@@ -4207,7 +4385,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("SC1 every section paints the panel background in its own colour", seen.join() === "#0b0c12,#17110b,#0b1510,#0b1219", seen.join());
     check("SC1 the accent colour stays the same in every section", acc.every((c) => c === "#9d7bff"), acc.join());
     await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
-    check("SC2 Settings → General → «Фон разделов»: four section rows, each with ready colours, a palette for any colour and a hex field", (await p.page.locator(".sec-color").count()) === 4 && (await p.page.locator(".sec-color .color-pick").count()) === 4 && (await p.page.locator(".sec-color .hex").count()) === 4 && (await p.page.locator(".sec-color .sec-name").allInnerTexts()).join() === "AI,Анимация,Инструменты,Шейп");
+    check("SC2 Settings → General → «Фон разделов»: five section rows, each with ready colours, a palette for any colour and a hex field", (await p.page.locator(".sec-color").count()) === 5 && (await p.page.locator(".sec-color .color-pick").count()) === 5 && (await p.page.locator(".sec-color .hex").count()) === 5 && (await p.page.locator(".sec-color .sec-name").allInnerTexts()).join() === "AI,Анимация,Инструменты,Шейп,Проекты");
     check("SC2 the accent colour also has a palette", (await p.page.locator("#accentSwatches .color-pick").count()) === 1);
     await p.page.fill("#bgShapeHex", "#12ab34");
     await p.page.locator("#bgMotionPick").evaluate((el) => { el.value = "#a1b2c3"; el.dispatchEvent(new Event("input", { bubbles: true })); });
