@@ -278,19 +278,23 @@ function mkDcComp(name, specs, log) {
   Object.defineProperty(c, "selectedLayers", { get: () => c.list.filter((l) => l.selected) });
   c.layer = (i) => c.list[i - 1] || null;
   specs.forEach((sp) => c.list.push(mkDcLayer(c, sp, log)));
-  c.list.forEach((l) => { if (l.spec.parent) l.parent = c.list.find((x) => x.name === l.spec.parent); });
+  c.list.forEach((l) => { if (l.spec.parent) l.setParentWithJump(c.list.find((x) => x.name === l.spec.parent)); l.jumps = 0; });
+  c.duration = 10;
+  c.layers = { addNull(dur) { const n = mkDcLayer(c, { name: "Null 1", isNull: true, startTime: 0, outPoint: dur, anchor: [50, 50, 0], position: [960, 540, 0] }, log); c.list.unshift(n); log.npNulls = (log.npNulls || 0) + 1; return n; } };
   return c;
 }
 function mkDcLayer(comp, sp, log) {
   const tr = {};
-  const mk = (n, v) => { tr[n] = { value: v, numKeys: 0, expression: "", expressionEnabled: false }; };
+  const mk = (n, v) => { tr[n] = { value: v, numKeys: 0, expression: "", expressionEnabled: false, setValue(x) { tr[n].value = x; } }; };
   mk("ADBE Anchor Point", sp.anchor || [960, 540, 0]); mk("ADBE Position", sp.position || [960, 540, 0]);
   mk("ADBE Scale", sp.scale || [100, 100, 100]); mk("ADBE Rotate Z", sp.rotation || 0); mk("ADBE Opacity", sp.opacity === undefined ? 100 : sp.opacity);
   const time = { startTime: sp.startTime || 0, inPoint: sp.inPoint === undefined ? (sp.startTime || 0) : sp.inPoint, outPoint: sp.outPoint === undefined ? 10 : sp.outPoint };
-  const L = { spec: sp, comp, name: sp.name, source: sp.source || null, parent: null, selected: !!sp.selected, locked: !!sp.locked, enabled: true, threeDLayer: !!sp.threeD,
+  let parentRef = null;
+  const L = { spec: sp, comp, name: sp.name, source: sp.source || null, nullLayer: !!sp.isNull, selected: !!sp.selected, locked: !!sp.locked, enabled: true, threeDLayer: !!sp.threeD,
     stretch: sp.stretch || 100, timeRemapEnabled: !!sp.remap, hasAudio: !!sp.audio, audioEnabled: !!sp.audio, jumps: 0, effects: sp.effects || 0, masks: sp.masks || 0 };
   const guard = () => { if (L.locked) throw new Error("After Effects error: layer is locked"); };
   Object.defineProperty(L, "index", { get: () => L.comp.list.indexOf(L) + 1 });
+  Object.defineProperty(L, "parent", { get: () => parentRef, set(v) { guard(); parentRef = v; L.parentSets = (L.parentSets || 0) + 1; } });
   Object.defineProperty(L, "startTime", { get: () => time.startTime, set(v) { guard(); const d = v - time.startTime; time.startTime = v; time.inPoint += d; time.outPoint += d; } });
   Object.defineProperty(L, "inPoint", { get: () => time.inPoint, set(v) { guard(); time.inPoint = v; } });
   Object.defineProperty(L, "outPoint", { get: () => time.outPoint, set(v) { guard(); time.outPoint = v; } });
@@ -305,7 +309,7 @@ function mkDcLayer(comp, sp, log) {
   L.moveBefore = (other) => { guard(); const l = L.comp.list; l.splice(l.indexOf(L), 1); l.splice(l.indexOf(other), 0, L); };
   L.duplicate = () => { const n = clone(L.comp); n.parent = L.parent; const l = L.comp.list; l.splice(l.indexOf(L), 0, n); return n; };
   L.remove = () => { const l = L.comp.list; l.splice(l.indexOf(L), 1); log.dcRemoved = (log.dcRemoved || []).concat([L.name]); };
-  L.setParentWithJump = (p) => { L.parent = p; L.jumps++; };
+  L.setParentWithJump = (p) => { parentRef = p; L.jumps++; };
   return L;
 }
 function makeAE(opts, tmpDir) {
@@ -384,8 +388,12 @@ function makeAE(opts, tmpDir) {
     dcMain = mkDcComp("Main", d.main || [{ name: "Title", selected: !!d.titleSelected }, pre, { name: "BG" }], log);
     log.dcInner = inner;
   }
+  if (opts.np) { dcMain = mkDcComp("Main", opts.np, log); }
   log.dcMain = dcMain;
-  const project = { get numItems() { return projItems.length; }, activeItem: opts.noActiveComp ? null : dcMain || comp, item(i) { return projItems[i - 1]; },
+  // opts.unused: [{ name, used }] — footage in the project, used in a comp or not.
+  (opts.unused || []).forEach((u) => projItems.push(Object.assign(new FootageItem(), { name: u.name, usedIn: u.used ? [comp] : [], parentFolder: rootFolder })));
+  const project = { get numItems() { return projItems.length; },
+    removeUnusedFootage() { const gone = projItems.filter((x) => x instanceof FootageItem && x.usedIn && !x.usedIn.length); gone.forEach((x) => projItems.splice(projItems.indexOf(x), 1)); log.unusedRemoved = gone.map((x) => x.name); return gone.length; }, activeItem: opts.noActiveComp ? null : dcMain || comp, item(i) { return projItems[i - 1]; },
     file: opts.projectFile ? new File(opts.projectFile) : null, rootFolder,
     importFile(io) {
       if (opts.importThrows) throw new Error("unsupported file");
@@ -428,8 +436,9 @@ function makeAE(opts, tmpDir) {
   const app = { version: "26.0", project, effects: opts.effects || FX_EFFECTS,
     scheduleTask: (code, ms, repeat) => { log.tasks.push({ code, ms, repeat }); return log.tasks.length; }, cancelTask: (id) => { log.tasks[id - 1].cancelled = true; },
     preferences: { getPrefAsLong: () => (opts.fileAccessOff ? 0 : 1) },
-    beginUndoGroup: (n) => log.undo.push("begin:" + n), endUndoGroup: () => log.undo.push("end"), __ran: (x) => log.ran.push(x) };
-  const ctx = vm.createContext({ app, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
+    beginUndoGroup: (n) => log.undo.push("begin:" + n), endUndoGroup: () => log.undo.push("end"), __ran: (x) => log.ran.push(x),
+    purge: (t) => { log.purges = (log.purges || []).concat([t]); } };
+  const ctx = vm.createContext({ app, PurgeTarget: opts.noPurge ? undefined : { ALL_CACHES: 1012, UNDO_CACHES: 1013, SNAPSHOT_CACHES: 1014, IMAGE_CACHES: 1015 }, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   ctx.$.global = ctx;
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
@@ -1497,7 +1506,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsClose");
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   t = await p.page.locator("#hotkeys .hotkey-row span").allInnerTexts();
-  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Organize (папки проекта),Decompose (слои из прекомпозиции),Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—,—", t.join());
+  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Organize (папки проекта),Decompose (слои из прекомпозиции),Clear cache (память After Effects),Null / Parent,Remove unused (лишние файлы),Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—,—,—,—,—", t.join());
   await p.page.locator("#hotkeys").scrollIntoViewIfNeeded();
   await p.page.screenshot({ path: path.join(SHOTS, "25-hotkeys-settings.png") });
   await p.page.click('#hotkeys [data-action="console"]');
@@ -2132,7 +2141,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#tabTools");
   check("W2 the Animation library uses the whole width, the status line stays in the column", (await box(p, "#viewTools .ac")).split(",")[0] === "14" && Number((await box(p, "#viewTools .ac")).split(",")[2]) > 900 && (await overflow(p)) <= 0, await box(p, "#viewTools .ac"));
   await p.page.click("#tabMotion");
-  t = await p.page.evaluate(() => { const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; }; return { tabs: r("#tabs"), top: r(".top"), status: r("#statusBox"), tools: r("#motionTools"), cards: Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), (c) => { const b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width)]; }) }; });
+  t = await p.page.evaluate(() => { const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; }; return { tabs: r("#tabs"), top: r(".top"), status: r("#statusBox"), tools: r("#motionTools"), cards: Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width)]; }) }; });
   check("W2 Animation tab in a wide panel: tabs and blocks get the whole width, the status line stays in the column", t.tabs.join() === "14,986" && t.top.join() === "14,986" && t.status[1] <= 366 && t.tools.join() === "14,986" && (await overflow(p)) <= 0, JSON.stringify(t));
   check("W2 the blocks are not stretched: 4 cells (168px) each, five side by side in one row, the sixth below", t.cards.map((c) => c[2]).join() === "168,168,168,168,168,168" && t.cards.map((c) => c[0]).join() === "14,190,366,542,718,718" && t.cards.slice(0, 5).every((c) => c[1] === t.cards[0][1]) && t.cards[5][1] > t.cards[4][1] && (await box(p, "#easeIn")).split(",")[2] === (await box(p, "#easeOut")).split(",")[2], JSON.stringify(t.cards));
   await p.page.click("#tabClaude");
@@ -2433,10 +2442,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
   // ---------------------------------------------------------------- animation: two blocks side by side, swappable
-  const toolOrder = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), (c) => c.getAttribute("data-tool")).join());
+  const toolOrder = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => c.getAttribute("data-tool")).join());
   // The layout checks below were written for the six original blocks; "Копия плавности" stands last and has its own checks.
-  const savedTools = (p) => p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").order; return o ? o.split(",").filter((x) => x !== "easecopy" && x !== "decompose").join(",") : null; });
-  const toolRects = (p) => p.page.evaluate(() => { const o = {}; Array.prototype.forEach.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), (c) => { const r = c.getBoundingClientRect(); o[c.getAttribute("data-tool")] = { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width) }; }); return o; });
+  const savedTools = (p) => p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").order; return o ? o.split(",").filter((x) => x !== "easecopy" && x !== "decompose" && x !== "cache" && x !== "nullp" && x !== "unused").join(",") : null; });
+  const toolRects = (p) => p.page.evaluate(() => { const o = {}; Array.prototype.forEach.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const r = c.getBoundingClientRect(); o[c.getAttribute("data-tool")] = { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width) }; }); return o; });
   const grip = (tool) => '#motionTools [data-tool="' + tool + '"] .tool-grip';
   async function dragFrom(p, from, to) {
     await p.page.mouse.move(from.x, from.y); await p.page.mouse.down();
@@ -2448,7 +2457,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const by = (pt, dx, dy) => ({ x: pt.x + dx, y: pt.y + (dy || 0) });
   const topOf = (r) => ({ x: (r.l + r.r) / 2, y: r.t + 20 });   // a point near the top: tall blocks may end below the window
   // Where each block sits on the grid: "name:column,row,width,height" in cells.
-  const cellsNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), (c) => { const a = /^(\d+) \/ span (\d+)$/.exec(c.style.gridColumn), b = /^(\d+) \/ span (\d+)$/.exec(c.style.gridRow); return c.getAttribute("data-tool") + ":" + (a[1] - 1) + "," + (b[1] - 1) + "," + a[2] + "," + b[2]; }).join(" "));
+  const cellsNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const a = /^(\d+) \/ span (\d+)$/.exec(c.style.gridColumn), b = /^(\d+) \/ span (\d+)$/.exec(c.style.gridRow); return c.getAttribute("data-tool") + ":" + (a[1] - 1) + "," + (b[1] - 1) + "," + a[2] + "," + b[2]; }).join(" "));
   const savedPlaces = (p) => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").places || "");
   const resizeTo = async (p, w) => { await p.page.setViewportSize({ width: w, height: 760 }); await p.page.waitForTimeout(80); };
 
@@ -2458,9 +2467,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R1 at 380px easing and anchor stand side by side, align goes to the row below at the same size", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && t.ease.w === 168 && t.anchor.w === 168 && t.align.w === 168 && t.ease.l === 14 && t.anchor.r === 358 && t.align.t >= t.ease.b && t.align.l === 14, JSON.stringify(t));
   t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.display, cs.gridAutoRows, cs.rowGap, cs.columnGap, g.style.gridTemplateColumns].join("|"); });
   check("R1 the blocks stand on a fine grid: 14px cells with 8px gaps (a 22px step), 16 cells across at 380px", t === "grid|14px|8px|8px|repeat(16, 14px)", t);
-  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), (c) => { const r = c.getBoundingClientRect(), g = document.getElementById("motionTools").getBoundingClientRect(); return (r.left - g.left) % 22 === 0 && (r.top - g.top) % 22 === 0 && (r.width + 8) % 22 === 0 && (r.height + 8) % 22 === 0; }));
+  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const r = c.getBoundingClientRect(), g = document.getElementById("motionTools").getBoundingClientRect(); return (r.left - g.left) % 22 === 0 && (r.top - g.top) % 22 === 0 && (r.width + 8) % 22 === 0 && (r.height + 8) % 22 === 0; }));
   check("R1 every block starts on a cell and is a whole number of cells wide and tall", t);
-  t = await p.page.evaluate(() => { const inside = (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button, select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5); }); }; return Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), inside).join(); });
+  t = await p.page.evaluate(() => { const inside = (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button, select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5); }); }; return Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), inside).join(); });
   check("R1 nothing sticks out of any block", t === "true,true,true,true,true,true" && (await overflow(p)) <= 0, t);
   t = await p.page.evaluate(() => [document.getElementById("easeIn").getBoundingClientRect().width, document.getElementById("easeOut").getBoundingClientRect().width, document.getElementById("anchorGrid").getBoundingClientRect().width].map(Math.round));
   check("R1 sliders stay usable and the arrow grid keeps its size", t[0] === t[1] && t[0] >= 40 && t[2] >= 118, t.join());
@@ -2572,7 +2581,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     ['"anchor,ease"', "anchor,ease,align,shift,paste,organize"] /* an order saved before the Align block existed */, ['"align,ghost,ease"', "align,ease,anchor,shift,paste,organize"]]) {
     p = await open({});
     await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", '{"order":' + v + "}"), bad); await p.restart(); await motionTab(p);
-    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])").count()) === 6 && p.errors.length === 0, await toolOrder(p));
+    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])").count()) === 6 && p.errors.length === 0, await toolOrder(p));
     await p.close();
   }
   p = await open({});
@@ -2811,11 +2820,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // ---------------------------------------------------------------- animation: a free panel, fixed blocks
   // Stretching the After Effects panel never resizes a block; it only changes how many stand in a row.
   console.log("\n=== animation: blocks reflow, sizes stay ===");
-  const allInside = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button:not(.tool-grip), select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5); }); }));
-  const sizesNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), (c) => { const b = c.getBoundingClientRect(); return Math.round(b.width) + "x" + Math.round(b.height); }).sort().join());
+  const allInside = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button:not(.tool-grip), select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5); }); }));
+  const sizesNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const b = c.getBoundingClientRect(); return Math.round(b.width) + "x" + Math.round(b.height); }).sort().join());
   // How many blocks stand in the first row, and is everything stacked in one column?
-  const firstRow = (p) => p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), (c) => /^1 \//.test(c.style.gridRow)).length);
-  const oneColumn = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), (c) => /^1 \//.test(c.style.gridColumn)));
+  const firstRow = (p) => p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => /^1 \//.test(c.style.gridRow)).length);
+  const oneColumn = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => /^1 \//.test(c.style.gridColumn)));
   p = await open({ width: 380 });
   await motionTab(p);
   c = await sizesNow(p);
@@ -2856,7 +2865,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 700, height: 1100, settings: { panelWidth: 640 } });   // blocks area: 672px = 15 cells
   await motionTab(p);
   t = await toolRects(p);
-  check("S1 every block has three handles: right edge (width), bottom edge (height), corner (both)", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), (c) => { const r = c.getBoundingClientRect(); const x = c.querySelector(".tool-resize").getBoundingClientRect(), y = c.querySelector(".tool-resize-y").getBoundingClientRect(), xy = c.querySelector(".tool-resize-xy").getBoundingClientRect(); return x.left < r.right && x.right > r.right && x.height > 30 && getComputedStyle(c.querySelector(".tool-resize")).cursor === "ew-resize" && y.top < r.bottom && y.bottom > r.bottom && y.width > 30 && getComputedStyle(c.querySelector(".tool-resize-y")).cursor === "ns-resize" && xy.right > r.right && xy.bottom > r.bottom && getComputedStyle(c.querySelector(".tool-resize-xy")).cursor === "nwse-resize"; }))));
+  check("S1 every block has three handles: right edge (width), bottom edge (height), corner (both)", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const r = c.getBoundingClientRect(); const x = c.querySelector(".tool-resize").getBoundingClientRect(), y = c.querySelector(".tool-resize-y").getBoundingClientRect(), xy = c.querySelector(".tool-resize-xy").getBoundingClientRect(); return x.left < r.right && x.right > r.right && x.height > 30 && getComputedStyle(c.querySelector(".tool-resize")).cursor === "ew-resize" && y.top < r.bottom && y.bottom > r.bottom && y.width > 30 && getComputedStyle(c.querySelector(".tool-resize-y")).cursor === "ns-resize" && xy.right > r.right && xy.bottom > r.bottom && getComputedStyle(c.querySelector(".tool-resize-xy")).cursor === "nwse-resize"; }))));
   check("S1 (scene) three blocks in one row, lists under the buttons", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await shape(p, "anchor")) === "vertical" && (await shape(p, "align")) === "vertical", JSON.stringify(t));
   await p.page.mouse.move((await center(p, edge("anchor"))).x, (await center(p, edge("anchor"))).y); await p.page.mouse.down();
   c = await center(p, edge("anchor"));
@@ -2982,7 +2991,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const pinOf = (p, name) => p.page.locator('.tool-card[data-tool="' + name + '"] .tool-pin');
   p = await open({});
   await motionTab(p);
-  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), (c) => { const pin = c.querySelector(".tool-pin"), tg = c.querySelector(".tool-toggle"); if (!pin || !tg) return false; const a = pin.getBoundingClientRect(), b = tg.getBoundingClientRect(), r = c.getBoundingClientRect(); return Math.abs(a.top - b.top) < 2 && a.right <= b.left + 1 && a.left > r.left && pin.getAttribute("aria-pressed") === "false"; }));
+  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const pin = c.querySelector(".tool-pin"), tg = c.querySelector(".tool-toggle"); if (!pin || !tg) return false; const a = pin.getBoundingClientRect(), b = tg.getBoundingClientRect(), r = c.getBoundingClientRect(); return Math.abs(a.top - b.top) < 2 && a.right <= b.left + 1 && a.left > r.left && pin.getAttribute("aria-pressed") === "false"; }));
   check("PN1 the pin does not cut the titles short", await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-head b"), (b) => b.scrollWidth <= b.clientWidth + 1)), await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-head b"), (b) => b.textContent + ":" + b.scrollWidth + "/" + b.clientWidth).join(" ")));
   check("PN1 every block has a pin right next to its minus; nothing is pinned at first, no line", t && (await pinLine(p)) === null && (await pinOf(p, "ease").getAttribute("title")) === "Закрепить наверху");
   c = await cellsNow(p);
@@ -3089,11 +3098,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const savedMotion = (p, k) => p.page.evaluate((k) => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}")[k], k);
   const titlesAttr = (p) => p.page.evaluate(() => document.documentElement.getAttribute("data-titles"));
   // Does the corner button overlap anything else in its block?
-  const togglesClear = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]) .tool-toggle"), (b) => { const r = b.querySelector("svg").getBoundingClientRect(); return Array.prototype.every.call(b.parentNode.querySelectorAll(".tool-head b, .anchor-grid button, .ease-bar > *, .ease-curve, select, .anchor-side label, .align-btn, .align-to label, .align-label, .shift-pick label, .tool-info, .shift-arrow, .shift-do"), (el) => { const q = el.getBoundingClientRect(); if (q.width === 0) return true; const tw = el.nodeName === "B" ? (() => { const g = document.createRange(); g.selectNodeContents(el); const t = g.getBoundingClientRect(); return { left: Math.max(t.left, q.left), right: Math.min(t.right, q.right), top: t.top, bottom: t.bottom }; })() : q; return tw.right <= r.left || tw.left >= r.right || tw.bottom <= r.top || tw.top >= r.bottom; }); }));
+  const togglesClear = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]) .tool-toggle"), (b) => { const r = b.querySelector("svg").getBoundingClientRect(); return Array.prototype.every.call(b.parentNode.querySelectorAll(".tool-head b, .anchor-grid button, .ease-bar > *, .ease-curve, select, .anchor-side label, .align-btn, .align-to label, .align-label, .shift-pick label, .tool-info, .shift-arrow, .shift-do"), (el) => { const q = el.getBoundingClientRect(); if (q.width === 0) return true; const tw = el.nodeName === "B" ? (() => { const g = document.createRange(); g.selectNodeContents(el); const t = g.getBoundingClientRect(); return { left: Math.max(t.left, q.left), right: Math.min(t.right, q.right), top: t.top, bottom: t.bottom }; })() : q; return tw.right <= r.left || tw.left >= r.right || tw.bottom <= r.top || tw.top >= r.bottom; }); }));
 
   p = await open({});
   await motionTab(p);
-  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]) .tool-toggle").count()) === 6 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "organizeOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose])"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
+  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]) .tool-toggle").count()) === 6 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "organizeOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
   check("F1 the corner buttons do not cover titles or controls", await togglesClear(p));
   c = await cardH(p, "anchor");
   await p.page.click("#anchorOptsToggle");
@@ -3126,7 +3135,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("F5 titles are shown unless switched off, one short word each", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность,Якорь,Выровнять,Время,Картинка,Порядок,Копия,Декомпоз");
+  check("F5 titles are shown unless switched off, one short word each", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность,Якорь,Выровнять,Время,Картинка,Порядок,Копия,Декомпоз,Кэш,Null,Чистка");
   c = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("F5 settings have the switch, on", await p.page.isChecked("#toolTitles"));
@@ -4068,6 +4077,70 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
+  // Remove unused: footage no comp uses leaves the project, nothing on disk is touched.
+  {
+    p = await open({ unused: [{ name: "intro.mp4", used: true }, { name: "old.png", used: false }, { name: "music.wav", used: false }, { name: "logo.ai", used: true }] });
+    await motionTab(p);
+    check("RU1 a «Чистка» block on the Tools tab with a Remove unused button and a hint that the disk is not touched", (await p.page.locator('#viewMotion .tool-card[data-tool="unused"] #unusedBtn').count()) === 1 && (await p.page.locator("#unusedBtn").innerText()).trim() === "Remove unused" && /С диска ничего не удаляется/.test(await p.page.locator("#unusedHint").innerText()));
+    await p.page.click("#unusedBtn"); await p.idle();
+    check("RU2 only the unused files leave the project, in one undo step", (p.ae.log.unusedRemoved || []).join() === "old.png,music.wav" && p.ae.projItems.some((x) => x.name === "intro.mp4") && p.ae.log.undo.join() === "begin:Sayframe: remove unused footage,end", (p.ae.log.unusedRemoved || []).join() + " " + p.ae.log.undo.join());
+    check("RU2 the report counts and names them", (await p.status()) === "Remove unused: убрано из проекта файлов: 2 (old.png, music.wav). С диска ничего не удалено. Отменить — Cmd/Ctrl+Z.", await p.status());
+    await p.page.click("#unusedBtn"); await p.idle();
+    check("RU3 nothing left to remove: says so, no undo step", (await p.status()) === "Remove unused: лишних файлов нет — всё в проекте где-то используется." && p.ae.log.undo.length === 2 && p.errors.length === 0, await p.status());
+    await p.close();
+  }
+
+  // Null / Parent: one button, the action follows the selection.
+  {
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const layers = (sel) => [
+      { name: "Title", selected: sel.indexOf("Title") >= 0, position: [300, 200, 0], inPoint: 1, outPoint: 7 },
+      { name: "Logo", selected: sel.indexOf("Logo") >= 0, position: [500, 400, 0], inPoint: 2, outPoint: 9, locked: sel.indexOf("lockLogo") >= 0 },
+      { name: "Star", selected: sel.indexOf("Star") >= 0, parent: "Logo", position: [10, 10, 0], inPoint: 3, outPoint: 8 },
+      { name: "BG", selected: sel.indexOf("BG") >= 0 }];
+    p = await open({ np: layers([]) });
+    await motionTab(p);
+    check("NP1 a «Null» block on the Tools tab with one Null button and a hint about the three cases", (await p.page.locator('#viewMotion .tool-card[data-tool="nullp"] #nullpBtn').count()) === 1 && (await p.page.locator("#nullpBtn").innerText()).trim() === "Null" && /Несколько слоёв/.test(await p.page.locator("#nullpHint").innerText()));
+    await p.page.click("#nullpBtn"); await p.idle();
+    check("NP2 nothing selected: a plain new Null on top, linked to nothing, selected", names(p) === "Null,Title,Logo,Star,BG" && !L(p, "Null").parent && L(p, "Null").selected && ["Title", "Logo", "BG"].every((n) => !L(p, n).parent) && (await p.status()) === "Null: создан новый Null Object в центре композиции. Отменить — Cmd/Ctrl+Z.", names(p) + " " + await p.status());
+    check("NP2 one undo step", p.ae.log.undo.join() === "begin:Sayframe: null parent,end", p.ae.log.undo.join());
+    await p.close();
+
+    p = await open({ np: layers(["Title", "Logo", "Star", "lockLogo"]) });
+    await motionTab(p); await p.page.click("#nullpBtn"); await p.idle();
+    t = L(p, "Parent Null");
+    check("NP3 several layers: a new Null right above the top one becomes their parent", names(p) === "Parent Null,Title,Logo,Star,BG" && L(p, "Title").parent === t && L(p, "Logo").parent === t, names(p));
+    check("NP3 a link inside the selection stays: Star keeps Logo as its parent", L(p, "Star").parent === L(p, "Logo"));
+    check("NP3 the Null sits in the middle of them and spans their time", t.tr["ADBE Position"].value.join() === "400,300" && t.inPoint === 1 && t.outPoint === 9, t.tr["ADBE Position"].value.join() + " " + t.inPoint + "-" + t.outPoint);
+    check("NP3 a locked layer is linked too and stays locked; only the Null is selected now", L(p, "Logo").locked === true && t.selected && !L(p, "Title").selected && !L(p, "Logo").selected);
+    check("NP3 the report says how many layers it carries", (await p.status()) === "Null: «Parent Null» стал родителем для слоёв: 2. Отменить — Cmd/Ctrl+Z.", await p.status());
+    await p.close();
+
+    p = await open({ np: layers(["Logo"]) });
+    await motionTab(p); await p.page.click("#nullpBtn"); await p.idle();
+    check("NP4 one layer selected: no new Null, its children get selected and listed", !p.ae.log.npNulls && L(p, "Star").selected && !L(p, "Logo").selected && (await p.status()) === "Дочерние слои «Logo» (1): Star. Они выделены на таймлайне.", await p.status());
+    await p.close();
+    p = await open({ np: layers(["BG"]) });
+    await motionTab(p); await p.page.click("#nullpBtn"); await p.idle();
+    check("NP4 a layer without children: says so, changes nothing", !p.ae.log.npNulls && L(p, "BG").selected && (await p.status()) === "У «BG» нет дочерних слоёв: к нему ничего не привязано через Parent." && p.errors.length === 0, await p.status());
+    await p.close();
+  }
+
+  // Clear cache: one click purges After Effects' memory.
+  {
+    p = await open({});
+    await motionTab(p);
+    check("CC1 a «Кэш» block on the Tools tab with a Clear cache button and a hint that undo is lost", (await p.page.locator('#viewMotion .tool-card[data-tool="cache"] #cacheBtn').count()) === 1 && (await p.page.locator("#cacheBtn").innerText()).trim() === "Clear cache" && /Cmd\/Ctrl\+Z/.test(await p.page.locator("#cacheHint").innerText()));
+    await p.page.click("#cacheBtn"); await p.idle();
+    check("CC2 one click purges all memory caches, as Edit > Purge > All Memory", (p.ae.log.purges || []).join() === "1012" && (await p.status()) === "Clear cache: память After Effects очищена — RAM-превью, кэш изображений, снимки и история отмены." && p.errors.length === 0, (p.ae.log.purges || []).join() + " " + await p.status());
+    await p.close();
+    p = await open({ noPurge: true });
+    await motionTab(p); await p.page.click("#cacheBtn"); await p.idle();
+    check("CC3 an After Effects without purging from scripts: says where to do it by hand", (await p.status()) === "Этот After Effects не даёт очистить память из панели. Очистите её в меню Edit > Purge > All Memory.", await p.status());
+    await p.close();
+  }
+
   // Narrowed button blocks (picture, organize, ease copy) turn into square icons, like the header buttons.
   {
     p = await open({ width: 700, settings: { panelWidth: 640 } });
@@ -4079,30 +4152,43 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await dragEdge(p, "organize", -400);
     await dragEdge(p, "anchor", -400);
     await dragEdge(p, "decompose", -400);
-    check("IC1 «Декомпоз» has one button, so it becomes an icon too", (await iconsOf("decompose")) && (await btnBox("decomposeBtn")) === "40,40,none", await btnBox("decomposeBtn"));
-    check("IC1 narrowed, «Картинка» and «Порядок» become square 40px icons: no title, no label, no hint", (await iconsOf("paste")) && (await iconsOf("organize")) && (await btnBox("pasteBtn")) === "40,40,none" && (await btnBox("organizeBtn")) === "40,40,none" && !(await vis(p, "#pasteHint")) && !(await vis(p, '#motionTools [data-tool="paste"] .tool-head b')) && (await allInside(p)), (await btnBox("pasteBtn")) + " " + (await btnBox("organizeBtn")));
+    await dragEdge(p, "cache", -400);
+    await dragEdge(p, "nullp", -400);
+    await dragEdge(p, "unused", -400);
+    check("IC1 «Чистка» becomes an icon too", (await iconsOf("unused")) && (await btnBox("unusedBtn")) === "42,42,none", await btnBox("unusedBtn"));
+    check("IC1 «Null» becomes an icon too", (await iconsOf("nullp")) && (await btnBox("nullpBtn")) === "42,42,none", await btnBox("nullpBtn"));
+    check("IC1 «Кэш» becomes an icon too", (await iconsOf("cache")) && (await btnBox("cacheBtn")) === "42,42,none", await btnBox("cacheBtn"));
+    check("IC1 «Декомпоз» has one button, so it becomes an icon too", (await iconsOf("decompose")) && (await btnBox("decomposeBtn")) === "42,42,none", await btnBox("decomposeBtn"));
+    check("IC1 narrowed, «Картинка» and «Порядок» become square 42px icons: no title, no label, no hint", (await iconsOf("paste")) && (await iconsOf("organize")) && (await btnBox("pasteBtn")) === "42,42,none" && (await btnBox("organizeBtn")) === "42,42,none" && !(await vis(p, "#pasteHint")) && !(await vis(p, '#motionTools [data-tool="paste"] .tool-head b')) && (await allInside(p)), (await btnBox("pasteBtn")) + " " + (await btnBox("organizeBtn")));
     check("IC1 a block with lists and sliders does not: «Якорь» only shrinks its content", !(await iconsOf("anchor")) && (await vis(p, "#anchorKeys")));
     t = await p.page.evaluate(() => { const c = document.querySelector('#motionTools [data-tool="paste"]').getBoundingClientRect(); return [Math.round(c.width), Math.round(c.height)].join(); });
     check("IC1 the icon block is a small square", t === "80,80", t);
     await p.page.click("#organizeBtn"); await p.idle();
     check("IC2 the icon still works and says what it is on hover", (await p.page.getAttribute("#organizeBtn", "title")) === "Разложить элементы проекта по папкам" && /^Project organized successfully/.test(await p.status()), await p.status());
     await dragEdge(p, "easecopy", -400);
-    check("IC2 «Копия» becomes three icons", (await iconsOf("easecopy")) && (await btnBox("ecCopy")) === "40,40,none" && (await btnBox("ecPasteValue")) === "40,40,none" && !(await vis(p, "#ecThrough")), await btnBox("ecCopy"));
+    check("IC2 «Копия» becomes three icons", (await iconsOf("easecopy")) && (await btnBox("ecCopy")) === "42,42,none" && (await btnBox("ecPasteValue")) === "42,42,none" && !(await vis(p, "#ecThrough")), await btnBox("ecCopy"));
     const ecAxis = () => p.page.evaluate(() => { const r = ["ecCopy", "ecPasteEase", "ecPasteValue"].map((id) => document.getElementById(id).getBoundingClientRect()); return document.querySelector('[data-tool="easecopy"]').getAttribute("data-icons") + ":" + (r.every((x) => x.left === r[0].left) ? "column" : r.every((x) => x.top === r[0].top) ? "row" : "mixed"); });
     check("IC4 narrow «Копия»: the three icons stand in a column", (await ecAxis()) === "col:column", await ecAxis());
-    await p.page.focus(edge("easecopy")); await p.page.keyboard.press("ArrowRight"); await p.page.keyboard.press("ArrowRight");
-    check("IC4 6 cells: still a column, never two over one", (await ecAxis()) === "col:column", await ecAxis());
-    await p.page.keyboard.press("ArrowRight");
+    t = await p.page.evaluate(() => Math.round(document.querySelector('[data-tool="easecopy"]').getBoundingClientRect().width));
+    check("IC4 the column is exactly 4 cells wide (80px)", t === 80, String(t));
+    await dragEdge(p, "easecopy", 2 * 22);
+    t = await p.page.evaluate(() => Math.round(document.querySelector('[data-tool="easecopy"]').getBoundingClientRect().width));
+    check("IC4 no width in between: pulled to 6 cells it stays a 4-cell column, never two over one", (await ecAxis()) === "col:column" && t === 80, (await ecAxis()) + " " + t);
+    await p.page.focus(edge("easecopy")); await p.page.keyboard.press("ArrowRight");
     t = await p.page.evaluate(() => { const c = document.querySelector('[data-tool="easecopy"]').getBoundingClientRect(); return [Math.round(c.width), Math.round(c.height)].join(); });
-    check("IC4 7 cells: a horizontal strip, three icons in a row, the same 40px icons, 146x80", (await ecAxis()) === "row:row" && t === "146,80" && (await allInside(p)), (await ecAxis()) + " " + t);
+    check("IC4 7 cells: a horizontal strip, three icons in a row, the same 42px icons, 146x80", (await ecAxis()) === "row:row" && t === "146,80" && (await allInside(p)), (await ecAxis()) + " " + t);
     t = await p.page.evaluate(() => ["pasteBtn", "organizeBtn", "ecCopy", "ecPasteEase", "ecPasteValue"].map((id) => { const b = document.getElementById(id), c = getComputedStyle(b), v = b.querySelector("svg").getBoundingClientRect(); return [Math.round(b.getBoundingClientRect().width), Math.round(b.getBoundingClientRect().height), c.backgroundColor, c.borderColor, c.borderRadius, c.color, Math.round(v.width)].join(); }));
     check("IC4 every icon looks the same: size, background, border, corners, colour and glyph", t.every((x) => x === t[0]), t.join(" / "));
     t = await p.page.evaluate(() => { const pin = document.querySelector('[data-tool="easecopy"] .tool-pin').getBoundingClientRect(), i = document.getElementById("ecPasteValue").getBoundingClientRect(); return pin.bottom <= i.top || pin.left >= i.right; });
     check("IC4 the pin does not cover the last icon", t);
     await p.page.screenshot({ path: path.join(SHOTS, "47-icon-row.png") });
+    await p.page.keyboard.press("ArrowRight");
+    t = await p.page.evaluate(() => document.querySelector('[data-tool="easecopy"]').hasAttribute("data-icons"));
+    check("IC4 one more step right: the usual block with labels", !t);
     await p.page.keyboard.press("ArrowLeft");
-    check("IC4 and back to a column", (await ecAxis()) === "col:column", await ecAxis());
-    await p.page.keyboard.press("ArrowLeft"); await p.page.keyboard.press("ArrowLeft");
+    check("IC4 a step left: the row again", (await ecAxis()) === "row:row", await ecAxis());
+    await p.page.keyboard.press("ArrowLeft");
+    check("IC4 and one more: straight back to a column", (await ecAxis()) === "col:column", await ecAxis());
     await p.page.screenshot({ path: path.join(SHOTS, "46-icon-blocks.png") });
     await p.restart(); await motionTab(p);
     check("IC3 icons survive a restart", (await iconsOf("paste")) && (await iconsOf("easecopy")));
