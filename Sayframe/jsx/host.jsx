@@ -2198,6 +2198,43 @@ var sayframeHost = (function () {
         return true;
     }
 
+    function brRound(v) { return Math.round(v * 1000) / 1000; }
+
+    function brRamp(l, g, comp) {
+        var fx, ef, r = null, w, h, cx, cy, a, dx, dy, len, rad, locked = l.locked;
+        fx = l.property("ADBE Effect Parade");
+        if (!fx) { return false; }
+        if (locked) { l.locked = false; }
+        try {
+            try { r = l.sourceRectAtTime(comp.time, false); } catch (e0) { r = null; }
+            if (!r || !(r.width > 0) || !(r.height > 0)) {
+                r = { left: 0, top: 0, width: l.width || comp.width, height: l.height || comp.height };
+            }
+            w = r.width; h = r.height;
+            cx = r.left + w / 2; cy = r.top + h / 2;
+            ef = fx.addProperty("ADBE Ramp");
+            try { ef.name = String(g.name); } catch (e1) {}
+            if (g.type === "radial") {
+                rad = Math.sqrt(w * w + h * h) / 2;
+                ef.property("ADBE Ramp-0001").setValue([cx, cy]);
+                ef.property("ADBE Ramp-0003").setValue([cx + rad, cy]);
+                ef.property("ADBE Ramp-0005").setValue(2);
+            } else {
+                a = (Number(g.angle) || 0) * Math.PI / 180;
+                dx = Math.sin(a); dy = -Math.cos(a);
+                len = Math.abs(w / 2 * dx) + Math.abs(h / 2 * dy);
+                ef.property("ADBE Ramp-0001").setValue([brRound(cx - dx * len), brRound(cy - dy * len)]);
+                ef.property("ADBE Ramp-0003").setValue([brRound(cx + dx * len), brRound(cy + dy * len)]);
+                ef.property("ADBE Ramp-0005").setValue(1);
+            }
+            ef.property("ADBE Ramp-0002").setValue(brHex(g.from));
+            ef.property("ADBE Ramp-0004").setValue(brHex(g.to));
+        } finally {
+            if (locked) { l.locked = true; }
+        }
+        return true;
+    }
+
     function brFontMissing(font) {
         var list;
         try {
@@ -4321,6 +4358,25 @@ var sayframeHost = (function () {
         // ---- Projects (brand books): logos, colors, fonts, texts and formats of one brand.
 
         // A logo file into the project (folder binName) and, when a comp is open, into the comp.
+        // Which of these files the open project still uses as footage (by index), so the panel keeps them on disk:
+        // a deleted source file makes After Effects show "A file could not be found" when it reloads footage.
+        brandFilesInUse: function (paths) {
+            return reply(function () {
+                var proj = app.project, used = [], names = {}, i, it, n;
+                for (i = 0; i < paths.length; i++) { try { names[new File(paths[i]).fsName] = i; } catch (e0) {} }
+                for (i = 1; proj && i <= proj.numItems; i++) {
+                    it = proj.item(i);
+                    try {
+                        if (it.mainSource && it.mainSource.file) {
+                            n = names[it.mainSource.file.fsName];
+                            if (n !== undefined) { used.push(n); }
+                        }
+                    } catch (e1) {}
+                }
+                return { used: used };
+            });
+        },
+
         brandLogo: function (path, binName, logoName) {
             return reply(function () {
                 var proj = app.project;
@@ -4362,6 +4418,40 @@ var sayframeHost = (function () {
             });
         },
 
+        // Brand icon: the file goes into the open comp as a plain layer in the centre at its own size,
+        // Collapse Transformations on (a vector icon stays sharp when scaled up). Without a comp it only lands in the bin.
+        brandIcon: function (path, binName) {
+            return reply(function () {
+                var proj = app.project;
+                var comp = proj.activeItem && proj.activeItem instanceof CompItem ? proj.activeItem : null;
+                var file = new File(path);
+                var item = null, i, it, reused, layer = null;
+                if (!file.exists) { throw new Error("ICON_NOT_FOUND"); }
+                for (i = 1; i <= proj.numItems; i++) {
+                    it = proj.item(i);
+                    try {
+                        if (it.mainSource && it.mainSource.file && it.mainSource.file.fsName === file.fsName) { item = it; break; }
+                    } catch (e0) {}
+                }
+                reused = !!item;
+                app.beginUndoGroup("Sayframe: brand icon");
+                try {
+                    if (!item) {
+                        item = proj.importFile(new ImportOptions(file));
+                        try { item.parentFolder = projectBin(binName); } catch (e1) {}
+                    }
+                    if (comp) {
+                        layer = comp.layers.add(item);
+                        try { layer.collapseTransformation = true; } catch (e2) {}
+                        restoreActive(comp);
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { name: String(item.name), comp: comp ? String(comp.name) : "", reused: reused };
+            });
+        },
+
         // Paints the selected layers. With a "Brand Colors" layer in the comp that has this color,
         // the color is linked to it by an expression, so changing it there changes it everywhere.
         brandColor: function (hex, name) {
@@ -4379,6 +4469,31 @@ var sayframeHost = (function () {
                     app.endUndoGroup();
                 }
                 return { count: n, linked: !!link };
+            });
+        },
+
+        // Brand gradient: a Gradient Ramp on each selected layer, fitted to the layer's own rectangle at the given
+        // angle (0 = bottom to top, 90 = left to right) or radial from its centre. Nothing selected: a new solid
+        // the size of the comp gets it. g = { name, from, to, angle, type }.
+        brandGradient: function (g) {
+            return reply(function () {
+                var comp = activeComp();
+                var sel = comp.selectedLayers, made = null, i, n = 0, list = [];
+                app.beginUndoGroup("Sayframe: brand gradient");
+                try {
+                    if (!sel.length) {
+                        made = comp.layers.addSolid([1, 1, 1], String(g.name), comp.width, comp.height, comp.pixelAspect || 1, comp.duration);
+                        list = [made];
+                    } else {
+                        for (i = 0; i < sel.length; i++) { list.push(sel[i]); }
+                    }
+                    for (i = 0; i < list.length; i++) {
+                        if (brRamp(list[i], g, comp)) { n++; }
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { count: n, created: made ? String(made.name) : "" };
             });
         },
 
@@ -4506,6 +4621,59 @@ var sayframeHost = (function () {
 
         // Remove unused: footage that no comp uses leaves the project (File > Dependencies > Remove Unused Footage).
         // Files on disk stay where they are. One undo step.
+        // Cut out: the photo under the selected layer (a still image file), for the panel's cut-out window.
+        cutoutSource: function () {
+            return reply(function () {
+                var comp = activeComp();
+                var sel = comp.selectedLayers;
+                var layer, src, ms, f;
+                if (!sel.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                layer = sel[0];
+                src = layer.source;
+                ms = src && src instanceof FootageItem ? src.mainSource : null;
+                if (!ms || !(ms instanceof FileSource) || !ms.file) { throw new Error("CO_NOT_PHOTO"); }
+                if (!ms.isStill) { throw new Error("CO_NOT_STILL"); }
+                f = ms.file;
+                if (!f.exists) { throw new Error("CO_MISSING"); }
+                return { path: f.fsName, layer: String(layer.name), index: layer.index, item: String(src.name),
+                    width: src.width, height: src.height, comp: String(comp.name), many: sel.length > 1,
+                    dir: app.project.file ? app.project.file.parent.fsName : "" };
+            });
+        },
+
+        // Cut out, done: the PNG with the transparent background replaces the photo on that layer
+        // ("replace": position, scale, effects stay) or goes on a copy of the layer just above it, and the
+        // original is switched off ("above"). The PNG lands in the project bin binName. One undo step.
+        cutoutApply: function (path, index, mode, binName, newName) {
+            return reply(function () {
+                var comp = activeComp();
+                var file = new File(path);
+                var layer, item, dup, res;
+                if (!(index >= 1 && index <= comp.numLayers)) { throw new Error("CO_LAYER_GONE"); }
+                layer = comp.layer(index);
+                if (!file.exists) { throw new Error("CO_NOT_SAVED"); }
+                app.beginUndoGroup("Sayframe: cut out background");
+                try {
+                    item = app.project.importFile(new ImportOptions(file));
+                    try { item.parentFolder = projectBin(binName); } catch (e1) {}
+                    if (mode === "above") {
+                        dup = layer.duplicate();
+                        dup.replaceSource(item, false);
+                        if (newName) { try { dup.name = String(newName); } catch (e2) {} }
+                        layer.enabled = false;
+                        res = { mode: "above", layer: String(dup.name), original: String(layer.name) };
+                    } else {
+                        layer.replaceSource(item, false);
+                        res = { mode: "replace", layer: String(layer.name) };
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                res.item = String(item.name);
+                return res;
+            });
+        },
+
         removeUnused: function () {
             return reply(function () {
                 var proj = app.project;
