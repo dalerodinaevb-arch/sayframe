@@ -23,6 +23,37 @@ function fakePng(i) {
 // A real 2x2 PNG, for the paste-event path that decodes the image in the browser.
 const REAL_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP8z8DwnwEImBigAMwAAA8HAQHt0bq5AAAAAElFTkSuQmCC", "base64");
 
+// Small real PNGs for the cut-out window: pngEncode(w, h, (x, y) => [r, g, b, a]) and pngDecode(buf) -> { w, h, px }.
+const zlib = require("zlib");
+function pngCrc(buf) { let c, crc = 0xffffffff; for (let n = 0; n < buf.length; n++) { c = (crc ^ buf[n]) & 0xff; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crc = (crc >>> 8) ^ c; } return (crc ^ 0xffffffff) >>> 0; }
+function pngChunk(type, data) { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type, "latin1"), data]); const crc = Buffer.alloc(4); crc.writeUInt32BE(pngCrc(td)); return Buffer.concat([len, td, crc]); }
+function pngEncode(w, h, f) {
+  const raw = Buffer.alloc((w * 4 + 1) * h);
+  for (let y = 0; y < h; y++) { raw[y * (w * 4 + 1)] = 0; for (let x = 0; x < w; x++) { const c = f(x, y); for (let k = 0; k < 4; k++) raw[y * (w * 4 + 1) + 1 + x * 4 + k] = c[k] === undefined ? 255 : c[k]; } }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk("IHDR", ihdr), pngChunk("IDAT", zlib.deflateSync(raw)), pngChunk("IEND", Buffer.alloc(0))]);
+}
+function pngDecode(buf) {
+  let o = 8, w, h, bd, ct; const idat = [];
+  while (o < buf.length) { const len = buf.readUInt32BE(o), type = buf.toString("latin1", o + 4, o + 8), d = buf.slice(o + 8, o + 8 + len);
+    if (type === "IHDR") { w = d.readUInt32BE(0); h = d.readUInt32BE(4); bd = d[8]; ct = d[9]; } else if (type === "IDAT") idat.push(d); o += 12 + len; }
+  if (bd !== 8 || (ct !== 6 && ct !== 2)) throw new Error("png " + bd + "/" + ct);
+  const bpp = ct === 6 ? 4 : 3, raw = zlib.inflateSync(Buffer.concat(idat)), st = w * bpp, px = Buffer.alloc(w * h * 4);
+  const cur = Buffer.alloc(st); let prev = Buffer.alloc(st);
+  for (let y = 0; y < h; y++) { const ft = raw[y * (st + 1)];
+    for (let i = 0; i < st; i++) { const x = raw[y * (st + 1) + 1 + i], a = i >= bpp ? cur[i - bpp] : 0, b = prev[i], c = i >= bpp ? prev[i - bpp] : 0;
+      let v = x; if (ft === 1) v = x + a; else if (ft === 2) v = x + b; else if (ft === 3) v = x + ((a + b) >> 1); else if (ft === 4) { const pp = a + b - c, pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c); v = x + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c); }
+      cur[i] = v & 255; }
+    for (let x = 0; x < w; x++) for (let k = 0; k < 4; k++) px[(y * w + x) * 4 + k] = k < bpp ? cur[x * bpp + k] : 255;
+    prev = Buffer.from(cur); }
+  return { w, h, px, alpha: (x, y) => px[(y * w + x) * 4 + 3] };
+}
+// The cut-out photo: a red disc (centre 150,100, r 55) and a green square (20..70, 20..70) on blue.
+const CO_W = 300, CO_H = 200;
+const coDisc = (x, y) => (x - 150) * (x - 150) + (y - 100) * (y - 100) <= 55 * 55;
+const coSquare = (x, y) => x >= 20 && x < 70 && y >= 20 && y < 70;
+const coPhoto = () => pngEncode(CO_W, CO_H, (x, y) => coDisc(x, y) ? [220, 40, 40] : coSquare(x, y) ? [40, 200, 70] : [30, 60, 200]);
+
 // ------------------------------------------------------------ mocked After Effects
 function CompItem() {} function TextLayer() {} function ShapeLayer() {} function CameraLayer() {} function LightLayer() {} function SolidSource() {}
 function FootageItem() {} function FileSource() {} function PlaceholderSource() {}
@@ -307,6 +338,7 @@ function mkDcLayer(comp, sp, log) {
   };
   L.copyToComp = (target) => { const n = clone(target); target.list.unshift(n); log.dcCopies = (log.dcCopies || 0) + 1; };
   L.moveBefore = (other) => { guard(); const l = L.comp.list; l.splice(l.indexOf(L), 1); l.splice(l.indexOf(other), 0, L); };
+  L.replaceSource = (item, fix) => { L.source = item; log.coReplaced = (log.coReplaced || []).concat([{ layer: L.name, item: item.name, fix }]); };
   L.duplicate = () => { const n = clone(L.comp); n.parent = L.parent; const l = L.comp.list; l.splice(l.indexOf(L), 0, n); return n; };
   L.remove = () => { const l = L.comp.list; l.splice(l.indexOf(L), 1); log.dcRemoved = (log.dcRemoved || []).concat([L.name]); };
   L.setParentWithJump = (p) => { parentRef = p; L.jumps++; };
@@ -318,6 +350,11 @@ function mkBrFx(log) {
   const list = [];
   return { list, get numProperties() { return list.length; }, property: (i) => (typeof i === "number" ? list[i - 1] : list.find((e) => e.name === i || e.matchName === i)) || null,
     addProperty(match) {
+      if (match === "ADBE Ramp") {
+        // Gradient Ramp: start/end point, start/end colour, shape — kept by match name.
+        const vals = {}, e = { matchName: match, name: "Gradient Ramp", vals, property: (k) => ({ setValue(v) { vals[k] = v; } }) };
+        list.push(e); return e;
+      }
       const color = mkBrColor([1, 1, 1]);
       const e = { matchName: match, name: match === "ADBE Fill" ? "Fill" : "Color Control", color,
         property: (k) => (k === 1 || k === "ADBE Fill-0002" ? color : null) };
@@ -332,7 +369,7 @@ function mkBrComp(log, layers) {
   const mk = (kind, name, selected) => {
     const L = Object.create(kind === "text" ? TextLayer.prototype : kind === "shape" ? ShapeLayer.prototype : Object.prototype);
     const fx = mkBrFx(log);
-    Object.assign(L, { name, kind, selected: !!selected, locked: false, fx });
+    Object.assign(L, { name, kind, selected: !!selected, locked: false, fx, sourceRectAtTime: () => ({ left: 0, top: 0, width: 400, height: 200 }) });
     if (kind === "text") {
       L.td = { text: name, font: "ArialMT", fillColor: [1, 1, 1], applyFill: true };
       const doc = { get value() { return Object.assign({}, L.td); }, setValue(v) { L.td = Object.assign({}, v); } };
@@ -352,6 +389,7 @@ function mkBrComp(log, layers) {
   (layers || []).forEach((l) => c.list.push(mk(l.kind, l.name, l.selected)));
   c.layers = {
     addNull() { const n = mk("null", "Null 1"); c.list.unshift(n); return n; },
+    addSolid(color, name, w, h, par, dur) { const n = mk("solid", name); n.sourceRectAtTime = () => ({ left: 0, top: 0, width: w, height: h }); n.solidSize = [w, h]; c.list.unshift(n); return n; },
     addText(t) { const n = mk("text", String(t)); n.added = true; c.list.unshift(n); log.brTexts = (log.brTexts || []).concat([n]); return n; },
     add(item) {
       const l = { name: item.name, source: item, collapseTransformation: false };
@@ -438,6 +476,12 @@ function makeAE(opts, tmpDir) {
     log.dcInner = inner;
   }
   if (opts.np) { dcMain = mkDcComp("Main", opts.np, log); }
+  // opts.co: { path, still, w, h } — the open comp has a photo layer «Фото» (selected) and «BG».
+  if (opts.co) {
+    const src = Object.assign(new FootageItem(), { name: path.basename(opts.co.path), width: opts.co.w || CO_W, height: opts.co.h || CO_H,
+      mainSource: Object.assign(new FileSource(), { file: new File(opts.co.path), isStill: opts.co.still !== false }) });
+    dcMain = mkDcComp("Main", [{ name: "Фото", source: src, selected: opts.co.select !== false }, { name: "BG" }], log);
+  }
   if (opts.br) { dcMain = mkBrComp(log, opts.br); dcMain.openInViewer = () => { project.activeItem = dcMain; }; }
   log.dcMain = dcMain;
   // opts.unused: [{ name, used }] — footage in the project, used in a comp or not.
@@ -445,6 +489,7 @@ function makeAE(opts, tmpDir) {
   const project = { get numItems() { return projItems.length; },
     removeUnusedFootage() { const gone = projItems.filter((x) => x instanceof FootageItem && x.usedIn && !x.usedIn.length); gone.forEach((x) => projItems.splice(projItems.indexOf(x), 1)); log.unusedRemoved = gone.map((x) => x.name); return gone.length; }, activeItem: opts.noActiveComp ? null : dcMain || comp, item(i) { return projItems[i - 1]; },
     file: opts.projectFile ? new File(opts.projectFile) : null, rootFolder,
+    addFootage(it) { projItems.push(it); },
     importFile(io) {
       if (opts.importThrows) throw new Error("unsupported file");
       log.imports.push(io.file.fsName);
@@ -581,11 +626,24 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         }
         case "reloaded": net.reloads = (net.reloads || 0) + 1; return null;
         case "pickFile": return opts.pickFile || null;
+        case "pickFiles": return opts.pickFiles || (opts.pickFile ? [opts.pickFile] : []);
         case "imageSize": return opts.imageSize === undefined ? { width: 800, height: 600 } : opts.imageSize;
         case "exec": {
           sys.exec.push({ file: args[0], args: args[1] });
           if (args[0] !== "osascript") return { code: 1, stdout: "", stderr: "unknown command" };
           if (args[1][0] === "-e") { sys.copied = (sys.copied || []).concat([args[1][1]]); return opts.copyFails ? { code: 1, stdout: "", stderr: "no" } : { code: 0, stdout: "", stderr: "" }; }
+          if (/vision\.js$/.test(args[1][2] || "")) {
+            // The cut-out window asks macOS for the objects on the photo. opts.vision: undefined — an older macOS,
+            // { masks: [fn(x, y) -> bool, …] } — what it finds, { error } — it fails.
+            const [, , js, src, dir, res] = args[1];
+            sys.vision = { js: fs.readFileSync(js, "utf8"), src };
+            const v = opts.vision;
+            if (!v) { fs.writeFileSync(res, "NOVISION"); return { code: 0, stdout: "", stderr: "" }; }
+            if (v.error) { fs.writeFileSync(res, "ERR " + v.error); return { code: 0, stdout: "", stderr: "" }; }
+            v.masks.forEach((m, i) => fs.writeFileSync(path.join(dir, "mask-" + i + ".png"), pngEncode(v.w || CO_W, v.h || CO_H, (x, y) => m(x, y) ? [255, 255, 255] : [0, 0, 0])));
+            fs.writeFileSync(res, "OK " + v.masks.length);
+            return { code: 0, stdout: "", stderr: "" };
+          }
           const [, , js, png, res] = args[1];
           sys.jxa = fs.readFileSync(js, "utf8");
           // opts.clipEmptyReads: the system says "nothing there" this many times before it hands the picture over.
@@ -649,7 +707,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         readBase64: call("readBase64"), readText: call("readText"), writeText: call("writeText"),
         writeBytes: (p, bytes) => window.__plat("writeBytes", [p, Array.from(bytes)]),
         remove: call("remove"), exists: call("exists"), mkdirp: call("mkdirp"), move: call("move"),
-        exec: call("exec"), pickFile: call("pickFile"), imageSize: call("imageSize"), postJSON: call("postJSON"),
+        exec: call("exec"), pickFile: call("pickFile"), pickFiles: call("pickFiles"), imageSize: call("imageSize"), postJSON: call("postJSON"),
         getText: call("getText"), download: call("download"), fetchUrl: call("fetchUrl"),
         openExternal: (u) => { window.__opened.push(u); return true; },
         reload: () => { window.__plat("reloaded", []).then(() => window.location.reload()); }
@@ -1567,7 +1625,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsClose");
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   t = await p.page.locator("#hotkeys .hotkey-row span").allInnerTexts();
-  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Organize (папки проекта),Decompose (слои из прекомпозиции),Clear cache (память After Effects),Null / Parent,Remove unused (лишние файлы),Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—,—,—,—,—", t.join());
+  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Organize (папки проекта),Decompose (слои из прекомпозиции),Clear cache (память After Effects),Null / Parent,Remove unused (лишние файлы),Cut out (вырезать фон на фото),Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—,—,—,—,—,—", t.join());
   await p.page.locator("#hotkeys").scrollIntoViewIfNeeded();
   await p.page.screenshot({ path: path.join(SHOTS, "25-hotkeys-settings.png") });
   await p.page.click('#hotkeys [data-action="console"]');
@@ -2202,7 +2260,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#tabTools");
   check("W2 the Animation library uses the whole width, the status line stays in the column", (await box(p, "#viewTools .ac")).split(",")[0] === "14" && Number((await box(p, "#viewTools .ac")).split(",")[2]) > 900 && (await overflow(p)) <= 0, await box(p, "#viewTools .ac"));
   await p.page.click("#tabMotion");
-  t = await p.page.evaluate(() => { const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; }; return { tabs: r("#tabs"), top: r(".top"), status: r("#statusBox"), tools: r("#motionTools"), cards: Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width)]; }) }; });
+  t = await p.page.evaluate(() => { const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; }; return { tabs: r("#tabs"), top: r(".top"), status: r("#statusBox"), tools: r("#motionTools"), cards: Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width)]; }) }; });
   check("W2 Animation tab in a wide panel: tabs and blocks get the whole width, the status line stays in the column", t.tabs.join() === "14,986" && t.top.join() === "14,986" && t.status[1] <= 366 && t.tools.join() === "14,986" && (await overflow(p)) <= 0, JSON.stringify(t));
   check("W2 the blocks are not stretched: 4 cells (168px) each, five side by side in one row, the sixth below", t.cards.map((c) => c[2]).join() === "168,168,168,168,168,168" && t.cards.map((c) => c[0]).join() === "14,190,366,542,718,718" && t.cards.slice(0, 5).every((c) => c[1] === t.cards[0][1]) && t.cards[5][1] > t.cards[4][1] && (await box(p, "#easeIn")).split(",")[2] === (await box(p, "#easeOut")).split(",")[2], JSON.stringify(t.cards));
   await p.page.click("#tabClaude");
@@ -2504,10 +2562,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
   // ---------------------------------------------------------------- animation: two blocks side by side, swappable
-  const toolOrder = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => c.getAttribute("data-tool")).join());
+  const toolOrder = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => c.getAttribute("data-tool")).join());
   // The layout checks below were written for the six original blocks; "Копия плавности" stands last and has its own checks.
-  const savedTools = (p) => p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").order; return o ? o.split(",").filter((x) => x !== "easecopy" && x !== "decompose" && x !== "cache" && x !== "nullp" && x !== "unused").join(",") : null; });
-  const toolRects = (p) => p.page.evaluate(() => { const o = {}; Array.prototype.forEach.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const r = c.getBoundingClientRect(); o[c.getAttribute("data-tool")] = { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width) }; }); return o; });
+  const savedTools = (p) => p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").order; return o ? o.split(",").filter((x) => x !== "easecopy" && x !== "decompose" && x !== "cache" && x !== "nullp" && x !== "unused" && x !== "cutout").join(",") : null; });
+  const toolRects = (p) => p.page.evaluate(() => { const o = {}; Array.prototype.forEach.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const r = c.getBoundingClientRect(); o[c.getAttribute("data-tool")] = { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width) }; }); return o; });
   const grip = (tool) => '#motionTools [data-tool="' + tool + '"] .tool-grip';
   async function dragFrom(p, from, to) {
     await p.page.mouse.move(from.x, from.y); await p.page.mouse.down();
@@ -2519,7 +2577,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const by = (pt, dx, dy) => ({ x: pt.x + dx, y: pt.y + (dy || 0) });
   const topOf = (r) => ({ x: (r.l + r.r) / 2, y: r.t + 20 });   // a point near the top: tall blocks may end below the window
   // Where each block sits on the grid: "name:column,row,width,height" in cells.
-  const cellsNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const a = /^(\d+) \/ span (\d+)$/.exec(c.style.gridColumn), b = /^(\d+) \/ span (\d+)$/.exec(c.style.gridRow); return c.getAttribute("data-tool") + ":" + (a[1] - 1) + "," + (b[1] - 1) + "," + a[2] + "," + b[2]; }).join(" "));
+  const cellsNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const a = /^(\d+) \/ span (\d+)$/.exec(c.style.gridColumn), b = /^(\d+) \/ span (\d+)$/.exec(c.style.gridRow); return c.getAttribute("data-tool") + ":" + (a[1] - 1) + "," + (b[1] - 1) + "," + a[2] + "," + b[2]; }).join(" "));
   const savedPlaces = (p) => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").places || "");
   const resizeTo = async (p, w) => { await p.page.setViewportSize({ width: w, height: 760 }); await p.page.waitForTimeout(80); };
 
@@ -2529,9 +2587,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R1 at 380px easing and anchor stand side by side, align goes to the row below at the same size", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && t.ease.w === 168 && t.anchor.w === 168 && t.align.w === 168 && t.ease.l === 14 && t.anchor.r === 358 && t.align.t >= t.ease.b && t.align.l === 14, JSON.stringify(t));
   t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.display, cs.gridAutoRows, cs.rowGap, cs.columnGap, g.style.gridTemplateColumns].join("|"); });
   check("R1 the blocks stand on a fine grid: 14px cells with 8px gaps (a 22px step), 16 cells across at 380px", t === "grid|14px|8px|8px|repeat(16, 14px)", t);
-  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const r = c.getBoundingClientRect(), g = document.getElementById("motionTools").getBoundingClientRect(); return (r.left - g.left) % 22 === 0 && (r.top - g.top) % 22 === 0 && (r.width + 8) % 22 === 0 && (r.height + 8) % 22 === 0; }));
+  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const r = c.getBoundingClientRect(), g = document.getElementById("motionTools").getBoundingClientRect(); return (r.left - g.left) % 22 === 0 && (r.top - g.top) % 22 === 0 && (r.width + 8) % 22 === 0 && (r.height + 8) % 22 === 0; }));
   check("R1 every block starts on a cell and is a whole number of cells wide and tall", t);
-  t = await p.page.evaluate(() => { const inside = (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button, select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5); }); }; return Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), inside).join(); });
+  t = await p.page.evaluate(() => { const inside = (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button, select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5); }); }; return Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), inside).join(); });
   check("R1 nothing sticks out of any block", t === "true,true,true,true,true,true" && (await overflow(p)) <= 0, t);
   t = await p.page.evaluate(() => [document.getElementById("easeIn").getBoundingClientRect().width, document.getElementById("easeOut").getBoundingClientRect().width, document.getElementById("anchorGrid").getBoundingClientRect().width].map(Math.round));
   check("R1 sliders stay usable and the arrow grid keeps its size", t[0] === t[1] && t[0] >= 40 && t[2] >= 118, t.join());
@@ -2645,7 +2703,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     ['"anchor,ease"', "anchor,ease,align,shift,paste,organize"] /* an order saved before the Align block existed */, ['"align,ghost,ease"', "align,ease,anchor,shift,paste,organize"]]) {
     p = await open({});
     await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", '{"order":' + v + "}"), bad); await p.restart(); await motionTab(p);
-    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])").count()) === 6 && p.errors.length === 0, await toolOrder(p));
+    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])").count()) === 6 && p.errors.length === 0, await toolOrder(p));
     await p.close();
   }
   p = await open({});
@@ -2884,11 +2942,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // ---------------------------------------------------------------- animation: a free panel, fixed blocks
   // Stretching the After Effects panel never resizes a block; it only changes how many stand in a row.
   console.log("\n=== animation: blocks reflow, sizes stay ===");
-  const allInside = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button:not(.tool-grip), select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5); }); }));
-  const sizesNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const b = c.getBoundingClientRect(); return Math.round(b.width) + "x" + Math.round(b.height); }).sort().join());
+  const allInside = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button:not(.tool-grip), select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5); }); }));
+  const sizesNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const b = c.getBoundingClientRect(); return Math.round(b.width) + "x" + Math.round(b.height); }).sort().join());
   // How many blocks stand in the first row, and is everything stacked in one column?
-  const firstRow = (p) => p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => /^1 \//.test(c.style.gridRow)).length);
-  const oneColumn = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => /^1 \//.test(c.style.gridColumn)));
+  const firstRow = (p) => p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => /^1 \//.test(c.style.gridRow)).length);
+  const oneColumn = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => /^1 \//.test(c.style.gridColumn)));
   p = await open({ width: 380 });
   await motionTab(p);
   c = await sizesNow(p);
@@ -2929,7 +2987,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 700, height: 1100, settings: { panelWidth: 640 } });   // blocks area: 672px = 15 cells
   await motionTab(p);
   t = await toolRects(p);
-  check("S1 every block has three handles: right edge (width), bottom edge (height), corner (both)", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const r = c.getBoundingClientRect(); const x = c.querySelector(".tool-resize").getBoundingClientRect(), y = c.querySelector(".tool-resize-y").getBoundingClientRect(), xy = c.querySelector(".tool-resize-xy").getBoundingClientRect(); return x.left < r.right && x.right > r.right && x.height > 30 && getComputedStyle(c.querySelector(".tool-resize")).cursor === "ew-resize" && y.top < r.bottom && y.bottom > r.bottom && y.width > 30 && getComputedStyle(c.querySelector(".tool-resize-y")).cursor === "ns-resize" && xy.right > r.right && xy.bottom > r.bottom && getComputedStyle(c.querySelector(".tool-resize-xy")).cursor === "nwse-resize"; }))));
+  check("S1 every block has three handles: right edge (width), bottom edge (height), corner (both)", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const r = c.getBoundingClientRect(); const x = c.querySelector(".tool-resize").getBoundingClientRect(), y = c.querySelector(".tool-resize-y").getBoundingClientRect(), xy = c.querySelector(".tool-resize-xy").getBoundingClientRect(); return x.left < r.right && x.right > r.right && x.height > 30 && getComputedStyle(c.querySelector(".tool-resize")).cursor === "ew-resize" && y.top < r.bottom && y.bottom > r.bottom && y.width > 30 && getComputedStyle(c.querySelector(".tool-resize-y")).cursor === "ns-resize" && xy.right > r.right && xy.bottom > r.bottom && getComputedStyle(c.querySelector(".tool-resize-xy")).cursor === "nwse-resize"; }))));
   check("S1 (scene) three blocks in one row, lists under the buttons", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await shape(p, "anchor")) === "vertical" && (await shape(p, "align")) === "vertical", JSON.stringify(t));
   await p.page.mouse.move((await center(p, edge("anchor"))).x, (await center(p, edge("anchor"))).y); await p.page.mouse.down();
   c = await center(p, edge("anchor"));
@@ -3047,8 +3105,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("G2 widened again, they go back to their cells", /shift:0,0,8,/.test(await cellsNow(p)) && /ease:24,0/.test(await cellsNow(p)), await cellsNow(p));
   await p.page.click("#arrangeReset");
   t = await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1")));
-  check("G3 'Reset' returns the layout of a new install: places, sizes and pins", t.places === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12".split(";").sort((a, b) => a.localeCompare(b)).join(";") || t.places.split(";").sort().join(";") === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12".split(";").sort().join(";"), t.places);
-  check("G3 … with the sizes and the pinned blocks on top", t.sizes.split(";").sort().join(";") === "ease=14x0;easecopy=17x0;shift=12x0" && t.pins === "paste,unused,easecopy,decompose,organize,cache,nullp", t.sizes + " | " + t.pins);
+  check("G3 'Reset' returns the layout of a new install: places, sizes and pins", t.places === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12".split(";").sort((a, b) => a.localeCompare(b)).join(";") || t.places.split(";").sort().join(";") === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12".split(";").sort().join(";"), t.places);
+  check("G3 … with the sizes and the pinned blocks on top", t.sizes.split(";").sort().join(";") === "ease=14x0;easecopy=17x0;shift=12x0" && t.pins === "paste,unused,easecopy,decompose,organize,cache,nullp,cutout", t.sizes + " | " + t.pins);
   check("G3 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
@@ -3057,7 +3115,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const pinOf = (p, name) => p.page.locator('.tool-card[data-tool="' + name + '"] .tool-pin');
   p = await open({});
   await motionTab(p);
-  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const pin = c.querySelector(".tool-pin"), tg = c.querySelector(".tool-toggle"); if (!pin || !tg) return false; const a = pin.getBoundingClientRect(), b = tg.getBoundingClientRect(), r = c.getBoundingClientRect(); return Math.abs(a.top - b.top) < 2 && a.right <= b.left + 1 && a.left > r.left && pin.getAttribute("aria-pressed") === "false"; }));
+  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const pin = c.querySelector(".tool-pin"), tg = c.querySelector(".tool-toggle"); if (!pin || !tg) return false; const a = pin.getBoundingClientRect(), b = tg.getBoundingClientRect(), r = c.getBoundingClientRect(); return Math.abs(a.top - b.top) < 2 && a.right <= b.left + 1 && a.left > r.left && pin.getAttribute("aria-pressed") === "false"; }));
   check("PN1 the pin does not cut the titles short", await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-head b"), (b) => b.scrollWidth <= b.clientWidth + 1)), await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-head b"), (b) => b.textContent + ":" + b.scrollWidth + "/" + b.clientWidth).join(" ")));
   check("PN1 every block has a pin right next to its minus; nothing is pinned at first, no line", t && (await pinLine(p)) === null && (await pinOf(p, "ease").getAttribute("title")) === "Закрепить наверху");
   c = await cellsNow(p);
@@ -3164,11 +3222,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const savedMotion = (p, k) => p.page.evaluate((k) => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}")[k], k);
   const titlesAttr = (p) => p.page.evaluate(() => document.documentElement.getAttribute("data-titles"));
   // Does the corner button overlap anything else in its block?
-  const togglesClear = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]) .tool-toggle"), (b) => { const r = b.querySelector("svg").getBoundingClientRect(); return Array.prototype.every.call(b.parentNode.querySelectorAll(".tool-head b, .anchor-grid button, .ease-bar > *, .ease-curve, select, .anchor-side label, .align-btn, .align-to label, .align-label, .shift-pick label, .tool-info, .shift-arrow, .shift-do"), (el) => { const q = el.getBoundingClientRect(); if (q.width === 0) return true; const tw = el.nodeName === "B" ? (() => { const g = document.createRange(); g.selectNodeContents(el); const t = g.getBoundingClientRect(); return { left: Math.max(t.left, q.left), right: Math.min(t.right, q.right), top: t.top, bottom: t.bottom }; })() : q; return tw.right <= r.left || tw.left >= r.right || tw.bottom <= r.top || tw.top >= r.bottom; }); }));
+  const togglesClear = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]) .tool-toggle"), (b) => { const r = b.querySelector("svg").getBoundingClientRect(); return Array.prototype.every.call(b.parentNode.querySelectorAll(".tool-head b, .anchor-grid button, .ease-bar > *, .ease-curve, select, .anchor-side label, .align-btn, .align-to label, .align-label, .shift-pick label, .tool-info, .shift-arrow, .shift-do"), (el) => { const q = el.getBoundingClientRect(); if (q.width === 0) return true; const tw = el.nodeName === "B" ? (() => { const g = document.createRange(); g.selectNodeContents(el); const t = g.getBoundingClientRect(); return { left: Math.max(t.left, q.left), right: Math.min(t.right, q.right), top: t.top, bottom: t.bottom }; })() : q; return tw.right <= r.left || tw.left >= r.right || tw.bottom <= r.top || tw.top >= r.bottom; }); }));
 
   p = await open({});
   await motionTab(p);
-  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]) .tool-toggle").count()) === 6 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "organizeOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused])"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
+  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]) .tool-toggle").count()) === 6 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "organizeOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
   check("F1 the corner buttons do not cover titles or controls", await togglesClear(p));
   c = await cardH(p, "anchor");
   await p.page.click("#anchorOptsToggle");
@@ -3201,7 +3259,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("F5 titles are shown unless switched off, one short word each", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность,Якорь,Выровнять,Время,Картинка,Порядок,Копия,Декомпоз,Кэш,Null,Чистка");
+  check("F5 titles are shown unless switched off, one short word each", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность,Якорь,Выровнять,Время,Картинка,Порядок,Копия,Декомпоз,Кэш,Null,Чистка,Вырезка");
   c = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("F5 settings have the switch, on", await p.page.isChecked("#toolTitles"));
@@ -4176,6 +4234,26 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click("#brandRigBtn"); await p.idle();
     check("BR4 pressed again it updates the same layer, no second one", p.ae.log.dcMain.list.filter((l) => l.name === "Brand Colors").length === 1 && p.ae.log.dcMain.list[0].fx.list.length === 2 && /обновлён/.test(await p.status()), await p.status());
 
+    // Gradients: two colours, linear at an angle or radial; a click puts a Gradient Ramp on the selected layers.
+    check("GR1 the gradient form starts with the project's first two colours", (await p.page.inputValue("#brandGradFrom")) === "#ff5a1f" && (await p.page.inputValue("#brandGradTo")) === "#101820" && (await p.page.locator("#brandGrads .brand-chip").count()) === 0);
+    await p.page.fill("#brandGradName", "Закат"); await p.page.fill("#brandGradAngle", "90"); await p.page.click("#brandGradAdd");
+    await p.page.locator("#brandGradTo").evaluate((el) => { el.value = "#2fc16e"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+    await p.page.selectOption("#brandGradType", "radial"); await p.page.click("#brandGradAdd");
+    t = (await stored()).items[0].subs[0].gradients;
+    check("GR1 gradients are added and saved: name, colours, kind, angle; one without a name gets a number", JSON.stringify(t) === JSON.stringify([{ name: "Закат", from: "#ff5a1f", to: "#101820", type: "linear", angle: 90 }, { name: "Градиент 2", from: "#ff5a1f", to: "#2fc16e", type: "radial", angle: 90 }]) && (await p.page.locator("#brandGrads .brand-chip").allInnerTexts()).map((x) => x.replace("×", "").replace(/\s+/g, " ").trim()).join("|") === "Закат 90°|Градиент 2 радиальный" && (await p.page.locator("#brandGradAngle").isDisabled()), JSON.stringify(t));
+    check("GR1 the chip shows the gradient itself", /linear-gradient\(90deg, (rgb\(255, 90, 31\)|#ff5a1f)/.test(await p.page.locator("#brandGrads .brand-chip i").first().evaluate((el) => el.style.background)));
+    await p.page.locator("#brandGrads .brand-chip").first().click(); await p.idle();
+    t = L("Box").fx.list.find((e) => e.matchName === "ADBE Ramp");
+    check("GR2 a click puts a Gradient Ramp on each selected layer, fitted to the layer at 90° (left to right), in the brand colours", t && t.name === "Закат" && t.vals["ADBE Ramp-0001"].join() === "0,100" && t.vals["ADBE Ramp-0003"].join() === "400,100" && t.vals["ADBE Ramp-0005"] === 1 && near(t.vals["ADBE Ramp-0002"], orange) && near(t.vals["ADBE Ramp-0004"], [0x10 / 255, 0x18 / 255, 0x20 / 255]) && L("Title").fx.list.some((e) => e.matchName === "ADBE Ramp"), JSON.stringify(t && t.vals));
+    check("GR2 the report and one undo step", /^Градиент «Закат» на выделенных слоях: 4\. Это эффект Gradient Ramp/.test(await p.status()) && p.ae.log.undo.slice(-2).join() === "begin:Sayframe: brand gradient,end", await p.status());
+    p.ae.log.dcMain.list.forEach((l) => { l.selected = false; });
+    await p.page.locator("#brandGrads .brand-chip").nth(1).click(); await p.idle();
+    t = p.ae.log.dcMain.list[0];
+    check("GR3 nothing selected: a new comp-size solid with the radial gradient from the centre", t.name === "Градиент 2" && t.solidSize.join() === "1920,1080" && t.fx.list[0].vals["ADBE Ramp-0005"] === 2 && t.fx.list[0].vals["ADBE Ramp-0001"].join() === "960,540" && Math.round(t.fx.list[0].vals["ADBE Ramp-0003"][0]) === 960 + Math.round(Math.hypot(1920, 1080) / 2) && /^Новый солид «Градиент 2»/.test(await p.status()), JSON.stringify(t.fx.list[0] && t.fx.list[0].vals) + (await p.status()));
+    await p.page.locator("#brandGradAdd").scrollIntoViewIfNeeded(); await p.page.screenshot({ path: path.join(SHOTS, "53-projects-gradients.png") });
+    p.ae.log.dcMain.list.shift();
+    brLayers().forEach((sp) => { const l = L(sp.name); if (l) l.selected = !!sp.selected; });
+
     await p.page.fill("#brandFontHead", "Montserrat-Bold"); await p.page.press("#brandFontHead", "Tab");
     await p.page.click("#brandFontHeadApply"); await p.idle();
     check("BR5 the heading font goes on the selected text layers only, and is remembered", L("Title").td.font === "Montserrat-Bold" && (await p.status()) === "Шрифт «Montserrat-Bold» поставлен текстовым слоям: 1." && (await stored()).items[0].subs[0].fonts.head === "Montserrat-Bold", await p.status());
@@ -4196,12 +4274,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
     await p.page.click("#brandLogoAdd"); await p.idle();
     t = (await stored()).items[0].subs[0].logos[0];
-    check("BR8 a logo is copied into Documents / Sayframe Brands and shown", t && t.name === "sayframe-test-logo" && /Documents\/Sayframe Brands\//.test(t.file) && fs.existsSync(t.file) && (await p.page.locator("#brandLogos .brand-logo").count()) === 1, JSON.stringify(t));
+    check("BR8 a logo is copied into Documents / Sayframe Brands and shown, named after the file in plain words", t && t.name === "sayframe test logo" && /Documents\/Sayframe Brands\//.test(t.file) && fs.existsSync(t.file) && (await p.page.locator("#brandLogos .brand-logo").count()) === 1, JSON.stringify(t));
     await p.page.click("#brandLogos .brand-logo-img"); await p.idle();
     t = p.ae.log.refComps[p.ae.log.refComps.length - 1];
     const ll = (p.ae.log.brAddedLayers || [])[0];
-    check("BR8 a click puts it into the open comp as a precomp the size of the logo, the logo at 100% inside", t && t.name === "sayframe-test-logo Logo" && t.width === 500 && t.height === 200 && t.added && /sayframe-test-logo\.png$/.test(t.added.name) && !t.scaleSet && t.addedLayer.collapseTransformation === true && t.parentFolder.name === "Brand — Acme", t && JSON.stringify({ n: t.name, w: t.width, h: t.height, a: t.added && t.added.name, s: t.scaleSet, c: t.addedLayer && t.addedLayer.collapseTransformation, f: t.parentFolder && t.parentFolder.name }));
-    check("BR8 … and that precomp sits in the comp at 10%, sharp (Collapse Transformations)", ll && ll.source === t && ll.scale.join() === "10,10" && ll.collapseTransformation === true && /^Логотип «sayframe-test-logo» вставлен в «Main» прекомпозицией «sayframe-test-logo Logo»: внутри логотип в масштабе 100 %, а сама прекомпозиция — 10 %/.test(await p.status()), await p.status());
+    check("BR8 a click puts it into the open comp as a precomp the size of the logo, the logo at 100% inside", t && t.name === "sayframe test logo Logo" && t.width === 500 && t.height === 200 && t.added && /sayframe-test-logo\.png$/.test(t.added.name) && !t.scaleSet && t.addedLayer.collapseTransformation === true && t.parentFolder.name === "Brand — Acme", t && JSON.stringify({ n: t.name, w: t.width, h: t.height, a: t.added && t.added.name, s: t.scaleSet, c: t.addedLayer && t.addedLayer.collapseTransformation, f: t.parentFolder && t.parentFolder.name }));
+    check("BR8 … and that precomp sits in the comp at 10%, sharp (Collapse Transformations)", ll && ll.source === t && ll.scale.join() === "10,10" && ll.collapseTransformation === true && /^Логотип «sayframe test logo» вставлен в «Main» прекомпозицией «sayframe test logo Logo»: внутри логотип в масштабе 100 %, а сама прекомпозиция — 10 %/.test(await p.status()), await p.status());
     check("BR8b the project list opens in the panel's dark style (no grey popup with white text)", await p.page.evaluate(() => { const o = document.querySelector("#brandSelect option"), cs = o && getComputedStyle(o), sel = getComputedStyle(document.getElementById("brandSelect")); return !!o && (o.selected ? /^rgba\(157, 123, 255/.test(cs.backgroundColor) && cs.color === "rgb(255, 255, 255)" : cs.backgroundColor === "rgb(27, 27, 34)" && cs.color === "rgb(243, 242, 248)") && sel.colorScheme === "dark"; }), await p.page.evaluate(() => { const o = document.querySelector("#brandSelect option"); return o ? [getComputedStyle(o).backgroundColor, getComputedStyle(o).color, getComputedStyle(document.getElementById("brandSelect")).colorScheme].join("|") : "no option"; }));
     await p.page.screenshot({ path: path.join(SHOTS, "49-projects.png") });
     await p.page.locator("#brandFormats").scrollIntoViewIfNeeded();
@@ -4215,6 +4293,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("BR9 the bin asks once more before deleting", (await vis(p, "#brandDeleteNote")) && (await p.page.locator("#brandSelect option").count()) === 2);
     await p.page.click("#brandDelete");
     check("BR9 the second press deletes it; Acme is current again", (await p.page.locator("#brandSelect option").allInnerTexts()).join() === "Acme" && (await p.page.locator("#brandColors .brand-chip").count()) === 2 && p.errors.filter((e) => !/Not allowed to load local resource/.test(e)).length === 0, p.errors.join(" | "));
+    // A logo the open AE project still uses as footage stays on disk when it is removed from the brand book
+    // (a deleted source makes After Effects show "A file could not be found").
+    t = (await stored()).items[0].subs[0].logos[0].file;
+    p.ae.project.addFootage(Object.assign(new FootageItem(), { name: "in-use.png", mainSource: { file: { fsName: t } } }));
+    await p.page.click("#brandLogos .brand-logo .brand-x"); await p.page.waitForTimeout(300); await p.idle();
+    check("BR9c a logo used in the AE project leaves the brand book but its file stays on disk", (await p.page.locator("#brandLogos .brand-logo").count()) === 0 && fs.existsSync(t));
     await p.close();
   }
 
@@ -4227,7 +4311,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click("#tabBrand");
     check("SB1 above the project card: a row of sections with «+», even before the first one", (await vis(p, "#brandSubAdd")) && (await chips()) === "");
     await p.page.click("#brandSubAdd");
-    check("SB1 «+» asks for the section name", (await vis(p, "#brandNameRow")) && /Alif, Samsung/.test(await p.page.getAttribute("#brandName", "placeholder")));
+    check("SB1 «+» asks for the section name", (await vis(p, "#brandNameRow")) && (await p.page.getAttribute("#brandName", "placeholder")) === "Название раздела");
     await p.page.fill("#brandName", "Alif"); await p.page.press("#brandName", "Enter");
     check("SB2 the section «Alif» opens empty: the usual «Создать первый проект»", (await chips()) === "Alif" && (await vis(p, "#brandEmpty")));
     await p.page.click("#brandFirst"); await p.page.fill("#brandName", "Alif Shop"); await p.page.press("#brandName", "Enter");
@@ -4314,15 +4398,178 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
+  // Icons in a brand book: several files at once; a click puts one into the open comp at its own size.
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sf-icons-"));
+    const svg = path.join(dir, "arrow right.svg"), png = path.join(dir, "star.png"), txt = path.join(dir, "notes.txt");
+    fs.writeFileSync(svg, '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path d="M4 12h16"/></svg>'); fs.writeFileSync(png, REAL_PNG); fs.writeFileSync(txt, "x");
+    const share = path.join(os.tmpdir(), "sayframe-icons-" + Date.now() + ".sfbrand");
+    p = await open({ br: [{ kind: "text", name: "Title" }], pickFiles: [svg, png, txt], saveAs: share });
+    const stored = () => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.brands.v1") || "null"));
+    await p.page.evaluate(() => localStorage.setItem("sayframe.brands.v1", JSON.stringify({ active: "g1", items: [{ id: "g1", name: "Alif", active: "b1", subs: [{ id: "b1", name: "Alif Shop", colors: [], fonts: { head: "", body: "" }, texts: [], logos: [] }] }] })));
+    await p.restart(); await p.page.click("#tabBrand");
+    check("IC1 a section «Иконки» with «+ Добавить», empty at first", (await vis(p, "#brandIconAdd")) && (await p.page.locator("#brandIcons .brand-icon").count()) === 0);
+    await p.page.click("#brandIconAdd"); await p.idle();
+    t = (await stored()).items[0].subs[0].icons;
+    check("IC1 several files at once: the pictures become icons (copied into Documents / Sayframe Brands), the text file is skipped", t.length === 2 && t.map((x) => x.name).join() === "arrow right,star" && t.every((x) => /Documents\/Sayframe Brands\//.test(x.file) && fs.existsSync(x.file)) && (await p.page.locator("#brandIcons .brand-icon").count()) === 2 &&
+      (await p.status()) === "Иконок добавлено: 2 в проект «Alif Shop». Щелчок по иконке вставит её в композицию. Пропущено файлов: 1 (не картинка или нет места).", JSON.stringify(t) + (await p.status()));
+    await p.page.locator("#brandIconAdd").scrollIntoViewIfNeeded(); await p.page.screenshot({ path: path.join(SHOTS, "54-projects-icons.png") });
+    await p.page.locator("#brandIcons .brand-icon").nth(1).locator(".brand-logo-img").click(); await p.idle();
+    t = (p.ae.log.brAddedLayers || [])[0];
+    check("IC2 a click puts the icon into the open comp as a layer at its own size, sharp (Collapse Transformations), in the bin «Brand — Alif Shop»", t && /star\.png$/.test(t.source.name) && t.collapseTransformation === true && !t.scale && t.source.parentFolder.name === "Brand — Alif Shop" &&
+      /^Иконка «star» вставлена в «Main» в центр, в исходном размере/.test(await p.status()), (await p.status()));
+    await p.page.click("#brandExport");
+    await p.page.waitForFunction(() => /сохранён|Не удалось/.test(document.getElementById("status").textContent), null, { timeout: 8000 }).catch(() => {});
+    await p.idle();
+    t = JSON.parse(fs.readFileSync(share, "utf8"));
+    check("IC3 «Поделиться» puts the icons into the file", t.brand.icons.length === 2 && t.brand.icons[1].ext === "png" && Buffer.from(t.brand.icons[1].data, "base64").equals(REAL_PNG));
+    const first = (await stored()).items[0].subs[0].icons[0].file;
+    await p.page.locator("#brandIcons .brand-icon").first().hover();
+    await p.page.locator("#brandIcons .brand-icon").first().locator(".brand-x").click(); await p.page.waitForTimeout(300);
+    check("IC4 × removes an icon and its copy on disk", (await p.page.locator("#brandIcons .brand-icon").count()) === 1 && !fs.existsSync(first));
+    await p.close();
+    p = await open({ pickFile: share });
+    await p.page.click("#tabBrand"); await p.page.click("#brandFirstImport"); await p.idle();
+    t = (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.brands.v1")))).items[0].subs[0].icons;
+    check("IC3 the colleague gets the icons too", t.length === 2 && t.every((x) => fs.existsSync(x.file)) && fs.readFileSync(t[1].file).equals(REAL_PNG), JSON.stringify(t));
+    await p.close();
+  }
+
+  // The brand book's sections can be moved up and down with the small arrows in their headers.
+  {
+    const order = (p) => p.page.evaluate(() => Array.from(document.querySelectorAll("#brandBody > .brand-sec")).map((x) => x.getAttribute("data-sec")).join());
+    const seed = { active: "g1", items: [{ id: "g1", name: "Alif", active: "b1", subs: [{ id: "b1", name: "Alif Shop", colors: [], fonts: { head: "", body: "" }, texts: [], logos: [] }] }] };
+    p = await open({});
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.brands.v1", JSON.stringify(v)), seed);
+    await p.restart(); await p.page.click("#tabBrand");
+    t = await p.page.evaluate(() => Array.from(document.querySelectorAll("#brandBody > .brand-sec")).map((x) => { const b = x.querySelectorAll(".brand-move button"); return b.length + ":" + b[0].disabled + ":" + b[1].disabled + ":" + b[0].getAttribute("aria-label"); }).join("|"));
+    check("SO1 every section has ↑ and ↓ in its header; the first cannot go up, the last cannot go down", (await order(p)) === "logos,icons,colors,grads,fonts,texts,formats" && t.split("|").length === 7 && /^2:true:false:Раздел «Логотипы» выше$/.test(t.split("|")[0]) && /^2:false:true:/.test(t.split("|")[6]) && t.split("|").slice(1, 6).every((x) => /^2:false:false:/.test(x)), t);
+    await p.page.click('#brandBody > .brand-sec[data-sec="logos"] .brand-move [data-dir="1"]');
+    check("SO2 ↓ on «Логотипы» swaps it with the section below; the focus stays on the arrow", (await order(p)) === "icons,logos,colors,grads,fonts,texts,formats" && (await p.page.evaluate(() => document.activeElement.getAttribute("aria-label"))) === "Раздел «Логотипы» ниже");
+    await p.page.click('#brandBody > .brand-sec[data-sec="formats"] .brand-move [data-dir="-1"]');
+    await p.page.click('#brandBody > .brand-sec[data-sec="formats"] .brand-move [data-dir="-1"]');
+    check("SO2 ↑ on «Форматы» twice lifts it above «Тексты» and «Шрифты»", (await order(p)) === "icons,logos,colors,grads,formats,fonts,texts");
+    await p.page.click('#brandBody > .brand-sec[data-sec="icons"] .brand-move [data-dir="1"]');
+    await p.page.click('#brandBody > .brand-sec[data-sec="icons"] .brand-move [data-dir="-1"]');
+    check("SO2 at the top ↑ is greyed out and the focus goes to ↓", (await p.page.evaluate(() => document.activeElement.getAttribute("aria-label"))) === "Раздел «Иконки» ниже" && (await p.page.locator('#brandBody > .brand-sec[data-sec="icons"] .brand-move [data-dir="-1"]').isDisabled()));
+    await p.page.screenshot({ path: path.join(SHOTS, "55-projects-order.png") });
+    await p.restart(); await p.page.click("#tabBrand");
+    check("SO3 the order is remembered", (await order(p)) === "icons,logos,colors,grads,formats,fonts,texts" && p.errors.length === 0, (await order(p)) + p.errors.join("|"));
+    await p.page.evaluate(() => localStorage.setItem("sayframe.brandOrder.v1", JSON.stringify(["texts", "colors", "logos", "fonts", "formats", "bogus", "texts"])));
+    await p.restart(); await p.page.click("#tabBrand");
+    check("SO3 sections missing from a saved order (new in an update) take their place after their old neighbour", (await order(p)) === "texts,colors,grads,logos,icons,fonts,formats", await order(p));
+    await p.close();
+  }
+
+  // The AI and the brand book: names, logo variants, «@» in the request and «AI поймёт так».
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sf-mention-"));
+    const lw = path.join(dir, "white.png"), lv = path.join(dir, "vwhite.png"), lm = path.join(dir, "main.png"), ic = path.join(dir, "cart.png");
+    [lw, lv, lm, ic].forEach((f) => fs.writeFileSync(f, REAL_PNG));
+    const seed = { active: "g1", items: [{ id: "g1", name: "Alif", active: "b1", subs: [{ id: "b1", name: "Alif Shop",
+      colors: [{ name: "Зелёный Alif", hex: "#2fc16e" }, { name: "Фон", hex: "#101820" }], gradients: [{ name: "Закат", from: "#ff5a1f", to: "#101820", type: "linear", angle: 90 }],
+      fonts: { head: "Montserrat-Bold", body: "" }, texts: [{ name: "Слоган", text: "Быстро и просто" }],
+      logos: [{ id: "l1", name: "alif logo", file: lm, variant: "main" }, { id: "l2", name: "alif logo white", file: lw, variant: "white" }, { id: "l3", name: "alif vertical", file: lv, variant: "vwhite" }, { id: "l4", name: "old mark", file: lm, variant: "icon" }],
+      icons: [{ id: "i1", name: "корзина", file: ic }] }] }] };
+    const hits = (p) => p.page.locator("#brandHits .brand-hit span").allInnerTexts().then((a) => a.join(" | "));
+    const stored = () => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.brands.v1") || "null"));
+    p = await open({ replies: [msg("Готово.\n```javascript\napp.__ran('m');\n```"), msg("Готово.\n```javascript\napp.__ran('m2');\n```")] });
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.brands.v1", JSON.stringify(v)), seed);
+    await p.restart();
+    await p.page.click("#tabBrand");
+    t = await p.page.locator('#brandLogos .brand-logo').first().locator("select option").allInnerTexts();
+    check("MN1 a logo can be marked as one of the variants: Основной, Тёмный, Белый, Вертикальный белый, Вертикальный чёрный, Только лого (and on green / white)", t.join() === "Основной,Тёмный,Белый,Вертикальный белый,Вертикальный чёрный,Только лого,Только лого, фон зелёный,Только лого, фон белый" && (await p.page.locator('#brandLogos .brand-logo[data-logo="l4"] select').inputValue()) === "mark", t.join());
+    await p.page.locator('#brandLogos .brand-logo[data-logo="l1"]').hover();
+    await p.page.locator('#brandLogos .brand-logo[data-logo="l1"] .brand-pen').click();
+    await p.page.fill(".brand-rename", "Лого основной"); await p.page.press(".brand-rename", "Enter");
+    await p.page.locator('#brandColors .brand-chip').first().hover();
+    await p.page.locator('#brandColors .brand-chip').first().locator(".brand-pen").click();
+    await p.page.fill(".brand-rename", "Зелёный"); await p.page.press(".brand-rename", "Enter");
+    t = (await stored()).items[0].subs[0];
+    check("MN2 ✎ renames a logo or a colour in place (Enter saves); a colour chip is not painted by it", t.logos[0].name === "Лого основной" && t.colors[0].name === "Зелёный" && !(p.ae.log.undo || []).length && (await p.page.locator('#brandLogos .brand-logo[data-logo="l1"] small').innerText()) === "Лого основной", JSON.stringify(t.logos[0]) + JSON.stringify(t.colors[0]));
+    await p.page.click("#tabClaude");
+    await p.page.fill("#prompt", "вставь белый логотип и сделай фон зелёным");
+    await p.page.waitForTimeout(300);
+    check("MN3 the panel shows what the AI will take: the white logo (not the vertical white), the colours «Фон» and «Зелёный»", (await hits(p)).split(" | ").sort().join(" | ") === "Логотип: alif logo white · Белый | Цвет: Зелёный | Цвет: Фон", await hits(p));
+    await p.page.fill("#prompt", "поставь вертикальный белый логотип");
+    await p.page.waitForTimeout(300);
+    check("MN3 «вертикальный белый логотип» picks the vertical white one", (await hits(p)) === "Логотип: alif vertical · Вертикальный белый", await hits(p));
+    await p.page.fill("#prompt", "добавь иконку корзины справа ");
+    await p.page.waitForTimeout(300);
+    check("MN3 icons are recognised by name in any form («корзины»)", (await hits(p)) === "Иконка: корзина", await hits(p));
+    // «@»: a list of everything in the brand book; typing narrows it; Enter puts the mention in.
+    await p.page.fill("#prompt", ""); await p.page.click("#prompt");
+    await p.page.keyboard.type("сделай фон @");
+    t = await p.page.locator("#mentionList .mention-row b").allInnerTexts();
+    await p.page.screenshot({ path: path.join(SHOTS, "57-ai-mention.png") });
+    check("MN4 «@» opens the list of the brand book: logos, icons, colours, gradients, texts, fonts", !(await p.page.locator("#mentionList").isHidden()) && t.length === 8 && t[0] === "Лого основной" && t.indexOf("корзина") >= 0, t.join());
+    await p.page.keyboard.type("зак");
+    t = await p.page.locator("#mentionList .mention-row b").allInnerTexts();
+    check("MN4 typing after @ narrows it down", t.join() === "Закат", t.join());
+    await p.page.keyboard.press("Enter");
+    check("MN4 Enter puts «@Закат» into the request and closes the list", (await p.page.inputValue("#prompt")) === "сделай фон @Закат " && (await p.page.locator("#mentionList").isHidden()) && /Градиент: Закат/.test(await hits(p)), await p.page.inputValue("#prompt"));
+    await p.page.keyboard.type("и логотип @бел");
+    await p.page.keyboard.press("ArrowDown"); await p.page.keyboard.press("Enter");
+    t = await p.page.inputValue("#prompt");
+    check("MN4 ↓ picks the next one: «@бел» → the white logo, then the vertical white", t === "сделай фон @Закат и логотип @alif vertical ", t);
+    await p.page.locator('#brandHits .brand-hit:has-text("Фон") button').click();
+    t = await hits(p);
+    await p.page.screenshot({ path: path.join(SHOTS, "56-ai-hits.png") });
+    check("MN5 × on a chip leaves it out of this request", !/Цвет: Фон/.test(t) && /Градиент: Закат/.test(t) && /Логотип: alif vertical/.test(t), t);
+    await p.page.click("#runBtn");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    t = JSON.stringify(p.net.requests[0].body.messages[0].content);
+    check("MN6 the request tells the AI exactly which items are meant: the gradient and the vertical white logo with its file, not «Фон»", /Brand items meant in this request/.test(t) && /gradient \\"Закат\\" #ff5a1f -> #101820 linear 90deg/.test(t) && /logo \\"alif vertical\\" \(vertical layout, white, for dark backgrounds\): [^"]*vwhite\.png/.test(t) && !/color \\"Фон\\"/.test(t) && !/"type":"image"/.test(t), t.slice(t.indexOf("[Brand items"), t.indexOf("[Brand items") + 400));
+    // With «AI видит упомянутые логотипы и иконки» the AI also gets their small pictures.
+    await p.page.evaluate(() => { const s = JSON.parse(localStorage.getItem("sayframe.settings.v1")); s.brandPics = true; localStorage.setItem("sayframe.settings.v1", JSON.stringify(s)); });
+    await p.restart();
+    await p.run("поставь @корзина и @alif logo white");
+    t = p.net.requests[1].body.messages.slice(-1)[0].content;
+    check("MN7 with the setting on, the mentioned logo and icon go to the AI as small pictures, named in order", Array.isArray(t) && t.filter((c) => c.type === "image").length === 2 && /\[Brand pictures\] The 2 image\(s\) above .*1\) (icon "корзина"|logo "alif logo white"), 2\)/.test(t.find((c) => c.type === "text").text), JSON.stringify(t).slice(0, 300));
+    await p.close();
+  }
+
+  // A brand book shared from a section («Alif») lands in a section of the same name at the colleague's.
+  {
+    const out = path.join(os.tmpdir(), "sayframe-share-sec-" + Date.now() + ".sfbrand");
+    const bb = (id, name) => ({ id, name, colors: [{ name: "Основной", hex: "#2fc16e" }], fonts: { head: "", body: "" }, texts: [], logos: [] });
+    p = await open({ saveAs: out });
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.brands.v1", JSON.stringify(v)),
+      { active: "g1", items: [{ id: "g1", name: "Alif", active: "b1", subs: [bb("b1", "Alif Shop")] }] });
+    await p.restart(); await p.page.click("#tabBrand");
+    await p.page.click("#brandExport");
+    await p.page.waitForFunction(() => /сохранён|Не удалось/.test(document.getElementById("status").textContent), null, { timeout: 8000 }).catch(() => {});
+    await p.idle();
+    t = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : null;
+    check("SH5 the file remembers the section the project is in", t && t.section === "Alif" && t.brand.name === "Alif Shop", JSON.stringify(t).slice(0, 200));
+    await p.close();
+
+    p = await open({ pickFile: out });
+    const stored = () => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.brands.v1") || "null"));
+    await p.page.click("#tabBrand"); await p.page.click("#brandFirstImport"); await p.idle();
+    t = await stored();
+    check("SH5 an empty panel: the section «Alif» is created with the project in it, and opened", t.items.length === 1 && t.items[0].name === "Alif" && t.items[0].subs.map((x) => x.name).join() === "Alif Shop" && t.active === t.items[0].id &&
+      (await p.status()) === "Брендбук «Alif Shop» добавлен в раздел «Alif»: логотипов — 0, цветов — 1, текстов — 0.", JSON.stringify(t) + " " + await p.status());
+    await p.close();
+
+    p = await open({ pickFile: out });
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.brands.v1", JSON.stringify(v)),
+      { active: "g2", items: [{ id: "g1", name: "alif", active: "b1", subs: [bb("b1", "Alif Academy")] }, { id: "g2", name: "Samsung", active: "b2", subs: [bb("b2", "Galaxy")] }] });
+    await p.restart(); await p.page.click("#tabBrand"); await p.page.click("#brandImport"); await p.idle();
+    t = await stored();
+    check("SH5 with «Samsung» open and «alif» already there: it goes into «alif», not into Samsung, no new section", t.items.length === 2 && t.items[0].subs.map((x) => x.name).join() === "Alif Academy,Alif Shop" && t.items[1].subs.length === 1 && t.active === "g1", JSON.stringify(t));
+    await p.close();
+  }
+
   // The AI knows the current project's brand.
   {
     p = await open({ replies: [msg("Готово.\n```javascript\napp.__ran('brand');\n```")] });
-    await p.page.evaluate(() => localStorage.setItem("sayframe.brands.v1", JSON.stringify({ active: "b1", items: [{ id: "b1", name: "Acme", colors: [{ name: "Основной", hex: "#ff5a1f" }], fonts: { head: "Montserrat-Bold", body: "" }, texts: [{ name: "Сайт", text: "acme.tj" }], logos: [{ id: "l1", name: "logo", file: "/brands/logo.png", variant: "main" }] }] })));
+    await p.page.evaluate(() => localStorage.setItem("sayframe.brands.v1", JSON.stringify({ active: "b1", items: [{ id: "b1", name: "Acme", colors: [{ name: "Основной", hex: "#ff5a1f" }], gradients: [{ name: "Закат", from: "#ff5a1f", to: "#101820", type: "linear", angle: 45 }], fonts: { head: "Montserrat-Bold", body: "" }, texts: [{ name: "Сайт", text: "acme.tj" }], logos: [{ id: "l1", name: "logo", file: "/brands/logo.png", variant: "main" }] }] })));
     await p.restart();
     await p.page.fill("#prompt", "сделай заставку с логотипом");
     await p.page.click("#runBtn"); await p.idle();
     t = JSON.stringify(p.net.requests[0] ? p.net.requests[0].body.messages[0].content : "");
-    check("BR10 the request to the AI carries the brand: colors, fonts, logo files, texts", /\[Brand: Acme\]/.test(t) && /Основной #ff5a1f/.test(t) && /headings Montserrat-Bold/.test(t) && /logo \(main\): \/brands\/logo.png/.test(t) && /Сайт: acme.tj/.test(t), t.slice(0, 600));
+    check("BR10 the request to the AI carries the brand: colors, fonts, logo files, texts", /\[Brand: Acme\]/.test(t) && /Основной #ff5a1f/.test(t) && /headings Montserrat-Bold/.test(t) && /\\"logo\\" \(primary\): \/brands\/logo.png/.test(t) && /Сайт: acme.tj/.test(t) && /Gradients .*Gradient Ramp.*Закат #ff5a1f -> #101820 linear 45deg/.test(t), t.slice(0, 900));
     await p.close();
     p = await open({ replies: [msg("Готово.\n```javascript\napp.__ran('plain');\n```")] });
     await p.page.fill("#prompt", "сделай заставку"); await p.page.click("#runBtn"); await p.idle();
@@ -4406,6 +4653,117 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ np: layers(["BG"]) });
     await motionTab(p); await p.page.click("#nullpBtn"); await p.idle();
     check("NP4 a layer without children: says so, changes nothing", !p.ae.log.npNulls && L(p, "BG").selected && (await p.status()) === "У «BG» нет дочерних слоёв: к нему ничего не привязано через Parent." && p.errors.length === 0, await p.status());
+    await p.close();
+  }
+
+  // Cut out: the photo of the selected layer opens in a window; clicks and the brush mark what stays.
+  {
+    const photoDir = fs.mkdtempSync(path.join(os.tmpdir(), "sf-co-"));
+    const photo = path.join(photoDir, "photo.png");
+    fs.writeFileSync(photo, coPhoto());
+    const coOpen = async (p) => {
+      await p.page.click("#tabMotion"); await p.page.click("#cutoutBtn");
+      await p.page.waitForFunction(() => !document.getElementById("cutoutView").hidden && document.getElementById("cutoutBusy").hidden && document.getElementById("cutoutNote").textContent !== "", null, { timeout: 15000 });
+    };
+    const coWait = (p) => p.page.waitForFunction(() => document.getElementById("cutoutBusy").hidden, null, { timeout: 20000 });
+    // A click on the photo at (x, y) in photo pixels.
+    const coClick = async (p, x, y, alt) => {
+      const r = await p.page.locator("#cutoutCanvas").boundingBox();
+      if (alt) await p.page.keyboard.down("Alt");
+      await p.page.mouse.click(r.x + (x + 0.5) * r.width / CO_W, r.y + (y + 0.5) * r.height / CO_H);
+      if (alt) await p.page.keyboard.up("Alt");
+      await p.page.waitForTimeout(80); await coWait(p);
+    };
+    const coDrag = async (p, pts) => {
+      const r = await p.page.locator("#cutoutCanvas").boundingBox(), at = (q) => [r.x + q[0] * r.width / CO_W, r.y + q[1] * r.height / CO_H];
+      await p.page.mouse.move(...at(pts[0])); await p.page.mouse.down();
+      for (const q of pts.slice(1)) await p.page.mouse.move(...at(q), { steps: 4 });
+      await p.page.mouse.up(); await p.page.waitForTimeout(80); await coWait(p);
+    };
+    const outDir = (p) => path.join(p.home, "Documents", "Sayframe Cutouts");
+    const outPng = (p) => { const d = outDir(p); const f = fs.existsSync(d) ? fs.readdirSync(d).filter((x) => /\.png$/.test(x)) : []; return f.length ? pngDecode(fs.readFileSync(path.join(d, f[0]))) : null; };
+    const coDone = async (p) => { await p.page.click("#cutoutDone"); await p.page.waitForFunction(() => document.getElementById("cutoutView").hidden, null, { timeout: 20000 }); };
+    const lay = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+
+    // Not a photo: a video layer, or nothing selected.
+    p = await open({ co: { path: photo, still: false } });
+    await p.page.click("#tabMotion"); await p.page.click("#cutoutBtn"); await p.idle();
+    check("CO1 a video layer: says Cut out is for photos, no window", (await p.page.locator("#cutoutView").isHidden()) && /это видео/.test(await p.status()), await p.status());
+    await p.close();
+    p = await open({ co: { path: photo, select: false } });
+    await p.page.click("#tabMotion"); await p.page.click("#cutoutBtn"); await p.idle();
+    check("CO1 nothing selected: asks to select the layer", (await p.page.locator("#cutoutView").isHidden()) && /Выделите слой/.test(await p.status()), await p.status());
+    await p.close();
+
+    // Without macOS help (older macOS / Windows): a click on the disc, GrabCut separates it by colour.
+    p = await open({ co: { path: photo } });
+    await coOpen(p);
+    check("CO2 the window opens with the photo of the selected layer and says what to do", (await p.page.locator("#cutoutName").innerText()) === "Фото" && /Щёлкните по тому, что нужно оставить/.test(await p.page.locator("#cutoutNote").innerText()) && /macOS 14/.test(await p.page.locator("#cutoutNote").innerText()) && p.sys.vision.src === photo && /VNGenerateForegroundInstanceMaskRequest/.test(p.sys.vision.js) && /^[\x09\x0a\x20-\x7e]*$/.test(p.sys.vision.js));
+    t = await p.page.evaluate(() => { const r = document.getElementById("cutoutCanvas").getBoundingClientRect(), v = document.getElementById("cutoutView").getBoundingClientRect(); return { w: r.width, h: r.height, ok: r.left >= v.left && r.right <= v.right && r.bottom <= v.bottom }; });
+    check("CO2 the photo fits the panel and keeps its proportions", t.ok && Math.abs(t.w / t.h - 1.5) < 0.02 && t.w > 250, JSON.stringify(t));
+    await p.page.screenshot({ path: path.join(SHOTS, "60-cutout-open.png") });
+    await coClick(p, 150, 100);
+    await p.page.screenshot({ path: path.join(SHOTS, "61-cutout-picked.png") });
+    await coDone(p);
+    t = outPng(p);
+    check("CO2 «Готово» saves a PNG the size of the photo: the disc stays, the background is transparent", t && t.w === CO_W && t.h === CO_H && t.alpha(150, 100) === 255 && t.alpha(150, 60) === 255 && t.alpha(280, 180) === 0 && t.alpha(250, 40) === 0 && t.alpha(45, 45) < 30, t && [t.alpha(150, 100), t.alpha(150, 60), t.alpha(280, 180), t.alpha(45, 45)].join());
+    check("CO2 … the colours of the photo are kept", t && t.px[(100 * CO_W + 150) * 4] === 220 && t.px[(100 * CO_W + 150) * 4 + 1] === 40);
+    t = p.ae.log.coReplaced || [];
+    check("CO2 the photo on the same layer is replaced by it (position, effects stay), in the bin «Cutouts», one undo step", t.length === 1 && t[0].layer === "Фото" && /^photo cutout \d{8}-\d{6}\.png$/.test(t[0].item) && t[0].fix === false && lay(p, "Фото").source.parentFolder.name === "Cutouts" && p.ae.log.dcMain.list.length === 2 && p.ae.log.undo.join() === "begin:Sayframe: cut out background,end", JSON.stringify(t) + p.ae.log.undo.join());
+    check("CO2 the report says where it went", /^Готово: на слое «Фото» теперь фото без фона\. PNG — в папке «Cutouts» проекта/.test(await p.status()) && (await p.statusKind()) === "done" && p.errors.length === 0, (await p.status()) + p.errors.join(" | "));
+    await p.close();
+
+    // With macOS (Vision): it finds the disc and the square; a click picks the square, «Новым слоем сверху».
+    p = await open({ co: { path: photo }, vision: { masks: [coDisc, coSquare] } });
+    await coOpen(p);
+    check("CO3 macOS found two objects: the window says so", /Нашлось объектов: 2/.test(await p.page.locator("#cutoutNote").innerText()), await p.page.locator("#cutoutNote").innerText());
+    await coClick(p, 45, 45);
+    await coClick(p, 150, 100);
+    await coClick(p, 150, 100, true);
+    await coClick(p, 260, 170);
+    check("CO3 a click on the background picks nothing and says to use the brush", /кистью «Оставить»/.test(await p.page.locator("#cutoutNote").innerText()));
+    await p.page.check('input[name="cutoutMode"][value="above"]');
+    await coDone(p);
+    t = outPng(p);
+    check("CO3 only the square is kept (the disc was picked and then Alt-clicked away)", t && t.alpha(45, 45) === 255 && t.alpha(150, 100) === 0 && t.alpha(280, 180) === 0, t && [t.alpha(45, 45), t.alpha(150, 100)].join());
+    t = p.ae.log.dcMain.list.map((l) => l.name + ":" + (l.enabled ? "on" : "off")).join();
+    check("CO3 «Новым слоем сверху»: a copy of the layer with the cut-out photo above, the original switched off", t === "Фото (без фона):on,Фото:off,BG:on" && /cutout/.test(lay(p, "Фото (без фона)").source.name) && lay(p, "Фото").source.name === "photo.png", t);
+    check("CO3 the report names both layers", /^Готово: вырезанное фото — новым слоем «Фото \(без фона\)» над «Фото», оригинал выключен/.test(await p.status()), await p.status());
+    await p.close();
+
+    // Brush, undo, reset, Esc.
+    p = await open({ co: { path: photo }, vision: { masks: [coDisc, coSquare] } });
+    await coOpen(p);
+    await coClick(p, 150, 100);
+    await p.page.click('.cutout-tool[data-co-tool="drop"]');
+    await coDrag(p, [[150, 40], [150, 160]]);
+    await p.page.click('.cutout-tool[data-co-tool="keep"]');
+    await coDrag(p, [[240, 150], [270, 150]]);
+    await p.page.screenshot({ path: path.join(SHOTS, "62-cutout-brush.png") });
+    await p.page.click("#cutoutUndo"); await coWait(p);
+    await p.page.locator("#cutoutEdge").fill("0");
+    await coDone(p);
+    t = outPng(p);
+    check("CO4 the «Убрать» brush cuts a stripe out of the picked disc; «Шаг назад» took back the «Оставить» stroke", t && t.alpha(150, 100) === 0 && t.alpha(120, 100) === 255 && t.alpha(255, 150) === 0, t && [t.alpha(150, 100), t.alpha(120, 100), t.alpha(255, 150)].join());
+    await p.close();
+
+    p = await open({ co: { path: photo }, vision: { masks: [coDisc] } });
+    await coOpen(p);
+    await coClick(p, 150, 100);
+    await p.page.click("#cutoutReset");
+    await p.page.click("#cutoutDone");
+    check("CO5 after «Сбросить» there is nothing to keep: «Готово» asks for a click first", /Сначала щёлкните/.test(await p.page.locator("#cutoutNote").innerText()) && !(await p.page.locator("#cutoutView").isHidden()));
+    await p.page.keyboard.press("Escape");
+    check("CO5 Esc closes the window, nothing changes", (await p.page.locator("#cutoutView").isHidden()) && !p.ae.log.coReplaced && !fs.existsSync(outDir(p)));
+    await p.close();
+
+    p = await open({ co: { path: photo }, vision: { error: "TypeError (-2700)" } });
+    await coOpen(p);
+    check("CO6 if macOS fails, the window says so and works by colour", /не сработало \(TypeError \(-2700\)\)/.test(await p.page.locator("#cutoutNote").innerText()), await p.page.locator("#cutoutNote").innerText());
+    await coClick(p, 45, 45);
+    await coDone(p);
+    t = outPng(p);
+    check("CO6 … a click on the square keeps the square", t && t.alpha(45, 45) === 255 && t.alpha(150, 100) === 0 && t.alpha(280, 180) === 0, t && [t.alpha(45, 45), t.alpha(150, 100)].join());
     await p.close();
   }
 
