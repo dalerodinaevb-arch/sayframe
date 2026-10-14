@@ -353,7 +353,11 @@ function mkBrComp(log, layers) {
   c.layers = {
     addNull() { const n = mk("null", "Null 1"); c.list.unshift(n); return n; },
     addText(t) { const n = mk("text", String(t)); n.added = true; c.list.unshift(n); log.brTexts = (log.brTexts || []).concat([n]); return n; },
-    add(item) { log.brAdded = (log.brAdded || []).concat([item.name]); return { name: item.name }; }
+    add(item) {
+      const l = { name: item.name, source: item, collapseTransformation: false };
+      l.property = (g) => (g === "ADBE Transform Group" ? { property: (n) => (n === "ADBE Scale" ? { setValue(v) { l.scale = v; } } : null) } : null);
+      log.brAdded = (log.brAdded || []).concat([item.name]); log.brAddedLayers = (log.brAddedLayers || []).concat([l]); return l;
+    }
   };
   return c;
 }
@@ -452,7 +456,7 @@ function makeAE(opts, tmpDir) {
       addComp(name, w, h, par, dur, fps) {
         const c = Object.assign(new CompItem(), { name, width: w, height: h, duration: dur, frameRate: fps, saved: [], scaleSet: null,
           openInViewer() { log.opened++; project.activeItem = c; },
-          layers: { add(it) { c.added = it; return { property() { return { property() { return { setValue(v) { c.scaleSet = v; } }; } }; } }; },
+          layers: { add(it) { c.added = it; c.addedLayer = { collapseTransformation: false, property() { return { property() { return { setValue(v) { c.scaleSet = v; } }; } }; } }; return c.addedLayer; },
             addSolid(color, nm, sw, sh) { c.solid = { color, name: nm, w: sw, h: sh }; return c.solid; } },
           saveFrameToPng(t, file) { c.saved.push(t); fs.writeFileSync(file.fsName, fakePng(c.saved.length - 1)); },
           remove() { log.removed.push("comp"); } });
@@ -4156,10 +4160,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click("#brandFirst");
     await p.page.fill("#brandName", "Acme");
     await p.page.press("#brandName", "Enter");
-    check("BR2 the first project is created and chosen; its sections show", (await p.page.inputValue("#brandSelect")) !== "" && (await p.page.locator("#brandSelect option").allInnerTexts()).join() === "Acme" && (await vis(p, "#brandBody")) && !(await vis(p, "#brandEmpty")) && (await stored()).items[0].name === "Acme", JSON.stringify(await stored()));
+    check("BR2 the first project is created and chosen; its sections show", (await p.page.inputValue("#brandSelect")) !== "" && (await p.page.locator("#brandSelect option").allInnerTexts()).join() === "Acme" && (await vis(p, "#brandBody")) && !(await vis(p, "#brandEmpty")) && (await stored()).items[0].subs[0].name === "Acme" && (await stored()).items[0].name === "Мои проекты", JSON.stringify(await stored()));
     await p.page.fill("#brandColorHex", "#ff5a1f"); await p.page.fill("#brandColorName", "Основной"); await p.page.click("#brandColorAdd");
     await p.page.fill("#brandColorHex", "#101820"); await p.page.fill("#brandColorName", "Фон"); await p.page.press("#brandColorName", "Enter");
-    check("BR3 colors are added with their names and saved", (await p.page.locator("#brandColors .brand-chip").count()) === 2 && (await stored()).items[0].colors.map((c) => c.name + c.hex).join() === "Основной#ff5a1f,Фон#101820");
+    check("BR3 colors are added with their names and saved", (await p.page.locator("#brandColors .brand-chip").count()) === 2 && (await stored()).items[0].subs[0].colors.map((c) => c.name + c.hex).join() === "Основной#ff5a1f,Фон#101820");
     await p.page.click('#brandColors .brand-chip[data-hex="#ff5a1f"]'); await p.idle();
     const orange = [1, 0x5a / 255, 0x1f / 255];
     check("BR3 a click paints the selected layers: text fill, every shape fill, the solid, a Fill effect on the rest", near(L("Title").td.fillColor, orange) && L("Box").fillColors.every((c) => near(c.value, orange)) && near(L("Plate").source.mainSource.color, orange) && near(L("Photo").fx.list[0].color.value, orange) && L("Photo").fx.list[0].name === "Brand Fill", await p.status());
@@ -4174,7 +4178,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
     await p.page.fill("#brandFontHead", "Montserrat-Bold"); await p.page.press("#brandFontHead", "Tab");
     await p.page.click("#brandFontHeadApply"); await p.idle();
-    check("BR5 the heading font goes on the selected text layers only, and is remembered", L("Title").td.font === "Montserrat-Bold" && (await p.status()) === "Шрифт «Montserrat-Bold» поставлен текстовым слоям: 1." && (await stored()).items[0].fonts.head === "Montserrat-Bold", await p.status());
+    check("BR5 the heading font goes on the selected text layers only, and is remembered", L("Title").td.font === "Montserrat-Bold" && (await p.status()) === "Шрифт «Montserrat-Bold» поставлен текстовым слоям: 1." && (await stored()).items[0].subs[0].fonts.head === "Montserrat-Bold", await p.status());
     check("BR5 the installed fonts are offered while typing", (await p.page.locator("#brandFontList option").count()) === 3);
     await p.page.fill("#brandFontBody", "Nope-Font"); await p.page.click("#brandFontBodyApply"); await p.idle();
     check("BR5 a font that is not installed: says so", /нет на этом компьютере/.test(await p.status()), await p.status());
@@ -4191,10 +4195,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p.ae.project.activeItem = p.ae.log.dcMain;
 
     await p.page.click("#brandLogoAdd"); await p.idle();
-    t = (await stored()).items[0].logos[0];
+    t = (await stored()).items[0].subs[0].logos[0];
     check("BR8 a logo is copied into Documents / Sayframe Brands and shown", t && t.name === "sayframe-test-logo" && /Documents\/Sayframe Brands\//.test(t.file) && fs.existsSync(t.file) && (await p.page.locator("#brandLogos .brand-logo").count()) === 1, JSON.stringify(t));
     await p.page.click("#brandLogos .brand-logo-img"); await p.idle();
-    check("BR8 a click puts it into the open comp", (p.ae.log.brAdded || []).length === 1 && /^Логотип «sayframe-test-logo» вставлен в «Main»/.test(await p.status()), await p.status());
+    t = p.ae.log.refComps[p.ae.log.refComps.length - 1];
+    const ll = (p.ae.log.brAddedLayers || [])[0];
+    check("BR8 a click puts it into the open comp as a precomp the size of the logo, the logo at 100% inside", t && t.name === "sayframe-test-logo Logo" && t.width === 500 && t.height === 200 && t.added && /sayframe-test-logo\.png$/.test(t.added.name) && !t.scaleSet && t.addedLayer.collapseTransformation === true && t.parentFolder.name === "Brand — Acme", t && JSON.stringify({ n: t.name, w: t.width, h: t.height, a: t.added && t.added.name, s: t.scaleSet, c: t.addedLayer && t.addedLayer.collapseTransformation, f: t.parentFolder && t.parentFolder.name }));
+    check("BR8 … and that precomp sits in the comp at 10%, sharp (Collapse Transformations)", ll && ll.source === t && ll.scale.join() === "10,10" && ll.collapseTransformation === true && /^Логотип «sayframe-test-logo» вставлен в «Main» прекомпозицией «sayframe-test-logo Logo»: внутри логотип в масштабе 100 %, а сама прекомпозиция — 10 %/.test(await p.status()), await p.status());
+    check("BR8b the project list opens in the panel's dark style (no grey popup with white text)", await p.page.evaluate(() => { const o = document.querySelector("#brandSelect option"), cs = o && getComputedStyle(o), sel = getComputedStyle(document.getElementById("brandSelect")); return !!o && (o.selected ? /^rgba\(157, 123, 255/.test(cs.backgroundColor) && cs.color === "rgb(255, 255, 255)" : cs.backgroundColor === "rgb(27, 27, 34)" && cs.color === "rgb(243, 242, 248)") && sel.colorScheme === "dark"; }), await p.page.evaluate(() => { const o = document.querySelector("#brandSelect option"); return o ? [getComputedStyle(o).backgroundColor, getComputedStyle(o).color, getComputedStyle(document.getElementById("brandSelect")).colorScheme].join("|") : "no option"; }));
     await p.page.screenshot({ path: path.join(SHOTS, "49-projects.png") });
     await p.page.locator("#brandFormats").scrollIntoViewIfNeeded();
     await p.page.screenshot({ path: path.join(SHOTS, "50-projects-bottom.png") });
@@ -4207,6 +4215,102 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("BR9 the bin asks once more before deleting", (await vis(p, "#brandDeleteNote")) && (await p.page.locator("#brandSelect option").count()) === 2);
     await p.page.click("#brandDelete");
     check("BR9 the second press deletes it; Acme is current again", (await p.page.locator("#brandSelect option").allInnerTexts()).join() === "Acme" && (await p.page.locator("#brandColors .brand-chip").count()) === 2 && p.errors.filter((e) => !/Not allowed to load local resource/.test(e)).length === 0, p.errors.join(" | "));
+    await p.close();
+  }
+
+  // Sections above the project list: Alif, Samsung, «+»; each section has its own list of projects (Alif Shop, …).
+  {
+    p = await open({ replies: [msg("Готово.\n```javascript\napp.__ran('x');\n```")] });
+    const stored = () => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.brands.v1") || "null"));
+    const chips = async () => (await p.page.locator("#brandSubs .brand-sub:not(.brand-sub-add)").allInnerTexts()).map((x) => x.replace("×", "").trim()).join();
+    const projects = () => p.page.locator("#brandSelect option").allInnerTexts().then((a) => a.join());
+    await p.page.click("#tabBrand");
+    check("SB1 above the project card: a row of sections with «+», even before the first one", (await vis(p, "#brandSubAdd")) && (await chips()) === "");
+    await p.page.click("#brandSubAdd");
+    check("SB1 «+» asks for the section name", (await vis(p, "#brandNameRow")) && /Alif, Samsung/.test(await p.page.getAttribute("#brandName", "placeholder")));
+    await p.page.fill("#brandName", "Alif"); await p.page.press("#brandName", "Enter");
+    check("SB2 the section «Alif» opens empty: the usual «Создать первый проект»", (await chips()) === "Alif" && (await vis(p, "#brandEmpty")));
+    await p.page.click("#brandFirst"); await p.page.fill("#brandName", "Alif Shop"); await p.page.press("#brandName", "Enter");
+    await p.page.fill("#brandColorHex", "#2fc16e"); await p.page.fill("#brandColorName", "Alif colour"); await p.page.click("#brandColorAdd");
+    await p.page.click("#brandNew"); await p.page.fill("#brandName", "Alif Academy"); await p.page.press("#brandName", "Enter");
+    check("SB3 inside the section the project card works as before: list, pencil, bin, «+ Новый»", (await projects()) === "Alif Shop,Alif Academy" && (await vis(p, "#brandRename")) && (await vis(p, "#brandDelete")) && (await vis(p, "#brandExport")));
+    await p.page.click("#brandSubAdd"); await p.page.fill("#brandName", "Samsung"); await p.page.press("#brandName", "Enter");
+    await p.page.click("#brandFirst"); await p.page.fill("#brandName", "Galaxy"); await p.page.press("#brandName", "Enter");
+    await p.page.fill("#brandColorHex", "#1428a0"); await p.page.fill("#brandColorName", "Samsung Blue"); await p.page.click("#brandColorAdd");
+    t = await stored();
+    check("SB4 each section has its own projects", (await chips()) === "Alif,Samsung" && (await projects()) === "Galaxy" && t.items.map((g) => g.name + ":" + g.subs.map((x) => x.name).join("+")).join() === "Alif:Alif Shop+Alif Academy,Samsung:Galaxy", JSON.stringify(t));
+    await p.page.click('#brandSubs .brand-sub[data-group]:first-child');
+    await p.page.selectOption("#brandSelect", { label: "Alif Shop" });
+    check("SB5 back in Alif, Alif Shop keeps its colors", (await projects()) === "Alif Shop,Alif Academy" && (await p.page.locator("#brandColors .brand-chip").getAttribute("data-hex")) === "#2fc16e");
+    await p.page.click("#tabClaude"); await p.page.fill("#prompt", "заставка в стиле бренда"); await p.page.click("#runBtn"); await p.idle();
+    t = JSON.stringify(p.net.requests[0] ? p.net.requests[0].body.messages[0].content : "");
+    check("SB5 the AI gets the chosen project with its section: «Alif / Alif Shop»", /\[Brand: Alif \/ Alif Shop\]/.test(t) && /Alif colour #2fc16e/.test(t) && !/#1428a0/.test(t), t.slice(0, 300));
+    await p.page.click("#tabBrand");
+    await p.page.dblclick('#brandSubs .brand-sub[aria-selected="true"]');
+    await p.page.fill("#brandName", "Alif Bank"); await p.page.press("#brandName", "Enter");
+    check("SB6 a double click renames the section", (await chips()) === "Alif Bank,Samsung");
+    await p.page.click('#brandSubs .brand-sub[data-group]:nth-child(2)');
+    await p.page.click('#brandSubs .brand-sub[aria-selected="true"] .brand-sub-x');
+    check("SB7 × on the open section asks once more", (await vis(p, "#brandDeleteNote")) && (await chips()) === "Alif Bank,Samsung");
+    await p.page.click('#brandSubs .brand-sub[aria-selected="true"] .brand-sub-x');
+    check("SB7 the second press deletes that section with its projects", (await chips()) === "Alif Bank" && (await projects()) === "Alif Shop,Alif Academy" && /Раздел «Samsung» удалён/.test(await p.status()), await p.status());
+    await p.restart(); await p.page.click("#tabBrand");
+    check("SB8 sections and their projects survive a restart", (await chips()) === "Alif Bank" && (await projects()) === "Alif Shop,Alif Academy" && p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
+    p = await open({});
+    await p.page.evaluate(() => localStorage.setItem("sayframe.brands.v1", JSON.stringify({ active: "b2", items: [{ id: "b1", name: "Acme", colors: [] }, { id: "b2", name: "Beta", colors: [] }] })));
+    await p.restart(); await p.page.click("#tabBrand");
+    check("SB9 projects from before stay as they were, in a section «Мои проекты»", (await chips()) === "Мои проекты" && (await projects()) === "Acme,Beta" && (await p.page.inputValue("#brandSelect")) === "b2", await projects());
+    await p.close();
+  }
+
+  // Sharing a brand book: one .sfbrand file with the logos inside, imported by a colleague.
+  {
+    const logoSrc = path.join(os.tmpdir(), "sayframe-share-logo.png");
+    fs.writeFileSync(logoSrc, fakePng(3));
+    const out = path.join(os.tmpdir(), "sayframe-share-" + Date.now() + ".sfbrand");
+    const seed = { active: "b1", items: [{ id: "b1", name: "Acme", colors: [{ name: "Основной", hex: "#ff5a1f" }, { name: "Фон", hex: "#101820" }], fonts: { head: "Montserrat-Bold", body: "Inter-Regular" }, texts: [{ name: "Сайт", text: "acme.tj" }], logos: [{ id: "l1", name: "acme-logo", file: logoSrc, variant: "white" }] }] };
+    p = await open({ saveAs: out });
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.brands.v1", JSON.stringify(v)), seed);
+    await p.restart(); await p.page.click("#tabBrand");
+    check("SH1 «Поделиться» and «Импорт» buttons under the project list", (await vis(p, "#brandExport")) && (await vis(p, "#brandImport")));
+    await p.page.click("#brandExport");
+    await p.page.waitForFunction(() => /сохранён|Не удалось/.test(document.getElementById("status").textContent), null, { timeout: 8000 }).catch(() => {});
+    await p.idle();
+    t = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : null;
+    const fb = t && t.brand;
+    check("SH1 «Поделиться» saves the whole project into one .sfbrand file, the logo inside it", t && t.format === "sayframe-brand" && t.version === 1 && fb.name === "Acme" && fb.colors.length === 2 && fb.fonts.head === "Montserrat-Bold" && fb.texts[0].text === "acme.tj" &&
+      fb.logos.length === 1 && fb.logos[0].ext === "png" && fb.logos[0].variant === "white" && Buffer.from(fb.logos[0].data, "base64").equals(fakePng(3)), fs.existsSync(out) + " " + JSON.stringify(t).slice(0, 300));
+    check("SH1 the save window starts in Documents with the project name; the report says what to do next", p.ae.log.saveDlg.length === 1 && /Documents\/Acme\.sfbrand$/.test(p.ae.log.saveDlg[0].path) && /сохранён в файл .*\.sfbrand.*«Проекты» → «Импорт»/.test(await p.status()), await p.status());
+    await p.close();
+
+    p = await open({ pickFile: out });
+    await p.page.click("#tabBrand");
+    check("SH2 an empty panel offers «Импорт из файла .sfbrand» right away", (await vis(p, "#brandFirstImport")) && !(await vis(p, "#brandTop")));
+    await p.page.click("#brandFirstImport"); await p.idle();
+    const stored = () => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.brands.v1") || "null"));
+    t = await stored();
+    const ib = t.items[0] && t.items[0].subs[0];
+    check("SH2 the colleague gets the project whole: colors, fonts, texts and the logo, copied into his Documents / Sayframe Brands", t.items.length === 1 && ib.name === "Acme" && ib.colors.map((c) => c.hex).join() === "#ff5a1f,#101820" && ib.fonts.body === "Inter-Regular" && ib.texts.length === 1 &&
+      ib.logos.length === 1 && ib.logos[0].variant === "white" && /Documents\/Sayframe Brands\//.test(ib.logos[0].file) && fs.readFileSync(ib.logos[0].file).equals(fakePng(3)), JSON.stringify(t));
+    check("SH2 the report counts what came in", (await p.status()) === "Брендбук «Acme» добавлен: логотипов — 1, цветов — 2, текстов — 1.", await p.status());
+    const firstLogo = ib.logos[0].file;
+    await p.page.click("#brandImport"); await p.idle();
+    check("SH3 the same brand again: asks whether to update it or keep a separate copy", (await vis(p, "#brandAsk")) && /уже есть проект «Acme»/.test(await p.page.locator("#brandAskText").innerText()) && !(await vis(p, "#brandShareRow")));
+    await p.page.click("#brandAskCopy"); await p.idle();
+    t = await stored();
+    check("SH3 «Отдельной копией» adds «Acme 2» next to it", t.items[0].subs.map((x) => x.name).join() === "Acme,Acme 2" && !(await vis(p, "#brandAsk")), t.items[0].subs.map((x) => x.name).join());
+    await p.page.click("#brandImport"); await p.idle();
+    await p.page.click("#brandAskUpdate"); await p.idle();
+    t = await stored();
+    check("SH3 «Обновить» replaces Acme in place, its old logo file is cleaned up", t.items[0].subs.map((x) => x.name).join() === "Acme,Acme 2" &&  !fs.existsSync(firstLogo) && fs.existsSync(t.items[0].subs[0].logos[0].file) && /обновлён/.test(await p.status()) && p.errors.filter((e) => !/Not allowed to load local resource/.test(e)).length === 0, (await p.status()) + " " + p.errors.join(" | "));
+    await p.page.click("#brandImport"); await p.idle(); await p.page.click("#brandAskCancel");
+    check("SH3 «Отмена» changes nothing", (await stored()).items[0].subs.length === 2 && (await p.status()) === "Импорт отменён.");
+    await p.close();
+
+    p = await open({ pickFile: logoSrc });
+    await p.page.click("#tabBrand"); await p.page.click("#brandFirstImport"); await p.idle();
+    check("SH4 a file that is not a brand book: a clear message, nothing added", (await p.status()) === "Это не файл брендбука Sayframe. Нужен файл .sfbrand, сохранённый кнопкой «Поделиться»." && !(await p.page.evaluate(() => localStorage.getItem("sayframe.brands.v1"))), await p.status());
     await p.close();
   }
 
