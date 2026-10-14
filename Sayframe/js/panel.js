@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.40.0";
+    var VERSION = "1.43.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -739,6 +739,9 @@
         brandColorPick: el("brandColorPick"), brandColorHex: el("brandColorHex"), brandColorName: el("brandColorName"), brandColorAdd: el("brandColorAdd"),
         brandRigBtn: el("brandRigBtn"), brandFontList: el("brandFontList"), brandFontHead: el("brandFontHead"), brandFontBody: el("brandFontBody"),
         brandFontHeadApply: el("brandFontHeadApply"), brandFontBodyApply: el("brandFontBodyApply"), brandTexts: el("brandTexts"),
+        brandTop: el("brandTop"), brandSubs: el("brandSubs"), brandShareRow: el("brandShareRow"), brandExport: el("brandExport"), brandImport: el("brandImport"),
+        brandFirstImport: el("brandFirstImport"), brandAsk: el("brandAsk"), brandAskText: el("brandAskText"), brandAskUpdate: el("brandAskUpdate"),
+        brandAskCopy: el("brandAskCopy"), brandAskCancel: el("brandAskCancel"),
         brandTextName: el("brandTextName"), brandTextValue: el("brandTextValue"), brandTextAdd: el("brandTextAdd"), brandFormats: el("brandFormats"),
         shapeTools: el("shapeTools"), shapeGridCells: el("shapeGridCells"), shapePinLine: el("shapePinLine"),
         ecOptsToggle: el("ecOptsToggle"), ecOpts: el("ecOpts"), ecCopy: el("ecCopy"), ecPasteEase: el("ecPasteEase"), ecPasteValue: el("ecPasteValue"),
@@ -6050,15 +6053,42 @@
 
     function brandNewId(prefix) { return prefix + Date.now().toString(36) + Math.floor(Math.random() * 1000); }
 
+    // Проект (например, «Alif Bank») состоит из разделов (Alif, Alifshop, Alif Academy…); у каждого раздела свой брендбук.
+    // Старые проекты без разделов становятся проектом с одним разделом того же имени.
+    // Сверху — разделы (например, Alif, Samsung). В разделе — проекты (Alif Shop, Alif Academy…) из списка,
+    // у каждого проекта свой брендбук. Проекты из прежних версий попадают в раздел «Мои проекты».
+    var BRAND_GROUP_DEFAULT = "Мои проекты";
+
+    function cleanGroup(g) {
+        var out, i, sb;
+        if (!g || typeof g !== "object" || typeof g.id !== "string" || !g.id || !(g.subs instanceof Array)) { return null; }
+        out = { id: g.id.substring(0, 40), name: brandStr(g.name, 60) || "Без названия", active: typeof g.active === "string" ? g.active : "", subs: [] };
+        for (i = 0; i < g.subs.length && out.subs.length < 100; i++) {
+            sb = cleanBrand(g.subs[i]);
+            if (sb && !out.subs.some(function (x) { return x.id === sb.id; })) { out.subs.push(sb); }
+        }
+        if (!out.subs.some(function (x) { return x.id === out.active; })) { out.active = out.subs.length ? out.subs[0].id : ""; }
+        return out;
+    }
+
     function loadBrands() {
-        var saved, out = { active: "", items: [] }, i, b;
+        var saved, out = { active: "", items: [] }, i, g, flat = [];
         try { saved = JSON.parse(window.localStorage.getItem(BRAND_KEY) || "null"); } catch (e) { saved = null; }
         if (saved && saved.items instanceof Array) {
             for (i = 0; i < saved.items.length && out.items.length < 100; i++) {
-                b = cleanBrand(saved.items[i]);
-                if (b && !out.items.some(function (x) { return x.id === b.id; })) { out.items.push(b); }
+                if (saved.items[i] && saved.items[i].subs instanceof Array) {
+                    g = cleanGroup(saved.items[i]);
+                    if (g && !out.items.some(function (x) { return x.id === g.id; })) { out.items.push(g); }
+                } else {
+                    flat.push(saved.items[i]);
+                }
             }
             out.active = typeof saved.active === "string" ? saved.active : "";
+            // Прежний формат: просто список проектов — они становятся разделом «Мои проекты».
+            if (flat.length) {
+                g = cleanGroup({ id: "gmain", name: BRAND_GROUP_DEFAULT, active: out.active, subs: flat });
+                if (g && g.subs.length) { out.items.unshift(g); out.active = g.id; }
+            }
         }
         if (!out.items.some(function (x) { return x.id === out.active; })) { out.active = out.items.length ? out.items[0].id : ""; }
         return out;
@@ -6070,14 +6100,39 @@
         try { window.localStorage.setItem(BRAND_KEY, JSON.stringify(brands)); } catch (e) {}
     }
 
-    function activeBrand() {
+    // Открытый раздел (Alif, Samsung…).
+    function activeProject() {
         var i;
         for (i = 0; i < brands.items.length; i++) { if (brands.items[i].id === brands.active) { return brands.items[i]; } }
         return null;
     }
 
+    // Брендбук проекта, выбранного в списке открытого раздела.
+    function activeBrand() {
+        var pr = activeProject(), i;
+        if (!pr) { return null; }
+        for (i = 0; i < pr.subs.length; i++) { if (pr.subs[i].id === pr.active) { return pr.subs[i]; } }
+        return null;
+    }
+
+    function brandFullName(b) {
+        var pr = activeProject();
+        return pr && pr.name !== b.name && pr.name !== BRAND_GROUP_DEFAULT ? pr.name + " / " + b.name : b.name;
+    }
+
     function brandFolder(b) { return platform.join(platform.homedir(), "Documents", "Sayframe Brands", b.id); }
     function brandBin(b) { return "Brand — " + b.name; }
+
+    // Раздел для нового проекта: открытый, а если разделов ещё нет — «Мои проекты».
+    function brandGroupForNew() {
+        var g = activeProject();
+        if (!g) {
+            g = { id: brandNewId("g"), name: BRAND_GROUP_DEFAULT, active: "", subs: [] };
+            brands.items.push(g);
+            brands.active = g.id;
+        }
+        return g;
+    }
 
     function fileUrl(p) {
         var norm = String(p).replace(/\\/g, "/");
@@ -6098,26 +6153,68 @@
     }
 
     function renderBrand() {
-        var b = activeBrand();
+        var pr = activeProject(), b = activeBrand();
+        var has = !!(pr && pr.subs.length);
         var i, o;
         ui.brandSelect.innerHTML = "";
-        for (i = 0; i < brands.items.length; i++) {
-            o = mkEl("option", "", brands.items[i].name);
-            o.value = brands.items[i].id;
+        for (i = 0; pr && i < pr.subs.length; i++) {
+            o = mkEl("option", "", pr.subs[i].name);
+            o.value = pr.subs[i].id;
             ui.brandSelect.appendChild(o);
         }
-        ui.brandSelect.value = brands.active;
-        ui.brandPickRow.hidden = !brands.items.length || brandNaming !== null;
+        ui.brandSelect.value = pr ? pr.active : "";
+        ui.brandPickRow.hidden = !has || brandNaming !== null;
+        ui.brandShareRow.hidden = !has || brandNaming !== null || !!brandPending;
+        ui.brandAsk.hidden = !brandPending;
+        ui.brandTop.hidden = !has && brandNaming === null && !brandPending;
         ui.brandNameRow.hidden = brandNaming === null;
-        ui.brandEmpty.hidden = !!brands.items.length || brandNaming !== null;
+        ui.brandEmpty.hidden = has || brandNaming !== null;
         ui.brandBody.hidden = !b;
         ui.brandDeleteNote.hidden = !brandDelAt;
+        ui.brandSubs.hidden = brandNaming !== null && !brands.items.length;
+        renderBrandSubs();
         if (!b) { return; }
         renderBrandLogos(b);
         renderBrandColors(b);
         if (document.activeElement !== ui.brandFontHead) { ui.brandFontHead.value = b.fonts.head; }
         if (document.activeElement !== ui.brandFontBody) { ui.brandFontBody.value = b.fonts.body; }
         renderBrandTexts(b);
+    }
+
+    // Разделы — ряд кнопок над проектом: «+» добавляет раздел, двойной щелчок переименовывает, × удаляет.
+    function renderBrandSubs() {
+        var box = ui.brandSubs, add;
+        box.innerHTML = "";
+        brands.items.forEach(function (g) {
+            var on = g.id === brands.active;
+            var chip = mkEl("button", "brand-sub", g.name);
+            var x;
+            chip.setAttribute("role", "tab");
+            chip.setAttribute("aria-selected", on ? "true" : "false");
+            chip.setAttribute("data-group", g.id);
+            chip.title = on ? "Двойной щелчок — переименовать раздел" : "Открыть раздел «" + g.name + "»";
+            chip.addEventListener("click", function () {
+                if (brands.active !== g.id) { brands.active = g.id; brandDelAt = 0; brandNaming = null; storeBrands(); renderBrand(); }
+            });
+            chip.addEventListener("dblclick", function () { brandAskName("rename-group"); });
+            if (on) {
+                x = mkEl("span", "brand-sub-x", "×");
+                x.setAttribute("role", "button");
+                x.setAttribute("tabindex", "0");
+                x.setAttribute("aria-label", "Удалить раздел «" + g.name + "»");
+                x.title = x.getAttribute("aria-label");
+                x.addEventListener("click", function (e) { e.stopPropagation(); brandDeleteGroup(); });
+                x.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); brandDeleteGroup(); } });
+                chip.appendChild(x);
+            }
+            box.appendChild(chip);
+        });
+        add = mkEl("button", "brand-sub brand-sub-add", "+");
+        add.id = "brandSubAdd";
+        add.title = "Добавить раздел (например, Samsung)";
+        add.setAttribute("aria-label", add.title);
+        add.addEventListener("click", function () { brandAskName("group"); });
+        box.appendChild(add);
     }
 
     function brandX(label, onClick) {
@@ -6138,7 +6235,7 @@
             var sel = mkEl("select", "field");
             var img;
             tile.setAttribute("data-logo", l.id);
-            pic.title = "Вставить «" + l.name + "» в открытую композицию";
+            pic.title = "Вставить «" + l.name + "» в открытую композицию: прекомпозицией размером с логотип, в масштабе 10 %";
             pic.setAttribute("aria-label", pic.title);
             if (LOGO_PREVIEW.test(l.file)) {
                 img = mkEl("img");
@@ -6200,52 +6297,239 @@
         });
     }
 
-    // Название проекта: новая строка для «+ Новый» и «Переименовать».
-    function brandAskName(mode) {
+    // ---- поделиться: проект целиком (с логотипами внутри) в один файл .sfbrand и обратно
+
+    var BRAND_FILE = "sayframe-brand";
+    var BRAND_FILE_MAX = 80 * 1024 * 1024;
+    var brandPending = null;     // { brand, logos, same } — импорт ждёт ответа «обновить или копией»
+
+    function brandSafeName(name) { return String(name).replace(/[\\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "") || "Brand"; }
+    function logoExt(p) { var m = /\.([a-z0-9]+)$/i.exec(String(p)); return m ? m[1].toLowerCase() : ""; }
+
+    async function brandExport() {
         var b = activeBrand();
+        var r, pack, logos = [], missing = 0, i, l;
+        if (!b || busy) { return; }
+        setBusy(true);
+        try {
+            r = await host("brandSaveDialog", [brandSafeName(b.name) + ".sfbrand", "Сохранить брендбук «" + b.name + "»"]);
+        } catch (e) {
+            setBusy(false);
+            setStatus("Не удалось открыть окно сохранения: " + humanError(e), "error");
+            return;
+        }
+        if (!r || !r.path) { setBusy(false); return; }
+        setStatus("Собираю брендбук…", "busy");
+        try {
+            for (i = 0; i < b.logos.length; i++) {
+                l = b.logos[i];
+                try {
+                    logos.push({ name: l.name, variant: l.variant, ext: logoExt(l.file), data: await platform.readBase64(l.file) });
+                } catch (e1) {
+                    missing++;
+                }
+            }
+            pack = { format: BRAND_FILE, version: 1, brand: { name: b.name, colors: b.colors, fonts: b.fonts, texts: b.texts, logos: logos } };
+            await platform.writeText(r.path, JSON.stringify(pack));
+            setBusy(false);
+            setStatus("Брендбук «" + b.name + "» сохранён в файл " + platform.basename(r.path) + " (" + platform.dirname(r.path) + "). Отправьте его коллеге: у себя он откроет «Проекты» → «Импорт»." +
+                (missing ? " Не нашлось файлов логотипов: " + missing + " — их в файле нет." : ""), "done");
+        } catch (e) {
+            setBusy(false);
+            setStatus("Не удалось сохранить брендбук: " + humanError(e), "error");
+        }
+    }
+
+    // Раздел из файла: брендбук без логотипов и логотипы отдельно (их ещё надо записать на диск).
+    function brandFromFile(raw) {
+        var b = cleanBrand({ id: brandNewId("b"), name: raw && raw.name, colors: raw && raw.colors, fonts: raw && raw.fonts, texts: raw && raw.texts, logos: [] });
+        var logos = (raw && raw.logos instanceof Array ? raw.logos : []).filter(function (l) {
+            return l && typeof l.data === "string" && l.data && LOGO_EXT.test("x." + String(l.ext || ""));
+        }).slice(0, BRAND_MAX.logos);
+        return { brand: b, logos: logos };
+    }
+
+    async function brandImport() {
+        var path, text, pack, parts = [], groupName = "", same = null, g;
+        if (busy) { return; }
+        setBusy(true);
+        path = await platform.pickFile("Выберите файл брендбука .sfbrand");
+        if (!path) { setBusy(false); return; }
+        try {
+            text = await platform.readText(path);
+            if (text.length > BRAND_FILE_MAX) { throw new Error("BIG"); }
+            pack = JSON.parse(text);
+        } catch (e) {
+            pack = null;
+        }
+        setBusy(false);
+        if (pack && pack.format === BRAND_FILE && pack.brand && typeof pack.brand === "object") {
+            parts = [brandFromFile(pack.brand)];
+        } else if (pack && pack.format === BRAND_FILE && pack.project && pack.project.subs instanceof Array) {
+            groupName = brandStr(pack.project.name, 60) || "Без названия";     // целый раздел с проектами
+            parts = pack.project.subs.slice(0, 100).map(brandFromFile);
+        }
+        if (!parts.length) {
+            setStatus("Это не файл брендбука Sayframe. Нужен файл .sfbrand, сохранённый кнопкой «Поделиться».", "error");
+            return;
+        }
+        if (!groupName) {
+            g = activeProject();
+            (g ? g.subs : []).forEach(function (x) { if (x.name.toLowerCase() === parts[0].brand.name.toLowerCase()) { same = x; } });
+        }
+        if (same) {
+            brandPending = { parts: parts, same: same };
+            ui.brandAskText.textContent = "В разделе уже есть проект «" + same.name + "». Обновить его из файла или сохранить отдельной копией?";
+            renderBrand();
+            return;
+        }
+        await brandFinishImport(parts, null, groupName);
+    }
+
+    // Пишет логотипы на диск и добавляет проекты: в открытый раздел или (groupName) новым разделом.
+    async function brandFinishImport(parts, replace, groupName) {
+        var g, i, j, l, id, dest, fails = 0, idx, b, nLogos = 0;
+        setBusy(true);
+        setStatus("Добавляю брендбук…", "busy");
+        try {
+            if (groupName) {
+                g = { id: brandNewId("g"), name: groupName, active: "", subs: [] };
+                brands.items.push(g);
+                brands.active = g.id;
+            } else {
+                g = brandGroupForNew();
+            }
+            if (replace) { brandForget(replace); }
+            for (j = 0; j < parts.length; j++) {
+                b = parts[j].brand;
+                if (replace && j === 0) { b.id = replace.id; }
+                if (parts[j].logos.length) { await platform.mkdirp(brandFolder(b)); }
+                for (i = 0; i < parts[j].logos.length; i++) {
+                    l = parts[j].logos[i];
+                    id = brandNewId("l");
+                    dest = platform.join(brandFolder(b), id + "-" + (brandStr(l.name, 60) || "logo").replace(/[^\w.\-]+/g, "_") + "." + String(l.ext).toLowerCase());
+                    try {
+                        await platform.writeBytes(dest, b64Bytes(l.data));
+                        b.logos.push({ id: id, name: brandStr(l.name, 80) || "logo", file: dest,
+                            variant: LOGO_VARIANTS.some(function (v) { return v[0] === l.variant; }) ? l.variant : "main" });
+                        nLogos++;
+                    } catch (e1) {
+                        fails++;
+                    }
+                }
+                idx = replace && j === 0 ? g.subs.indexOf(replace) : -1;
+                if (idx >= 0) { g.subs[idx] = b; } else { g.subs.push(b); }
+            }
+            g.active = parts[0].brand.id;
+            brandPending = null;
+            storeBrands();
+            renderBrand();
+            setBusy(false);
+            b = parts[0].brand;
+            setStatus(groupName ? "Раздел «" + g.name + "» добавлен: проектов — " + parts.length + ", логотипов — " + nLogos + "." :
+                "Брендбук «" + b.name + "» " + (replace ? "обновлён" : "добавлен") + ": логотипов — " + b.logos.length + ", цветов — " + b.colors.length + ", текстов — " + b.texts.length + "." +
+                (fails ? " Не удалось сохранить логотипов: " + fails + "." : ""), "done");
+        } catch (e) {
+            setBusy(false);
+            setStatus("Не удалось добавить брендбук: " + humanError(e), "error");
+        }
+    }
+
+    function brandAnswer(how) {
+        var p = brandPending, n = 2, g = activeProject(), base;
+        if (!p) { return; }
+        if (how === "cancel") { brandPending = null; renderBrand(); setStatus("Импорт отменён.", ""); return; }
+        if (how === "copy") {
+            base = p.parts[0].brand.name;
+            while (g && g.subs.some(function (x) { return x.name.toLowerCase() === (base + " " + n).toLowerCase(); })) { n++; }
+            p.parts[0].brand.name = brandStr(base + " " + n, 60);
+            brandFinishImport(p.parts, null, "");
+            return;
+        }
+        brandFinishImport(p.parts, p.same, "");
+    }
+
+    // Название: новый проект, новый раздел или переименование того или другого — одна строка ввода.
+    var BRAND_NAME_HINT = { "new": "Название: клиент или компания", rename: "Новое название проекта",
+        group: "Название раздела: Alif, Samsung…", "rename-group": "Новое название раздела" };
+
+    function brandAskName(mode) {
+        var g = activeProject(), b = activeBrand();
         brandNaming = mode;
         brandDelAt = 0;
-        ui.brandName.value = mode === "rename" && b ? b.name : "";
+        ui.brandName.value = mode === "rename" && b ? b.name : mode === "rename-group" && g ? g.name : "";
+        ui.brandName.placeholder = BRAND_NAME_HINT[mode] || "";
         renderBrand();
         ui.brandName.focus();
     }
 
     function brandNameDone(ok) {
         var name = brandStr(ui.brandName.value, 60);
-        var mode = brandNaming;
-        var b;
+        var mode = brandNaming, g = activeProject(), b = activeBrand(), sb, msg = "";
         if (ok && !name) { ui.brandName.focus(); return; }
-        if (ok && mode === "rename" && activeBrand()) {
-            activeBrand().name = name;
+        if (ok && mode === "rename" && b) {
+            b.name = name;
+            msg = "Проект переименован: «" + name + "».";
+        } else if (ok && mode === "rename-group" && g) {
+            g.name = name;
+            msg = "Раздел переименован: «" + name + "».";
+        } else if (ok && mode === "group") {
+            g = { id: brandNewId("g"), name: name, active: "", subs: [] };
+            brands.items.push(g);
+            brands.active = g.id;
+            msg = "Раздел «" + name + "» добавлен. Создайте в нём первый проект.";
         } else if (ok) {
-            b = cleanBrand({ id: brandNewId("b"), name: name });
-            brands.items.push(b);
-            brands.active = b.id;
+            g = brandGroupForNew();
+            sb = cleanBrand({ id: brandNewId("b"), name: name });
+            g.subs.push(sb);
+            g.active = sb.id;
+            msg = "Проект «" + name + "» готов. Добавьте логотипы, цвета, шрифты и тексты.";
         }
         brandNaming = null;
         storeBrands();
         renderBrand();
-        if (ok) { setStatus(mode === "rename" ? "Проект переименован: «" + name + "»." : "Проект «" + name + "» готов. Добавьте логотипы, цвета, шрифты и тексты.", ""); }
+        if (msg) { setStatus(msg, ""); }
+    }
+
+    function brandForget(b) {
+        b.logos.forEach(function (l) { if (l.file.indexOf(brandFolder(b)) === 0) { platform.remove(l.file); } });
+    }
+
+    // Удаление — со второго нажатия в течение 4 секунд. what: "project" или "group".
+    var brandDelWhat = "";
+    function brandArmDelete(what, text) {
+        var now = Date.now();
+        if (brandDelAt && brandDelWhat === what && now - brandDelAt <= 4000) { brandDelAt = 0; return true; }
+        brandDelAt = now;
+        brandDelWhat = what;
+        ui.brandDeleteNote.textContent = text;
+        renderBrand();
+        setTimeout(function () { if (brandDelAt === now) { brandDelAt = 0; renderBrand(); } }, 4000);
+        return false;
     }
 
     function brandDelete() {
-        var b = activeBrand();
-        var now = Date.now();
-        if (!b) { return; }
-        if (!brandDelAt || now - brandDelAt > 4000) {
-            brandDelAt = now;
-            ui.brandDeleteNote.textContent = "Нажмите корзину ещё раз, чтобы удалить «" + b.name + "» вместе с его логотипами.";
-            renderBrand();
-            setTimeout(function () { if (brandDelAt === now) { brandDelAt = 0; renderBrand(); } }, 4000);
-            return;
-        }
-        brandDelAt = 0;
-        b.logos.forEach(function (l) { if (l.file.indexOf(brandFolder(b)) === 0) { platform.remove(l.file); } });
-        brands.items = brands.items.filter(function (x) { return x.id !== b.id; });
-        brands.active = brands.items.length ? brands.items[0].id : "";
+        var g = activeProject(), b = activeBrand();
+        if (!g || !b) { return; }
+        if (!brandArmDelete("project", "Нажмите корзину ещё раз, чтобы удалить «" + b.name + "» вместе с его логотипами.")) { return; }
+        brandForget(b);
+        g.subs = g.subs.filter(function (x) { return x.id !== b.id; });
+        g.active = g.subs.length ? g.subs[0].id : "";
         storeBrands();
         renderBrand();
         setStatus("Проект «" + b.name + "» удалён.", "");
+    }
+
+    function brandDeleteGroup() {
+        var g = activeProject();
+        if (!g) { return; }
+        if (!brandArmDelete("group", "Нажмите × ещё раз, чтобы удалить раздел «" + g.name + "» со всеми его проектами (" + g.subs.length + ")." )) { return; }
+        g.subs.forEach(brandForget);
+        brands.items = brands.items.filter(function (x) { return x.id !== g.id; });
+        brands.active = brands.items.length ? brands.items[0].id : "";
+        storeBrands();
+        renderBrand();
+        setStatus("Раздел «" + g.name + "» удалён.", "");
     }
 
     function b64Bytes(b64) {
@@ -6258,14 +6542,15 @@
         var b = activeBrand();
         var src, id, dest, name;
         if (!b || busy) { return; }
-        if (b.logos.length >= BRAND_MAX.logos) { setStatus("В проекте уже " + BRAND_MAX.logos + " логотипов — уберите лишние.", ""); return; }
+        if (b.logos.length >= BRAND_MAX.logos) { setStatus("В разделе уже " + BRAND_MAX.logos + " логотипов — уберите лишние.", ""); return; }
+        setBusy(true);
         src = await platform.pickFile("Выберите файл логотипа");
-        if (!src) { return; }
-        if (!LOGO_EXT.test(src)) { setStatus("Это не логотип: подойдут PNG, SVG, AI, EPS, PSD, PDF, JPG, TIFF, GIF или WebP.", "error"); return; }
+        if (!src) { setBusy(false); return; }
+        if (!LOGO_EXT.test(src)) { setBusy(false); setStatus("Это не логотип: подойдут PNG, SVG, AI, EPS, PSD, PDF, JPG, TIFF, GIF или WebP.", "error"); return; }
         id = brandNewId("l");
         name = platform.basename(src).replace(/\.[^.]+$/, "");
         dest = src;
-        // Копия в папку проекта: логотип не потеряется, даже если оригинал переместят.
+        // Копия в папку раздела: логотип не потеряется, даже если оригинал переместят.
         try {
             await platform.mkdirp(brandFolder(b));
             dest = platform.join(brandFolder(b), id + "-" + platform.basename(src).replace(/[^\w.\-]+/g, "_"));
@@ -6276,6 +6561,7 @@
         b.logos.push({ id: id, name: name, file: dest, variant: "main" });
         storeBrands();
         renderBrand();
+        setBusy(false);
         setStatus("Логотип «" + name + "» добавлен в проект «" + b.name + "». Щелчок по нему вставит его в композицию.", "done");
     }
 
@@ -6305,8 +6591,8 @@
     function brandPlaceLogo(l) {
         var b = activeBrand();
         if (!b) { return; }
-        brandCall("brandLogo", [l.file, brandBin(b)], function (r) {
-            return r.comp ? "Логотип «" + l.name + "» вставлен в «" + r.comp + "»" + (r.reused ? " (он уже был в проекте)." : " и лежит в папке «" + brandBin(b) + "».")
+        brandCall("brandLogo", [l.file, brandBin(b), l.name], function (r) {
+            return r.comp ? "Логотип «" + l.name + "» вставлен в «" + r.comp + "» прекомпозицией «" + r.pre + "»: внутри логотип в масштабе 100 %, а сама прекомпозиция — " + r.scale + " %. Файл и прекомпозиция лежат в папке «" + brandBin(b) + "»."
                 : "Логотип «" + l.name + "» добавлен в проект, в папку «" + brandBin(b) + "». Откройте композицию — и щелчок вставит его в неё.";
         });
     }
@@ -6372,7 +6658,7 @@
         var b = activeBrand();
         var lines = [];
         if (!b || (!b.colors.length && !b.logos.length && !b.fonts.head && !b.fonts.body && !b.texts.length)) { return ""; }
-        lines.push("[Brand: " + b.name + "] Use this brand when the request mentions the brand, logo, brand colors or fonts, or asks for something \"in our style\".");
+        lines.push("[Brand: " + brandFullName(b) + "] Use this brand when the request mentions the brand, logo, brand colors or fonts, or asks for something \"in our style\".");
         if (b.colors.length) { lines.push("Colors: " + b.colors.map(function (c) { return c.name + " " + c.hex; }).join(", ")); }
         if (b.fonts.head || b.fonts.body) { lines.push("Fonts (PostScript names): headings " + (b.fonts.head || "-") + ", body text " + (b.fonts.body || b.fonts.head || "-")); }
         if (b.logos.length) {
@@ -6394,8 +6680,14 @@
             if (e.key === "Enter") { e.preventDefault(); brandNameDone(true); }
             if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); brandNaming = null; renderBrand(); }
         });
-        ui.brandSelect.addEventListener("change", function () { brands.active = ui.brandSelect.value; brandDelAt = 0; storeBrands(); renderBrand(); });
+        ui.brandSelect.addEventListener("change", function () { var g = activeProject(); if (g) { g.active = ui.brandSelect.value; } brandDelAt = 0; storeBrands(); renderBrand(); });
         ui.brandLogoAdd.addEventListener("click", brandAddLogo);
+        ui.brandExport.addEventListener("click", brandExport);
+        ui.brandImport.addEventListener("click", brandImport);
+        ui.brandFirstImport.addEventListener("click", brandImport);
+        ui.brandAskUpdate.addEventListener("click", function () { brandAnswer("update"); });
+        ui.brandAskCopy.addEventListener("click", function () { brandAnswer("copy"); });
+        ui.brandAskCancel.addEventListener("click", function () { brandAnswer("cancel"); });
         ui.brandColorPick.addEventListener("input", function () { ui.brandColorHex.value = ui.brandColorPick.value; });
         ui.brandColorHex.addEventListener("input", function () { var c = parseHex(ui.brandColorHex.value); if (c) { ui.brandColorPick.value = c.hex; } });
         ui.brandColorAdd.addEventListener("click", function () {
