@@ -735,7 +735,11 @@ textarea:focus, .field:focus {
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
 }
-.select option { background: #1b1b22; color: #f3f2f8; }
+/* Выпадающие списки — в тёмном стиле панели (иначе Chromium рисует серый фон с белым текстом). */
+select { color-scheme: dark; }
+select option, select optgroup { background: #1b1b22; color: #f3f2f8; }
+select option:checked { background: rgba(var(--accent-rgb), 0.35); color: #fff; }
+select option:disabled { color: rgba(243, 242, 248, 0.36); }
 .select:disabled { opacity: 0.45; cursor: default; }
 
 /* Мелкие блоки (настройка «Блоки в разделе „Анимация“»): кнопки, отступы и подписи меньше,
@@ -1421,3 +1425,17 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .brand-sec, .brand-empty { padding: 14px; }
 #brandBody { display: flex; flex-direction: column; gap: 10px; }
 #brandBody[hidden] { display: none; }
+.brand-share .ghost { flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.brand-share svg { width: 15px; height: 15px; flex: none; }
+.brand-ask { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid rgba(var(--accent-rgb), 0.5); border-radius: 12px; font: 600 12.5px/1.4 var(--round); }
+.brand-ask[hidden] { display: none; }
+.brand-ask .brand-row > button { flex: 1 1 auto; }
+.brand-subs { display: flex; flex-wrap: wrap; gap: 6px; }
+.brand-subs[hidden] { display: none; }
+.brand-sub { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--glass); color: var(--muted); font: 700 12.5px/1 var(--round); cursor: pointer; max-width: 100%; }
+.brand-sub:hover { color: var(--text); }
+.brand-sub[aria-selected="true"] { color: var(--text); border-color: rgba(var(--accent-rgb), 0.75); background: rgba(var(--accent-rgb), 0.18); }
+.brand-sub-add { width: 30px; padding: 0; justify-content: center; font-size: 16px; }
+.brand-sub-x { display: grid; place-items: center; width: 16px; height: 16px; margin-right: -6px; border-radius: 50%; color: var(--muted); font-size: 13px; line-height: 1; }
+.brand-sub-x:hover, .brand-sub-x:focus-visible { color: var(--text); background: rgba(255,255,255,0.1); }
