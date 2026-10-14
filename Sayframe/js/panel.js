@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.43.0";
+    var VERSION = "1.50.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -106,6 +106,7 @@
         bgBrand: "#130f17",          // фон раздела «Проекты»
         selfCheck: true,
         alwaysAsk: false,
+        brandPics: false,   // отправлять ли AI маленькие картинки упомянутых логотипов и иконок
         refFrames: 8,
         panelWidth: 380,    // ширина содержимого в пикселях; сама панель After Effects может быть шире
         toolSize: "100",    // масштаб блоков раздела «Инструменты» в процентах: "100", "90", "80", "70", "60" или "50"
@@ -199,6 +200,44 @@
         "}"
     ].join("\n");
 
+    // Скрипт для macOS 14 и новее: встроенное «отделить объект от фона» (Vision).
+    // Аргументы: картинка, папка для масок, файл с результатом. Каждая найденная фигура — своя маска
+    // mask-0.png, mask-1.png… в размер картинки (белое — объект). Результат: OK <число>, NOVISION или ERR <текст>.
+    var JXA_VISION = [
+        'ObjC.import("Foundation");',
+        'ObjC.import("AppKit");',
+        'ObjC.import("CoreImage");',
+        "function run(argv) {",
+        '    var res = "ERR";',
+        "    try { res = cut(argv[0], argv[1]); } catch (e) { res = \"ERR \" + e; }",
+        "    $(res).writeToFileAtomicallyEncodingError(argv[2], true, $.NSUTF8StringEncoding, null);",
+        "    return res;",
+        "}",
+        "function cut(src, dir) {",
+        '    try { ObjC.import("Vision"); } catch (e) { return "NOVISION"; }',
+        '    if (!$.VNGenerateForegroundInstanceMaskRequest || typeof $.VNGenerateForegroundInstanceMaskRequest.alloc === "undefined") { return "NOVISION"; }',
+        "    var handler = $.VNImageRequestHandler.alloc.initWithURLOptions($.NSURL.fileURLWithPath(src), $.NSDictionary.dictionary);",
+        "    var req = $.VNGenerateForegroundInstanceMaskRequest.alloc.init;",
+        "    if (!handler.performRequestsError($.NSArray.arrayWithObject(req), null)) { return \"ERR perform\"; }",
+        "    var results = req.results;",
+        '    if (results.isNil() || results.count === 0) { return "OK 0"; }',
+        "    var obs = results.objectAtIndex(0);",
+        "    var all = obs.allInstances;",
+        "    var count = Math.min(all.count, 12), n = 0, idx = all.firstIndex, k;",
+        "    var ctx = $.CIContext.contextWithOptions($.NSDictionary.dictionary);",
+        "    for (k = 0; k < count; k++) {",
+        "        var buf = obs.generateScaledMaskForImageForInstancesFromRequestHandlerError($.NSIndexSet.indexSetWithIndex(idx), handler, null);",
+        "        var ci = $.CIImage.imageWithCVPixelBuffer(buf);",
+        "        var cg = ctx.createCGImageFromRect(ci, ci.extent);",
+        "        var rep = $.NSBitmapImageRep.alloc.initWithCGImage(cg);",
+        "        var png = rep.representationUsingTypeProperties(4, $.NSDictionary.dictionary);",
+        '        if (!png.isNil() && png.writeToFileAtomically(dir + "/mask-" + n + ".png", true)) { n++; }',
+        "        idx = all.indexGreaterThanIndex(idx);",
+        "    }",
+        '    return "OK " + n;',
+        "}"
+    ].join("\n");
+
     var PS_CLIPBOARD = "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; " +
         "$i=[System.Windows.Forms.Clipboard]::GetImage(); " +
         "if($i){$i.Save($args[0],[System.Drawing.Imaging.ImageFormat]::Png); 'OK'} " +
@@ -243,6 +282,21 @@
                 r = null;
             }
             return Promise.resolve(r && r.data && r.data.length ? String(r.data[0]) : null);
+        }
+
+        // Несколько файлов сразу (иконки). Возвращает массив путей, пустой — если ничего не выбрали.
+        function pickFiles(title) {
+            var r;
+            try {
+                if (window.cep && window.cep.fs && window.cep.fs.showOpenDialogEx) {
+                    r = window.cep.fs.showOpenDialogEx(true, false, title, "", []);
+                } else if (window.cep && window.cep.fs && window.cep.fs.showOpenDialog) {
+                    r = window.cep.fs.showOpenDialog(true, false, title, "", []);
+                }
+            } catch (e) {
+                r = null;
+            }
+            return Promise.resolve(r && r.data && r.data.length ? Array.prototype.map.call(r.data, String) : []);
         }
 
         function openExternal(url) {
@@ -340,6 +394,7 @@
                 remove: function () { return Promise.resolve(); },
                 exists: need, mkdirp: need, move: need, exec: need,
                 pickFile: pickFile,
+                pickFiles: pickFiles,
                 imageSize: imageSize,
                 openExternal: openExternal,
                 reload: reload,
@@ -417,6 +472,7 @@
                 });
             },
             pickFile: pickFile,
+            pickFiles: pickFiles,
             imageSize: imageSize,
             openExternal: openExternal,
             reload: reload,
@@ -586,8 +642,15 @@
         if (m === "NO_KEYS_SELECTED") { return "Выделите ключевые кадры на таймлайне и нажмите ещё раз."; }
         if (m === "NO_LAYERS_SELECTED") { return "Выделите слой в композиции и нажмите ещё раз."; }
         if (m === "LOGO_NOT_FOUND") { return "Файл логотипа не найден. Удалите его из проекта и добавьте снова."; }
+        if (m === "ICON_NOT_FOUND") { return "Файл иконки не найден. Удалите её из проекта и добавьте снова."; }
         if (m === "BR_NO_TEXT") { return "Выделите текстовый слой в композиции и нажмите ещё раз."; }
         if (m === "DC_NO_PRECOMP") { return "Выделите слой-прекомпозицию (слой, внутри которого другая композиция) и нажмите ещё раз."; }
+        if (m === "CO_NOT_PHOTO") { return "Cut out работает с фото: выделите слой, у которого источник — файл-картинка (JPG, PNG, PSD…), и нажмите ещё раз."; }
+        if (m === "CO_NOT_STILL") { return "Cut out вырезает фон на фото, а это видео. Для видео в After Effects есть Roto Brush."; }
+        if (m === "CO_MISSING") { return "Файл этого фото не найден на диске. Верните его на место (File > Replace Footage) и нажмите ещё раз."; }
+        if (m === "CO_FORMAT") { return "Панель не смогла открыть этот файл картинки. Сохраните фото как JPG или PNG и замените им слой."; }
+        if (m === "CO_LAYER_GONE") { return "Слоя, с которого открыли фото, больше нет в открытой композиции. Откройте ту композицию и нажмите Cut out ещё раз."; }
+        if (m === "CO_NOT_SAVED") { return "Не удалось сохранить картинку без фона на диск. Проверьте, что в папке проекта можно записывать файлы."; }
         if (m === "STAGGER_NEEDS_TWO") { return "Для лесенки выделите хотя бы два слоя."; }
         if (m === "STAGGER_NO_KEYS") { return "Для лесенки нужно хотя бы два слоя с ключами в этой половине слоя. Чтобы сдвинуть слои целиком, выберите «Слои»."; }
         if (m === "DISTRIBUTE_NEEDS_THREE") { return "Чтобы распределить слои, выделите три или больше: крайние останутся на месте, остальные встанут между ними через равные промежутки."; }
@@ -678,7 +741,7 @@
     function el(id) { return document.getElementById(id); }
 
     var ui = {
-        prompt: el("prompt"), runBtn: el("runBtn"), fixBtn: el("fixBtn"), newBtn: el("newBtn"),
+        prompt: el("prompt"), mentionList: el("mentionList"), brandHits: el("brandHits"), brandPics: el("brandPics"), runBtn: el("runBtn"), fixBtn: el("fixBtn"), newBtn: el("newBtn"),
         refBtn: el("refBtn"), refChip: el("refChip"), refText: el("refText"), refClear: el("refClear"),
         exprCard: el("exprCard"), exprToggle: el("exprToggle"), exprBody: el("exprBody"), exprWish: el("exprWish"),
         exprApplyBtn: el("exprApplyBtn"), exprFixBtn: el("exprFixBtn"),
@@ -714,6 +777,10 @@
         cacheBtn: el("cacheBtn"), cacheOptsToggle: el("cacheOptsToggle"), cacheHint: el("cacheHint"),
         nullpBtn: el("nullpBtn"), nullpOptsToggle: el("nullpOptsToggle"), nullpHint: el("nullpHint"),
         unusedBtn: el("unusedBtn"), unusedOptsToggle: el("unusedOptsToggle"), unusedHint: el("unusedHint"),
+        cutoutBtn: el("cutoutBtn"), cutoutOptsToggle: el("cutoutOptsToggle"), cutoutHint: el("cutoutHint"),
+        cutoutView: el("cutoutView"), cutoutName: el("cutoutName"), cutoutClose: el("cutoutClose"), cutoutBrush: el("cutoutBrush"),
+        cutoutStage: el("cutoutStage"), cutoutCanvas: el("cutoutCanvas"), cutoutBusy: el("cutoutBusy"), cutoutNote: el("cutoutNote"),
+        cutoutEdge: el("cutoutEdge"), cutoutUndo: el("cutoutUndo"), cutoutReset: el("cutoutReset"), cutoutDone: el("cutoutDone"),
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
         shiftOptsToggle: el("shiftOptsToggle"), shiftPick: el("shiftPick"), timePick: el("timePick"), staggerPick: el("staggerPick"),
         shiftWhat: el("shiftWhat"), shiftStep: el("shiftStep"), shiftBack: el("shiftBack"), shiftFwd: el("shiftFwd"),
@@ -735,7 +802,9 @@
         brandSelect: el("brandSelect"), brandRename: el("brandRename"), brandDelete: el("brandDelete"), brandNew: el("brandNew"),
         brandPickRow: el("brandPickRow"), brandNameRow: el("brandNameRow"), brandName: el("brandName"), brandNameOk: el("brandNameOk"),
         brandNameCancel: el("brandNameCancel"), brandDeleteNote: el("brandDeleteNote"), brandEmpty: el("brandEmpty"), brandFirst: el("brandFirst"),
-        brandBody: el("brandBody"), brandLogos: el("brandLogos"), brandLogoAdd: el("brandLogoAdd"), brandColors: el("brandColors"),
+        brandBody: el("brandBody"), brandLogos: el("brandLogos"), brandLogoAdd: el("brandLogoAdd"), brandIcons: el("brandIcons"), brandIconAdd: el("brandIconAdd"), brandColors: el("brandColors"),
+        brandGrads: el("brandGrads"), brandGradFrom: el("brandGradFrom"), brandGradTo: el("brandGradTo"), brandGradType: el("brandGradType"),
+        brandGradAngle: el("brandGradAngle"), brandGradName: el("brandGradName"), brandGradAdd: el("brandGradAdd"), brandGradPreview: el("brandGradPreview"),
         brandColorPick: el("brandColorPick"), brandColorHex: el("brandColorHex"), brandColorName: el("brandColorName"), brandColorAdd: el("brandColorAdd"),
         brandRigBtn: el("brandRigBtn"), brandFontList: el("brandFontList"), brandFontHead: el("brandFontHead"), brandFontBody: el("brandFontBody"),
         brandFontHeadApply: el("brandFontHeadApply"), brandFontBodyApply: el("brandFontBodyApply"), brandTexts: el("brandTexts"),
@@ -990,6 +1059,7 @@
         ui.cacheBtn.disabled = on;
         ui.nullpBtn.disabled = on;
         ui.unusedBtn.disabled = on;
+        ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
         ui.snapBtn.disabled = on;
         ui.snapSave.disabled = on;
@@ -1419,7 +1489,7 @@
 
     async function onRun() {
         var text = ui.prompt.value.replace(/^\s+|\s+$/g, "");
-        var info, body, sent;
+        var info, body, sent, hits, note, pics, picBlocks = [];
         if (busy) { return; }
         if (text === "") { setStatus("Напишите, что нужно сделать.", ""); return; }
         try {
@@ -1428,16 +1498,27 @@
             setStatus(humanError(e), "error");
             return;
         }
-        body = "[Project state]\n" + info.snapshot + (brandNote() ? "\n\n" + brandNote() : "") + "\n\n[Request]\n" + text;
+        hits = brandHitsNow();
+        note = brandNote();
+        if (hits.length) { note = (note ? note + "\n" : "") + brandHitsNote(hits); }
+        body = "[Project state]\n" + info.snapshot + (note ? "\n\n" + note : "") + "\n\n[Request]\n" + text;
+        // По настройке AI видит и сами упомянутые логотипы и иконки.
+        pics = settings.brandPics && hits.length ? await brandPictures(hits) : [];
+        if (pics.length) {
+            picBlocks = pics.map(function (pc) { return { type: "image", source: { type: "base64", media_type: "image/png", data: pc.data } }; });
+            picBlocks.push({ type: "text", text: "[Brand pictures] The " + pics.length + " image(s) above show the brand items mentioned in the request, in order: " +
+                pics.map(function (pc, i) { return (i + 1) + ") " + pc.item.kind + " \"" + pc.item.name + "\""; }).join(", ") + ". They are references for what the files look like." });
+        }
         sent = pendingRef;
         if (sent) {
-            history.push({ role: "user", content: framesContent(sent.frames, referenceNote(sent) + "\n\n" + body) });
+            history.push({ role: "user", content: picBlocks.concat(framesContent(sent.frames, referenceNote(sent) + "\n\n" + body)) });
             pendingRef = null;
             refSentNote = true;
             showRef();
         } else {
-            history.push({ role: "user", content: body });
+            history.push({ role: "user", content: picBlocks.length ? picBlocks.concat([{ type: "text", text: body }]) : body });
         }
+        closeMention();
         trimHistory();
         text = text.replace(/\s+/g, " ");
         beginRun(text);
@@ -2647,6 +2728,7 @@
         });
         ui.selfCheck.checked = draft.selfCheck;
         ui.alwaysAsk.checked = draft.alwaysAsk;
+        ui.brandPics.checked = draft.brandPics;
         ui.panelWidth.value = String(draft.panelWidth);
         ui.panelWidthVal.textContent = draft.panelWidth + " px";
         showProvider();
@@ -2670,6 +2752,7 @@
             keepTypedKey();
             draft.selfCheck = ui.selfCheck.checked;
             draft.alwaysAsk = ui.alwaysAsk.checked;
+            draft.brandPics = ui.brandPics.checked;
             draft.toolTitles = ui.toolTitles.checked;
             draft.stats = ui.statsOn.checked;
             draft.infoTips = ui.infoTipsOn.checked;
@@ -2717,25 +2800,25 @@
 
     var GRID_VERSION = 2;         // 2 — мелкая сетка (шаг 22 px)
     // Так было до 1.40.0: блоки по порядку, без мест и булавок, всё развёрнуто.
-    var MOTION_LEGACY = { curve: true, order: "ease,anchor,align,shift,paste,organize,easecopy,decompose,cache,nullp,unused", sizes: "", places: "", pins: "",
-        ecOpts: true, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, anchorOpts: true, alignOpts: true };
+    var MOTION_LEGACY = { curve: true, order: "ease,anchor,align,shift,paste,organize,easecopy,decompose,cache,nullp,unused,cutout", sizes: "", places: "", pins: "",
+        ecOpts: true, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, cutoutOpts: true, anchorOpts: true, alignOpts: true };
 
     // Так «Инструменты» выглядят после новой установки: блоки-кнопки закреплены сверху, под линией — «Время»,
     // «Якорь», «Выровнять» и «Плавность»; подсказки и списки свёрнуты (их открывает плюс в углу блока).
     // У тех, кто уже настроил панель, сохранённое не меняется; новые блоки встают сверху, ближе к середине.
     var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: false, anchorKeys: "key", alignTo: "comp",
-        order: "paste,unused,easecopy,decompose,organize,cache,nullp,shift,anchor,align,ease",
+        order: "paste,unused,easecopy,decompose,organize,cache,nullp,cutout,shift,anchor,align,ease",
         sizes: "ease=14x0;shift=12x0;easecopy=17x0",
-        places: "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12",
-        pins: "paste,unused,easecopy,decompose,organize,cache,nullp", grid: GRID_VERSION,
-        ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false,
+        places: "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12",
+        pins: "paste,unused,easecopy,decompose,organize,cache,nullp,cutout", grid: GRID_VERSION,
+        ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false, cutoutOpts: false,
         anchorOpts: false, alignOpts: false,
         shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
     var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
     var STAGGER_ORDERS = ["asc", "desc", "selection", "random"];
     var MAX_STEP_FRAMES = 999;
-    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused"];
+    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
     var SHAPE_TOOL_NAMES = [];
     // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
     // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
@@ -2756,7 +2839,7 @@
     // (TOOL_DEFAULT_COLS клеток); блок уже этого не обрезает кнопки, а уменьшает их целиком —
     // так блок можно сузить до TOOL_MIN_COLS клеток.
     // Блоки, в которых только кнопки: суженными они показывают одни иконки.
-    var ICON_TOOLS = ["paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused"];
+    var ICON_TOOLS = ["paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
     var ICON_ROW_COLS = 7;        // «Копия» иконками в ряд — ровно 7 клеток; уже — столбик в 4 клетки
     // Ширина блока-иконок: столбик (4 клетки) или ряд (7 клеток, если в блоке несколько кнопок). Промежуточной нет.
     // Шаг клавиатурой у блока-иконок: столбик → ряд → обычный блок и обратно, без застревания на месте.
@@ -2959,6 +3042,7 @@
             { key: "cacheOpts", button: ui.cacheOptsToggle, part: ui.cacheHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "nullpOpts", button: ui.nullpOptsToggle, part: ui.nullpHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "unusedOpts", button: ui.unusedOptsToggle, part: ui.unusedHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
+            { key: "cutoutOpts", button: ui.cutoutOptsToggle, part: ui.cutoutHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "shiftOpts", button: ui.shiftOptsToggle, part: ui.shiftPick, more: [ui.timePick, ui.staggerPick, ui.staggerOrder], hide: "Скрыть списки", show: "Показать списки",
                 selects: [ui.shiftWhat, ui.timeAlign, ui.staggerWhat, ui.staggerOrder] }
         ];
@@ -5514,6 +5598,7 @@
         { id: "cache", label: "Clear cache (память After Effects)", def: "" },
         { id: "nullp", label: "Null / Parent", def: "" },
         { id: "unused", label: "Remove unused (лишние файлы)", def: "" },
+        { id: "cutout", label: "Cut out (вырезать фон на фото)", def: "" },
         { id: "paste", label: "Вставить картинку из буфера", def: "" },
         { id: "tabAI", label: "Вкладка AI", def: "" },
         { id: "tabAnim", label: "Вкладка «Анимация»", def: "" },
@@ -5605,6 +5690,7 @@
         else if (id === "cache") { onClearCache(); }
         else if (id === "nullp") { onNullParent(); }
         else if (id === "unused") { onRemoveUnused(); }
+        else if (id === "cutout") { onCutout(); }
         else if (id === "paste") { pasteImage(null); }
         else if (id === "tabAI") { showTab("claude"); }
         else if (id === "tabAnim") { showTab("tools"); }
@@ -6018,10 +6104,24 @@
     // цвета, шрифты, тексты. Хранится в localStorage; выбранный проект знает и AI.
 
     var BRAND_KEY = "sayframe.brands.v1";
-    var LOGO_VARIANTS = [["main", "Основной"], ["white", "Белый"], ["dark", "Тёмный"], ["icon", "Значок"]];
+    // Варианты логотипа: подпись в панели и что это значит для AI.
+    var LOGO_VARIANTS = [["main", "Основной", "primary"], ["dark", "Тёмный", "dark, for light backgrounds"], ["white", "Белый", "white, for dark backgrounds"],
+        ["vwhite", "Вертикальный белый", "vertical layout, white, for dark backgrounds"], ["vblack", "Вертикальный чёрный", "vertical layout, black, for light backgrounds"],
+        ["mark", "Только лого", "symbol only, without the wordmark"], ["markgreen", "Только лого, фон зелёный", "symbol only, on a green background"],
+        ["markwhite", "Только лого, фон белый", "symbol only, on a white background"]];
+    function logoVariant(v) {
+        var i;
+        if (v === "icon") { v = "mark"; }      // «Значок» до 1.50.0
+        for (i = 0; i < LOGO_VARIANTS.length; i++) { if (LOGO_VARIANTS[i][0] === v) { return LOGO_VARIANTS[i]; } }
+        return LOGO_VARIANTS[0];
+    }
+    // Имя из имени файла: «alif_logo-white.png» → «alif logo white».
+    function niceName(file) {
+        return String(platform.basename(file)).replace(/\.[^.]+$/, "").replace(/[_\-.]+/g, " ").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "") || "logo";
+    }
     var LOGO_EXT = /\.(png|jpe?g|svg|ai|eps|psd|pdf|tiff?|gif|webp)$/i;
     var LOGO_PREVIEW = /\.(png|jpe?g|svg|gif|webp)$/i;
-    var BRAND_MAX = { colors: 24, texts: 30, logos: 30 };
+    var BRAND_MAX = { colors: 24, texts: 30, logos: 30, gradients: 24, icons: 80 };
     var brandNaming = null;      // "new" или "rename", пока открыта строка названия
     var brandDelAt = 0;          // время первого нажатия «удалить»: второе в течение 4 с удаляет
     var brandFontsLoaded = false;
@@ -6031,10 +6131,14 @@
     function cleanBrand(b) {
         var out, i, c, t, l;
         if (!b || typeof b !== "object" || typeof b.id !== "string" || !b.id) { return null; }
-        out = { id: b.id.substring(0, 40), name: brandStr(b.name, 60) || "Без названия", colors: [], fonts: { head: "", body: "" }, texts: [], logos: [] };
+        out = { id: b.id.substring(0, 40), name: brandStr(b.name, 60) || "Без названия", colors: [], gradients: [], fonts: { head: "", body: "" }, texts: [], logos: [], icons: [] };
         for (i = 0; b.colors instanceof Array && i < b.colors.length && out.colors.length < BRAND_MAX.colors; i++) {
             c = b.colors[i];
             if (c && parseHex(c.hex)) { out.colors.push({ name: brandStr(c.name, 30) || "Цвет", hex: parseHex(c.hex).hex }); }
+        }
+        for (i = 0; b.gradients instanceof Array && i < b.gradients.length && out.gradients.length < BRAND_MAX.gradients; i++) {
+            c = cleanGradient(b.gradients[i]);
+            if (c) { out.gradients.push(c); }
         }
         if (b.fonts && typeof b.fonts === "object") { out.fonts.head = brandStr(b.fonts.head, 120); out.fonts.body = brandStr(b.fonts.body, 120); }
         for (i = 0; b.texts instanceof Array && i < b.texts.length && out.texts.length < BRAND_MAX.texts; i++) {
@@ -6045,10 +6149,30 @@
             l = b.logos[i];
             if (l && typeof l.file === "string" && l.file) {
                 out.logos.push({ id: brandStr(l.id, 40) || brandNewId("l"), name: brandStr(l.name, 80) || platform.basename(l.file), file: l.file,
-                    variant: LOGO_VARIANTS.some(function (v) { return v[0] === l.variant; }) ? l.variant : "main" });
+                    variant: logoVariant(l.variant)[0] });
+            }
+        }
+        for (i = 0; b.icons instanceof Array && i < b.icons.length && out.icons.length < BRAND_MAX.icons; i++) {
+            l = b.icons[i];
+            if (l && typeof l.file === "string" && l.file) {
+                out.icons.push({ id: brandStr(l.id, 40) || brandNewId("i"), name: brandStr(l.name, 80) || platform.basename(l.file), file: l.file });
             }
         }
         return out;
+    }
+
+    // Градиент бренда: два цвета (столько умеет Gradient Ramp в After Effects), линейный под углом или радиальный.
+    function cleanGradient(g) {
+        var a;
+        if (!g || !parseHex(g.from) || !parseHex(g.to)) { return null; }
+        a = Math.round(Number(g.angle));
+        return { name: brandStr(g.name, 30) || "Градиент", from: parseHex(g.from).hex, to: parseHex(g.to).hex,
+            type: g.type === "radial" ? "radial" : "linear", angle: isFinite(a) ? ((a % 360) + 360) % 360 : 90 };
+    }
+
+    // CSS-заливка для образца: угол как в After Effects и CSS (0° — снизу вверх, 90° — слева направо).
+    function gradientCss(g) {
+        return g.type === "radial" ? "radial-gradient(circle, " + g.from + ", " + g.to + ")" : "linear-gradient(" + g.angle + "deg, " + g.from + ", " + g.to + ")";
     }
 
     function brandNewId(prefix) { return prefix + Date.now().toString(36) + Math.floor(Math.random() * 1000); }
@@ -6173,9 +6297,12 @@
         ui.brandDeleteNote.hidden = !brandDelAt;
         ui.brandSubs.hidden = brandNaming !== null && !brands.items.length;
         renderBrandSubs();
+        renderBrandHits();
         if (!b) { return; }
         renderBrandLogos(b);
+        renderBrandIcons(b);
         renderBrandColors(b);
+        renderBrandGrads(b);
         if (document.activeElement !== ui.brandFontHead) { ui.brandFontHead.value = b.fonts.head; }
         if (document.activeElement !== ui.brandFontBody) { ui.brandFontBody.value = b.fonts.body; }
         renderBrandTexts(b);
@@ -6225,6 +6352,42 @@
         return x;
     }
 
+    // Карандаш у элемента: переименовать. Имя — то, по которому AI узнаёт элемент в запросе.
+    function brandPen(label, onClick) {
+        var p = mkEl("button", "brand-pen");
+        p.type = "button";
+        p.setAttribute("aria-label", label);
+        p.title = label;
+        p.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l2.2 2.2L4 10.2 1.5 10.5l.3-2.5z"/></svg>';
+        p.addEventListener("click", function (e) { e.stopPropagation(); onClick(); });
+        return p;
+    }
+
+    // Поле с именем на месте элемента: Enter или уход из поля — сохранить, Esc — отменить.
+    function brandRenameInline(node, current, maxLen, save) {
+        var input = mkEl("input", "field brand-rename"), done = false;
+        input.value = current;
+        input.maxLength = maxLen;
+        input.spellcheck = false;
+        input.setAttribute("aria-label", "Новое название");
+        function finish(ok) {
+            var v;
+            if (done) { return; }
+            done = true;
+            v = brandStr(input.value, maxLen);
+            if (ok && v && v !== current) { save(v); storeBrands(); }
+            renderBrand();
+        }
+        input.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") { e.preventDefault(); finish(true); }
+            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
+        });
+        input.addEventListener("blur", function () { finish(true); });
+        node.parentNode.replaceChild(input, node);
+        input.focus();
+        input.select();
+    }
+
     function renderBrandLogos(b) {
         var box = ui.brandLogos;
         box.innerHTML = "";
@@ -6233,7 +6396,7 @@
             var tile = mkEl("div", "brand-logo");
             var pic = mkEl("button", "brand-logo-img");
             var sel = mkEl("select", "field");
-            var img;
+            var img, nm;
             tile.setAttribute("data-logo", l.id);
             pic.title = "Вставить «" + l.name + "» в открытую композицию: прекомпозицией размером с логотип, в масштабе 10 %";
             pic.setAttribute("aria-label", pic.title);
@@ -6251,13 +6414,48 @@
                 o.value = v[0];
                 sel.appendChild(o);
             });
-            sel.value = l.variant;
+            sel.value = logoVariant(l.variant)[0];
             sel.setAttribute("aria-label", "Вариант логотипа «" + l.name + "»");
             sel.addEventListener("change", function () { l.variant = sel.value; storeBrands(); });
+            nm = mkEl("small", "", l.name);
+            nm.title = l.name + " — двойной щелчок, чтобы переименовать";
+            nm.addEventListener("dblclick", function () { brandRenameInline(nm, l.name, 80, function (v) { l.name = v; }); });
             tile.appendChild(pic);
-            tile.appendChild(mkEl("small", "", l.name));
+            tile.appendChild(nm);
             tile.appendChild(sel);
+            tile.appendChild(brandPen("Переименовать логотип «" + l.name + "»", function () { brandRenameInline(nm, l.name, 80, function (v) { l.name = v; }); }));
             tile.appendChild(brandX("Убрать логотип «" + l.name + "» из проекта", function () { brandRemoveLogo(b, l); }));
+            box.appendChild(tile);
+        });
+    }
+
+    function renderBrandIcons(b) {
+        var box = ui.brandIcons;
+        box.innerHTML = "";
+        box.setAttribute("data-empty", "Пока пусто: нажмите «+ Добавить» и выберите файлы иконок — можно сразу несколько.");
+        b.icons.forEach(function (l) {
+            var tile = mkEl("div", "brand-icon");
+            var pic = mkEl("button", "brand-logo-img");
+            var img, nm;
+            tile.setAttribute("data-icon", l.id);
+            pic.title = "Вставить иконку «" + l.name + "» в открытую композицию";
+            pic.setAttribute("aria-label", pic.title);
+            if (LOGO_PREVIEW.test(l.file)) {
+                img = mkEl("img");
+                img.alt = "";
+                img.src = fileUrl(l.file);
+                pic.appendChild(img);
+            } else {
+                pic.appendChild(mkEl("span", "", (l.file.match(/\.([a-z0-9]+)$/i) || ["", "file"])[1]));
+            }
+            pic.addEventListener("click", function () { brandPlaceIcon(l); });
+            nm = mkEl("small", "", l.name);
+            nm.title = l.name + " — двойной щелчок, чтобы переименовать";
+            nm.addEventListener("dblclick", function () { brandRenameInline(nm, l.name, 80, function (v) { l.name = v; }); });
+            tile.appendChild(pic);
+            tile.appendChild(nm);
+            tile.appendChild(brandPen("Переименовать иконку «" + l.name + "»", function () { brandRenameInline(nm, l.name, 80, function (v) { l.name = v; }); }));
+            tile.appendChild(brandX("Убрать иконку «" + l.name + "» из проекта", function () { brandRemoveIcon(b, l); }));
             box.appendChild(tile);
         });
     }
@@ -6277,8 +6475,56 @@
             chip.setAttribute("data-hex", c.hex);
             chip.title = "Покрасить выделенные слои в «" + c.name + "» " + c.hex;
             chip.addEventListener("click", function () { brandPaint(c); });
+            chip.appendChild(brandPen("Переименовать цвет «" + c.name + "»", function () { brandRenameInline(chip, c.name, 30, function (v) { c.name = v; }); }));
             chip.appendChild(brandX("Убрать цвет «" + c.name + "»", function () { b.colors.splice(i, 1); storeBrands(); renderBrand(); }));
             box.appendChild(chip);
+        });
+    }
+
+    var brandGradFor = "", brandGradTouched = false;
+    function renderBrandGrads(b) {
+        var box = ui.brandGrads;
+        box.innerHTML = "";
+        box.setAttribute("data-empty", "Добавьте градиент ниже: два цвета, вид и угол.");
+        // Для нового проекта форма предлагает его первые два цвета.
+        // Пока цвета в форме не трогали, она предлагает первые два цвета проекта.
+        if (brandGradFor !== b.id) { brandGradFor = b.id; brandGradTouched = false; }
+        if (!brandGradTouched) {
+            if (b.colors[0]) { ui.brandGradFrom.value = b.colors[0].hex; }
+            if (b.colors[1]) { ui.brandGradTo.value = b.colors[1].hex; }
+        }
+        brandGradPreview();
+        b.gradients.forEach(function (g, i) {
+            var chip = mkEl("button", "brand-chip");
+            var sw = mkEl("i", "brand-grad-sw");
+            var txt = mkEl("span", "", g.name);
+            sw.style.background = gradientCss(g);
+            txt.appendChild(mkEl("small", "", g.type === "radial" ? "радиальный" : g.angle + "°"));
+            chip.appendChild(sw);
+            chip.appendChild(txt);
+            chip.title = "Градиент «" + g.name + "» " + g.from + " → " + g.to + " на выделенные слои (ничего не выделено — новый солид)";
+            chip.addEventListener("click", function () { brandGradient(g); });
+            chip.appendChild(brandPen("Переименовать градиент «" + g.name + "»", function () { brandRenameInline(chip, g.name, 30, function (v) { g.name = v; }); }));
+            chip.appendChild(brandX("Убрать градиент «" + g.name + "»", function () { b.gradients.splice(i, 1); storeBrands(); renderBrand(); }));
+            box.appendChild(chip);
+        });
+    }
+
+    function brandGradForm() {
+        return cleanGradient({ name: ui.brandGradName.value, from: ui.brandGradFrom.value, to: ui.brandGradTo.value,
+            type: ui.brandGradType.value, angle: ui.brandGradAngle.value });
+    }
+
+    function brandGradPreview() {
+        var g = brandGradForm();
+        if (g) { ui.brandGradPreview.style.background = gradientCss(g); }
+        ui.brandGradAngle.disabled = ui.brandGradType.value === "radial";
+    }
+
+    function brandGradient(g) {
+        brandCall("brandGradient", [g], function (r) {
+            return (r.created ? "Новый солид «" + r.created + "» с градиентом на всю композицию." : "Градиент «" + g.name + "» на выделенных слоях: " + r.count + ".") +
+                " Это эффект Gradient Ramp — точки начала и конца можно двигать. Отменить — Cmd/Ctrl+Z.";
         });
     }
 
@@ -6307,8 +6553,8 @@
     function logoExt(p) { var m = /\.([a-z0-9]+)$/i.exec(String(p)); return m ? m[1].toLowerCase() : ""; }
 
     async function brandExport() {
-        var b = activeBrand();
-        var r, pack, logos = [], missing = 0, i, l;
+        var b = activeBrand(), g = activeProject();
+        var r, pack, logos = [], icons = [], missing = 0, i, l;
         if (!b || busy) { return; }
         setBusy(true);
         try {
@@ -6329,7 +6575,17 @@
                     missing++;
                 }
             }
-            pack = { format: BRAND_FILE, version: 1, brand: { name: b.name, colors: b.colors, fonts: b.fonts, texts: b.texts, logos: logos } };
+            for (i = 0; i < b.icons.length; i++) {
+                l = b.icons[i];
+                try {
+                    icons.push({ name: l.name, ext: logoExt(l.file), data: await platform.readBase64(l.file) });
+                } catch (e2) {
+                    missing++;
+                }
+            }
+            // section — раздел, в котором лежит проект: у коллеги брендбук встанет в раздел с тем же названием.
+            pack = { format: BRAND_FILE, version: 1, section: g && g.name !== BRAND_GROUP_DEFAULT ? g.name : "",
+                brand: { name: b.name, colors: b.colors, gradients: b.gradients, fonts: b.fonts, texts: b.texts, logos: logos, icons: icons } };
             await platform.writeText(r.path, JSON.stringify(pack));
             setBusy(false);
             setStatus("Брендбук «" + b.name + "» сохранён в файл " + platform.basename(r.path) + " (" + platform.dirname(r.path) + "). Отправьте его коллеге: у себя он откроет «Проекты» → «Импорт»." +
@@ -6342,11 +6598,14 @@
 
     // Раздел из файла: брендбук без логотипов и логотипы отдельно (их ещё надо записать на диск).
     function brandFromFile(raw) {
-        var b = cleanBrand({ id: brandNewId("b"), name: raw && raw.name, colors: raw && raw.colors, fonts: raw && raw.fonts, texts: raw && raw.texts, logos: [] });
+        var b = cleanBrand({ id: brandNewId("b"), name: raw && raw.name, colors: raw && raw.colors, gradients: raw && raw.gradients, fonts: raw && raw.fonts, texts: raw && raw.texts, logos: [] });
         var logos = (raw && raw.logos instanceof Array ? raw.logos : []).filter(function (l) {
             return l && typeof l.data === "string" && l.data && LOGO_EXT.test("x." + String(l.ext || ""));
         }).slice(0, BRAND_MAX.logos);
-        return { brand: b, logos: logos };
+        var icons = (raw && raw.icons instanceof Array ? raw.icons : []).filter(function (l) {
+            return l && typeof l.data === "string" && l.data && LOGO_EXT.test("x." + String(l.ext || ""));
+        }).slice(0, BRAND_MAX.icons);
+        return { brand: b, logos: logos, icons: icons };
     }
 
     async function brandImport() {
@@ -6365,6 +6624,7 @@
         setBusy(false);
         if (pack && pack.format === BRAND_FILE && pack.brand && typeof pack.brand === "object") {
             parts = [brandFromFile(pack.brand)];
+            brandOpenSection(brandStr(pack.section, 60));
         } else if (pack && pack.format === BRAND_FILE && pack.project && pack.project.subs instanceof Array) {
             groupName = brandStr(pack.project.name, 60) || "Без названия";     // целый раздел с проектами
             parts = pack.project.subs.slice(0, 100).map(brandFromFile);
@@ -6384,6 +6644,20 @@
             return;
         }
         await brandFinishImport(parts, null, groupName);
+    }
+
+    // Брендбук из файла встаёт в раздел, где он был у отправителя: в такой же по названию или в новый.
+    function brandOpenSection(name) {
+        var g = null;
+        if (!name || name === BRAND_GROUP_DEFAULT) { return; }
+        brands.items.forEach(function (x) { if (!g && x.name.toLowerCase() === name.toLowerCase()) { g = x; } });
+        if (!g) {
+            g = { id: brandNewId("g"), name: name, active: "", subs: [] };
+            brands.items.push(g);
+        }
+        brands.active = g.id;
+        storeBrands();
+        renderBrand();
     }
 
     // Пишет логотипы на диск и добавляет проекты: в открытый раздел или (groupName) новым разделом.
@@ -6411,9 +6685,21 @@
                     try {
                         await platform.writeBytes(dest, b64Bytes(l.data));
                         b.logos.push({ id: id, name: brandStr(l.name, 80) || "logo", file: dest,
-                            variant: LOGO_VARIANTS.some(function (v) { return v[0] === l.variant; }) ? l.variant : "main" });
+                            variant: logoVariant(l.variant)[0] });
                         nLogos++;
                     } catch (e1) {
+                        fails++;
+                    }
+                }
+                if ((parts[j].icons || []).length) { await platform.mkdirp(brandFolder(b)); }
+                for (i = 0; i < (parts[j].icons || []).length; i++) {
+                    l = parts[j].icons[i];
+                    id = brandNewId("i");
+                    dest = platform.join(brandFolder(b), id + "-" + (brandStr(l.name, 60) || "icon").replace(/[^\w.\-]+/g, "_") + "." + String(l.ext).toLowerCase());
+                    try {
+                        await platform.writeBytes(dest, b64Bytes(l.data));
+                        b.icons.push({ id: id, name: brandStr(l.name, 80) || "icon", file: dest });
+                    } catch (e2) {
                         fails++;
                     }
                 }
@@ -6427,7 +6713,7 @@
             setBusy(false);
             b = parts[0].brand;
             setStatus(groupName ? "Раздел «" + g.name + "» добавлен: проектов — " + parts.length + ", логотипов — " + nLogos + "." :
-                "Брендбук «" + b.name + "» " + (replace ? "обновлён" : "добавлен") + ": логотипов — " + b.logos.length + ", цветов — " + b.colors.length + ", текстов — " + b.texts.length + "." +
+                "Брендбук «" + b.name + "» " + (replace ? "обновлён" : "добавлен") + (g.name !== BRAND_GROUP_DEFAULT ? " в раздел «" + g.name + "»" : "") + ": логотипов — " + b.logos.length + ", цветов — " + b.colors.length + ", текстов — " + b.texts.length + "." +
                 (fails ? " Не удалось сохранить логотипов: " + fails + "." : ""), "done");
         } catch (e) {
             setBusy(false);
@@ -6451,7 +6737,7 @@
 
     // Название: новый проект, новый раздел или переименование того или другого — одна строка ввода.
     var BRAND_NAME_HINT = { "new": "Название: клиент или компания", rename: "Новое название проекта",
-        group: "Название раздела: Alif, Samsung…", "rename-group": "Новое название раздела" };
+        group: "Название раздела", "rename-group": "Новое название раздела" };
 
     function brandAskName(mode) {
         var g = activeProject(), b = activeBrand();
@@ -6491,8 +6777,17 @@
         if (msg) { setStatus(msg, ""); }
     }
 
+    // Файлы логотипов удаляем с диска, только если открытый проект After Effects их не использует:
+    // иначе After Effects при перезагрузке футажа покажет «A file could not be found».
+    async function brandRemoveFiles(paths) {
+        var used = [], r;
+        if (!paths.length) { return; }
+        try { r = await host("brandFilesInUse", [paths]); used = r && r.used instanceof Array ? r.used : []; } catch (e) { return; }
+        paths.forEach(function (p, i) { if (used.indexOf(i) < 0) { platform.remove(p); } });
+    }
+
     function brandForget(b) {
-        b.logos.forEach(function (l) { if (l.file.indexOf(brandFolder(b)) === 0) { platform.remove(l.file); } });
+        brandRemoveFiles(b.logos.concat(b.icons).filter(function (l) { return l.file.indexOf(brandFolder(b)) === 0; }).map(function (l) { return l.file; }));
     }
 
     // Удаление — со второго нажатия в течение 4 секунд. what: "project" или "group".
@@ -6548,7 +6843,7 @@
         if (!src) { setBusy(false); return; }
         if (!LOGO_EXT.test(src)) { setBusy(false); setStatus("Это не логотип: подойдут PNG, SVG, AI, EPS, PSD, PDF, JPG, TIFF, GIF или WebP.", "error"); return; }
         id = brandNewId("l");
-        name = platform.basename(src).replace(/\.[^.]+$/, "");
+        name = niceName(src);
         dest = src;
         // Копия в папку раздела: логотип не потеряется, даже если оригинал переместят.
         try {
@@ -6565,9 +6860,58 @@
         setStatus("Логотип «" + name + "» добавлен в проект «" + b.name + "». Щелчок по нему вставит его в композицию.", "done");
     }
 
+    // Иконки: можно выбрать сразу несколько файлов; каждый копируется в папку проекта, как логотип.
+    async function brandAddIcons() {
+        var b = activeBrand();
+        var list, src, id, dest, added = [], skipped = 0, i, room;
+        if (!b || busy) { return; }
+        room = BRAND_MAX.icons - b.icons.length;
+        if (room <= 0) { setStatus("В проекте уже " + BRAND_MAX.icons + " иконок — уберите лишние.", ""); return; }
+        setBusy(true);
+        list = await platform.pickFiles("Выберите файлы иконок");
+        if (!list || !list.length) { setBusy(false); return; }
+        for (i = 0; i < list.length; i++) {
+            src = list[i];
+            if (!LOGO_EXT.test(src) || added.length >= room) { skipped++; continue; }
+            id = brandNewId("i");
+            dest = src;
+            try {
+                await platform.mkdirp(brandFolder(b));
+                dest = platform.join(brandFolder(b), id + "-" + platform.basename(src).replace(/[^\w.\-]+/g, "_"));
+                await platform.writeBytes(dest, b64Bytes(await platform.readBase64(src)));
+            } catch (e) {
+                dest = src;
+            }
+            b.icons.push({ id: id, name: niceName(src), file: dest });
+            added.push(b.icons[b.icons.length - 1].name);
+        }
+        storeBrands();
+        renderBrand();
+        setBusy(false);
+        if (!added.length) { setStatus("Это не иконки: подойдут SVG, PNG, AI, EPS, PSD, PDF, JPG, TIFF, GIF или WebP.", "error"); return; }
+        setStatus((added.length === 1 ? "Иконка «" + added[0] + "» добавлена" : "Иконок добавлено: " + added.length) + " в проект «" + b.name + "». Щелчок по иконке вставит её в композицию." +
+            (skipped ? " Пропущено файлов: " + skipped + " (не картинка или нет места)." : ""), "done");
+    }
+
+    function brandRemoveIcon(b, l) {
+        b.icons = b.icons.filter(function (x) { return x.id !== l.id; });
+        if (l.file.indexOf(brandFolder(b)) === 0) { brandRemoveFiles([l.file]); }
+        storeBrands();
+        renderBrand();
+    }
+
+    function brandPlaceIcon(l) {
+        var b = activeBrand();
+        if (!b) { return; }
+        brandCall("brandIcon", [l.file, brandBin(b)], function (r) {
+            return r.comp ? "Иконка «" + l.name + "» вставлена в «" + r.comp + "» в центр, в исходном размере. Файл — в папке «" + brandBin(b) + "». Отменить — Cmd/Ctrl+Z."
+                : "Иконка «" + l.name + "» добавлена в проект, в папку «" + brandBin(b) + "». Откройте композицию — и щелчок вставит её туда.";
+        });
+    }
+
     function brandRemoveLogo(b, l) {
         b.logos = b.logos.filter(function (x) { return x.id !== l.id; });
-        if (l.file.indexOf(brandFolder(b)) === 0) { platform.remove(l.file); }
+        if (l.file.indexOf(brandFolder(b)) === 0) { brandRemoveFiles([l.file]); }
         storeBrands();
         renderBrand();
     }
@@ -6657,19 +7001,306 @@
     function brandNote() {
         var b = activeBrand();
         var lines = [];
-        if (!b || (!b.colors.length && !b.logos.length && !b.fonts.head && !b.fonts.body && !b.texts.length)) { return ""; }
+        if (!b || (!b.colors.length && !b.gradients.length && !b.logos.length && !b.icons.length && !b.fonts.head && !b.fonts.body && !b.texts.length)) { return ""; }
         lines.push("[Brand: " + brandFullName(b) + "] Use this brand when the request mentions the brand, logo, brand colors or fonts, or asks for something \"in our style\".");
         if (b.colors.length) { lines.push("Colors: " + b.colors.map(function (c) { return c.name + " " + c.hex; }).join(", ")); }
+        if (b.gradients.length) {
+            lines.push("Gradients (two colors each; in After Effects use the Gradient Ramp effect, angle 0 = bottom to top, 90 = left to right): " +
+                b.gradients.map(function (g) { return g.name + " " + g.from + " -> " + g.to + (g.type === "radial" ? " radial" : " linear " + g.angle + "deg"); }).join(", "));
+        }
         if (b.fonts.head || b.fonts.body) { lines.push("Fonts (PostScript names): headings " + (b.fonts.head || "-") + ", body text " + (b.fonts.body || b.fonts.head || "-")); }
         if (b.logos.length) {
             lines.push("Logo files (import with app.project.importFile; reuse an item already in the project if its file matches): " +
-                b.logos.map(function (l) { return l.name + " (" + l.variant + "): " + l.file; }).join("; "));
+                b.logos.map(function (l) { return '"' + l.name + '" (' + logoVariant(l.variant)[2] + "): " + l.file; }).join("; "));
+        }
+        if (b.icons.length) {
+            lines.push("Icon files (import with app.project.importFile; reuse an item already in the project if its file matches): " +
+                b.icons.map(function (l) { return l.name + ": " + l.file; }).join("; "));
         }
         if (b.texts.length) { lines.push("Brand texts: " + b.texts.map(function (t) { return (t.name ? t.name + ": " : "") + t.text; }).join(" | ")); }
         return lines.join("\n");
     }
 
+    // Порядок разделов брендбука (Логотипы, Иконки, Цвета…): стрелки ↑ ↓ в заголовке меняют раздел местами с соседним.
+    // Порядок общий для всех проектов и запоминается.
+    var BRAND_ORDER_KEY = "sayframe.brandOrder.v1";
+    var BRAND_SEC_NAMES = { logos: "Логотипы", icons: "Иконки", colors: "Цвета", grads: "Градиенты", fonts: "Шрифты", texts: "Тексты", formats: "Форматы" };
+
+    function brandSecs() { return Array.prototype.slice.call(ui.brandBody.querySelectorAll(":scope > .brand-sec")); }
+
+    function brandSecArrows() {
+        var list = brandSecs();
+        list.forEach(function (sec, i) {
+            sec.querySelector('.brand-move [data-dir="-1"]').disabled = i === 0;
+            sec.querySelector('.brand-move [data-dir="1"]').disabled = i === list.length - 1;
+        });
+    }
+
+    function brandMoveSec(sec, dir) {
+        var list = brandSecs(), i = list.indexOf(sec), other = list[i + dir];
+        if (!other) { return; }
+        if (dir < 0) { ui.brandBody.insertBefore(sec, other); } else { ui.brandBody.insertBefore(other, sec); }
+        try { window.localStorage.setItem(BRAND_ORDER_KEY, JSON.stringify(brandSecs().map(function (x) { return x.getAttribute("data-sec"); }))); } catch (e) {}
+        brandSecArrows();
+        // Фокус остаётся на нажатой стрелке; если она стала неактивной (раздел дошёл до края) — на другой.
+        var btn = sec.querySelector('.brand-move [data-dir="' + dir + '"]');
+        (btn.disabled ? sec.querySelector('.brand-move [data-dir="' + (-dir) + '"]') : btn).focus();
+        if (sec.scrollIntoView) { sec.scrollIntoView({ block: "nearest" }); }
+    }
+
+    function initBrandOrder() {
+        var saved = null;
+        try { saved = JSON.parse(window.localStorage.getItem(BRAND_ORDER_KEY) || "null"); } catch (e) {}
+        brandSecs().forEach(function (sec) {
+            var id = sec.getAttribute("data-sec"), name = BRAND_SEC_NAMES[id] || id, head = sec.querySelector(".brand-h"), box = mkEl("span", "brand-move");
+            [[-1, "M6 10V2M2.5 5.5L6 2l3.5 3.5", "выше"], [1, "M6 2v8M2.5 6.5L6 10l3.5-3.5", "ниже"]].forEach(function (d) {
+                var b = mkEl("button");
+                b.type = "button";
+                b.setAttribute("data-dir", String(d[0]));
+                b.setAttribute("aria-label", "Раздел «" + name + "» " + d[2]);
+                b.title = "Поднять раздел «" + name + "» " + d[2];
+                if (d[0] > 0) { b.title = "Опустить раздел «" + name + "» " + d[2]; }
+                b.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + d[1] + '"/></svg>';
+                b.addEventListener("click", function () { brandMoveSec(sec, d[0]); });
+                box.appendChild(b);
+            });
+            head.insertBefore(box, head.querySelector("b").nextSibling);
+        });
+        if (saved instanceof Array) {
+            var def = brandSecs().map(function (x) { return x.getAttribute("data-sec"); });
+            var order = saved.filter(function (id, i) { return def.indexOf(id) >= 0 && saved.indexOf(id) === i; });
+            // Раздел, которого нет в сохранённом порядке (появился в обновлении), встаёт после своего прежнего соседа.
+            def.forEach(function (id, i) {
+                var k, at = 0;
+                if (order.indexOf(id) >= 0) { return; }
+                for (k = i - 1; k >= 0; k--) { if (order.indexOf(def[k]) >= 0) { at = order.indexOf(def[k]) + 1; break; } }
+                order.splice(at, 0, id);
+            });
+            order.forEach(function (id) { ui.brandBody.appendChild(ui.brandBody.querySelector(':scope > .brand-sec[data-sec="' + id + '"]')); });
+        }
+        brandSecArrows();
+    }
+
+    // ---- AI и брендбук: @-упоминания и «AI поймёт так»
+    // Каждый элемент брендбука (логотип, иконка, цвет, градиент, текст, шрифт) — со своим именем.
+    // В поле AI «@» открывает список элементов, выбранный встаёт меткой «@Имя». Без @ панель сама ищет в запросе
+    // имена и варианты («белый логотип», «зелёный», «иконка корзина») и показывает под полем, что именно уйдёт AI.
+
+    var BRAND_KIND_RU = { logo: "Логотип", icon: "Иконка", color: "Цвет", grad: "Градиент", text: "Текст", font: "Шрифт" };
+    var BRAND_KIND_WORDS = { logo: ["лого", "logo", "знак"], icon: ["иконк", "icon", "значок", "пиктограм"], color: ["цвет", "color"],
+        grad: ["градиент", "gradient"], text: ["текст", "слоган", "надпис", "text"], font: ["шрифт", "font"] };
+    var brandOff = {};         // ключи элементов, которые пользователь убрал из «AI поймёт так» для этого запроса
+
+    function brandItems(b) {
+        var out = [];
+        if (!b) { return out; }
+        b.logos.forEach(function (l) { out.push({ key: "logo:" + l.id, kind: "logo", name: l.name, extra: logoVariant(l.variant)[1], ref: l }); });
+        b.icons.forEach(function (l) { out.push({ key: "icon:" + l.id, kind: "icon", name: l.name, extra: "", ref: l }); });
+        b.colors.forEach(function (c) { out.push({ key: "color:" + c.name + c.hex, kind: "color", name: c.name, extra: c.hex, ref: c }); });
+        b.gradients.forEach(function (g) { out.push({ key: "grad:" + g.name + g.from + g.to, kind: "grad", name: g.name, extra: "", ref: g }); });
+        b.texts.forEach(function (t, i) { out.push({ key: "text:" + i + t.text, kind: "text", name: t.name || t.text.substring(0, 30), extra: t.name ? t.text : "", ref: t }); });
+        if (b.fonts.head) { out.push({ key: "font:head", kind: "font", name: b.fonts.head, extra: "заголовки", ref: { role: "headings", font: b.fonts.head } }); }
+        if (b.fonts.body) { out.push({ key: "font:body", kind: "font", name: b.fonts.body, extra: "текст", ref: { role: "body text", font: b.fonts.body } }); }
+        return out;
+    }
+
+    function normTxt(s) { return String(s || "").toLowerCase().replace(/ё/g, "е"); }
+    function wordsOf(s) { return normTxt(s).split(/[^a-zа-я0-9]+/).filter(function (w) { return w.length >= 2; }); }
+    function wordStem(w) { return w.length > 4 ? w.substring(0, w.length - 2) : w; }
+    // Одно слово в разных формах: «белый» = «белое» = «белым», «лого» = «логотип».
+    function sameWord(a, b) {
+        var x = wordStem(a), y = wordStem(b);
+        if (Math.min(x.length, y.length) < 3) { return a === b; }
+        return x.indexOf(y) === 0 || y.indexOf(x) === 0;
+    }
+    function isKindWord(w, kind) {
+        return BRAND_KIND_WORDS[kind].some(function (k) { return w.indexOf(k) === 0 || (w.length >= 4 && k.indexOf(w) === 0); });
+    }
+
+    // Что из брендбука упомянуто в запросе: [{ item, how: "@" | "name" | "variant" }], самое точное сначала.
+    function brandMatches(text, b) {
+        var low = normTxt(text), words = wordsOf(text), out = [];
+        brandItems(b).forEach(function (it) {
+            var kindHit = words.some(function (w) { return isKindWord(w, it.kind); });
+            var nw = wordsOf(it.name).filter(function (w) { return !isKindWord(w, it.kind); });
+            var xw = it.kind === "logo" ? wordsOf(it.extra) : [];
+            var has = function (w) { return words.some(function (x) { return sameWord(w, x); }); };
+            var nf = nw.filter(has).length, xf = xw.filter(has).length, score = 0, how = "";
+            if (low.indexOf("@" + normTxt(it.name)) >= 0) { score = 100; how = "@"; }
+            else if (nw.length && nf === nw.length && (nw.length > 1 || kindHit || nw[0].length >= 3)) { score = 10 + nf + (kindHit ? 1 : 0); how = "name"; }
+            else if (it.kind === "logo" && kindHit && xw.length && xf === xw.length) { score = 5 + xf; how = "variant"; }
+            if (score) { out.push({ item: it, how: how, score: score }); }
+        });
+        // Вариант логотипа: «вертикальный белый» точнее, чем просто «белый».
+        out.sort(function (a, c) { return c.score - a.score; });
+        out = out.filter(function (h) {
+            return !(h.how === "variant" && out.some(function (o) { return o.how === "variant" && o.score > h.score && o.item.kind === "logo"; }));
+        });
+        return out.slice(0, 8);
+    }
+
+    function brandHitsNow() {
+        var b = activeBrand(), text = ui.prompt.value;
+        if (!b || !/\S/.test(text)) { return []; }
+        return brandMatches(text, b).filter(function (h) { return !brandOff[h.item.key]; });
+    }
+
+    function renderBrandHits() {
+        var hits, box = ui.brandHits;
+        if (!/\S/.test(ui.prompt.value)) { brandOff = {}; }
+        hits = brandHitsNow();
+        box.innerHTML = "";
+        box.hidden = !hits.length;
+        if (!hits.length) { return; }
+        box.appendChild(mkEl("span", "brand-hits-label", "AI поймёт так:"));
+        hits.forEach(function (h) {
+            var it = h.item, chip = mkEl("span", "brand-hit"), x = mkEl("button", "", "×");
+            chip.appendChild(brandMentionSwatch(it));
+            chip.appendChild(mkEl("span", "", BRAND_KIND_RU[it.kind] + ": " + it.name + (it.kind === "logo" ? " · " + it.extra : "")));
+            chip.setAttribute("data-key", it.key);
+            x.type = "button";
+            x.setAttribute("aria-label", "Не передавать AI: " + it.name);
+            x.title = "Не то — не передавать AI";
+            x.addEventListener("click", function () { brandOff[it.key] = true; renderBrandHits(); ui.prompt.focus(); });
+            chip.appendChild(x);
+            box.appendChild(chip);
+        });
+    }
+
+    // Строка для AI о том, что именно из брендбука имеется в виду в запросе.
+    function brandHitsNote(hits) {
+        if (!hits.length) { return ""; }
+        return "[Brand items meant in this request — use exactly these]\n" + hits.map(function (h) {
+            var it = h.item, r = it.ref;
+            if (it.kind === "logo") { return "- logo \"" + it.name + "\" (" + logoVariant(r.variant)[2] + "): " + r.file; }
+            if (it.kind === "icon") { return "- icon \"" + it.name + "\": " + r.file; }
+            if (it.kind === "color") { return "- color \"" + it.name + "\" " + r.hex; }
+            if (it.kind === "grad") { return "- gradient \"" + it.name + "\" " + r.from + " -> " + r.to + (r.type === "radial" ? " radial" : " linear " + r.angle + "deg"); }
+            if (it.kind === "font") { return "- font for " + r.role + ": " + r.font; }
+            return "- text \"" + it.name + "\": " + r.text;
+        }).join("\n");
+    }
+
+    function brandMentionSwatch(it) {
+        var sw = mkEl("i", "brand-mention-sw"), img;
+        if ((it.kind === "logo" || it.kind === "icon") && LOGO_PREVIEW.test(it.ref.file)) {
+            img = mkEl("img"); img.alt = ""; img.src = fileUrl(it.ref.file); sw.appendChild(img);
+        } else if (it.kind === "color") {
+            sw.style.background = it.ref.hex;
+        } else if (it.kind === "grad") {
+            sw.style.background = gradientCss(it.ref);
+        } else {
+            sw.textContent = it.kind === "font" ? "Aa" : it.kind === "text" ? "T" : "◆";
+        }
+        return sw;
+    }
+
+    // ---- список по «@»
+    var mention = null;        // { start, query, list, index }
+
+    function mentionQuery() {
+        var pos = ui.prompt.selectionStart, before = ui.prompt.value.substring(0, pos), m;
+        if (ui.prompt.selectionEnd !== pos) { return null; }
+        m = /(^|\s)@([^\s@]{0,30})$/.exec(before);
+        return m ? { start: pos - m[2].length - 1, query: m[2] } : null;
+    }
+
+    function renderMention() {
+        var q = mentionQuery(), b = activeBrand(), box = ui.mentionList, list, nq;
+        if (!q || !b) { closeMention(); return; }
+        nq = normTxt(q.query);
+        list = brandItems(b).filter(function (it) {
+            return !nq || normTxt(it.name).indexOf(nq) >= 0 || normTxt(BRAND_KIND_RU[it.kind]).indexOf(nq) === 0 || normTxt(it.extra).indexOf(nq) >= 0;
+        }).slice(0, 8);
+        mention = { start: q.start, query: q.query, list: list, index: mention && mention.query === q.query ? Math.min(mention.index, Math.max(0, list.length - 1)) : 0 };
+        box.innerHTML = "";
+        if (!list.length) {
+            box.appendChild(mkEl("div", "mention-empty", brandItems(b).length ? "В брендбуке «" + b.name + "» нет такого. Продолжайте писать или нажмите Esc." : "Брендбук «" + b.name + "» пока пуст: добавьте логотипы и цвета во вкладке «Проекты»."));
+        }
+        list.forEach(function (it, i) {
+            var row = mkEl("button", "mention-row");
+            row.type = "button";
+            row.setAttribute("role", "option");
+            row.setAttribute("aria-selected", i === mention.index ? "true" : "false");
+            row.appendChild(brandMentionSwatch(it));
+            row.appendChild(mkEl("b", "", it.name));
+            row.appendChild(mkEl("small", "", BRAND_KIND_RU[it.kind] + (it.extra && it.kind !== "text" ? " · " + it.extra : "")));
+            row.addEventListener("mousedown", function (e) { e.preventDefault(); });
+            row.addEventListener("click", function () { pickMention(i); });
+            box.appendChild(row);
+        });
+        box.hidden = false;
+    }
+
+    function closeMention() {
+        mention = null;
+        ui.mentionList.hidden = true;
+        ui.mentionList.innerHTML = "";
+    }
+
+    function pickMention(i) {
+        var m = mention, it, v, ins;
+        if (!m || !m.list[i]) { return; }
+        it = m.list[i];
+        v = ui.prompt.value;
+        ins = "@" + it.name + " ";
+        ui.prompt.value = v.substring(0, m.start) + ins + v.substring(m.start + 1 + m.query.length);
+        ui.prompt.selectionStart = ui.prompt.selectionEnd = m.start + ins.length;
+        delete brandOff[it.key];
+        closeMention();
+        ui.prompt.focus();
+        renderBrandHits();
+    }
+
+    function initMentions() {
+        var t = 0;
+        ui.prompt.addEventListener("input", function () {
+            renderMention();
+            clearTimeout(t);
+            t = setTimeout(renderBrandHits, 150);
+        });
+        ui.prompt.addEventListener("click", renderMention);
+        ui.prompt.addEventListener("blur", function () { setTimeout(closeMention, 150); });
+        ui.prompt.addEventListener("keydown", function (e) {
+            if (!mention || ui.mentionList.hidden) { return; }
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                if (!mention.list.length) { return; }
+                mention.index = (mention.index + (e.key === "ArrowDown" ? 1 : -1) + mention.list.length) % mention.list.length;
+                Array.prototype.forEach.call(ui.mentionList.querySelectorAll(".mention-row"), function (r, i) { r.setAttribute("aria-selected", i === mention.index ? "true" : "false"); });
+            } else if ((e.key === "Enter" || e.key === "Tab") && !e.metaKey && !e.ctrlKey && mention.list.length) {
+                e.preventDefault();
+                pickMention(mention.index);
+            } else if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                closeMention();
+            }
+        });
+    }
+
+    // Маленькие картинки упомянутых логотипов и иконок для AI (настройка «AI видит упомянутые логотипы»).
+    async function brandPictures(hits) {
+        var out = [], i, it, data, img, c, k, ext;
+        for (i = 0; i < hits.length && out.length < 4; i++) {
+            it = hits[i].item;
+            if ((it.kind !== "logo" && it.kind !== "icon") || !LOGO_PREVIEW.test(it.ref.file)) { continue; }
+            try {
+                ext = (it.ref.file.match(/\.([a-z0-9]+)$/i) || ["", "png"])[1].toLowerCase();
+                data = await platform.readBase64(it.ref.file);
+                img = await coImage("data:" + (ext === "svg" ? "image/svg+xml" : ext === "jpg" ? "image/jpeg" : "image/" + ext) + ";base64," + data);
+                k = Math.min(1, 256 / Math.max(img.naturalWidth || 256, img.naturalHeight || 256));
+                c = coCanvas(Math.max(1, Math.round((img.naturalWidth || 256) * k)), Math.max(1, Math.round((img.naturalHeight || 256) * k)));
+                c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+                out.push({ item: it, data: c.toDataURL("image/png").replace(/^data:image\/png;base64,/, "") });
+            } catch (e) {}
+        }
+        return out;
+    }
+
     function initBrand() {
+        initBrandOrder();
+        initMentions();
         ui.brandNew.addEventListener("click", function () { brandAskName("new"); });
         ui.brandFirst.addEventListener("click", function () { brandAskName("new"); });
         ui.brandRename.addEventListener("click", function () { if (activeBrand()) { brandAskName("rename"); } });
@@ -6682,6 +7313,7 @@
         });
         ui.brandSelect.addEventListener("change", function () { var g = activeProject(); if (g) { g.active = ui.brandSelect.value; } brandDelAt = 0; storeBrands(); renderBrand(); });
         ui.brandLogoAdd.addEventListener("click", brandAddLogo);
+        ui.brandIconAdd.addEventListener("click", brandAddIcons);
         ui.brandExport.addEventListener("click", brandExport);
         ui.brandImport.addEventListener("click", brandImport);
         ui.brandFirstImport.addEventListener("click", brandImport);
@@ -6703,6 +7335,24 @@
         });
         ui.brandColorName.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); ui.brandColorAdd.click(); } });
         ui.brandRigBtn.addEventListener("click", brandRig);
+        [ui.brandGradFrom, ui.brandGradTo, ui.brandGradType, ui.brandGradAngle].forEach(function (x) {
+            x.addEventListener("input", brandGradPreview);
+            x.addEventListener("change", brandGradPreview);
+        });
+        [ui.brandGradFrom, ui.brandGradTo].forEach(function (x) {
+            x.addEventListener("input", function () { brandGradTouched = true; });
+        });
+        ui.brandGradAdd.addEventListener("click", function () {
+            var b = activeBrand(), g = brandGradForm();
+            if (!b || !g) { return; }
+            if (b.gradients.length >= BRAND_MAX.gradients) { setStatus("В проекте уже " + BRAND_MAX.gradients + " градиентов.", ""); return; }
+            if (!brandStr(ui.brandGradName.value, 30)) { g.name = "Градиент " + (b.gradients.length + 1); }
+            b.gradients.push(g);
+            ui.brandGradName.value = "";
+            storeBrands();
+            renderBrand();
+        });
+        ui.brandGradName.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); ui.brandGradAdd.click(); } });
         [["head", ui.brandFontHead], ["body", ui.brandFontBody]].forEach(function (f) {
             f[1].addEventListener("change", function () { var b = activeBrand(); if (b) { b.fonts[f[0]] = brandStr(f[1].value, 120); storeBrands(); } });
             f[1].addEventListener("focus", brandLoadFonts);
@@ -6730,9 +7380,450 @@
     }
 
     // Замечания вроде «ничего не выделено» — подсказка, а не ошибка.
+    // ------------------------------------------------------------ Без фона (Cut out)
+    // Фото выделенного слоя открывается в окне панели. На Mac (macOS 14+) объекты на фото находит сама система
+    // (Vision): щелчок выбирает объект целиком. Иначе — GrabCut из js/cutout.js: щелчки «оставить»/«убрать»
+    // и рамка кадра задают объект и фон. Кисти «Оставить» и «Убрать» поправляют результат в обоих случаях.
+    // «Готово» — PNG с прозрачным фоном рядом с проектом, в окне Project — в папке «Cutouts».
+
+    var CO_BROWSER_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
+    var CO_PROC_MAX = 2048;      // маска считается не крупнее этого, потом растягивается на всё фото
+    var CO_DISP_MAX = 1400;
+    var CO_BIN = "Cutouts";
+    var co = null;
+
+    function coEngine() { return window.SayframeCutout; }
+
+    function coImage(src) {
+        return new Promise(function (resolve, reject) {
+            var img = new Image();
+            img.onload = function () { resolve(img); };
+            img.onerror = function () { reject(new Error("CO_FORMAT")); };
+            img.src = src;
+        });
+    }
+
+    function coMime(path) {
+        var m = /\.([a-z0-9]+)$/i.exec(path), e = m ? m[1].toLowerCase() : "png";
+        return "image/" + (e === "jpg" ? "jpeg" : e);
+    }
+
+    // Фото → картинка в панели. Чего браузер не читает (PSD, TIFF, HEIC…), сначала переводится в PNG:
+    // на Mac — системной sips, на Windows — через .NET (TIFF, BMP).
+    async function coLoadPhoto(path, tmp) {
+        var src = path, out, r;
+        if (!CO_BROWSER_EXT.test(path)) {
+            out = platform.join(tmp, "photo.png");
+            if (platform.isWindows()) {
+                r = await platform.exec("powershell", ["-NoProfile", "-Command",
+                    "Add-Type -AssemblyName System.Drawing; [System.Drawing.Image]::FromFile($args[0]).Save($args[1], [System.Drawing.Imaging.ImageFormat]::Png)", path, out], 60000);
+            } else {
+                r = await platform.exec("sips", ["-s", "format", "png", path, "--out", out], 60000);
+            }
+            if (r.code !== 0 || !(await platform.exists(out))) { throw new Error("CO_FORMAT"); }
+            src = out;
+        }
+        return coImage("data:" + coMime(src) + ";base64," + (await platform.readBase64(src)));
+    }
+
+    function coCanvas(w, h) {
+        var c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        return c;
+    }
+
+    // Картинка → RGBA размером w×h.
+    function coPixels(img, w, h) {
+        var c = coCanvas(w, h), g = c.getContext("2d");
+        g.drawImage(img, 0, 0, w, h);
+        return g.getImageData(0, 0, w, h).data;
+    }
+
+    // Маска-картинка (белое — объект) → Float32Array w×h.
+    function coMaskField(img, w, h) {
+        var px = coPixels(img, w, h), out = new Float32Array(w * h), i;
+        for (i = 0; i < w * h; i++) { out[i] = px[i * 4] / 255 * (px[i * 4 + 3] / 255); }
+        return out;
+    }
+
+    function coFit(w, h, max) {
+        var k = Math.min(1, max / Math.max(w, h));
+        return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) };
+    }
+
+    function coSetNote(text) { ui.cutoutNote.textContent = text || ""; }
+
+    function coShowBusy(text) {
+        ui.cutoutBusy.textContent = text || "Считаю…";
+        ui.cutoutBusy.hidden = !text;
+    }
+
+    // Даёт окну перерисоваться перед долгим расчётом.
+    function coBreath() { return new Promise(function (r) { setTimeout(r, 30); }); }
+
+    async function onCutout() {
+        var src, tmp, img, E = coEngine();
+        if (busy || co) { return; }
+        if (!E) { setStatus("Не загрузилась часть панели для вырезания фона (js/cutout.js). Переустановите Sayframe.", "error"); return; }
+        setBusy(true);
+        setStatus("Открываю фото…", "busy");
+        try {
+            src = await host("cutoutSource", []);
+            tmp = platform.join(platform.tmpdir(), "sayframe-cutout-" + Date.now());
+            await platform.mkdirp(tmp);
+            img = await coLoadPhoto(src.path, tmp);
+        } catch (e) {
+            toolFailed(e);
+            return;
+        }
+        co = { src: src, tmp: tmp, img: img, W: img.naturalWidth, H: img.naturalHeight, engine: "js",
+            masks: [], sel: [], marks: [], hist: [], coarse: null, tool: "pick", stroke: null, seq: 0 };
+        co.proc = coFit(co.W, co.H, CO_PROC_MAX);
+        co.proc.rgba = coPixels(img, co.proc.w, co.proc.h);
+        setBusy(false);
+        setStatus(src.many ? "Cut out: взят верхний из выделенных слоёв — «" + src.layer + "»." : "", "");
+        ui.cutoutName.textContent = src.layer;
+        ui.cutoutName.title = src.path;
+        coSetTool("pick");
+        ui.cutoutView.hidden = false;
+        coLayout();
+        coRender();
+        if (isMac()) {
+            await coVision();
+        } else {
+            coSetNote("Щёлкните по тому, что нужно оставить. Alt+щелчок — убрать лишнее. Кистями «Оставить» и «Убрать» поправьте край.");
+        }
+    }
+
+    // macOS сама находит объекты на фото. Не вышло — работает GrabCut, окно об этом пишет.
+    async function coVision() {
+        var c = co, js, res, n, i, img, out = [], r;
+        coShowBusy("Ищу объекты на фото…");
+        try {
+            js = platform.join(c.tmp, "vision.js");
+            res = platform.join(c.tmp, "vision.txt");
+            await platform.writeText(js, JXA_VISION);
+            r = await platform.exec("osascript", ["-l", "JavaScript", js, c.src.path, c.tmp, res], 90000);
+            r = (await platform.exists(res)) ? String(await platform.readText(res)).trim() : "ERR " + (r.stderr || r.code);
+            if (c !== co) { return; }
+            if (/^OK \d+$/.test(r)) {
+                n = Number(r.split(" ")[1]);
+                for (i = 0; i < n; i++) {
+                    img = await coImage("data:image/png;base64," + (await platform.readBase64(platform.join(c.tmp, "mask-" + i + ".png"))));
+                    // Маска должна совпасть с фото по пропорциям (иначе фото повёрнуто, например по EXIF).
+                    if (Math.abs(img.naturalWidth / img.naturalHeight - c.W / c.H) > 0.02) { throw new Error("CO_MASK_SHAPE"); }
+                    out.push(img);
+                }
+            } else if (r === "NOVISION") {
+                out = null;
+            } else {
+                throw new Error(r);
+            }
+        } catch (e) {
+            out = null;
+            r = String(e && e.message ? e.message : e).replace(/^ERR\s*/, "");
+        }
+        if (c !== co) { return; }
+        coShowBusy("");
+        if (out && out.length) {
+            c.engine = "vision";
+            c.masks = out.map(function (m) { return { img: m, proc: coMaskField(m, c.proc.w, c.proc.h), disp: null }; });
+            coLayout();
+            coSetNote("Нашлось объектов: " + out.length + ". Щёлкните по тому, что оставить (можно по нескольким). Alt+щелчок — убрать объект. Кисти «Оставить» и «Убрать» поправят край.");
+        } else if (out) {
+            coSetNote("macOS не нашла на фото отдельных объектов. Щёлкните по тому, что оставить, — панель отделит его по цветам. Alt+щелчок — убрать лишнее.");
+        } else if (r === "NOVISION") {
+            coSetNote("Щёлкните по тому, что нужно оставить. Alt+щелчок — убрать лишнее. (Выбор объекта целиком работает на macOS 14 и новее.)");
+        } else {
+            coSetNote("Встроенное выделение macOS не сработало (" + String(r).slice(0, 120) + "). Щёлкните по тому, что оставить, — панель отделит его по цветам.");
+        }
+        coRender();
+    }
+
+    // Размер холста под окно: фото целиком, чётко на Retina.
+    function coLayout() {
+        var c = co, st = ui.cutoutStage, dpr = Math.min(2, window.devicePixelRatio || 1), sw, sh, k, d;
+        if (!c) { return; }
+        sw = Math.max(80, st.clientWidth); sh = Math.max(80, st.clientHeight);
+        k = Math.min(sw / c.W, sh / c.H);
+        ui.cutoutCanvas.style.width = Math.round(c.W * k) + "px";
+        ui.cutoutCanvas.style.height = Math.round(c.H * k) + "px";
+        d = coFit(c.W, c.H, Math.min(CO_DISP_MAX, Math.round(Math.max(c.W, c.H) * k * dpr)));
+        if (!c.disp || c.disp.w !== d.w || c.disp.h !== d.h) {
+            c.disp = d;
+            c.disp.rgba = coPixels(c.img, d.w, d.h);
+            ui.cutoutCanvas.width = d.w; ui.cutoutCanvas.height = d.h;
+            c.masks.forEach(function (m) { m.disp = null; });
+        }
+        c.masks.forEach(function (m) { if (!m.disp) { m.disp = coMaskField(m.img, c.disp.w, c.disp.h); } });
+    }
+
+    function coEdge() { return Number(ui.cutoutEdge.value) || 0; }
+
+    function coHasKeep() {
+        return co.sel.length > 0 || co.marks.some(function (m) { return m.v > 0; });
+    }
+
+    // Маска размером w×h (rgba — фото того же размера, fields — маски объектов в том же размере).
+    function coAlpha(w, h, rgba, field) {
+        var E = coEngine(), c = co, out, i, j, user;
+        if (!coHasKeep()) { return null; }
+        if (c.engine === "js") {
+            if (!c.coarse) { return null; }
+            return E.refine(rgba, w, h, c.coarse.alpha, c.coarse.w, c.coarse.h, c.marks, coEdge());
+        }
+        out = new Float32Array(w * h);
+        for (j = 0; j < c.sel.length; j++) {
+            for (i = 0; i < w * h; i++) { if (field(c.sel[j])[i] > out[i]) { out[i] = field(c.sel[j])[i]; } }
+        }
+        if (c.marks.length) {
+            user = E.paintMarks(c.marks, w, h);
+            for (i = 0; i < w * h; i++) { if (user[i] > 0) { out[i] = 1; } else if (user[i] < 0) { out[i] = 0; } }
+        }
+        return coEdge() > 0 ? E.feather(out, w, h, coEdge() * Math.max(w, h) / 1000) : out;
+    }
+
+    // Фото на шахматке: объект ярко, убранный фон — шахматкой. Метки кисти — полупрозрачным цветом.
+    function coRender() {
+        var c = co, d, g, data, a, i, x, y, ch, k, m, j, L;
+        if (!c || !c.disp) { return; }
+        d = c.disp;
+        g = ui.cutoutCanvas.getContext("2d");
+        a = coAlpha(d.w, d.h, d.rgba, function (n) { return c.masks[n].disp; });
+        data = g.createImageData(d.w, d.h);
+        for (y = 0; y < d.h; y++) {
+            for (x = 0; x < d.w; x++) {
+                i = y * d.w + x; k = i * 4;
+                ch = ((x >> 3) + (y >> 3)) & 1 ? 58 : 38;
+                if (!a) {
+                    data.data[k] = d.rgba[k]; data.data[k + 1] = d.rgba[k + 1]; data.data[k + 2] = d.rgba[k + 2];
+                } else {
+                    data.data[k] = d.rgba[k] * a[i] + ch * (1 - a[i]);
+                    data.data[k + 1] = d.rgba[k + 1] * a[i] + ch * (1 - a[i]);
+                    data.data[k + 2] = d.rgba[k + 2] * a[i] + ch * (1 - a[i]);
+                }
+                data.data[k + 3] = 255;
+            }
+        }
+        g.putImageData(data, 0, 0);
+        L = Math.max(d.w, d.h);
+        g.lineCap = "round"; g.lineJoin = "round";
+        for (j = 0; j < c.marks.length + (c.stroke ? 1 : 0); j++) {
+            m = j < c.marks.length ? c.marks[j] : c.stroke;
+            g.globalAlpha = m.pts.length === 2 ? 0.9 : 0.35;
+            g.strokeStyle = g.fillStyle = m.v > 0 ? "#7be3a7" : "#ff7d8e";
+            if (m.pts.length === 2) {
+                g.beginPath(); g.arc(m.pts[0] * d.w, m.pts[1] * d.h, Math.max(3, m.r * L * 0.6), 0, Math.PI * 2); g.fill();
+                g.globalAlpha = 1; g.lineWidth = 1.5; g.strokeStyle = "#0b0c12"; g.stroke();
+            } else {
+                g.lineWidth = Math.max(2, m.r * L * 2);
+                g.beginPath(); g.moveTo(m.pts[0] * d.w, m.pts[1] * d.h);
+                for (k = 2; k < m.pts.length; k += 2) { g.lineTo(m.pts[k] * d.w, m.pts[k + 1] * d.h); }
+                g.stroke();
+            }
+        }
+        g.globalAlpha = 1;
+    }
+
+    // GrabCut заново (только для режима без macOS): по всем меткам.
+    async function coSolve() {
+        var c = co, seq = ++c.seq, E = coEngine(), r;
+        if (c.engine !== "js") { coRender(); return; }
+        if (!c.marks.some(function (m) { return m.v > 0; })) { c.coarse = null; coRender(); return; }
+        coShowBusy("Считаю…");
+        await coBreath();
+        if (c !== co || seq !== c.seq) { return; }
+        r = E.solve(c.proc.rgba, c.proc.w, c.proc.h, c.marks);
+        if (c !== co || seq !== c.seq) { return; }
+        c.coarse = r;
+        coShowBusy("");
+        coRender();
+    }
+
+    function coRemember() {
+        co.hist.push({ marks: co.marks.slice(), sel: co.sel.slice() });
+        if (co.hist.length > 60) { co.hist.shift(); }
+    }
+
+    function coChanged() { if (co.engine === "js") { coSolve(); } else { coRender(); } }
+
+    function coSetTool(t) {
+        if (co) { co.tool = t; }
+        Array.prototype.forEach.call(ui.cutoutView.querySelectorAll(".cutout-tool"), function (b) {
+            b.setAttribute("aria-pressed", b.getAttribute("data-co-tool") === t ? "true" : "false");
+        });
+    }
+
+    function coPoint(e) {
+        var r = ui.cutoutCanvas.getBoundingClientRect();
+        return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
+    }
+
+    function coBrushR() { return Number(ui.cutoutBrush.value) * 0.006; }
+
+    // Щелчок «Объект»: на Mac — выбрать или убрать объект, найденный системой; иначе — точка-подсказка для GrabCut.
+    function coPick(pt, remove) {
+        var c = co, d = c.disp, x = Math.min(d.w - 1, Math.floor(pt[0] * d.w)), y = Math.min(d.h - 1, Math.floor(pt[1] * d.h)), hit = [], i;
+        if (c.engine === "vision") {
+            for (i = 0; i < c.masks.length; i++) { if (c.masks[i].disp[y * d.w + x] > 0.5) { hit.push(i); } }
+            if (!hit.length) {
+                coSetNote(remove ? "Здесь и так фон. Чтобы убрать кусок объекта, закрасьте его кистью «Убрать»."
+                    : "Здесь macOS объекта не нашла. Закрасьте нужное кистью «Оставить».");
+                return;
+            }
+            coRemember();
+            if (remove) {
+                c.sel = c.sel.filter(function (n) { return hit.indexOf(n) < 0; });
+            } else {
+                hit.forEach(function (n) { if (c.sel.indexOf(n) < 0) { c.sel.push(n); } });
+            }
+            coSetNote("");
+            coRender();
+            return;
+        }
+        coRemember();
+        c.marks.push({ v: remove ? -1 : 1, r: 0.012, pts: [pt[0], pt[1]] });
+        coChanged();
+    }
+
+    async function coDone() {
+        var c = co, E = coEngine(), p = c.proc, a, mask, mg, md, i, full, fg, blob, bytes, dir, name, file, res, mode;
+        if (!coHasKeep() || (c.engine === "js" && !c.coarse)) { coSetNote("Сначала щёлкните по тому, что нужно оставить."); return; }
+        mode = ui.cutoutView.querySelector('input[name="cutoutMode"]:checked').value;
+        ui.cutoutDone.disabled = true;
+        coShowBusy("Сохраняю…");
+        await coBreath();
+        try {
+            a = coAlpha(p.w, p.h, p.rgba, function (n) { return c.masks[n].proc; });
+            mask = coCanvas(p.w, p.h); mg = mask.getContext("2d"); md = mg.createImageData(p.w, p.h);
+            for (i = 0; i < p.w * p.h; i++) {
+                md.data[i * 4] = md.data[i * 4 + 1] = md.data[i * 4 + 2] = 255;
+                md.data[i * 4 + 3] = Math.round(a[i] * 255);
+            }
+            mg.putImageData(md, 0, 0);
+            full = coCanvas(c.W, c.H); fg = full.getContext("2d");
+            fg.drawImage(c.img, 0, 0);
+            fg.globalCompositeOperation = "destination-in";
+            fg.imageSmoothingEnabled = true;
+            fg.drawImage(mask, 0, 0, c.W, c.H);
+            blob = await new Promise(function (resolve) { full.toBlob(resolve, "image/png"); });
+            if (!blob) { throw new Error("CO_NOT_SAVED"); }
+            bytes = await new Promise(function (resolve, reject) {
+                var fr = new FileReader();
+                fr.onload = function () { resolve(new Uint8Array(fr.result)); };
+                fr.onerror = function () { reject(new Error("CO_NOT_SAVED")); };
+                fr.readAsArrayBuffer(blob);
+            });
+            dir = c.src.dir ? platform.join(c.src.dir, "Sayframe Cutouts") : platform.join(platform.homedir(), "Documents", "Sayframe Cutouts");
+            await platform.mkdirp(dir);
+            name = String(c.src.item).replace(/\.[A-Za-z0-9]+$/, "").replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 60) || "photo";
+            file = platform.join(dir, name + " cutout " + coStamp() + ".png");
+            try { await platform.writeBytes(file, bytes); } catch (e1) { throw new Error("CO_NOT_SAVED"); }
+            res = await host("cutoutApply", [file, c.src.index, mode, CO_BIN, c.src.layer + " (без фона)"]);
+        } catch (e) {
+            if (co !== c) { return; }
+            ui.cutoutDone.disabled = false;
+            coShowBusy("");
+            coSetNote(humanError(e));
+            return;
+        }
+        coClose();
+        setStatus(res.mode === "above"
+            ? "Готово: вырезанное фото — новым слоем «" + res.layer + "» над «" + res.original + "», оригинал выключен. PNG — в папке «" + CO_BIN + "» проекта. Отменить — Cmd/Ctrl+Z."
+            : "Готово: на слое «" + res.layer + "» теперь фото без фона. PNG — в папке «" + CO_BIN + "» проекта, оригинал остался в проекте. Отменить — Cmd/Ctrl+Z.", "done");
+    }
+
+    function coStamp() {
+        var d = new Date();
+        function two(n) { return (n < 10 ? "0" : "") + n; }
+        return d.getFullYear() + two(d.getMonth() + 1) + two(d.getDate()) + "-" + two(d.getHours()) + two(d.getMinutes()) + two(d.getSeconds());
+    }
+
+    function coClose() {
+        var c = co;
+        if (!c) { return; }
+        co = null;
+        ui.cutoutView.hidden = true;
+        ui.cutoutDone.disabled = false;
+        coShowBusy("");
+        coSetNote("");
+        ["vision.js", "vision.txt", "photo.png"].concat(c.masks.map(function (m, i) { return "mask-" + i + ".png"; })).forEach(function (f) {
+            platform.remove(platform.join(c.tmp, f));
+        });
+    }
+
+    function coUndo() {
+        var h;
+        if (!co || !co.hist.length) { return; }
+        h = co.hist.pop();
+        co.marks = h.marks; co.sel = h.sel;
+        if (!co.marks.some(function (m) { return m.v > 0; })) { co.coarse = null; }
+        coChanged();
+    }
+
+    function enableCutout() {
+        var cv = ui.cutoutCanvas, down = null, resizeT = 0;
+        ui.cutoutClose.addEventListener("click", coClose);
+        ui.cutoutDone.addEventListener("click", function () { if (co) { coDone(); } });
+        ui.cutoutUndo.addEventListener("click", coUndo);
+        ui.cutoutReset.addEventListener("click", function () {
+            if (!co || (!co.marks.length && !co.sel.length)) { return; }
+            coRemember();
+            co.marks = []; co.sel = []; co.coarse = null;
+            coRender();
+        });
+        ui.cutoutEdge.addEventListener("input", function () { if (co) { coRender(); } });
+        Array.prototype.forEach.call(ui.cutoutView.querySelectorAll(".cutout-tool"), function (b) {
+            b.addEventListener("click", function () { coSetTool(b.getAttribute("data-co-tool")); });
+        });
+        // Мышь, а не pointer events: в самом After Effects события указателя в панели срабатывают ненадёжно.
+        cv.addEventListener("mousedown", function (e) {
+            var pt;
+            if (!co || e.button === 1) { return; }
+            e.preventDefault();
+            pt = coPoint(e);
+            down = { pt: pt, remove: e.altKey || e.button === 2 || co.tool === "drop" };
+            if (co.tool !== "pick") {
+                co.stroke = { v: co.tool === "keep" ? 1 : -1, r: coBrushR(), pts: [pt[0], pt[1], pt[0], pt[1]] };
+                coRender();
+            }
+        });
+        document.addEventListener("mousemove", function (e) {
+            var pt, s;
+            if (!co || !down || !co.stroke) { return; }
+            pt = coPoint(e); s = co.stroke.pts;
+            if (Math.hypot(pt[0] - s[s.length - 2], pt[1] - s[s.length - 1]) < 0.004) { return; }
+            s.push(pt[0], pt[1]);
+            coRender();
+        });
+        document.addEventListener("mouseup", function () {
+            var d = down;
+            down = null;
+            if (!co || !d) { return; }
+            if (co.stroke) {
+                coRemember();
+                co.marks.push(co.stroke);
+                co.stroke = null;
+                coChanged();
+                return;
+            }
+            coPick(d.pt, d.remove);
+        });
+        cv.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+        document.addEventListener("keydown", function (e) {
+            if (!co) { return; }
+            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); coClose(); return; }
+            if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) { e.preventDefault(); e.stopPropagation(); coUndo(); }
+        }, true);
+        window.addEventListener("resize", function () {
+            clearTimeout(resizeT);
+            resizeT = setTimeout(function () { if (co) { coLayout(); coRender(); } }, 120);
+        });
+    }
+
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -7979,6 +9070,8 @@
     ui.cacheBtn.addEventListener("click", onClearCache);
     ui.nullpBtn.addEventListener("click", onNullParent);
     ui.unusedBtn.addEventListener("click", onRemoveUnused);
+    ui.cutoutBtn.addEventListener("click", onCutout);
+    enableCutout();
     initBrand();
     ui.fxBtn.addEventListener("click", openFxConsole);
     ui.fxClose.addEventListener("click", closeFxConsole);
