@@ -1383,10 +1383,18 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .brand-empty p { margin: 0; color: var(--muted); font: 600 12.5px/1.45 var(--round); }
 .brand-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .brand-h b { font: 700 13.5px/1.25 var(--round); }
+.brand-h b { margin-right: auto; }
+.brand-move { display: flex; gap: 2px; flex: none; }
+.brand-move button { width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border: 1px solid transparent; border-radius: 7px;
+  background: transparent; color: var(--faint); cursor: pointer; }
+.brand-move button:hover:not(:disabled) { color: var(--text); border-color: var(--line); background: var(--glass); }
+.brand-move button:disabled { opacity: 0.25; cursor: default; }
+.brand-move svg { width: 12px; height: 12px; }
 .ghost.brand-add { width: auto; height: 28px; padding: 0 10px; font-size: 12px; flex: none; }
 .brand-wide { width: 100%; }
 .brand-logos { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
-.brand-logos:empty::before, .brand-colors:empty::before, .brand-texts:empty::before { content: attr(data-empty); color: var(--muted); font: 600 12px/1.4 var(--round); grid-column: 1 / -1; }
+.brand-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
+.brand-logos:empty::before, .brand-icons:empty::before, .brand-colors:empty::before, .brand-texts:empty::before { content: attr(data-empty); color: var(--muted); font: 600 12px/1.4 var(--round); grid-column: 1 / -1; }
 .brand-logo { position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .brand-logo-img { height: 72px; padding: 8px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 12px; cursor: pointer;
   background: repeating-conic-gradient(rgba(255,255,255,0.06) 0% 25%, transparent 0% 50%) 50% / 14px 14px; }
@@ -1394,6 +1402,11 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .brand-logo-img img { max-width: 100%; max-height: 56px; object-fit: contain; }
 .brand-logo-img span { color: var(--muted); font: 700 11px/1.2 var(--round); text-transform: uppercase; }
 .brand-logo select { width: 100%; height: 24px; padding: 0 4px; font-size: 11px; border-radius: 8px; }
+.brand-icon { position: relative; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.brand-icon .brand-logo-img { height: 56px; padding: 8px; }
+.brand-icon .brand-logo-img img { max-height: 38px; }
+.brand-icon small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font: 600 10.5px/1.2 var(--round); text-align: center; }
+.brand-icon:hover .brand-x { opacity: 1; }
 .brand-logo small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font: 600 11px/1.2 var(--round); }
 .brand-x { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; display: grid; place-items: center; border: 1px solid var(--line);
   border-radius: 50%; background: var(--bg); color: var(--muted); font-size: 13px; line-height: 1; cursor: pointer; opacity: 0; }
@@ -1406,6 +1419,11 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .brand-chip small { display: block; color: var(--muted); font: 600 10.5px/1.2 var(--mono, monospace); }
 .brand-addrow .color-pick { flex: none; }
 .brand-addrow .hex { flex: 0 0 82px; }
+.brand-gradrow { align-items: center; }
+.brand-grad-preview { flex: 1 1 40px; min-width: 30px; height: 30px; border-radius: 9px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18); }
+.brand-gradtype { flex: 0 0 auto; width: auto; }
+.brand-angle { flex: 0 0 58px; width: 58px; }
+.brand-chip i.brand-grad-sw { width: 40px; }
 .brand-font { display: grid; grid-template-columns: 78px 1fr auto; align-items: center; gap: 6px; }
 .brand-font span { color: var(--muted); font: 600 12px/1.2 var(--round); }
 .brand-font .ghost { width: auto; height: 32px; padding: 0 10px; font-size: 12px; }
@@ -1439,3 +1457,112 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .brand-sub-add { width: 30px; padding: 0; justify-content: center; font-size: 16px; }
 .brand-sub-x { display: grid; place-items: center; width: 16px; height: 16px; margin-right: -6px; border-radius: 50%; color: var(--muted); font-size: 13px; line-height: 1; }
 .brand-sub-x:hover, .brand-sub-x:focus-visible { color: var(--text); background: rgba(255,255,255,0.1); }
+
+/* ------------------------------------------------------- Без фона */
+
+/* Окно на всю панель: фото крупно, сверху — чем отмечать, снизу — край, куда положить и «Готово». */
+.cutout {
+  position: fixed;
+  left: 0; top: 0; right: 0; bottom: 0;
+  z-index: 50;
+  display: flex;
+  padding: 10px;
+  background: rgba(4, 4, 8, 0.72);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.cutout[hidden] { display: none; }
+.cutout-card-view {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: #15161d;
+  box-shadow: 0 30px 80px -20px #000;
+}
+.cutout-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cutout-top b { flex: none; font: 700 14px/1.2 var(--round); }
+.cutout-name { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+.cutout-top .icon-btn { flex: none; font-size: 18px; line-height: 1; }
+.cutout-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cutout-tool {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.cutout-tool:hover { color: var(--text); background: var(--glass); }
+.cutout-tool[aria-pressed="true"] { color: var(--text); border-color: rgba(var(--accent-rgb), 0.9); background: rgba(var(--accent-rgb), 0.18); }
+.cutout-keep[aria-pressed="true"] { border-color: #7be3a7; background: rgba(123, 227, 167, 0.16); }
+.cutout-drop[aria-pressed="true"] { border-color: #ff7d8e; background: rgba(255, 125, 142, 0.16); }
+.cutout-brush { flex: 1 1 60px; min-width: 50px; accent-color: var(--accent); }
+.cutout-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #0d0e13;
+}
+.cutout-canvas { display: block; max-width: 100%; max-height: 100%; cursor: crosshair; touch-action: none; }
+.cutout-busy {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgba(10, 10, 16, 0.85);
+  color: var(--text);
+  font-size: 12px;
+  pointer-events: none;
+}
+.cutout-busy[hidden] { display: none; }
+.cutout-note { margin: 0; min-height: 16px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.cutout-edge { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.cutout-edge input { flex: 1 1 auto; accent-color: var(--accent); }
+.cutout-mode { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 12px; }
+.cutout-mode label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.cutout-mode input { accent-color: var(--accent); }
+.cutout-actions { display: flex; gap: 8px; }
+.cutout-actions .ghost { flex: none; height: 36px; }
+.cutout-actions .primary { flex: 1 1 auto; height: 36px; font-size: 13px; border-radius: 10px; }
+
+/* ------------------------------------------------- AI и брендбук: @ и «AI поймёт так» */
+
+.mention-list { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: #15161d; max-height: 260px; overflow: auto; }
+.mention-list[hidden] { display: none; }
+.mention-row { display: grid; grid-template-columns: 28px 1fr; grid-template-rows: auto auto; column-gap: 8px; align-items: center; padding: 5px 8px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.mention-row .brand-mention-sw { grid-row: 1 / 3; }
+.mention-row b { overflow: hidden; font: 600 12.5px/1.2 var(--round); white-space: nowrap; text-overflow: ellipsis; }
+.mention-row small { overflow: hidden; color: var(--muted); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
+.mention-row[aria-selected="true"], .mention-row:hover { background: rgba(var(--accent-rgb), 0.18); }
+.mention-empty { padding: 6px 8px; color: var(--muted); font-size: 12px; }
+.brand-mention-sw { width: 28px; height: 28px; display: grid; place-items: center; overflow: hidden; border-radius: 7px; background: rgba(255,255,255,0.06);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); color: var(--muted); font: 700 11px/1 var(--round); font-style: normal; }
+.brand-mention-sw img { max-width: 24px; max-height: 24px; object-fit: contain; }
+.brand-hits { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.brand-hits[hidden] { display: none; }
+.brand-hits-label { color: var(--muted); font-size: 11.5px; }
+.brand-hit { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 4px 3px 4px; border: 1px solid rgba(var(--accent-rgb), 0.45); border-radius: 10px;
+  background: rgba(var(--accent-rgb), 0.1); color: var(--text); font: 600 11.5px/1.2 var(--round); }
+.brand-hit .brand-mention-sw { width: 20px; height: 20px; border-radius: 5px; font-size: 9px; }
+.brand-hit .brand-mention-sw img { max-width: 17px; max-height: 17px; }
+.brand-hit span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.brand-hit button { width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font-size: 13px; line-height: 1; cursor: pointer; }
+.brand-hit button:hover { color: var(--text); background: var(--glass-strong); }
+
+/* Переименование элемента брендбука: карандаш при наведении, поле на месте названия. */
+.brand-pen { position: absolute; top: -6px; right: 18px; width: 20px; height: 20px; padding: 0; display: grid; place-items: center; border: 1px solid var(--line);
+  border-radius: 50%; background: var(--bg); color: var(--muted); cursor: pointer; opacity: 0; }
+.brand-pen svg { width: 10px; height: 10px; }
+.brand-logo:hover .brand-pen, .brand-icon:hover .brand-pen, .brand-chip:hover .brand-pen, .brand-pen:focus-visible { opacity: 1; }
+.brand-pen:hover, .brand-x:hover { color: var(--text); }
+.brand-rename { width: 100%; min-width: 90px; height: 28px; padding: 0 8px; font-size: 12px; }
