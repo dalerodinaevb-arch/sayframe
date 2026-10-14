@@ -2109,6 +2109,7 @@ var sayframeHost = (function () {
     // ---- brand helpers
 
     var BR_RIG = "Brand Colors";
+    var BR_LOGO_SCALE = 10;     // percent: the logo precomp layer in the user's comp
 
     function brHex(hex) {
         var m = /^#?([0-9a-fA-F]{6})$/.exec(String(hex));
@@ -4320,12 +4321,12 @@ var sayframeHost = (function () {
         // ---- Projects (brand books): logos, colors, fonts, texts and formats of one brand.
 
         // A logo file into the project (folder binName) and, when a comp is open, into the comp.
-        brandLogo: function (path, binName) {
+        brandLogo: function (path, binName, logoName) {
             return reply(function () {
                 var proj = app.project;
                 var comp = proj.activeItem && proj.activeItem instanceof CompItem ? proj.activeItem : null;
                 var file = new File(path);
-                var item = null, i, it, reused;
+                var item = null, i, it, reused, pre = null, inner, layer;
                 if (!file.exists) { throw new Error("LOGO_NOT_FOUND"); }
                 for (i = 1; i <= proj.numItems; i++) {
                     it = proj.item(i);
@@ -4340,14 +4341,24 @@ var sayframeHost = (function () {
                         item = proj.importFile(new ImportOptions(file));
                         try { item.parentFolder = projectBin(binName); } catch (e1) {}
                     }
+                    // In a comp the logo goes in as a precomp the size of the logo: inside it stays at 100%,
+                    // the precomp layer is scaled to 10% so a big logo file does not fill the screen.
+                    // Collapse Transformations keeps a vector logo sharp at any size.
                     if (comp) {
-                        comp.layers.add(item);
+                        pre = proj.items.addComp((logoName ? String(logoName) : baseName(item.name)) + " Logo", Math.max(4, Math.round(item.width || 100)), Math.max(4, Math.round(item.height || 100)),
+                            item.pixelAspect || 1, comp.duration, comp.frameRate);
+                        try { pre.parentFolder = projectBin(binName); } catch (e2) {}
+                        inner = pre.layers.add(item);
+                        try { inner.collapseTransformation = true; } catch (e3) {}
+                        layer = comp.layers.add(pre);
+                        layer.property("ADBE Transform Group").property("ADBE Scale").setValue([BR_LOGO_SCALE, BR_LOGO_SCALE]);
+                        try { layer.collapseTransformation = true; } catch (e4) {}
                         restoreActive(comp);
                     }
                 } finally {
                     app.endUndoGroup();
                 }
-                return { name: String(item.name), comp: comp ? comp.name : "", reused: reused };
+                return { name: String(item.name), comp: comp ? comp.name : "", reused: reused, pre: pre ? pre.name : "", scale: BR_LOGO_SCALE };
             });
         },
 
@@ -4465,6 +4476,17 @@ var sayframeHost = (function () {
                     app.endUndoGroup();
                 }
                 return { name: comp.name, bg: !!bg };
+            });
+        },
+
+        // Save window for a brand book file; starts in Documents with the suggested name.
+        brandSaveDialog: function (fileName, prompt) {
+            return reply(function () {
+                var f = new File(Folder.myDocuments.fsName + "/" + fileName);
+                var picked = f.saveDlg(prompt);
+                var path = picked ? String(picked.fsName) : "";
+                if (path && !/\.sfbrand$/i.test(path)) { path += ".sfbrand"; }
+                return { path: path };
             });
         },
 
