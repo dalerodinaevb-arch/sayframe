@@ -104,7 +104,9 @@
           </div>
         </div>
       </div>
-      <textarea id="prompt" rows="4" placeholder="Опишите, что сделать в композиции" aria-label="Задача для нейросети"></textarea>
+      <textarea id="prompt" rows="4" placeholder="Опишите, что сделать в композиции. @ — логотип, цвет или иконка из брендбука" aria-label="Задача для нейросети"></textarea>
+      <div id="mentionList" class="mention-list" role="listbox" aria-label="Из брендбука" hidden></div>
+      <div id="brandHits" class="brand-hits" aria-live="polite" hidden></div>
       <div class="attach-row">
         <button id="refBtn" class="chip-btn" title="Прикрепить видео или картинку">+ Референс</button>
         <button id="refLinkBtn" class="chip-btn" title="Референс по ссылке: картинка, видео или страница с ними (Pinterest, Behance, Dribbble…)">+ Ссылка</button>
@@ -510,6 +512,26 @@
       <small id="unusedHint" class="paste-hint">Убирает из проекта файлы, которые нигде не используются. С диска ничего не удаляется. Отменить — Cmd/Ctrl+Z</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Чистка»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
+    <section class="card tool-card cutout-card" data-tool="cutout" data-info="Вырезка|Выделите в композиции слой с фото и нажмите Cut out: откроется окно с этим фото. Щёлкните по тому, что нужно оставить, — фон уберётся. Alt+щелчок убирает лишнее, кисти «Оставить» и «Убрать» поправляют край. «Готово» — фото на слое заменяется вырезанным PNG с прозрачным фоном (или ложится новым слоем сверху). Оригинал остаётся в проекте. Отменить — Cmd/Ctrl+Z." aria-label="Вырезка" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Вырезка»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="cutoutOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="cutoutHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
+      </button>
+      <div class="tool-head" title="Убирает фон с фото: щёлкните по тому, что оставить">
+        <b>Вырезка</b>
+      </div>
+      <button id="cutoutBtn" class="paste-do" title="Вырезать фон на фото выделенного слоя">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="6.5" cy="6.5" r="2.5"/>
+          <circle cx="6.5" cy="17.5" r="2.5"/>
+          <path d="M8.6 8l11.4 9.5"/>
+          <path d="M8.6 16l11.4-9.5"/>
+        </svg>
+        <span>Cut out</span>
+      </button>
+      <small id="cutoutHint" class="paste-hint">Выделите слой с фото: щёлкните по тому, что оставить, — фон уберётся. Отменить — Cmd/Ctrl+Z</small>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Вырезка»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
+    </section>
     <section class="card tool-card easecopy-card" data-tool="easecopy" data-info="Копия плавности|«Копировать» запоминает плавность, тип и значения выделенных ключей. «Вставить плавность» переносит только характер движения на другие ключи: значения не трогает, скорость подгоняет под новое движение. «Вставить значения» — наоборот. Если у свойства нет ключей, панель создаст их от указателя времени. «Сквозная скорость» убирает рывок на средних ключах цепочки." aria-label="Копия плавности" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Копия плавности»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="ecOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="ecOpts" aria-label="Скрыть настройку" title="Скрыть настройку">
@@ -606,13 +628,19 @@
       </section>
 
       <div id="brandBody" hidden>
-        <section class="card brand-sec">
+        <section class="card brand-sec" data-sec="logos">
           <div class="brand-h"><b>Логотипы</b><button id="brandLogoAdd" class="ghost brand-add" title="Добавить файл логотипа: PNG, SVG, AI, PSD, JPG">+ Добавить</button></div>
           <div id="brandLogos" class="brand-logos"></div>
           <small class="hint">Щелчок по логотипу — вставить в открытую композицию прекомпозицией: внутри логотип 100 %, сама прекомпозиция — 10 %. В проекте — в папке «Brand — …». Файлы копируются в «Документы / Sayframe Brands».</small>
         </section>
 
-        <section class="card brand-sec">
+        <section class="card brand-sec" data-sec="icons">
+          <div class="brand-h"><b>Иконки</b><button id="brandIconAdd" class="ghost brand-add" title="Добавить файлы иконок: SVG, PNG, AI, PSD… Можно выбрать сразу несколько">+ Добавить</button></div>
+          <div id="brandIcons" class="brand-icons"></div>
+          <small class="hint">Щелчок по иконке — вставить её в открытую композицию слоем в центре, в исходном размере (вектор остаётся чётким). В проекте — в папке «Brand — …».</small>
+        </section>
+
+        <section class="card brand-sec" data-sec="colors">
           <div class="brand-h"><b>Цвета</b></div>
           <div id="brandColors" class="brand-colors"></div>
           <div class="brand-row brand-addrow">
@@ -625,7 +653,27 @@
           <small class="hint">Щелчок по цвету красит выделенные слои: текст, шейп, солид или любой слой (эффектом Fill). Если в композиции есть слой Brand Colors, цвет привязывается к нему: поменяете цвет там — он сменится везде.</small>
         </section>
 
-        <section class="card brand-sec">
+        <section class="card brand-sec" data-sec="grads">
+          <div class="brand-h"><b>Градиенты</b></div>
+          <div id="brandGrads" class="brand-colors"></div>
+          <div class="brand-row brand-addrow brand-gradrow">
+            <input id="brandGradFrom" class="color-pick" type="color" value="#9d7bff" aria-label="Цвет начала градиента" title="Цвет начала">
+            <i id="brandGradPreview" class="brand-grad-preview" aria-hidden="true"></i>
+            <input id="brandGradTo" class="color-pick" type="color" value="#2fc16e" aria-label="Цвет конца градиента" title="Цвет конца">
+            <select id="brandGradType" class="field brand-gradtype" aria-label="Вид градиента">
+              <option value="linear">Линейный</option>
+              <option value="radial">Радиальный</option>
+            </select>
+            <input id="brandGradAngle" class="field brand-angle" type="number" min="0" max="359" step="15" value="90" aria-label="Угол, градусы" title="Угол: 0° — снизу вверх, 90° — слева направо">
+          </div>
+          <div class="brand-row brand-addrow">
+            <input id="brandGradName" class="field" maxlength="30" spellcheck="false" placeholder="Название градиента" aria-label="Название градиента">
+            <button id="brandGradAdd" class="ghost brand-add" title="Добавить градиент">+</button>
+          </div>
+          <small class="hint">Щелчок по градиенту — эффект Gradient Ramp на выделенных слоях: по их размеру и под заданным углом. Ничего не выделено — новый солид с градиентом на всю композицию.</small>
+        </section>
+
+        <section class="card brand-sec" data-sec="fonts">
           <div class="brand-h"><b>Шрифты</b></div>
           <datalist id="brandFontList"></datalist>
           <label class="brand-font"><span>Заголовки</span>
@@ -638,7 +686,7 @@
           </label>
         </section>
 
-        <section class="card brand-sec">
+        <section class="card brand-sec" data-sec="texts">
           <div class="brand-h"><b>Тексты</b></div>
           <div id="brandTexts" class="brand-texts"></div>
           <div class="brand-row brand-addrow">
@@ -649,7 +697,7 @@
           <small class="hint">Щелчок по тексту — текстовый слой в открытой композиции, сразу в шрифте заголовков и первом цвете бренда.</small>
         </section>
 
-        <section class="card brand-sec">
+        <section class="card brand-sec" data-sec="formats">
           <div class="brand-h"><b>Форматы</b></div>
           <div id="brandFormats" class="brand-formats">
             <button class="ghost" data-w="1920" data-h="1080" title="Горизонтальное видео">16:9<small>1920×1080</small></button>
@@ -708,6 +756,13 @@
             <span class="track"></span>
             <span class="text">Claude проверяет результат по кадрам
               <small>После запуска видит композицию и сам вносит правки. Дольше и дороже.</small>
+            </span>
+          </label>
+          <label class="switch">
+            <input id="brandPics" type="checkbox">
+            <span class="track"></span>
+            <span class="text">AI видит упомянутые логотипы и иконки
+              <small>Вместе с запросом уходят их маленькие картинки (только тех, что упомянуты). Немного дороже.</small>
             </span>
           </label>
           <label class="switch">
@@ -861,6 +916,38 @@
     </div>
   </div>
 
+  <!-- Без фона: фото выделенного слоя, щелчки и кисть отмечают, что оставить -->
+  <div id="cutoutView" class="cutout" hidden>
+    <div class="card cutout-card-view" role="dialog" aria-modal="true" aria-labelledby="cutoutTitle">
+      <div class="cutout-top">
+        <b id="cutoutTitle">Вырезать фон</b>
+        <span id="cutoutName" class="cutout-name"></span>
+        <button id="cutoutClose" class="icon-btn" aria-label="Закрыть без изменений" title="Закрыть без изменений (Esc)">&times;</button>
+      </div>
+      <div class="cutout-tools" role="group" aria-label="Чем отмечать">
+        <button type="button" class="cutout-tool" data-co-tool="pick" aria-pressed="true" title="Щелчок — оставить объект, Alt+щелчок — убрать">Объект</button>
+        <button type="button" class="cutout-tool cutout-keep" data-co-tool="keep" aria-pressed="false" title="Закрасьте то, что нужно оставить">Оставить</button>
+        <button type="button" class="cutout-tool cutout-drop" data-co-tool="drop" aria-pressed="false" title="Закрасьте то, что нужно убрать">Убрать</button>
+        <input id="cutoutBrush" class="cutout-brush" type="range" min="1" max="12" value="4" aria-label="Размер кисти" title="Размер кисти">
+      </div>
+      <div id="cutoutStage" class="cutout-stage">
+        <canvas id="cutoutCanvas" class="cutout-canvas"></canvas>
+        <div id="cutoutBusy" class="cutout-busy" hidden>Считаю…</div>
+      </div>
+      <p id="cutoutNote" class="cutout-note"></p>
+      <label class="cutout-edge">Мягкость края <input id="cutoutEdge" type="range" min="0" max="10" value="1"></label>
+      <div class="cutout-mode" role="radiogroup" aria-label="Куда положить результат">
+        <label><input type="radio" name="cutoutMode" value="replace" checked> Заменить на слое</label>
+        <label><input type="radio" name="cutoutMode" value="above"> Новым слоем сверху</label>
+      </div>
+      <div class="cutout-actions">
+        <button id="cutoutUndo" type="button" class="ghost" title="Отменить последнюю отметку (Cmd/Ctrl+Z)">Шаг назад</button>
+        <button id="cutoutReset" type="button" class="ghost" title="Убрать все отметки">Сбросить</button>
+        <button id="cutoutDone" type="button" class="primary">Готово</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Диалог: подтверждение запуска и выбор способа вставки -->
   <div id="modal" class="modal" hidden>
     <div class="card modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -871,6 +958,7 @@
     </div>
   </div>
 
+  <script src="js/cutout.js"></script>
   <script src="js/panel.js"></script>
 </body>
 </html>
