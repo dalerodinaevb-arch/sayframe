@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.52.0";
+    var VERSION = "1.53.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -1535,6 +1535,181 @@
         }
     }
 
+    // ---------------------------------------------------------- видео-референс по сценам
+    // Одним скриптом AI повторяет из длинного видео только начало. Поэтому видео длиннее SCENE_MIN_SECONDS
+    // делается в несколько шагов: (1) AI смотрит все кадры и пишет план сцен с таймингом, (2) панель
+    // готовит композицию нужной длины, (3) каждая сцена — отдельный запрос со своими кадрами и своим
+    // скриптом, (4) по желанию — одна проверка всего ролика по кадрам. Так ролик всегда сделан до конца.
+    var SCENE_MIN_SECONDS = 5;
+    var SCENE_MAX = 8;
+
+    function sceneNeeded(ref) { return !!ref && !ref.isStill && ref.duration > SCENE_MIN_SECONDS && ref.frames.length > 2; }
+
+    function framesWithTimes(frames, intro) {
+        var content = [], i;
+        for (i = 0; i < frames.length; i++) {
+            content.push({ type: "image", source: { type: "base64", media_type: "image/png", data: frames[i].data } });
+        }
+        content.push({ type: "text", text: intro });
+        return content;
+    }
+
+    function timesOf(frames) { return frames.map(function (f) { return f.time.toFixed(2); }).join(", "); }
+
+    // Разбирает план от AI: JSON где-то в ответе. Сцены — подряд от 0 до конца видео.
+    function parsePlan(text, duration) {
+        var m = /\{[\s\S]*\}/.exec(String(text || "")), plan, out = [], i, s, e, prev = 0;
+        if (!m) { return null; }
+        try { plan = JSON.parse(m[0]); } catch (err) { return null; }
+        if (!plan || !(plan.scenes instanceof Array) || !plan.scenes.length) { return null; }
+        for (i = 0; i < plan.scenes.length && out.length < SCENE_MAX; i++) {
+            s = Number(plan.scenes[i].start); e = Number(plan.scenes[i].end);
+            if (!isFinite(s)) { s = prev; }
+            if (!isFinite(e) || e <= s) { continue; }
+            s = Math.max(prev, Math.min(s, duration)); e = Math.min(duration, e);
+            if (e - s < 0.2) { continue; }
+            out.push({ start: s, end: e, what: String(plan.scenes[i].what || plan.scenes[i].description || "").substring(0, 1500) });
+            prev = e;
+        }
+        if (!out.length) { return null; }
+        out[0].start = 0;
+        out[out.length - 1].end = duration;
+        for (i = 1; i < out.length; i++) { out[i].start = out[i - 1].end; }
+        return { scenes: out, look: String(plan.look || plan.style || "").substring(0, 1500), background: String(plan.background || "") };
+    }
+
+    function planText(plan) {
+        return (plan.look ? "Overall look: " + plan.look + "\n" : "") + plan.scenes.map(function (sc, i) {
+            return "Scene " + (i + 1) + " (" + sc.start.toFixed(2) + "-" + sc.end.toFixed(2) + " s): " + sc.what;
+        }).join("\n");
+    }
+
+    // Композиция под референс: открытая удлиняется, а если её нет — создаётся с пропорциями видео.
+    function sceneSetupCode(ref) {
+        var k = 1920 / Math.max(ref.width || 1920, ref.height || 1080), w = Math.round((ref.width || 1920) * k / 2) * 2, h = Math.round((ref.height || 1080) * k / 2) * 2,
+            d = Math.ceil(ref.duration * 10) / 10;
+        return "var c = app.project.activeItem;\n" +
+            "if (!c || !(c instanceof CompItem)) { c = app.project.items.addComp('Reference', " + w + ", " + h + ", 1, " + d + ", 30); c.openInViewer(); }\n" +
+            "if (c.duration < " + d + ") { c.duration = " + d + "; }\n" +
+            "if (c.workAreaStart + c.workAreaDuration < " + d + ") { try { c.workAreaStart = 0; c.workAreaDuration = " + d + "; } catch (e) {} }\n";
+    }
+
+    async function runByScenes(text, ref, info, picBlocks, note) {
+        var plan, reply, i, sc, frames, content, code, syn, res, done = 0, fails = [], codes = [], tries, intro, snap, checkFrames, tdiff;
+        function stop(msg, kind) { setBusy(false); setStatus(msg, kind); }
+        if (!aiKey()) { stop("Нужен " + providerOf().keyLabel.replace(/^Ключ/, "ключ") + ". Вставьте его в настройках.", "error"); openSettings(); return; }
+        setBusy(true);
+        lastError = null;
+
+        // 1. План сцен по всем кадрам.
+        setStatus("Видео " + ref.duration.toFixed(1) + " с: " + aiName() + " смотрит все " + ref.frames.length + " кадров и делит его на сцены…", "busy");
+        intro = "[Reference video plan] The " + ref.frames.length + " images above are frames sampled in order from the user's reference video \"" + ref.name + "\" (" +
+            ref.width + "x" + ref.height + ", " + ref.duration.toFixed(2) + " s), at these times in seconds: " + timesOf(ref.frames) + ".\n" +
+            "The whole video will be rebuilt in After Effects scene by scene, each scene by a separate script. First, split it into 2-" + SCENE_MAX +
+            " consecutive scenes covering 0 to " + ref.duration.toFixed(2) + " s with no gaps (cut where the picture or the action clearly changes; a scene is usually 1.5-5 s).\n" +
+            "For each scene describe precisely what is on screen and how it moves, so that someone who cannot see the video could rebuild it: elements, layout and positions, colours (hex), text (exact words), typography, and the motion with timing (what enters when, how, from where, how it leaves, transitions).\n" +
+            "Reply with ONLY this JSON, no code block and no other text:\n" +
+            "{\"look\": \"overall style, palette, fonts, background\", \"scenes\": [{\"start\": 0, \"end\": 2.4, \"what\": \"...\"}, ...]}\n\n" +
+            (note ? note + "\n\n" : "") + "[User's request]\n" + text;
+        reply = await callAI([{ role: "user", content: picBlocks.concat(framesWithTimes(ref.frames, intro)) }], 4096);
+        if (!reply.ok) { pendingRef = ref; refSentNote = false; showRef(); stop(reply.error, "error"); return; }
+        plan = parsePlan(reply.text, ref.duration);
+        if (!plan) { pendingRef = ref; refSentNote = false; showRef(); stop(aiName() + " не прислал план сцен. Попробуйте ещё раз.", "error"); return; }
+        showReply("План по сценам:\n" + plan.scenes.map(function (s, n) { return (n + 1) + ") " + s.start.toFixed(1) + "–" + s.end.toFixed(1) + " с: " + s.what; }).join("\n"));
+        dialogHasRef = true;
+
+        // 2. Композиция нужной длины.
+        try {
+            code = sceneSetupCode(ref);
+            res = await host("run", [code, "композиция под референс", false, platform.tmpdir()]);
+            if (res.runError) { throw new Error(res.runError); }
+            codes.push(code);
+        } catch (e) {
+            stop("Не удалось подготовить композицию: " + humanError(e), "error");
+            return;
+        }
+
+        // 3. Сцена за сценой.
+        for (i = 0; i < plan.scenes.length; i++) {
+            sc = plan.scenes[i];
+            frames = ref.frames.filter(function (f) { return f.time >= sc.start - 0.05 && f.time <= sc.end + 0.05; });
+            if (!frames.length) { frames = [ref.frames.reduce(function (a, f) { return Math.abs(f.time - (sc.start + sc.end) / 2) < Math.abs(a.time - (sc.start + sc.end) / 2) ? f : a; })]; }
+            frames = frames.slice(0, 8);
+            try { snap = (await host("info", [])).snapshot; } catch (e1) { snap = info.snapshot; }
+            intro = "[Scene " + (i + 1) + " of " + plan.scenes.length + "] The " + frames.length + " images above are the reference video's frames for this scene, at " + timesOf(frames) + " s.\n" +
+                "Build ONLY this scene, from " + sc.start.toFixed(2) + " to " + sc.end.toFixed(2) + " s, in the active composition: " + sc.what + "\n\n" +
+                "Plan of the whole video (for context; other scenes are built by other scripts):\n" + planText(plan) + "\n\n" +
+                "Rules for this scene:\n" +
+                "- Layers from earlier scenes are in the project state below. Reuse things that continue (for example the background or a logo that stays) instead of making them again.\n" +
+                "- New layers of this scene: set inPoint to " + sc.start.toFixed(2) + " and outPoint to " + sc.end.toFixed(2) + " (later if the plan says the element stays into the next scene). Put all keyframes inside that time. Name layers with the prefix \"S" + (i + 1) + " \".\n" +
+                "- Keep it moving through the whole scene, then hand over to the next one (exit or transition at the end if the reference does).\n" +
+                "- Do not change the composition's size or length, and do not touch other scenes' layers unless this scene continues them.\n\n" +
+                (note ? note + "\n\n" : "") + "[Project state]\n" + snap + "\n\n[User's request]\n" + text;
+            content = framesWithTimes(frames, intro);
+            setStatus("Сцена " + (i + 1) + " из " + plan.scenes.length + " (" + sc.start.toFixed(1) + "–" + sc.end.toFixed(1) + " с): жду " + aiName() + "…", "busy");
+            for (tries = 0; tries < 2; tries++) {
+                reply = await callAI([{ role: "user", content: content }]);
+                if (!reply.ok) { fails.push(i + 1); break; }
+                code = extractCode(reply.text);
+                if (code === null) { fails.push(i + 1); break; }
+                try { syn = (await host("syntax", [code])).error; } catch (e2) { syn = humanError(e2); }
+                if (!syn) {
+                    if (settings.motionStyle !== "normal") { code = 'try { SF.style("' + settings.motionStyle + '"); } catch (eSF) {} ' + code; }
+                    setStatus("Сцена " + (i + 1) + " из " + plan.scenes.length + ": выполняю скрипт…", "busy");
+                    try { res = await host("run", [code, "сцена " + (i + 1), false, platform.tmpdir()]); } catch (e3) { res = { runError: humanError(e3) }; }
+                    syn = res.runError;
+                    if (!syn) { codes.push(code); done++; break; }
+                }
+                if (tries === 0) {
+                    content = content.concat([{ type: "text", text: "Your script for this scene failed: " + syn + "\nAssume its partial changes were undone. Return the full corrected script for this scene." }]);
+                    setStatus("Сцена " + (i + 1) + ": ошибка в скрипте, прошу " + aiName() + " исправить…", "busy");
+                } else {
+                    fails.push(i + 1);
+                }
+            }
+        }
+
+        // 4. Проверка всего ролика по кадрам (одна): AI сравнивает с референсом и правит, если что-то явно не так.
+        if (settings.selfCheck && info.fileAccess !== false && done > 0) {
+            setStatus("Готово сцен: " + done + " из " + plan.scenes.length + ". " + aiName() + " сверяет ролик с референсом…", "busy");
+            try {
+                tdiff = [];
+                for (i = 0; i < 6; i++) { tdiff.push(Math.round(ref.duration * (i + 0.5) / 6 * 100) / 100); }
+                res = await host("run", ["var SAYFRAME_CHECK_TIMES = [" + tdiff.join(", ") + "];", "проверка", true, platform.tmpdir()]);
+                checkFrames = res.frames && res.frames.length ? await loadFrames(res.frames) : null;
+            } catch (e4) { checkFrames = null; }
+            if (checkFrames) {
+                snap = (await host("info", [])).snapshot;
+                content = framesWithTimes(ref.frames.filter(function (f, n) { return n % Math.max(1, Math.ceil(ref.frames.length / 8)) === 0; }),
+                    "[Reference] The images above are frames of the user's reference video at " + timesOf(ref.frames.filter(function (f, n) { return n % Math.max(1, Math.ceil(ref.frames.length / 8)) === 0; })) + " s.");
+                content = content.concat(framesWithTimes(checkFrames, "[Result check] These images are the rebuilt composition at " + timesOf(checkFrames) + " s, built scene by scene from this plan:\n" + planText(plan) +
+                    "\nCompare with the reference at the same times. If the result is acceptable, reply with one short sentence in the user's language and NO code block. " +
+                    "Only if something is clearly wrong (a scene missing or empty, an element missing, wrong colour or text, nothing moving where the reference moves), reply with one sentence and one code block that fixes the existing layers in place (find them by name).\n\n[Project state]\n" + snap));
+                reply = await callAI([{ role: "user", content: content }]);
+                code = reply.ok ? extractCode(reply.text) : null;
+                if (code !== null) {
+                    try {
+                        syn = (await host("syntax", [code])).error;
+                        if (!syn) { res = await host("run", [code, "правка после проверки", false, platform.tmpdir()]); if (!res.runError) { codes.push(code); } }
+                    } catch (e5) {}
+                }
+            }
+        }
+
+        if (currentRun) { currentRun.codes = currentRun.codes.concat(codes); }
+        // В историю — коротко: что просили и какой план сделан, чтобы следующие просьбы его продолжали.
+        history.push({ role: "user", content: "[Request]\n" + text + "\n(The user attached a reference video, " + ref.duration.toFixed(1) + " s. It was rebuilt scene by scene by separate scripts, following this plan:)\n" + planText(plan) });
+        history.push({ role: "assistant", content: "Готово: ролик собран по сценам (" + done + " из " + plan.scenes.length + ")." });
+        trimHistory();
+        refSentNote = true;
+        showRef();
+        setBusy(false);
+        setStatus(done === plan.scenes.length ?
+            "Готово: ролик " + ref.duration.toFixed(1) + " с собран по " + plan.scenes.length + " сценам — от начала до конца.\nОтменить: Cmd/Ctrl+Z, каждая сцена — отдельный шаг." :
+            "Собрано сцен: " + done + " из " + plan.scenes.length + "." + (fails.length ? " Не получились сцены: " + fails.join(", ") + " — попросите доделать их отдельно, например: «доделай сцену " + fails[0] + "»." : ""),
+            done ? "done" : "error");
+    }
+
     async function onRun() {
         var text = ui.prompt.value.replace(/^\s+|\s+$/g, "");
         var info, body, sent, hits, note, pics, picBlocks = [];
@@ -1559,6 +1734,15 @@
                 pics.map(function (pc, i) { return (i + 1) + ") " + pc.item.kind + " \"" + pc.item.name + "\""; }).join(", ") + ". They are references for what the files look like." });
         }
         sent = pendingRef;
+        // Длинное видео — по сценам: план, композиция нужной длины, по скрипту на сцену.
+        if (sceneNeeded(sent)) {
+            pendingRef = null;
+            closeMention();
+            beginRun(text.replace(/\s+/g, " "));
+            await runByScenes(text, sent, info, picBlocks, note);
+            endRun();
+            return;
+        }
         if (sent) {
             history.push({ role: "user", content: picBlocks.concat(framesContent(sent.frames, referenceNote(sent) + "\n\n" + body)) });
             pendingRef = null;
