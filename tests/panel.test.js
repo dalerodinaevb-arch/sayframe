@@ -777,7 +777,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ replies: [msg("Создаю слой.\n```javascript\napp.__ran('one');\nvar a = 1;\n```\n")] });
   await p.run('  сделай текст «Привет» \\ с "кавычками"\nи второй строкой  ');
   c = p.net.requests[0];
-  check("A1 one request with key, version and model", p.net.requests.length === 1 && c.url === "https://api.anthropic.com/v1/messages" && c.headers["x-api-key"] === "sk-ant-test" && c.headers["anthropic-version"] === "2023-06-01" && c.body.model === "claude-sonnet-5-5" && c.body.max_tokens === 8192 && c.body.system.length > 500);
+  check("A1 one request with key, version and model", p.net.requests.length === 1 && c.url === "https://api.anthropic.com/v1/messages" && c.headers["x-api-key"] === "sk-ant-test" && c.headers["anthropic-version"] === "2023-06-01" && c.body.model === "claude-sonnet-5-5" && c.body.max_tokens === 16384 && c.body.system.length > 500);
   check("A1 prompt and snapshot reach Claude intact", /\[Request\]\nсделай текст «Привет» \\ с "кавычками"\nи второй строкой$/.test(c.body.messages[0].content) && /#1 \[text\] "Заголовок" SELECTED/.test(c.body.messages[0].content) && /#2 \[solid\] "Фон"/.test(c.body.messages[0].content));
   check("A1 script ran inside one undo group named after the request", p.ae.log.ran.join() === "one" && p.ae.log.undo.length === 2 && /^begin:Sayframe: сделай текст «Привет» \\ с "кавычками" и /.test(p.ae.log.undo[0]) && p.ae.log.undo[0].indexOf("\n") < 0);
   check("A1 status and reply card", (await p.status()) === "Готово: Создаю слой.\nОтменить всё: Cmd/Ctrl+Z." && (await p.statusKind()) === "done" && (await p.page.locator("#replyText").isHidden()) && (await p.page.locator("#fixBtn").isHidden()) && /app\.__ran\('one'\)/.test(await p.page.locator("#replyCode").textContent()));
@@ -1154,13 +1154,16 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ footage: IMG, web: {
     "https://example.com/empty": { type: "text/html", body: PAGE("<title>Nothing</title>", "<p>text</p>") },
     "https://example.com/private": { status: 403 },
+    "https://dribbble.com/shots/27503671-Promo-Video": { status: 202 },
     "https://example.com/gone.png": { status: 404 },
     "https://example.com/doc.pdf": { type: "application/pdf" },
     "https://example.com/slow": { error: "TIMEOUT" } } });
   await addLink(p, "https://example.com/empty");
   check("L6 a page without pictures or video -> says so", /^Не удалось взять референс по ссылке: на странице не нашлось картинки или видео/.test(await p.status()) && (await p.statusKind()) === "error" && (await p.page.locator("#refLinkRow").isVisible()) && (await p.page.inputValue("#refLink")) === "https://example.com/empty", await p.status());
   await addLink(p, "https://example.com/private");
-  check("L6 a site that wants a login -> says so and suggests downloading the file", /не пускает без входа в аккаунт \(код 403\)/.test(await p.status()), await p.status());
+  check("L6 a site that wants a login -> says so and suggests downloading the file", /сайт example\.com не пускает программы \(нужен вход в аккаунт или стоит защита от ботов, код 403\)\. Откройте ссылку в браузере.*«\+ Референс»/.test(await p.status()), await p.status());
+  await addLink(p, "https://dribbble.com/shots/27503671-Promo-Video");
+  check("L6 Dribbble's bot protection (202): explains it and how to take the direct link to the video (cdn.dribbble.com)", /^Не удалось взять референс по ссылке: сайт dribbble\.com не пускает программы — у него защита от ботов \(код 202\)\. .*«Копировать адрес видео».*cdn\.dribbble\.com/.test(await p.status()), await p.status());
   await addLink(p, "https://example.com/gone.png");
   check("L6 nothing at the address", /по ссылке ничего нет \(код 404\)/.test(await p.status()), await p.status());
   await addLink(p, "https://example.com/doc.pdf");
@@ -1244,7 +1247,29 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("C8 an unknown saved OpenAI model falls back to the first one", (await p.page.getAttribute('#models button[data-value="gpt-6.1-sol"]', "aria-pressed")) === "true");
   await p.close();
 
+  console.log("\n=== motion style ===");
+  p = await open({ replies: [msg("Делаю.\n```javascript\napp.__ran('ms');\n```"), msg("Делаю.\n```javascript\napp.__ran('ms2');\n```")] });
+  t = await p.page.locator("#styleRow .style-chip").allInnerTexts();
+  check("MS1 above the request: «Стиль:» with Обычный, Плавный, Энергичный, Минимализм, Корпоративный, Игривый; Обычный is on", t.join() === "Обычный,Плавный,Энергичный,Минимализм,Корпоративный,Игривый" && (await p.page.getAttribute('#styleRow [data-style="normal"]', "aria-checked")) === "true" && (await p.page.evaluate(() => { const q = document.getElementById("styleRow").getBoundingClientRect(), t = document.getElementById("prompt").getBoundingClientRect(); return q.bottom <= t.top; })), t.join());
+  await p.page.click('#styleRow [data-style="energetic"]');
+  await p.run("сделай заставку");
+  c = p.net.requests[0].body;
+  check("MS2 the AI is told the style, and knows the SF library and the motion rules", /\[Motion style\] Energetic and punchy/.test(JSON.stringify(c.messages[0].content)) && /SF\.popIn\(layer, t/.test(c.system) && /Nothing moves linearly/.test(c.system) && /SF\.textIn\(textLayer/.test(c.system), JSON.stringify(c.messages[0].content).slice(0, 300));
+  check("MS2 the script runs with that style set in the SF library", vm.runInContext("SF.defaults.name", p.ae.ctx) === "energetic" && p.ae.log.ran.join() === "ms");
+  await p.restart();
+  check("MS3 the style is remembered", (await p.page.getAttribute('#styleRow [data-style="energetic"]', "aria-checked")) === "true");
+  await p.page.click('#styleRow [data-style="normal"]');
+  await p.run("ещё раз");
+  check("MS3 «Обычный»: no style note, SF back to normal", !/\[Motion style\]/.test(JSON.stringify(p.net.requests[1].body.messages.slice(-1)[0].content)) && vm.runInContext("SF.defaults.name", p.ae.ctx) === "normal");
+  await p.close();
+
   console.log("\n=== reference ===");
+  // A long video (12 s) gets more frames than the setting (8): about 1.5 per second, up to 16, so its later part is seen too.
+  p = await open({ pickFile: "/Users/x/Movies/long.mp4", footage: Object.assign({}, VIDEO, { duration: 12 }) });
+  await p.page.click("#refBtn"); await p.idle();
+  t = p.ae.log.refComps[0].saved;
+  check("R0 a 12 s reference video: 16 frames spread over the whole 12 s, up to the last second", t.length === 16 && t[0] < 0.5 && t[15] > 11.5 && /^Видео прикреплено: 16 кадров/.test(await p.status()), t.map((x) => x.toFixed(2)).join() + " " + await p.status());
+  await p.close();
   p = await open({ pickFile: "/Users/x/Movies/мой референс.mp4", footage: VIDEO, replies: [msg("Повторяю.\n```javascript\napp.__ran('ref');\n```"), msg("ok\n```javascript\napp.__ran('second');\n```")] });
   await p.page.click("#refBtn"); await p.idle();
   check("R1 8 frames from a 640x360 temp comp; project cleaned; comp restored", p.ae.log.refComps[0].width === 640 && p.ae.log.refComps[0].saved.map((x) => x.toFixed(2)).join() === "0.25,0.75,1.25,1.75,2.25,2.75,3.25,3.75" && p.ae.log.removed.join() === "comp,item" && p.ae.project.activeItem === p.ae.comp && p.ae.log.undo.join("|") === "begin:Sayframe: reference frames|end");
@@ -1252,7 +1277,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.screenshot({ path: path.join(SHOTS, "06-reference.png") });
   await p.run("сделай такую же анимацию");
   c = p.net.requests[0].body.messages[0].content;
-  check("R1 request = 8 exact frames + note + state + request", Array.isArray(c) && c.length === 9 && c.slice(0, 8).every((b, i) => Buffer.from(b.source.data, "base64").equals(fakePng(i))) && /^\[Reference\] The 8 images above are frames sampled in chronological order from the user's reference video "мой референс\.mp4" \(1920x1080, duration 4\.00 s\)\. Frame times in seconds: 0\.25, 0\.75, 1\.25, 1\.75, 2\.25, 2\.75, 3\.25, 3\.75\.\n\n\[Project state\]/.test(c[8].text) && /\[Request\]\nсделай такую же анимацию$/.test(c[8].text));
+  check("R1 request = 8 exact frames + note + state + request", Array.isArray(c) && c.length === 9 && c.slice(0, 8).every((b, i) => Buffer.from(b.source.data, "base64").equals(fakePng(i))) && /^\[Reference\] The 8 images above are frames sampled in chronological order from the user's reference video "мой референс\.mp4" \(1920x1080, duration 4\.00 s\)\. Frame times in seconds: 0\.25, 0\.75, 1\.25, 1\.75, 2\.25, 2\.75, 3\.25, 3\.75\.\nRecreate the whole 4\.0 s of it, not only the beginning: make the composition at least 4 s long and keep the animation going through every frame above[^\n]*\n\n\[Project state\]/.test(c[8].text) && /\[Request\]\nсделай такую же анимацию$/.test(c[8].text));
   check("R1 chip turns into 'sent' note", (await p.page.locator("#refText").innerText()) === "Референс отправлен, Claude помнит его в этом диалоге" && (await p.page.locator("#refClear").isHidden()));
   await p.run("сделай быстрее");
   m = p.net.requests[1].body.messages;
