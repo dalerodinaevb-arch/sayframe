@@ -3558,9 +3558,9 @@ var sayframeHost = (function () {
                     ref.isStill = !!(item.mainSource && item.mainSource.isStill);
                     ref.duration = ref.isStill ? 0 : item.duration;
                     fps = item.frameRate > 0 ? item.frameRate : 30;
-                    // A long video gets more frames (about 1.5 per second, up to 16) so its later part is seen too;
-                    // the setting is the least, and a larger setting wins.
-                    n = ref.isStill ? 1 : Math.max(1, Math.min(Math.max(maxFrames, Math.min(16, Math.ceil(ref.duration * 1.5))), Math.floor(ref.duration * fps)));
+                    // A long video gets more frames (2 per second, up to 30): the panel rebuilds it scene by scene and
+                    // gives each scene its own frames. The setting is the least, and a larger setting wins.
+                    n = ref.isStill ? 1 : Math.max(1, Math.min(Math.max(maxFrames, Math.min(30, Math.ceil(ref.duration * 2))), Math.floor(ref.duration * fps)));
                     for (i = 0; i < n; i++) {
                         times.push(ref.isStill ? 0 : ref.duration * (i + 0.5) / n);
                     }
