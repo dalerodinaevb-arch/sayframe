@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.50.0";
+    var VERSION = "1.52.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -40,11 +40,11 @@
 
     var API_URL = "https://api.anthropic.com/v1/messages";
     var API_VERSION = "2023-06-01";
-    var MAX_TOKENS = 8192;
+    var MAX_TOKENS = 16384;     // длинный референс — длинный скрипт: при 8192 он обрывался
     var MAX_HISTORY = 16;
     var MAX_SYNTAX_RETRIES = 2;
     var MAX_CHECK_ROUNDS = 2;
-    var FRAME_CHOICES = [6, 8, 12, 16];
+    var FRAME_CHOICES = [6, 8, 12, 16, 24];
     var SETTINGS_KEY = "sayframe.settings.v1";
     // Анонимная статистика: адрес веб-приложения Google Apps Script (tools/stats/Code.gs). Пусто — ничего не отправляется.
     var STATS_URL = "https://script.google.com/macros/s/AKfycbwztwaUNH-e6ujv3hiN_OLrOABwl3qFcso5QenP-cW7jjKQASZsPOWFyGGzFBgDK5oQQg/exec";
@@ -107,6 +107,7 @@
         selfCheck: true,
         alwaysAsk: false,
         brandPics: false,   // отправлять ли AI маленькие картинки упомянутых логотипов и иконок
+        motionStyle: "normal",  // стиль анимации для AI: normal, smooth, energetic, minimal, corporate, playful
         refFrames: 8,
         panelWidth: 380,    // ширина содержимого в пикселях; сама панель After Effects может быть шире
         toolSize: "100",    // масштаб блоков раздела «Инструменты» в процентах: "100", "90", "80", "70", "60" или "50"
@@ -115,6 +116,21 @@
         infoTips: true,     // подсказки-окошки при наведении курсора на секунду
         hotkeys: ""         // горячие клавиши: "console=Ctrl+Space;snapshot=;…"; пусто — стандартные
     };
+    // Стили анимации: подпись в панели и что это значит для AI (библиотека SF получает то же имя).
+    var MOTION_STYLES = [
+        { id: "normal", label: "Обычный", note: "" },
+        { id: "smooth", label: "Плавный", note: "Smooth and premium, like Apple: longer soft moves with a strong ease-out, no bounce, subtle scale and blur reveals, gentle stagger, calm rhythm." },
+        { id: "energetic", label: "Энергичный", note: "Energetic and punchy: fast snappy moves, springs with overshoot, quick stagger, bold scale pops, motion blur, quick cuts between beats." },
+        { id: "minimal", label: "Минимализм", note: "Minimal: few things move, small distances, fades and gentle slides, lots of empty space and holds, no bounce, restrained colour." },
+        { id: "corporate", label: "Корпоративный", note: "Corporate and clean: confident calm moves, mask wipes and slides, tidy aligned layout, clear readable text, no playful bounce." },
+        { id: "playful", label: "Игривый", note: "Playful: bouncy pops with overshoot, a little rotation, lively stagger, cheerful rhythm, elements that react to each other." }
+    ];
+    function motionStyleOf(id) {
+        var i;
+        for (i = 0; i < MOTION_STYLES.length; i++) { if (MOTION_STYLES[i].id === id) { return MOTION_STYLES[i]; } }
+        return null;
+    }
+
     var PANEL_WIDTH_MIN = 280;
     var PANEL_WIDTH_MAX = 640;
 
@@ -143,14 +159,31 @@
         "- Do not call alert, confirm or prompt. Do not use File, Folder, Socket, system.callSystem, $.evalFile, the render queue, or save/open/close/new project, and do not delete layers or project items, unless the user explicitly asks for that.",
         "- Write defensive code: check that things exist before using them, and throw new Error('clear message in the user\\'s language') when the request cannot be carried out (for example, no layer is selected).",
         "",
+        "Motion design (make it look like a professional motion designer did it):",
+        "- Nothing moves linearly: things arriving decelerate (ease out), things leaving accelerate (ease in). Elements enter one after another with a small stagger, not all at once. Combine moves (position plus scale or opacity), use a mask wipe or a text animator instead of a plain fade where it fits, give important elements a little overshoot, leave short holds so text can be read, and switch on motion blur for fast moves.",
+        "- Typical timing: an element enters in 0.4-0.9 s, a stagger step is 0.04-0.1 s, text stays readable for at least 1.5 s.",
+        "- Build the motion with the SF library, which is already loaded (tested recipes, ES3; times in comp seconds; o is an optional object; every recipe returns the layer):",
+        "  SF.keys(prop, [[t, v], [t, v], ...], ease) - keys with easing; ease 'out' (default, arriving), 'in' (leaving), 'inout', 'linear', 'hold'.",
+        "  SF.spring(prop) - overshoot and settle after the last key.",
+        "  SF.fadeIn(layer, t, o) / SF.fadeOut(layer, t, o).",
+        "  SF.slideIn(layer, t, {from: 'left'|'right'|'top'|'bottom', dist: px, dur: s, spring: bool}) / SF.slideOut(layer, t, {to: ...}) - move from/to an offset of the layer's current position.",
+        "  SF.popIn(layer, t, {dur, spring}) / SF.popOut(layer, t, o) - scale up with an overshoot / scale away.",
+        "  SF.wipe(layer, t, {from: 'left'|'right'|'top'|'bottom', dur, feather}) - mask reveal over the layer's own rectangle.",
+        "  SF.textIn(textLayer, t, {by: 'chars'|'words'|'lines', style: 'rise'|'fade'|'scale'|'blur', dur}) - text animator, one piece after another. SF.typeOn(textLayer, t, {dur}) - typewriter.",
+        "  SF.drawOn(shapeLayer, t, {dur}) - strokes draw themselves (Trim Paths). SF.blurIn(layer, t, {amount, dur}). SF.drift(layer, t, {dur, amount}) - slow push-in.",
+        "  SF.stagger(layers, t, step, 'popIn', o) - the same recipe on several layers, each step seconds later. SF.motionBlur(layers) - motion blur on (all layers if omitted). SF.wiggle(prop, freq, amp).",
+        "  SF.defaults holds the current style's dur, step and dist; the panel sets the style with SF.style(name) before your script runs - do not call SF.style yourself unless the user asks for a different style.",
+        "- Create the layers and set their final look (position, size, colour) first, then animate them with SF. Use plain setValueAtTime only for things SF does not cover, and ease those keys with SF.keys.",
+        "",
         "References:",
         "- A user message may start with images: either one reference picture, or frames sampled in chronological order from a reference video, with their timestamps listed in the text.",
         "- Study them closely: layout, shapes, colors, typography, and how each element changes from one frame to the next. You cannot see motion between frames, so infer it from those changes and from the user's words, and use the timestamps to set keyframe times.",
+        "- Recreate the WHOLE reference video, from its first frame to its last, not just the opening seconds: the composition must be at least as long as the reference (lengthen the active composition if it is shorter), and every stage you see in the frames (new scenes, elements that appear later, text changes, transitions, the ending) must happen at about the same time as in the reference. Keep animating until the reference ends; do not leave the rest of the timeline static.",
         "- Rebuild the look and motion with native After Effects layers (shapes, text, solids, effects, expressions, keyframes). The reference file is not in the project, so never try to import or use it as footage.",
         "- In your one-sentence summary, say plainly what you approximated or left out (for example real 3D, photo-real materials, complex characters).",
         "",
         "Checking your own work:",
-        "- After your script runs, the panel may send you frames of the resulting composition so you can check it. End every script with a line like: var SAYFRAME_CHECK_TIMES = [0, 0.4, 1.2, 3]; listing up to 6 times in seconds that best show the result (the start state, key moments of the motion, the final state).",
+        "- After your script runs, the panel may send you frames of the resulting composition so you can check it. End every script with a line like: var SAYFRAME_CHECK_TIMES = [0, 0.4, 1.2, 3]; listing up to 6 times in seconds that best show the result (the start state, key moments of the motion, the final state). With a reference video, spread these times over its whole length, including its last second.",
         "- Give layers clear, unique names so a later fix script can find them.",
         "- When you receive a [Result check] message, follow the instructions in it.",
         "",
@@ -611,7 +644,7 @@
     var FILE_ACCESS_HINT = "Включите в After Effects: Settings > Scripting & Expressions > Allow Scripts to Write Files and Access Network.";
 
     function humanError(e) {
-        var m = e && e.message ? e.message : String(e);
+        var m = e && e.message ? e.message : String(e), host;
         var ec = /^EC_(COUNT|PROPS):(\d+):(\d+)$/.exec(m);
         if (ec && ec[1] === "COUNT") { return "Скопировано ключей: " + ec[2] + ", выделено: " + ec[3] + ". Выделите столько же ключей или кратно больше (" + ec[2] + ", " + (ec[2] * 2) + ", " + (ec[2] * 3) + "…)."; }
         if (ec) { return "Скопированы ключи " + ec[2] + " свойств, а выделены у " + ec[3] + ". Выделите ключи у одного свойства или у стольких же, сколько копировали."; }
@@ -632,8 +665,16 @@
         if (m === "LINK_TOO_BIG") { return "файл больше 150 МБ. Скачайте его и прикрепите кнопкой «+ Референс»."; }
         if (m === "TOO_MANY_REDIRECTS") { return "сайт слишком много раз перенаправляет запрос."; }
         if (/^LINK_HTTP:/.test(m)) {
+            host = m.split(":")[2] || "";
             m = m.split(":")[1];
-            if (m === "401" || m === "403") { return "сайт не пускает без входа в аккаунт (код " + m + "). Скачайте файл и прикрепите его кнопкой «+ Референс»."; }
+            // Защита от ботов (Dribbble, Behance, Cloudflare…): страницу отдают только настоящему браузеру,
+            // а прямые ссылки на сами файлы обычно открыты.
+            if (m === "202" || m === "429" || m === "503" || m === "403") {
+                return "сайт " + (host || "") + " не пускает программы" + (m === "403" ? " (нужен вход в аккаунт или стоит защита от ботов, код 403)" : " — у него защита от ботов (код " + m + ")") +
+                    ". Откройте ссылку в браузере, щёлкните правой кнопкой по видео или картинке → «Копировать адрес видео» (или «…изображения») и вставьте сюда эту прямую ссылку" +
+                    (/dribbble/.test(host) ? " — у Dribbble она начинается с cdn.dribbble.com" : "") + ". Или сохраните файл и прикрепите его кнопкой «+ Референс».";
+            }
+            if (m === "401") { return "сайт не пускает без входа в аккаунт (код 401). Скачайте файл и прикрепите его кнопкой «+ Референс»."; }
             if (m === "404") { return "по ссылке ничего нет (код 404)."; }
             return "сайт ответил ошибкой (код " + m + ").";
         }
@@ -676,6 +717,7 @@
         ["accent", "bg", "bgTools", "bgMotion", "bgShape", "bgBrand"].forEach(function (k) { var c = parseHex(s[k]); s[k] = c ? c.hex : DEFAULTS[k]; });
         if (!PROVIDERS.hasOwnProperty(s.provider)) { s.provider = "claude"; }
         if (!knownModel(OPENAI_MODELS, s.openaiModel)) { s.openaiModel = OPENAI_MODELS[0].id; }
+        if (!motionStyleOf(s.motionStyle)) { s.motionStyle = "normal"; }
         return s;
     }
 
@@ -741,7 +783,7 @@
     function el(id) { return document.getElementById(id); }
 
     var ui = {
-        prompt: el("prompt"), mentionList: el("mentionList"), brandHits: el("brandHits"), brandPics: el("brandPics"), runBtn: el("runBtn"), fixBtn: el("fixBtn"), newBtn: el("newBtn"),
+        prompt: el("prompt"), styleRow: el("styleRow"), mentionList: el("mentionList"), brandHits: el("brandHits"), brandPics: el("brandPics"), runBtn: el("runBtn"), fixBtn: el("fixBtn"), newBtn: el("newBtn"),
         refBtn: el("refBtn"), refChip: el("refChip"), refText: el("refText"), refClear: el("refClear"),
         exprCard: el("exprCard"), exprToggle: el("exprToggle"), exprBody: el("exprBody"), exprWish: el("exprWish"),
         exprApplyBtn: el("exprApplyBtn"), exprFixBtn: el("exprFixBtn"),
@@ -1176,7 +1218,9 @@
         for (i = 0; i < ref.frames.length; i++) { times.push(ref.frames[i].time.toFixed(2)); }
         return "[Reference] The " + ref.frames.length + ' images above are frames sampled in chronological order from the user\'s reference video "' +
             ref.name + '" (' + ref.width + "x" + ref.height + ", duration " + ref.duration.toFixed(2) +
-            " s). Frame times in seconds: " + times.join(", ") + ".";
+            " s). Frame times in seconds: " + times.join(", ") + ".\n" +
+            "Recreate the whole " + ref.duration.toFixed(1) + " s of it, not only the beginning: make the composition at least " + Math.ceil(ref.duration) +
+            " s long and keep the animation going through every frame above, so what you see at each time happens at about that time.";
     }
 
     function checkNote(compName, frames, hasReference) {
@@ -1187,6 +1231,7 @@
             '" as it looks now, after your script ran, at these times in seconds: ' + times.join(", ") + ".\n" +
             "Compare them with what the user asked for" +
             (hasReference ? " and with the reference images earlier in this conversation" : "") + ".\n" +
+            (hasReference ? "- With a reference video, also check that the composition is as long as the reference and that the later part of it is animated too, not only the opening. If the end is missing or static, that counts as clearly wrong.\n" : "") +
             "- If the result is acceptable, reply with one short sentence in the user's language and NO code block. Small imperfections are fine; do not polish endlessly.\n" +
             "- Only if something is clearly wrong (an element is missing, invisible, off-screen, overlapping, unreadable, the wrong color, or moving at the wrong time), reply with one sentence saying what you are fixing, then one code block.\n" +
             "- That script runs on top of the current project: fix the existing layers in place (find them by name or index in the snapshot below). Do not recreate the composition and do not add duplicates of layers that already exist.";
@@ -1441,6 +1486,9 @@
             }
 
             setStatus(scriptsRun > 0 ? aiName() + " нашёл недочёт: " + (expl || "вношу правку") + "…" : "Выполняю скрипт…", "busy");
+            // Стиль движения для библиотеки SF — в той же строке, чтобы номера строк в ошибках не сдвигались.
+            // Обычный стиль хост ставит сам перед каждым скриптом, поэтому строка нужна только для остальных.
+            if (settings.motionStyle !== "normal" && code.indexOf("try { SF.style(") !== 0) { code = 'try { SF.style("' + settings.motionStyle + '"); } catch (eSF) {} ' + code; }
             try {
                 res = await host("run", [code, scriptsRun > 0 ? "правка " + scriptsRun : label,
                     wantCheck && round < MAX_CHECK_ROUNDS, platform.tmpdir()]);
@@ -1500,6 +1548,7 @@
         }
         hits = brandHitsNow();
         note = brandNote();
+        if (motionStyleOf(settings.motionStyle).note) { note = (note ? note + "\n\n" : "") + "[Motion style] " + motionStyleOf(settings.motionStyle).note; }
         if (hits.length) { note = (note ? note + "\n" : "") + brandHitsNote(hits); }
         body = "[Project state]\n" + info.snapshot + (note ? "\n\n" + note : "") + "\n\n[Request]\n" + text;
         // По настройке AI видит и сами упомянутые логотипы и иконки.
@@ -2271,6 +2320,10 @@
         try { return new URL(pageUrl || mediaUrl).hostname.replace(/^www\./, ""); } catch (e3) { return "ссылка"; }
     }
 
+    function linkHost(u) {
+        try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return ""; }
+    }
+
     function normalizeLink(text) {
         var t = String(text || "").replace(/^\s+|\s+$/g, "");
         if (!t) { return null; }
@@ -2294,7 +2347,7 @@
         title = "";
         try {
             r = await platform.fetchUrl(url, base);
-            if (r.status !== 200) { throw new Error("LINK_HTTP:" + r.status); }
+            if (r.status !== 200) { throw new Error("LINK_HTTP:" + r.status + ":" + linkHost(url)); }
             target = url;
             if (r.text !== undefined) {
                 found = pageMedia(r.text, r.finalUrl || url);
@@ -2308,7 +2361,7 @@
                 if (!target) { throw new Error("LINK_NO_MEDIA"); }
                 setStatus("Скачиваю " + (target === found.video ? "видео" : "картинку") + " со страницы…", "busy");
                 r = await platform.fetchUrl(target, base);
-                if (r.status !== 200) { throw new Error("LINK_HTTP:" + r.status); }
+                if (r.status !== 200) { throw new Error("LINK_HTTP:" + r.status + ":" + linkHost(target)); }
             }
             if (!r.path) { throw new Error("LINK_NOT_MEDIA"); }
             path = r.path;
@@ -7298,6 +7351,30 @@
         return out;
     }
 
+    // Ряд «Стиль:» над полем AI. Выбор запоминается и действует на все запросы.
+    function renderMotionStyles() {
+        Array.prototype.forEach.call(ui.styleRow.querySelectorAll(".style-chip"), function (b) {
+            b.setAttribute("aria-checked", b.getAttribute("data-style") === settings.motionStyle ? "true" : "false");
+        });
+    }
+    function initMotionStyles() {
+        MOTION_STYLES.forEach(function (st) {
+            var b = mkEl("button", "style-chip", st.label);
+            b.type = "button";
+            b.setAttribute("role", "radio");
+            b.setAttribute("data-style", st.id);
+            b.title = st.id === "normal" ? "Без особого стиля: аккуратные плавности и очерёдность" : "Стиль движения: " + st.label.toLowerCase();
+            b.addEventListener("click", function () {
+                settings.motionStyle = st.id;
+                storeSettings(settings);
+                renderMotionStyles();
+                setStatus(st.id === "normal" ? "Стиль анимации: обычный." : "Стиль анимации: «" + st.label + "» — для всех следующих запросов.", "");
+            });
+            ui.styleRow.appendChild(b);
+        });
+        renderMotionStyles();
+    }
+
     function initBrand() {
         initBrandOrder();
         initMentions();
@@ -9112,6 +9189,7 @@
     ui.checkUpdate.addEventListener("click", onCheckUpdate);
     ui.versionText.textContent = "Sayframe " + VERSION;
     document.addEventListener("paste", onPasteEvent);
+    initMotionStyles();
     ui.prompt.addEventListener("keydown", function (e) {
         // Cmd/Ctrl+Enter запускает задачу.
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onRun(); }
