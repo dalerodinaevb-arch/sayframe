@@ -1264,11 +1264,30 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
   console.log("\n=== reference ===");
-  // A long video (12 s) gets more frames than the setting (8): about 1.5 per second, up to 16, so its later part is seen too.
-  p = await open({ pickFile: "/Users/x/Movies/long.mp4", footage: Object.assign({}, VIDEO, { duration: 12 }) });
+  // A long video (12 s): 24 frames (2 per second), and it is rebuilt scene by scene - a plan first, then a script per scene.
+  p = await open({ pickFile: "/Users/x/Movies/long.mp4", footage: Object.assign({}, VIDEO, { duration: 12 }), replies: [
+    msg('{"look": "dark, green accents", "scenes": [{"start": 0, "end": 5, "what": "logo pops in"}, {"start": 5, "end": 12, "what": "title words rise"}]}'),
+    msg("Сцена 1.\n```javascript\napp.__ran('s1');\n```"),
+    msg("Сцена 2.\n```javascript\nthrow new Error('boom');\n```"),
+    msg("Исправил.\n```javascript\napp.__ran('s2');\n```")] });
   await p.page.click("#refBtn"); await p.idle();
   t = p.ae.log.refComps[0].saved;
-  check("R0 a 12 s reference video: 16 frames spread over the whole 12 s, up to the last second", t.length === 16 && t[0] < 0.5 && t[15] > 11.5 && /^Видео прикреплено: 16 кадров/.test(await p.status()), t.map((x) => x.toFixed(2)).join() + " " + await p.status());
+  check("R0 a 12 s reference video: 24 frames (2 per second) over the whole 12 s", t.length === 24 && t[0] < 0.5 && t[23] > 11.5 && /^Видео прикреплено: 24 кадров/.test(await p.status()), t.length + " " + await p.status());
+  await p.run("сделай такое же видео");
+  m = p.net.requests.map((r) => r.body.messages[0].content);
+  check("R0 first the AI sees all 24 frames and returns a plan of scenes covering 0-12 s", m.length === 4 && m[0].filter((b) => b.type === "image").length === 24 && /\[Reference video plan\].*\n.*0 to 12\.00 s/.test(m[0].slice(-1)[0].text) && /\[User's request\]\nсделай такое же видео$/.test(m[0].slice(-1)[0].text), JSON.stringify(m.map((x) => Array.isArray(x) ? x.length : x)).slice(0, 200));
+  check("R0 the open composition is made as long as the video (10 s -> 12 s)", p.ae.comp.duration === 12, p.ae.comp && p.ae.comp.duration);
+  check("R0 each scene is a separate request with only its own frames and the whole plan", m[1].filter((b) => b.type === "image").length === 8 && /^\[Scene 1 of 2\].*at 0\.25, 0\.75/.test(m[1].slice(-1)[0].text) && /Build ONLY this scene, from 0\.00 to 5\.00 s.*logo pops in/.test(m[1].slice(-1)[0].text) && /Scene 2 \(5\.00-12\.00 s\): title words rise/.test(m[1].slice(-1)[0].text) && /^\[Scene 2 of 2\].*at 5\.25/.test(m[2].slice(-1)[0].text), m[1].slice(-1)[0].text.slice(0, 200));
+  check("R0 a scene whose script fails is asked again with the error; both scenes are built", /Your script for this scene failed: Error: boom/.test(JSON.stringify(m[3])) && p.ae.log.ran.join() === "s1,s2", p.ae.log.ran.join());
+  check("R0 the report says the whole video is built", /^Готово: ролик 12\.0 с собран по 2 сценам — от начала до конца/.test(await p.status()) && (await p.page.locator("#replyText").innerText()).indexOf("1) 0.0–5.0 с: logo pops in") >= 0, await p.status());
+  await p.close();
+  p = await open({ settings: { selfCheck: true }, pickFile: "/Users/x/Movies/long.mp4", footage: Object.assign({}, VIDEO, { duration: 12 }), replies: [
+    msg('{"scenes": [{"start": 0, "end": 6, "what": "a"}, {"start": 6, "end": 12, "what": "b"}]}'),
+    msg("1\n```javascript\napp.__ran('a');\n```"), msg("2\n```javascript\napp.__ran('b');\n```"), msg("Похоже на референс.")] });
+  await p.page.click("#refBtn"); await p.idle();
+  await p.run("повтори");
+  t = p.net.requests[3] && p.net.requests[3].body.messages[0].content;
+  check("R0 with the self-check on, the whole result is compared once with the reference: reference frames + 6 frames of the result over 12 s", Array.isArray(t) && /\[Result check\] These images are the rebuilt composition at 1\.00, 3\.00, 5\.00, 7\.00, 9\.00, 11\.00 s/.test(JSON.stringify(t)) && t.filter((b) => b.type === "image").length >= 12 && p.ae.log.ran.join() === "a,b" && /^Готово: ролик 12\.0 с собран по 2 сценам/.test(await p.status()) && p.errors.length === 0, JSON.stringify(t || "").slice(0, 300) + " | " + await p.status());
   await p.close();
   p = await open({ pickFile: "/Users/x/Movies/мой референс.mp4", footage: VIDEO, replies: [msg("Повторяю.\n```javascript\napp.__ran('ref');\n```"), msg("ok\n```javascript\napp.__ran('second');\n```")] });
   await p.page.click("#refBtn"); await p.idle();
