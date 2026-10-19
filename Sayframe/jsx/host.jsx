@@ -233,6 +233,7 @@ var sayframeHost = (function () {
     // Returns SAYFRAME_CHECK_TIMES when the script declares it.
     function executeGenerated(__sayframeCode) {
         var SAYFRAME_CHECK_TIMES;
+        try { SF.style("normal"); } catch (eSF) {}
         eval(__sayframeCode);
         return SAYFRAME_CHECK_TIMES;
     }
@@ -3557,7 +3558,9 @@ var sayframeHost = (function () {
                     ref.isStill = !!(item.mainSource && item.mainSource.isStill);
                     ref.duration = ref.isStill ? 0 : item.duration;
                     fps = item.frameRate > 0 ? item.frameRate : 30;
-                    n = ref.isStill ? 1 : Math.max(1, Math.min(maxFrames, Math.floor(ref.duration * fps)));
+                    // A long video gets more frames (about 1.5 per second, up to 16) so its later part is seen too;
+                    // the setting is the least, and a larger setting wins.
+                    n = ref.isStill ? 1 : Math.max(1, Math.min(Math.max(maxFrames, Math.min(16, Math.ceil(ref.duration * 1.5))), Math.floor(ref.duration * fps)));
                     for (i = 0; i < n; i++) {
                         times.push(ref.isStill ? 0 : ref.duration * (i + 0.5) / n);
                     }
@@ -5062,4 +5065,267 @@ var sayframeHost = (function () {
             });
         }
     };
+})();
+
+/*
+ * SF - motion design building blocks for the scripts the AI writes (and for "my scripts").
+ * Tested recipes instead of hand-made keyframes: proper easing, springs, staggers, text animators,
+ * mask wipes, draw-on. Times are in seconds of the composition; every function is defensive and
+ * returns the layer (or property) it worked on. SF.style(name) sets the character of the motion.
+ */
+var SF = (function () {
+    var D = {};
+    var STYLES = {
+        normal:    { dur: 0.7, step: 0.06, easeIn: 15, easeOut: 85, spring: false, amp: 0.06, freq: 2.5, decay: 6, dist: 0.12, rise: 40, blur: 30, popFrom: 0 },
+        smooth:    { dur: 0.9, step: 0.08, easeIn: 10, easeOut: 90, spring: false, amp: 0.04, freq: 2, decay: 7, dist: 0.08, rise: 30, blur: 25, popFrom: 0.85 },
+        energetic: { dur: 0.45, step: 0.04, easeIn: 25, easeOut: 80, spring: true, amp: 0.08, freq: 3, decay: 7, dist: 0.2, rise: 60, blur: 40, popFrom: 0 },
+        minimal:   { dur: 0.7, step: 0.06, easeIn: 15, easeOut: 85, spring: false, amp: 0.03, freq: 2, decay: 8, dist: 0.04, rise: 20, blur: 15, popFrom: 0.95 },
+        corporate: { dur: 0.8, step: 0.07, easeIn: 20, easeOut: 80, spring: false, amp: 0.04, freq: 2, decay: 8, dist: 0.08, rise: 30, blur: 20, popFrom: 0.9 },
+        playful:   { dur: 0.55, step: 0.05, easeIn: 20, easeOut: 80, spring: true, amp: 0.12, freq: 2.5, decay: 5, dist: 0.15, rise: 50, blur: 30, popFrom: 0 }
+    };
+    var KIT = (typeof KeyframeInterpolationType !== "undefined") ? KeyframeInterpolationType : { LINEAR: 6612, BEZIER: 6613, HOLD: 6614 };
+
+    function style(name) {
+        var s = STYLES[name] || STYLES.normal, k;
+        for (k in s) { if (s.hasOwnProperty(k)) { D[k] = s[k]; } }
+        D.name = STYLES[name] ? name : "normal";
+        return D.name;
+    }
+    style("normal");
+
+    function opt(o, k) { return (o && o[k] !== undefined && o[k] !== null) ? o[k] : D[k]; }
+    function comp() {
+        var c = app.project.activeItem;
+        if (!c || !(c instanceof CompItem)) { throw new Error("SF: open a composition first"); }
+        return c;
+    }
+    function tr(layer, m) { return layer.property("ADBE Transform Group").property(m); }
+    function copy(v) { var o, i; if (v && typeof v === "object" && typeof v.length === "number") { o = []; for (i = 0; i < v.length; i++) { o.push(v[i]); } return o; } return v; }
+    function valueAt(prop, t) { try { return copy(prop.numKeys ? prop.valueAtTime(t, true) : prop.value); } catch (e) { return copy(prop.value); } }
+
+    function easeAt(prop, k, inInf, outInf) {
+        var n, a, b, i;
+        try { prop.setInterpolationTypeAtKey(k, KIT.BEZIER, KIT.BEZIER); } catch (e0) {}
+        for (n = 1; n <= 3; n++) {
+            a = []; b = [];
+            for (i = 0; i < n; i++) { a.push(new KeyframeEase(0, inInf)); b.push(new KeyframeEase(0, outInf)); }
+            try { prop.setTemporalEaseAtKey(k, a, b); return true; } catch (e1) {}
+        }
+        return false;
+    }
+
+    // Keys with easing: pairs = [[time, value], ...]; ease = "out" (fast start, soft landing - for things
+    // arriving), "in" (soft start, fast exit - for things leaving), "inout", "linear" or "hold".
+    function keys(prop, pairs, ease) {
+        var i, k, inInf, outInf, idx = [];
+        if (!prop || !pairs || !pairs.length) { return prop; }
+        ease = ease || "out";
+        for (i = 0; i < pairs.length; i++) { prop.setValueAtTime(pairs[i][0], pairs[i][1]); }
+        for (i = 0; i < pairs.length; i++) { try { idx.push(prop.nearestKeyIndex(pairs[i][0])); } catch (e) {} }
+        inInf = ease === "in" ? D.easeIn : ease === "inout" ? 66 : D.easeOut;
+        outInf = ease === "in" ? D.easeOut : ease === "inout" ? 66 : D.easeIn;
+        for (i = 0; i < idx.length; i++) {
+            k = idx[i];
+            if (ease === "linear") { try { prop.setInterpolationTypeAtKey(k, KIT.LINEAR, KIT.LINEAR); } catch (e2) {} }
+            else if (ease === "hold") { try { prop.setInterpolationTypeAtKey(k, KIT.HOLD, KIT.HOLD); } catch (e3) {} }
+            else { easeAt(prop, k, inInf, outInf); }
+        }
+        return prop;
+    }
+
+    // Overshoot and settle after the last key (an inertial bounce expression).
+    function spring(prop, amp, freq, decay) {
+        if (!prop) { return prop; }
+        amp = amp || D.amp; freq = freq || D.freq; decay = decay || D.decay;
+        try {
+            prop.expression = "var amp=" + amp + ",freq=" + freq + ",decay=" + decay + ";var n=0;" +
+                "if(numKeys>0){n=nearestKey(time).index;if(key(n).time>time){n--;}}" +
+                "if(n>0&&n==numKeys&&time>key(n).time){var t=time-key(n).time;var v=velocityAtTime(key(n).time-thisComp.frameDuration/10);" +
+                "value+v*amp*Math.sin(freq*t*2*Math.PI)/Math.exp(decay*t);}else{value;}";
+        } catch (e) {}
+        return prop;
+    }
+
+    function fadeIn(layer, t, o) {
+        var p = tr(layer, "ADBE Opacity"), d = typeof o === "number" ? o : opt(o, "dur") * 0.6, to = valueAt(p, t);
+        if (to === 0) { to = 100; }
+        keys(p, [[t, 0], [t + d, to]], "out");
+        return layer;
+    }
+    function fadeOut(layer, t, o) {
+        var p = tr(layer, "ADBE Opacity"), d = typeof o === "number" ? o : opt(o, "dur") * 0.6;
+        keys(p, [[t, valueAt(p, t)], [t + d, 0]], "in");
+        return layer;
+    }
+
+    function dirVec(from, c, o) {
+        var dist = (o && o.dist) ? o.dist : Math.round(Math.max(c.width, c.height) * D.dist);
+        if (from === "right") { return [dist, 0]; }
+        if (from === "top") { return [0, -dist]; }
+        if (from === "bottom") { return [0, dist]; }
+        return [-dist, 0];
+    }
+
+    // Moves a layer by an offset: o.reverse - leave instead of arrive.
+    function shift(layer, t, vec, d, leaving, springy) {
+        var p = tr(layer, "ADBE Position"), base, a, b, px, py;
+        if (p.dimensionsSeparated) {
+            px = tr(layer, "ADBE Position_0"); py = tr(layer, "ADBE Position_1");
+            a = valueAt(px, t); b = valueAt(py, t);
+            if (leaving) { keys(px, [[t, a], [t + d, a + vec[0]]], "in"); keys(py, [[t, b], [t + d, b + vec[1]]], "in"); }
+            else { keys(px, [[t, a + vec[0]], [t + d, a]], "out"); keys(py, [[t, b + vec[1]], [t + d, b]], "out"); if (springy) { spring(px); spring(py); } }
+            return;
+        }
+        base = valueAt(p, t);
+        a = copy(base); a[0] += vec[0]; a[1] += vec[1];
+        if (leaving) { keys(p, [[t, base], [t + d, a]], "in"); }
+        else { keys(p, [[t, a], [t + d, base]], "out"); if (springy) { spring(p); } }
+    }
+
+    function slideIn(layer, t, o) {
+        var c = comp(), d = opt(o, "dur");
+        shift(layer, t, dirVec(o && o.from, c, o), d, false, opt(o, "spring"));
+        if (!o || o.fade !== false) { fadeIn(layer, t, d * 0.6); }
+        return layer;
+    }
+    function slideOut(layer, t, o) {
+        var c = comp(), d = opt(o, "dur"), v = dirVec((o && o.to) || (o && o.from) || "left", c, o);
+        shift(layer, t, v, d, true, false);
+        if (!o || o.fade !== false) { fadeOut(layer, t + d * 0.4, d * 0.6); }
+        return layer;
+    }
+
+    function scaled(v, k) { var o = copy(v), i; for (i = 0; i < o.length && i < 2; i++) { o[i] = o[i] * k; } return o; }
+    function popIn(layer, t, o) {
+        var p = tr(layer, "ADBE Scale"), d = opt(o, "dur"), to = valueAt(p, t), from = opt(o, "popFrom"), springy = (o && o.spring !== undefined) ? o.spring : true;
+        keys(p, [[t, scaled(to, from)], [t + d, to]], "out");
+        if (springy) { spring(p); }
+        fadeIn(layer, t, d * 0.4);
+        return layer;
+    }
+    function popOut(layer, t, o) {
+        var p = tr(layer, "ADBE Scale"), d = opt(o, "dur") * 0.8, v = valueAt(p, t);
+        keys(p, [[t, v], [t + d, scaled(v, 0)]], "in");
+        fadeOut(layer, t + d * 0.5, d * 0.5);
+        return layer;
+    }
+
+    function rectOf(layer, t) {
+        var r = null, c = comp();
+        try { r = layer.sourceRectAtTime(t, false); } catch (e) {}
+        if (!r || !(r.width > 0) || !(r.height > 0)) { r = { left: 0, top: 0, width: layer.width || c.width, height: layer.height || c.height }; }
+        return r;
+    }
+    function boxShape(l, tp, r, b) {
+        var s = new Shape();
+        s.vertices = [[l, tp], [r, tp], [r, b], [l, b]];
+        s.closed = true;
+        return s;
+    }
+
+    // Mask wipe: the layer is revealed from one side (o.from: left, right, top, bottom).
+    function wipe(layer, t, o) {
+        var d = opt(o, "dur"), r = rectOf(layer, t), pad = 2, L = r.left - pad, T = r.top - pad, R = r.left + r.width + pad, B = r.top + r.height + pad;
+        var from = (o && o.from) || "left", m, shape, start;
+        m = layer.property("ADBE Mask Parade").addProperty("ADBE Mask Atom");
+        try { m.name = "SF Wipe"; } catch (e0) {}
+        shape = m.property("ADBE Mask Shape");
+        start = from === "right" ? boxShape(R, T, R, B) : from === "top" ? boxShape(L, T, R, T) : from === "bottom" ? boxShape(L, B, R, B) : boxShape(L, T, L, B);
+        keys(shape, [[t, start], [t + d, boxShape(L, T, R, B)]], opt(o, "ease") === "inout" ? "inout" : "out");
+        if (o && o.feather) { try { m.property("ADBE Mask Feather").setValue([o.feather, o.feather]); } catch (e1) {} }
+        return layer;
+    }
+
+    // Text by characters, words or lines (o.by), style: rise (default), fade, scale, blur.
+    function textIn(layer, t, o) {
+        var d = (o && o.dur) ? o.dur : D.dur * 1.6, by = (o && o.by) || "chars", st = (o && o.style) || "rise", an, props, sel, adv;
+        try {
+            an = layer.property("ADBE Text Properties").property("ADBE Text Animators").addProperty("ADBE Text Animator");
+            try { an.name = "SF Text In"; } catch (e0) {}
+            props = an.property("ADBE Text Animator Properties");
+            props.addProperty("ADBE Text Opacity").setValue(0);
+            if (st === "rise") { props.addProperty("ADBE Text Position 3D").setValue([0, opt(o, "rise"), 0]); }
+            if (st === "scale") { props.addProperty("ADBE Text Scale 3D").setValue([0, 0, 100]); }
+            if (st === "blur") { props.addProperty("ADBE Text Blur").setValue([opt(o, "blur"), opt(o, "blur")]); }
+            sel = an.property("ADBE Text Selectors").addProperty("ADBE Text Selector");
+            adv = sel.property("ADBE Text Range Advanced");
+            try { adv.property("ADBE Text Range Type2").setValue(by === "words" ? 3 : by === "lines" ? 4 : 2); } catch (e1) {}
+            try { adv.property("ADBE Text Range Shape").setValue(1); } catch (e2) {}
+            try { adv.property("ADBE Text Selector Smoothness").setValue(100); } catch (e3) {}
+            keys(sel.property("ADBE Text Percent Start"), [[t, 0], [t + d, 100]], "inout");
+        } catch (e) {
+            fadeIn(layer, t, d * 0.5);
+        }
+        return layer;
+    }
+    function typeOn(layer, t, o) {
+        var d = (o && o.dur) ? o.dur : D.dur * 2, an, sel, adv;
+        try {
+            an = layer.property("ADBE Text Properties").property("ADBE Text Animators").addProperty("ADBE Text Animator");
+            try { an.name = "SF Type On"; } catch (e0) {}
+            an.property("ADBE Text Animator Properties").addProperty("ADBE Text Opacity").setValue(0);
+            sel = an.property("ADBE Text Selectors").addProperty("ADBE Text Selector");
+            adv = sel.property("ADBE Text Range Advanced");
+            try { adv.property("ADBE Text Range Shape").setValue(1); } catch (e1) {}
+            try { adv.property("ADBE Text Selector Smoothness").setValue(0); } catch (e2) {}
+            keys(sel.property("ADBE Text Percent Start"), [[t, 0], [t + d, 100]], "linear");
+        } catch (e) {
+            fadeIn(layer, t, d * 0.3);
+        }
+        return layer;
+    }
+
+    // Strokes of a shape layer draw themselves (Trim Paths 0 -> 100%). Other layers get a wipe instead.
+    function drawOn(layer, t, o) {
+        var d = opt(o, "dur") * 1.4, root = null, trim;
+        try { root = layer.property("ADBE Root Vectors Group"); } catch (e0) {}
+        if (!root) { return wipe(layer, t, o); }
+        trim = root.addProperty("ADBE Vector Filter - Trim");
+        keys(trim.property("ADBE Vector Trim End"), [[t, 0], [t + d, 100]], "inout");
+        return layer;
+    }
+
+    function blurIn(layer, t, o) {
+        var d = opt(o, "dur"), fx = layer.property("ADBE Effect Parade").addProperty("ADBE Gaussian Blur 2");
+        try { fx.name = "SF Blur In"; } catch (e0) {}
+        try { fx.property("ADBE Gaussian Blur 2-0003").setValue(1); } catch (e1) {}
+        keys(fx.property("ADBE Gaussian Blur 2-0001"), [[t, (o && o.amount) || D.blur], [t + d, 0]], "out");
+        return layer;
+    }
+
+    // A slow push-in for the whole shot (o.amount: percent, default 6).
+    function drift(layer, t, o) {
+        var p = tr(layer, "ADBE Scale"), d = (o && o.dur) ? o.dur : 4, v = valueAt(p, t), k = 1 + ((o && o.amount) || 6) / 100;
+        keys(p, [[t, v], [t + d, scaled(v, k)]], "inout");
+        return layer;
+    }
+
+    function wiggle(prop, freq, amp) {
+        try { prop.expression = "wiggle(" + (freq || 2) + "," + (amp || 10) + ")"; } catch (e) {}
+        return prop;
+    }
+
+    function motionBlur(layers) {
+        var c = comp(), i;
+        try { c.motionBlur = true; } catch (e0) {}
+        if (!layers) { layers = []; for (i = 1; i <= c.numLayers; i++) { layers.push(c.layer(i)); } }
+        for (i = 0; i < layers.length; i++) { try { layers[i].motionBlur = true; } catch (e1) {} }
+        return c;
+    }
+
+    var API = {};
+    // One effect on several layers, each a little later: SF.stagger(layers, t, step, "popIn", opts).
+    function stagger(layers, t, step, fn, o) {
+        var i, f = typeof fn === "string" ? API[fn] : fn;
+        if (!f) { throw new Error("SF.stagger: unknown recipe " + fn); }
+        if (step === null || step === undefined) { step = D.step; }
+        for (i = 0; i < layers.length; i++) { f(layers[i], t + i * step, o); }
+        return layers;
+    }
+
+    API.style = style; API.defaults = D; API.keys = keys; API.spring = spring;
+    API.fadeIn = fadeIn; API.fadeOut = fadeOut; API.slideIn = slideIn; API.slideOut = slideOut;
+    API.popIn = popIn; API.popOut = popOut; API.wipe = wipe; API.textIn = textIn; API.typeOn = typeOn;
+    API.drawOn = drawOn; API.blurIn = blurIn; API.drift = drift; API.wiggle = wiggle; API.motionBlur = motionBlur; API.stagger = stagger;
+    return API;
 })();
