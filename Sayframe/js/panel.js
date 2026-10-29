@@ -6211,8 +6211,8 @@
             e.preventDefault();
             e.stopPropagation();
             // Это же нажатие уже пришло от наблюдателя за клавишами.
-            if (lastPanelHotkey.outside && lastPanelHotkey.id === id && Date.now() - lastPanelHotkey.at < 800) { return; }
-            lastPanelHotkey = { id: id, at: Date.now() };
+            if (lastPanelHotkey.src !== "panel" && lastPanelHotkey.id === id && Date.now() - lastPanelHotkey.at < 800) { return; }
+            lastPanelHotkey = { id: id, at: Date.now(), src: "panel" };
             runHotkey(id);
         }
     }
@@ -6427,11 +6427,10 @@
     // хост несколько раз в секунду смотрит, какие клавиши зажаты, и присылает панели событие.
     // Как и в FX Console, сочетание нужно чуть подержать.
     var HOST_KEY_EVENT = "com.sayframe.hotkey";
-    var lastPanelHotkey = { id: "", at: 0 };
+    var lastPanelHotkey = { id: "", at: 0, src: "" };
 
     var KEYWATCH_BEAT_MS = 3000;
-    var hostKeyList = [];
-    var keyWatch = null;        // { proc, list, ready, timer, hb } — наблюдатель за клавишами (см. JXA_KEYWATCH)
+    var keyWatch = null;        // { proc, list, timer, hb } — наблюдатель за клавишами (см. JXA_KEYWATCH)
 
     function watchHostHotkeys(map) {
         var list = [], k, parts;
@@ -6441,10 +6440,10 @@
             list.push({ id: k, key: parts[parts.length - 1], ctrl: parts.indexOf("Ctrl") >= 0, alt: parts.indexOf("Alt") >= 0,
                 shift: parts.indexOf("Shift") >= 0, cmd: parts.indexOf("Cmd") >= 0 });
         }
-        hostKeyList = list;
         startKeyWatch(list);
-        // Пока наблюдатель не заработал, клавиши смотрит сам After Effects (на Mac он называет клавишу).
-        host("setHotkeys", [keyWatch && keyWatch.ready ? [] : list]).catch(function () {});
+        // After Effects тоже смотрит клавиши: на Mac он называет клавишу, и это запас, если системе
+        // не понравится наблюдатель. Одно нажатие от обоих выполняется один раз (outsideHotkey).
+        host("setHotkeys", [list]).catch(function () {});
     }
 
     function stopKeyWatch() {
@@ -6468,7 +6467,7 @@
         hb = platform.join(tmp, "sayframe_keys_" + Date.now() + ".beat");
         listFile = hb.replace(/\.beat$/, ".json");
         script = hb.replace(/\.beat$/, platform.isWindows() ? ".ps1" : ".js");
-        w = keyWatch = { proc: { kill: function () {} }, list: watch, ready: false, timer: 0, hb: hb };
+        w = keyWatch = { proc: { kill: function () {} }, list: watch, timer: 0, hb: hb };
         try {
             await platform.writeText(hb, String(Date.now()));
             await platform.writeText(listFile, JSON.stringify(watch));
@@ -6479,37 +6478,31 @@
         w.proc = platform.spawn(platform.isWindows() ? "powershell" : "osascript",
             platform.isWindows() ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, hb, listFile] : ["-l", "JavaScript", script, hb, listFile],
             function (line) {
-                if (keyWatch !== w) { return; }
-                if (line === "READY" && !w.ready) {
-                    w.ready = true;
-                    host("setHotkeys", [[]]).catch(function () {});
-                } else if (line.indexOf("HIT ") === 0) {
-                    outsideHotkey(line.substring(4));
-                }
+                if (keyWatch === w && line.indexOf("HIT ") === 0) { outsideHotkey(line.substring(4), "watch"); }
             },
             function () {
                 platform.remove(script);
                 platform.remove(listFile);
                 if (keyWatch !== w) { return; }
-                // Наблюдатель не запустился или упал — клавиши снова смотрит After Effects.
+                // Наблюдатель не запустился или упал — остаются After Effects и сама панель.
                 clearInterval(w.timer);
                 platform.remove(hb);
                 keyWatch = null;
-                host("setHotkeys", [hostKeyList]).catch(function () {});
             });
     }
 
     function onHostHotkey(ev) {
-        outsideHotkey(ev && ev.data !== undefined ? String(ev.data) : "");
+        outsideHotkey(ev && ev.data !== undefined ? String(ev.data) : "", "host");
     }
 
-    // Нажатие пришло не из самой панели: от After Effects или от наблюдателя.
-    function outsideHotkey(id) {
+    // Нажатие пришло не из самой панели: от After Effects (src "host") или от наблюдателя ("watch").
+    // Одно нажатие могут заметить и они, и панель — второй раз его не выполняем.
+    function outsideHotkey(id, src) {
         if (!id || !HOTKEY_ACTIONS.some(function (a) { return a.id === id; })) { return; }
         if (!ui.sheet.hidden || !ui.modal.hidden) { return; }
         // Панель уже сама поймала это нажатие.
-        if (!lastPanelHotkey.outside && lastPanelHotkey.id === id && Date.now() - lastPanelHotkey.at < 800) { return; }
-        lastPanelHotkey = { id: id, at: Date.now(), outside: true };
+        if (lastPanelHotkey.src !== src && lastPanelHotkey.id === id && Date.now() - lastPanelHotkey.at < 800) { return; }
+        lastPanelHotkey = { id: id, at: Date.now(), src: src };
         try { window.focus(); } catch (e) {}
         runHotkey(id);
     }

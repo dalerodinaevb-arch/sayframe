@@ -1946,11 +1946,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("KW1 the panel starts the key watcher (osascript on Mac) with a pulse file and the list of shortcuts", t.length === 1 && t[0].file === "osascript" && c[0] === "-l" && c[1] === "JavaScript" &&
     /CGEventSourceKeyState/.test(fs.readFileSync(c[2], "utf8")) && fs.existsSync(c[3]) &&
     JSON.stringify(JSON.parse(fs.readFileSync(c[4], "utf8"))) === JSON.stringify([{ id: "console", code: 49, ctrl: true, alt: false, shift: false, cmd: false }]), JSON.stringify(t));
-  await p.page.waitForTimeout(200);
-  check("KW2 until the watcher answers, After Effects keeps watching the keys", hostKeys(p).length === 1);
   await watcherSays(p, 0, "READY");
   await p.page.waitForTimeout(200);
-  check("KW2 once it is ready, After Effects stops polling the keyboard", hostKeys(p).length === 0 && p.ae.log.tasks.every((x) => x.cancelled), JSON.stringify(hostKeys(p)));
+  check("KW2 After Effects keeps watching the keys too (a spare on Mac)", hostKeys(p).length === 1 && p.ae.log.tasks.some((x) => !x.cancelled), JSON.stringify(hostKeys(p)));
   await p.page.evaluate(() => document.activeElement && document.activeElement.blur());
   await watcherSays(p, 0, "HIT console");
   await p.page.waitForTimeout(100);
@@ -1958,6 +1956,17 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.keyboard.press("Control+Space");
   await p.page.waitForTimeout(100);
   check("KW3 the same press caught by the panel too does not close it again", await p.page.locator("#fxConsole").isVisible());
+  await p.page.keyboard.press("Escape");
+  await p.page.waitForTimeout(900);
+  await p.page.evaluate(() => document.activeElement && document.activeElement.blur());
+  Object.assign(p.ae.keyboardState, { keyName: "Space", ctrlKey: true, altKey: false, shiftKey: false, metaKey: false });
+  vm.runInContext("sayframeHost.pollKeys()", p.ae.ctx);
+  for (const ev of p.ae.log.events.splice(0)) await p.page.evaluate((ev) => window.__cepListeners[ev.type] && window.__cepListeners[ev.type](ev), ev);
+  await watcherSays(p, 0, "HIT console");
+  await p.page.waitForTimeout(100);
+  check("KW3 the same press seen by After Effects and by the watcher runs once", await p.page.locator("#fxConsole").isVisible());
+  Object.assign(p.ae.keyboardState, { keyName: "", ctrlKey: false });
+  vm.runInContext("sayframeHost.pollKeys()", p.ae.ctx);
   await p.page.keyboard.press("Escape");
   await watcherSays(p, 0, "HIT nothing");
   await watcherSays(p, 0, "garbage");
@@ -1974,7 +1983,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("KW4 the new shortcut works from outside", (await p.page.locator("#tabMotion").getAttribute("aria-selected")) === "true");
   await p.page.evaluate(() => window.__spawns[1].onExit(1));
   await p.page.waitForTimeout(200);
-  check("KW5 if the watcher stops, After Effects watches the keys again", hostKeys(p).length === 2 && p.errors.length === 0, JSON.stringify(hostKeys(p)));
+  check("KW5 if the watcher stops, After Effects still watches the keys", hostKeys(p).length === 2 && p.errors.length === 0, JSON.stringify(hostKeys(p)));
   await p.close();
 
   console.log("\n=== animation library ===");
