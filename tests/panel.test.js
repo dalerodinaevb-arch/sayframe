@@ -497,7 +497,8 @@ function makeAE(opts, tmpDir) {
       project.activeItem = it;
       return it;
     },
-    items: { addFolder(name) { const f = new FolderItem(name); f.id = 900 + log.bins.length; projItems.push(f); log.bins.push(name); return f; },
+    items: { addFolder(name) { const f = new FolderItem(name); f.id = 900 + log.bins.length; projItems.push(f); log.bins.push(name);
+        f.remove = () => { projItems.splice(projItems.indexOf(f), 1); log.bins.splice(log.bins.lastIndexOf(name), 1); log.undo.push("mark"); }; return f; },
       addComp(name, w, h, par, dur, fps) {
         const c = Object.assign(new CompItem(), { name, width: w, height: h, duration: dur, frameRate: fps, saved: [], scaleSet: null,
           openInViewer() { log.opened++; project.activeItem = c; },
@@ -533,6 +534,7 @@ function makeAE(opts, tmpDir) {
     scheduleTask: (code, ms, repeat) => { log.tasks.push({ code, ms, repeat }); return log.tasks.length; }, cancelTask: (id) => { log.tasks[id - 1].cancelled = true; },
     preferences: { getPrefAsLong: () => (opts.fileAccessOff ? 0 : 1) },
     beginUndoGroup: (n) => log.undo.push("begin:" + n), endUndoGroup: () => log.undo.push("end"), __ran: (x) => log.ran.push(x),
+    executeCommand: opts.noExecuteCommand ? undefined : (id) => { log.commands = (log.commands || []).concat([id]); },
     purge: (t) => { log.purges = (log.purges || []).concat([t]); },
     fonts: opts.noFonts ? undefined : { allFonts: [[{ postScriptName: "Inter-Regular" }, { postScriptName: "Inter-Bold" }], [{ postScriptName: "Montserrat-Bold" }]],
       getFontsByPostScriptName: (n) => (/^(Inter|Montserrat|ArialMT)/.test(n) ? [{ postScriptName: n }] : []) } };
@@ -793,6 +795,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ replies: [msg("x\n```javascript\nthrow new Error('Нет слоя');\n```"), msg("ok\n```javascript\napp.__ran('fixed');\n```")] });
   await p.run("задача");
   check("A3 runtime error shown, fix enabled", /^Ошибка при выполнении: Error: Нет слоя/.test(await p.status()) && (await p.statusKind()) === "error" && !(await p.page.locator("#fixBtn").isDisabled()) && (await p.page.locator("#fixBtn").isVisible()));
+  check("A3 the failed script is undone at once: a marker change closes its undo group, then Edit > Undo (16)", p.ae.log.undo.join("|") === "begin:Sayframe: задача|mark|end" && (p.ae.log.commands || []).join() === "16" && p.ae.log.bins.length === 0 && /\nТо, что скрипт успел изменить, отменено\. Нажмите «Исправить ошибку»\.$/.test(await p.status()), p.ae.log.undo.join("|") + " " + await p.status());
   await p.page.screenshot({ path: path.join(SHOTS, "04-error.png") });
   await p.page.click("#fixBtn"); await p.idle();
   check("A3 fix request carries the error; fixed script ran", /threw an error while running: Error: Нет слоя/.test(p.net.requests[1].body.messages[2].content) && p.ae.log.ran.join() === "fixed" && (await p.page.locator("#fixBtn").isDisabled()));
@@ -807,7 +810,39 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
   p = await open({ replies: [msg("x\n```javascript\napp.project.activeItem.layer(1).remove ( ); app.__ran('rm');\n```")] });
   await p.run("удали слой"); await p.modalClick("Запустить");
-  check("A4 accepted -> run", p.ae.log.undo.length === 2 && /Готово|Ошибка при выполнении/.test(await p.status()));
+  check("A4 accepted -> run", p.ae.log.undo.filter((x) => x !== "mark").length === 2 && /Готово|Ошибка при выполнении/.test(await p.status()));
+  await p.close();
+  // Обходные пути к system / File / eval: каждый должен открыть окно, а не запуститься молча.
+  const hidden = [
+    'system["callSystem"]("open -a Calculator");',
+    "var s = system; s.callSystem('x');",
+    "var k = 'call' + 'Sys' + 'tem'; system[k]('x');",
+    "new Function('return 1')();",
+    "var g = (function () { return this; })(); g.x = 1;",
+    "var F = [].constructor.constructor; F('x')();",
+    "$.global.sys = 1;",
+    "Folder.desktop.getFiles();",
+    "var f = Folder; f.temp;",
+    "var t = '\\u0073ystem'; app[t];",
+    "var n = String.fromCharCode(115); app[n];",
+    "this['eval']('1');",
+    "app.project.file.execute();"
+  ];
+  for (const code of hidden) {
+    p = await open({ replies: [msg("x\n```javascript\n" + code + " app.__ran('h');\n```")] });
+    await p.run("задача");
+    check("A5 hidden access asks first: " + code, !(await p.page.locator("#modal").isHidden()) && p.ae.log.ran.length === 0 && /обходным путём|удаляет что-то/.test(await p.page.locator("#modalText").innerText()), await p.status());
+    await p.close();
+  }
+  // Обычный скрипт анимации окна не вызывает.
+  p = await open({ replies: [msg("x\n```javascript\nvar comp = app.project.activeItem; var names = ['a', 'b']; for (var i = 0; i < names.length; i++) { app.__ran(names[i] + (i + 1)); }\n```")] });
+  await p.run("задача");
+  check("A5 an ordinary script still runs straight away", (await p.page.locator("#modal").isHidden()) && p.ae.log.ran.join() === "a1,b2" && (p.ae.log.commands || []).length === 0 && p.ae.log.undo.join("|") === "begin:Sayframe: задача|end", p.ae.log.ran.join());
+  await p.close();
+  // Без Edit > Undo (старый After Effects) — прежняя подсказка нажать Cmd/Ctrl+Z.
+  p = await open({ noExecuteCommand: true, replies: [msg("x\n```javascript\nthrow new Error('Нет слоя');\n```")] });
+  await p.run("задача");
+  check("A6 no executeCommand -> nothing undone, the old Cmd/Ctrl+Z hint", /нажмите Cmd\/Ctrl\+Z, затем «Исправить ошибку»\.$/.test(await p.status()), await p.status());
   await p.close();
   p = await open({ replies: [msg("x\n```javascript\napp.__ran('e');\n```")] });
   await p.run("задача"); await p.page.fill("#prompt", "ещё");
@@ -1279,7 +1314,19 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R0 the open composition is made as long as the video (10 s -> 12 s)", p.ae.comp.duration === 12, p.ae.comp && p.ae.comp.duration);
   check("R0 each scene is a separate request with only its own frames and the whole plan", m[1].filter((b) => b.type === "image").length === 8 && /^\[Scene 1 of 2\].*at 0\.25, 0\.75/.test(m[1].slice(-1)[0].text) && /Build ONLY this scene, from 0\.00 to 5\.00 s.*logo pops in/.test(m[1].slice(-1)[0].text) && /Scene 2 \(5\.00-12\.00 s\): title words rise/.test(m[1].slice(-1)[0].text) && /^\[Scene 2 of 2\].*at 5\.25/.test(m[2].slice(-1)[0].text), m[1].slice(-1)[0].text.slice(0, 200));
   check("R0 a scene whose script fails is asked again with the error; both scenes are built", /Your script for this scene failed: Error: boom/.test(JSON.stringify(m[3])) && p.ae.log.ran.join() === "s1,s2", p.ae.log.ran.join());
+  check("R0 the failed scene was undone before its fix ran", (p.ae.log.commands || []).join() === "16", JSON.stringify(p.ae.log.commands));
   check("R0 the report says the whole video is built", /^Готово: ролик 12\.0 с собран по 2 сценам — от начала до конца/.test(await p.status()) && (await p.page.locator("#replyText").innerText()).indexOf("1) 0.0–5.0 с: logo pops in") >= 0, await p.status());
+  await p.close();
+  // Сцены тоже проходят проверку: рискованный скрипт сцены показывается перед запуском.
+  p = await open({ pickFile: "/Users/x/Movies/long.mp4", footage: Object.assign({}, VIDEO, { duration: 12 }), replies: [
+    msg('{"scenes": [{"start": 0, "end": 6, "what": "a"}, {"start": 6, "end": 12, "what": "b"}]}'),
+    msg("1\n```javascript\nsystem['callSystem']('x'); app.__ran('bad');\n```"), msg("2\n```javascript\napp.__ran('b');\n```")] });
+  await p.page.click("#refBtn"); await p.idle();
+  await p.page.fill("#prompt", "повтори"); await p.page.click("#runBtn");
+  await p.page.waitForSelector("#modal:not([hidden])");
+  check("R0b a risky scene script opens the confirmation first", (await p.page.locator("#modalTitle").innerText()) === "Запустить скрипт сцены 1?" && p.ae.log.ran.length === 0);
+  await p.modalClick("Не запускать");
+  check("R0b declined scene is skipped and reported; the next scene is built", p.ae.log.ran.join() === "b" && /Не получились сцены: 1/.test(await p.status()), p.ae.log.ran.join() + " " + await p.status());
   await p.close();
   p = await open({ settings: { selfCheck: true }, pickFile: "/Users/x/Movies/long.mp4", footage: Object.assign({}, VIDEO, { duration: 12 }), replies: [
     msg('{"scenes": [{"start": 0, "end": 6, "what": "a"}, {"start": 6, "end": 12, "what": "b"}]}'),

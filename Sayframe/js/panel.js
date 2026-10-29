@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.53.0";
+    var VERSION = "1.54.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
@@ -1189,8 +1189,42 @@
         return (idx >= 0 ? text.substring(0, idx) : text).replace(/^\s+|\s+$/g, "");
     }
 
-    function needsConfirmation(code) {
-        return /system\s*\.\s*callSystem|\bFile\s*\(|\bFolder\s*\(|\bSocket\s*\(|\$\s*\.\s*evalFile|\beval\s*\(|app\s*\.\s*quit|app\s*\.\s*newProject|app\s*\.\s*open\s*\(|project\s*\.\s*close|project\s*\.\s*save|renderQueue\s*\.\s*render|\.importFile\s*\(|\.remove\s*\(\s*\)/.test(code);
+    var RISK_PLAIN = /system\s*\.\s*callSystem|\bFile\s*\(|\bFolder\s*\(|\bSocket\s*\(|\$\s*\.\s*evalFile|\beval\s*\(|app\s*\.\s*quit|app\s*\.\s*newProject|app\s*\.\s*open\s*\(|project\s*\.\s*close|project\s*\.\s*save|renderQueue\s*\.\s*render|\.importFile\s*\(|\.remove\s*\(\s*\)/;
+    // Обходные пути к тем же объектам: имя собрано из кусков строки, взято через [""], псевдоним, глобальный объект,
+    // конструктор Function. Обычному скрипту анимации всё это не нужно, поэтому такой скрипт тоже показываем перед запуском.
+    var RISK_HIDDEN = new RegExp([
+        "callSystem", "evalFile", "ExternalObject", "fromCharCode", "\\bunescape\\b", "\\bdecodeURI", "\\bFunction\\b", "\\bconstructor\\b", "__\\w+__",
+        "\\bsystem\\s*[.\\[]", "\\b(File|Folder|Socket)\\s*\\.", "\\.\\s*execute\\s*\\(", "[=(,:\\[]\\s*(system|File|Folder|Socket|eval)\\s*[;,)\\]}]", "[=(,:\\[]\\s*(system|File|Folder|Socket|eval)\\s*$",
+        "[\"'](system|File|Folder|Socket|eval|quit|open|close|save|render|remove|importFile)[\"']",
+        "\\$\\s*\\.\\s*global", "\\$\\s*\\[", "\\bthis\\s*\\[", "=\\s*this\\b", "return\\s+this\\b", "[(,]\\s*this\\s*[),]",
+        "\\[[^\\]\\n]*[\"'][^\\]\\n]*\\+[^\\]\\n]*\\]", "\\[[^\\]\\n]*\\+[^\\]\\n]*[\"'][^\\]\\n]*\\]"
+    ].join("|"), "m");
+    var RISK_PLAIN_TEXT = "Этот скрипт удаляет что-то или обращается к файлам, сети, рендеру или проекту целиком. Проверьте его перед запуском.";
+    var RISK_HIDDEN_TEXT = "Этот скрипт обращается к объектам After Effects обходным путём: так можно спрятать доступ к файлам или командам системы. Проверьте его перед запуском.";
+
+    // Почему скрипт нужно показать перед запуском; пустая строка — можно запускать сразу.
+    // \u0073 и \x73 в строках сначала раскрываются, чтобы имя нельзя было спрятать за кодами символов.
+    function scriptRisk(code) {
+        var plain = String(code).replace(/\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})/g, function (m, u, x) {
+            return String.fromCharCode(parseInt(u || x, 16));
+        });
+        if (RISK_PLAIN.test(plain)) { return RISK_PLAIN_TEXT; }
+        if (RISK_HIDDEN.test(plain)) { return RISK_HIDDEN_TEXT; }
+        return "";
+    }
+
+    function needsConfirmation(code) { return scriptRisk(code) !== ""; }
+
+    // Спрашивает перед запуском скрипта, если он рискованный. true — можно запускать.
+    async function allowScript(code, title) {
+        var why = scriptRisk(code);
+        if (!why) { return true; }
+        return !!(await modal({
+            title: title || "Запустить этот скрипт?",
+            text: why,
+            code: code,
+            buttons: [{ label: "Не запускать", value: false }, { label: "Запустить", value: true, primary: true }]
+        }));
     }
 
     function trimHistory() {
@@ -1464,10 +1498,8 @@
                 break;
             }
 
-            reason = null;
-            if (needsConfirmation(code)) {
-                reason = "Этот скрипт удаляет что-то или обращается к файлам, сети, рендеру или проекту целиком. Проверьте его перед запуском.";
-            } else if (settings.alwaysAsk) {
+            reason = scriptRisk(code) || null;
+            if (reason === null && settings.alwaysAsk) {
                 reason = expl || aiName() + " подготовил скрипт.";
             }
             if (reason !== null) {
@@ -1500,7 +1532,8 @@
             if (res.runError) {
                 lastError = res.runError;
                 finish("Ошибка при выполнении" + (scriptsRun > 0 ? " правки" : "") + ": " + lastError +
-                    "\nЕсли скрипт успел что-то изменить, нажмите Cmd/Ctrl+Z, затем «Исправить ошибку».", "error");
+                    (res.undone ? "\nТо, что скрипт успел изменить, отменено. Нажмите «Исправить ошибку»." :
+                        "\nЕсли скрипт успел что-то изменить, нажмите Cmd/Ctrl+Z, затем «Исправить ошибку»."), "error");
                 return;
             }
 
@@ -1654,6 +1687,7 @@
                 if (code === null) { fails.push(i + 1); break; }
                 try { syn = (await host("syntax", [code])).error; } catch (e2) { syn = humanError(e2); }
                 if (!syn) {
+                    if (!(await allowScript(code, "Запустить скрипт сцены " + (i + 1) + "?"))) { fails.push(i + 1); break; }
                     if (settings.motionStyle !== "normal") { code = 'try { SF.style("' + settings.motionStyle + '"); } catch (eSF) {} ' + code; }
                     setStatus("Сцена " + (i + 1) + " из " + plan.scenes.length + ": выполняю скрипт…", "busy");
                     try { res = await host("run", [code, "сцена " + (i + 1), false, platform.tmpdir()]); } catch (e3) { res = { runError: humanError(e3) }; }
@@ -1690,7 +1724,7 @@
                 if (code !== null) {
                     try {
                         syn = (await host("syntax", [code])).error;
-                        if (!syn) { res = await host("run", [code, "правка после проверки", false, platform.tmpdir()]); if (!res.runError) { codes.push(code); } }
+                        if (!syn && await allowScript(code)) { res = await host("run", [code, "правка после проверки", false, platform.tmpdir()]); if (!res.runError) { codes.push(code); } }
                     } catch (e5) {}
                 }
             }
@@ -1911,7 +1945,7 @@
         if (it.codes.some(needsConfirmation)) {
             ok = await modal({
                 title: "Запустить «" + it.name + "»?",
-                text: "Этот скрипт удаляет что-то или обращается к файлам, сети, рендеру или проекту целиком. Проверьте его перед запуском.",
+                text: it.codes.map(scriptRisk).filter(Boolean)[0],
                 code: all,
                 buttons: [{ label: "Не запускать", value: false }, { label: "Запустить", value: true, primary: true }]
             });
@@ -1930,7 +1964,8 @@
             if (res.runError) {
                 setBusy(false);
                 setStatus("Ошибка в «" + it.name + "»" + (it.codes.length > 1 ? " (шаг " + (i + 1) + " из " + it.codes.length + ")" : "") + ": " + res.runError +
-                    "\nСкрипт мог рассчитывать на другую композицию или слои. Если он успел что-то изменить, нажмите Cmd/Ctrl+Z.", "error");
+                    "\nСкрипт мог рассчитывать на другую композицию или слои." +
+                    (res.undone ? " То, что этот шаг успел изменить, отменено." : " Если он успел что-то изменить, нажмите Cmd/Ctrl+Z."), "error");
                 return;
             }
         }
