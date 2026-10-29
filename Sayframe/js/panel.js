@@ -45,6 +45,16 @@
     var API_VERSION = "2023-06-01";
     var MAX_TOKENS = 16384;     // длинный референс — длинный скрипт: при 8192 он обрывался
     var MAX_HISTORY = 16;
+    // Сервер нейросети перегружен или упёрся в лимит ключа (429, 529…): панель ждёт и повторяет запрос.
+    var AI_RETRY_MS = window.__SAYFRAME_TEST_RETRY_MS__ || [3000, 8000, 20000];
+    var AI_RETRY_STATUS = [429, 500, 502, 503, 504, 529];
+    // Цены Claude, долларов за миллион токенов: ввод, вывод, чтение из кэша. Запись в кэш — цена ввода × 1,25.
+    var CLAUDE_PRICES = {
+        "claude-sonnet-5-5": [2, 10, 0.2],
+        "claude-opus-5-5": [4, 20, 0.2],
+        "claude-haiku-4-5-20251001": [1, 5, 0.1]
+    };
+    var SPEND_KEY = "sayframe.spend.v1";
     var MAX_SYNTAX_RETRIES = 2;
     var MAX_CHECK_ROUNDS = 2;
     var FRAME_CHOICES = [6, 8, 12, 16, 24];
@@ -442,13 +452,15 @@
                 download: need,
                 fetchUrl: need,
                 verify: function () { return Promise.resolve(false); },
-                postJSON: function (url, headers, body) {
+                postJSON: function (url, headers, body, timeoutMs, onRequest) {
                     var h = {};
-                    var k;
+                    var k, ctl;
                     for (k in headers) { if (headers.hasOwnProperty(k)) { h[k] = headers[k]; } }
                     h["anthropic-dangerous-direct-browser-access"] = "true";
-                    return fetch(url, { method: "POST", headers: h, body: body }).then(function (res) {
-                        return res.text().then(function (text) { return { status: res.status, text: text }; });
+                    ctl = typeof AbortController === "function" ? new AbortController() : null;
+                    if (ctl && onRequest) { onRequest(function () { ctl.abort(); }); }
+                    return fetch(url, { method: "POST", headers: h, body: body, signal: ctl ? ctl.signal : undefined }).then(function (res) {
+                        return res.text().then(function (text) { return { status: res.status, text: text, retryAfter: res.headers.get("retry-after") || "" }; });
                     });
                 }
             };
@@ -551,7 +563,8 @@
                         .then(function () { return { status: 200, contentType: r.type, finalUrl: r.url, path: destBase + ext, size: r.body.length }; });
                 });
             },
-            postJSON: function (url, headers, body, timeoutMs) {
+            // onRequest получает функцию, которая обрывает запрос (кнопка «Стоп»).
+            postJSON: function (url, headers, body, timeoutMs, onRequest) {
                 return new Promise(function (resolve, reject) {
                     var u = new URL(url);
                     var data = Buf.from(body, "utf8");
@@ -561,10 +574,11 @@
                     rq = https.request({ method: "POST", hostname: u.hostname, port: 443, path: u.pathname, headers: h }, function (res) {
                         var chunks = [];
                         res.on("data", function (c) { chunks.push(c); });
-                        res.on("end", function () { resolve({ status: res.statusCode, text: Buf.concat(chunks).toString("utf8") }); });
+                        res.on("end", function () { resolve({ status: res.statusCode, text: Buf.concat(chunks).toString("utf8"), retryAfter: String(res.headers["retry-after"] || "") }); });
                     });
                     rq.on("error", reject);
                     rq.setTimeout(timeoutMs || 300000, function () { rq.destroy(new Error("TIMEOUT")); });
+                    if (onRequest) { onRequest(function () { rq.destroy(new Error("STOPPED")); }); }
                     rq.write(data);
                     rq.end();
                 });
@@ -805,7 +819,7 @@
         saveConfirm: el("saveConfirm"), saveCancel: el("saveCancel"),
         scriptsCard: el("scriptsCard"), scriptsToggle: el("scriptsToggle"), scriptsCount: el("scriptsCount"), scriptsList: el("scriptsList"),
         refLinkBtn: el("refLinkBtn"), refLinkRow: el("refLinkRow"), refLink: el("refLink"), refLinkAdd: el("refLinkAdd"), refLinkCancel: el("refLinkCancel"),
-        statusBox: el("statusBox"), status: el("status"),
+        statusBox: el("statusBox"), status: el("status"), stopBtn: el("stopBtn"), spendLine: el("spendLine"),
         replyCard: el("replyCard"), replyText: el("replyText"), replyCode: el("replyCode"), codeBox: el("codeBox"),
         pinLine: el("pinLine"), pasteBtn: el("pasteBtn"), settingsBtn: el("settingsBtn"),
         sheet: el("settingsSheet"), settingsClose: el("settingsClose"), apiKey: el("apiKey"), testKey: el("testKey"),
@@ -1094,6 +1108,8 @@
     }
 
     function setBusy(on) {
+        // Новое действие: прежний «Стоп» к нему не относится, расход считается заново.
+        if (on && !busy) { aiStop = { requested: false, waiters: [] }; opSpend = null; showSpend(); }
         busy = on;
         ui.runBtn.disabled = on;
         ui.newBtn.disabled = on;
@@ -1314,8 +1330,120 @@
         });
     }
 
-    function callAI(messages, maxTokens, system) {
-        return settings.provider === "openai" ? callOpenAI(messages, maxTokens, system) : callClaude(messages, maxTokens, system);
+    // ------------------------------------------------- стоп и расходы
+
+    var aiStop = { requested: false, waiters: [] };
+    var aiPending = 0;      // сколько запросов к нейросети сейчас в пути
+    var opSpend = null;     // расход текущего действия: { usd, tokens, priced }
+    var spend = loadSpend();
+
+    function requestStop() {
+        aiStop.requested = true;
+        aiStop.waiters.splice(0).forEach(function (f) { f(); });
+        showStop();
+    }
+    function untilStopped() {
+        var stop = aiStop;
+        return new Promise(function (resolve) { if (stop.requested) { resolve(); } else { stop.waiters.push(resolve); } });
+    }
+    function showStop() { ui.stopBtn.hidden = aiPending === 0 || aiStop.requested; }
+    function stoppedReply() { return { ok: false, stopped: true, text: "", stopReason: "", error: "Запрос остановлен." }; }
+    // Пауза перед повтором; true — пока ждали, нажали «Стоп».
+    function pause(ms) {
+        return Promise.race([
+            new Promise(function (resolve) { setTimeout(function () { resolve(false); }, ms); }),
+            untilStopped().then(function () { return true; })
+        ]);
+    }
+
+    function monthNow() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2); }
+    function loadSpend() {
+        var s = null;
+        try { s = JSON.parse(window.localStorage.getItem(SPEND_KEY) || "null"); } catch (e) { s = null; }
+        if (!s || s.month !== monthNow() || typeof s.usd !== "number") { s = { month: monthNow(), usd: 0, tokens: 0 }; }
+        return s;
+    }
+    function money(v) { return "$" + (v >= 1 ? v.toFixed(2) : v >= 0.01 ? v.toFixed(3) : v.toFixed(4)); }
+    function bigNumber(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+
+    // u — токены ответа: { input, output, cacheRead, cacheWrite }. Цены известны только для Claude.
+    function addSpend(u, claude) {
+        var p = claude ? CLAUDE_PRICES[settings.model] : null;
+        var tokens = u.input + u.output + u.cacheRead + u.cacheWrite;
+        var usd = p ? (u.input * p[0] + u.cacheWrite * p[0] * 1.25 + u.cacheRead * p[2] + u.output * p[1]) / 1e6 : 0;
+        if (spend.month !== monthNow()) { spend = { month: monthNow(), usd: 0, tokens: 0 }; }
+        spend.usd += usd;
+        spend.tokens += tokens;
+        try { window.localStorage.setItem(SPEND_KEY, JSON.stringify(spend)); } catch (e) {}
+        if (!opSpend) { opSpend = { usd: 0, tokens: 0, priced: true }; }
+        opSpend.usd += usd;
+        opSpend.tokens += tokens;
+        if (!p) { opSpend.priced = false; }
+        showSpend();
+    }
+    function showSpend() {
+        ui.spendLine.hidden = !opSpend;
+        if (!opSpend) { return; }
+        ui.spendLine.textContent = opSpend.priced ?
+            "Расход: " + money(opSpend.usd) + " за этот запрос, " + money(spend.usd) + " за месяц." :
+            "Расход: " + bigNumber(opSpend.tokens) + " токенов за этот запрос.";
+    }
+
+    // Запрос к нейросети: повторяет, когда сервер перегружен, слушается кнопки «Стоп» и считает расход.
+    // opts.quiet — проверка ключа: один запрос без повторов, без кнопки и без счётчика.
+    async function callAI(messages, maxTokens, system, opts) {
+        var quiet = !!(opts && opts.quiet);
+        var claude = settings.provider !== "openai";
+        var attempt = 0;
+        var out, wait, was;
+        if (quiet) { return claude ? callClaude(messages, maxTokens, system, true) : callOpenAI(messages, maxTokens, system, true); }
+        aiPending++;
+        showStop();
+        try {
+            while (true) {
+                if (aiStop.requested) { return stoppedReply(); }
+                out = await (claude ? callClaude(messages, maxTokens, system) : callOpenAI(messages, maxTokens, system));
+                if (out.usage) { addSpend(out.usage, claude); }
+                if (out.stopped) { return stoppedReply(); }
+                if (!out.retry || attempt >= AI_RETRY_MS.length) { return out; }
+                wait = AI_RETRY_MS[attempt];
+                if (/^\d+(\.\d+)?$/.test(out.retryAfter || "") && +out.retryAfter <= 60) { wait = Math.max(wait, Math.round(+out.retryAfter * 1000)); }
+                attempt++;
+                was = { text: ui.status.textContent, cls: ui.statusBox.className };
+                setStatus((out.status === 429 ? aiName() + ": слишком много запросов подряд" : "Сервер " + aiName() + " перегружен") +
+                    ", повторю через " + Math.ceil(wait / 1000) + " с (попытка " + (attempt + 1) + " из " + (AI_RETRY_MS.length + 1) + ")…", "busy");
+                if (await pause(wait)) { return stoppedReply(); }
+                ui.status.textContent = was.text;
+                ui.statusBox.className = was.cls;
+            }
+        } finally {
+            aiPending--;
+            showStop();
+        }
+    }
+
+    // Отправка с кнопкой «Стоп»: запрос обрывается, ответ — ошибка STOPPED.
+    function postAI(url, headers, body, quiet) {
+        var cancel = null;
+        var req = platform.postJSON(url, headers, body, 300000, function (c) { cancel = c; });
+        if (quiet) { return req; }
+        return Promise.race([req, untilStopped().then(function () {
+            if (cancel) { cancel(); }
+            throw new Error("STOPPED");
+        })]);
+    }
+
+    // Ошибка сети или сервера, после которой стоит повторить: перегрузка, лимит, оборванное соединение.
+    function retryStatus(status, data) { return AI_RETRY_STATUS.indexOf(status) >= 0 && (status !== 500 || !!(data && data.error)); }
+    function netFailure(e) {
+        var m = e && e.message ? e.message : String(e);
+        if (m === "STOPPED") { return stoppedReply(); }
+        return { ok: false, text: "", stopReason: "", error: "Нет связи с сервером: " + humanError(e), retry: /ECONNRESET|socket hang up|EPIPE|ECONNREFUSED|EAI_AGAIN/.test(m) };
+    }
+    function busyError(status, name, text) {
+        if (status === 429) { return name + ": слишком много запросов подряд (лимит ключа). Подождите минуту и повторите."; }
+        if (status === 529 || status === 503) { return "Сервер " + name + " сейчас перегружен. Повторите через минуту."; }
+        return text;
     }
 
     // История хранится в формате Claude; для ChatGPT картинки и текст перекладываются в его формат.
@@ -1335,7 +1463,7 @@
         return out;
     }
 
-    function callOpenAI(messages, maxTokens, system) {
+    function callOpenAI(messages, maxTokens, system, quiet) {
         var body = JSON.stringify({
             model: settings.openaiModel,
             max_completion_tokens: Math.max(maxTokens || 0, OPENAI_MAX_TOKENS),
@@ -1345,16 +1473,24 @@
             "authorization": "Bearer " + settings.openaiKey,
             "content-type": "application/json"
         };
-        return platform.postJSON(OPENAI_URL, headers, body, 300000).then(function (res) {
-            var data, choice, content;
-            var out = { ok: false, text: "", stopReason: "", error: "" };
+        return postAI(OPENAI_URL, headers, body, quiet).then(function (res) {
+            var data, choice, content, u;
+            var out = { ok: false, text: "", stopReason: "", error: "", status: res.status, retryAfter: res.retryAfter || "" };
             try { data = JSON.parse(res.text); } catch (e) {
                 out.error = "Не удалось разобрать ответ сервера (код " + res.status + ").";
+                out.retry = retryStatus(res.status, null);
                 return out;
             }
             if (data && data.error) {
-                out.error = "ChatGPT API: " + (data.error.message || data.error.code || data.error.type || "ошибка");
+                out.error = busyError(res.status, "ChatGPT", "ChatGPT API: " + (data.error.message || data.error.code || data.error.type || "ошибка"));
+                // 429 из-за исчерпанного баланса повторять бесполезно.
+                out.retry = retryStatus(res.status, data) && data.error.code !== "insufficient_quota";
                 return out;
+            }
+            u = data && data.usage;
+            if (u) {
+                content = u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens || 0;
+                out.usage = { input: (u.prompt_tokens || 0) - content, output: u.completion_tokens || 0, cacheRead: content, cacheWrite: 0 };
             }
             choice = data && data.choices instanceof Array ? data.choices[0] : null;
             if (!choice || !choice.message) {
@@ -1370,33 +1506,41 @@
             out.stopReason = choice.finish_reason === "length" ? "max_tokens" : (choice.finish_reason || "");
             out.ok = true;
             return out;
-        }, function (e) {
-            return { ok: false, text: "", stopReason: "", error: "Нет связи с сервером: " + humanError(e) };
-        });
+        }, netFailure);
     }
 
-    function callClaude(messages, maxTokens, system) {
+    // Кэш: инструкции (system) — отдельная метка, остальной диалог Claude кэширует сам (метка на запросе).
+    // Повторный запрос в том же диалоге читает общее начало из кэша — дешевле и быстрее.
+    function callClaude(messages, maxTokens, system, quiet) {
         var body = JSON.stringify({
             model: settings.model,
             max_tokens: maxTokens || MAX_TOKENS,
-            system: system || SYSTEM_PROMPT,
-            messages: messages
+            system: [{ type: "text", text: system || SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+            messages: messages,
+            cache_control: { type: "ephemeral" }
         });
         var headers = {
             "x-api-key": settings.apiKey,
             "anthropic-version": API_VERSION,
             "content-type": "application/json"
         };
-        return platform.postJSON(API_URL, headers, body, 300000).then(function (res) {
-            var data, i, block;
-            var out = { ok: false, text: "", stopReason: "", error: "" };
+        return postAI(API_URL, headers, body, quiet).then(function (res) {
+            var data, i, block, u;
+            var out = { ok: false, text: "", stopReason: "", error: "", status: res.status, retryAfter: res.retryAfter || "" };
             try { data = JSON.parse(res.text); } catch (e) {
                 out.error = "Не удалось разобрать ответ сервера (код " + res.status + ").";
+                out.retry = retryStatus(res.status, null);
                 return out;
             }
             if (data && data.error) {
-                out.error = "Claude API: " + (data.error.message || data.error.type || "ошибка");
+                out.error = busyError(res.status, "Claude", "Claude API: " + (data.error.message || data.error.type || "ошибка"));
+                out.retry = retryStatus(res.status, data) || data.error.type === "overloaded_error";
                 return out;
+            }
+            u = data && data.usage;
+            if (u) {
+                out.usage = { input: u.input_tokens || 0, output: u.output_tokens || 0,
+                    cacheRead: u.cache_read_input_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0 };
             }
             if (!data || !(data.content instanceof Array)) {
                 out.error = "Неожиданный ответ сервера (код " + res.status + ").";
@@ -1409,9 +1553,7 @@
             out.stopReason = data.stop_reason || "";
             out.ok = true;
             return out;
-        }, function (e) {
-            return { ok: false, text: "", stopReason: "", error: "Нет связи с сервером: " + humanError(e) };
-        });
+        }, netFailure);
     }
 
     // ---------------------------------------------------------- main flow
@@ -1460,6 +1602,10 @@
                 }
 
                 reply = await callAI(history);
+                if (reply.stopped) {
+                    giveUp(scriptsRun > 0 ? doneText() + "\nПроверка результата остановлена." + undoHint() : "Остановлено, скрипт не запускался.");
+                    return;
+                }
                 if (!reply.ok) {
                     giveUp(scriptsRun > 0 ?
                         doneText() + "\nПроверить результат не удалось: " + reply.error + undoHint() :
@@ -1691,6 +1837,7 @@
                 "- Do not change the composition's size or length, and do not touch other scenes' layers unless this scene continues them.\n\n" +
                 (note ? note + "\n\n" : "") + "[Project state]\n" + snap + "\n\n[User's request]\n" + text;
             content = framesWithTimes(frames, intro);
+            if (aiStop.requested) { fails.push(i + 1); continue; }
             setStatus("Сцена " + (i + 1) + " из " + plan.scenes.length + " (" + sc.start.toFixed(1) + "–" + sc.end.toFixed(1) + " с): жду " + aiName() + "…", "busy");
             for (tries = 0; tries < 2; tries++) {
                 reply = await callAI([{ role: "user", content: content }]);
@@ -1716,7 +1863,7 @@
         }
 
         // 4. Проверка всего ролика по кадрам (одна): AI сравнивает с референсом и правит, если что-то явно не так.
-        if (settings.selfCheck && info.fileAccess !== false && done > 0) {
+        if (settings.selfCheck && info.fileAccess !== false && done > 0 && !aiStop.requested) {
             setStatus("Готово сцен: " + done + " из " + plan.scenes.length + ". " + aiName() + " сверяет ролик с референсом…", "busy");
             try {
                 tdiff = [];
@@ -1752,7 +1899,7 @@
         setBusy(false);
         setStatus(done === plan.scenes.length ?
             "Готово: ролик " + ref.duration.toFixed(1) + " с собран по " + plan.scenes.length + " сценам — от начала до конца.\nОтменить: Cmd/Ctrl+Z, каждая сцена — отдельный шаг." :
-            "Собрано сцен: " + done + " из " + plan.scenes.length + "." + (fails.length ? " Не получились сцены: " + fails.join(", ") + " — попросите доделать их отдельно, например: «доделай сцену " + fails[0] + "»." : ""),
+            "Собрано сцен: " + done + " из " + plan.scenes.length + "." + (aiStop.requested ? " Остановлено, остальные сцены не собирались." : fails.length ? " Не получились сцены: " + fails.join(", ") + " — попросите доделать их отдельно, например: «доделай сцену " + fails[0] + "»." : ""),
             done ? "done" : "error");
     }
 
@@ -3069,7 +3216,7 @@
         ui.keyHint.textContent = "Проверяю…";
         ui.keyHint.className = "hint";
         settings = trial;
-        callAI([{ role: "user", content: "ping" }], 1).then(function (r) {
+        callAI([{ role: "user", content: "ping" }], 1, undefined, { quiet: true }).then(function (r) {
             settings = saved;
             ui.testKey.disabled = false;
             ui.keyHint.textContent = r.ok ? "Ключ работает." : r.error;
@@ -9409,6 +9556,7 @@
     enableMotion();
 
     ui.runBtn.addEventListener("click", onRun);
+    ui.stopBtn.addEventListener("click", requestStop);
     ui.fixBtn.addEventListener("click", onFix);
     ui.newBtn.addEventListener("click", onNew);
     enableScripts();

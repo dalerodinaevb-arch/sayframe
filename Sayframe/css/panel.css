@@ -262,6 +262,9 @@ textarea:focus, .field:focus {
 .status p { margin: 0; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
 .status.error p { color: var(--danger); }
 .status.done p { color: var(--text); }
+.status-text { flex: 1; min-width: 0; }
+.status p.spend-line { margin-top: 2px; font-size: 11px; color: var(--faint); }
+.stop-btn { flex: none; padding: 2px 10px; font-size: 11px; }
 
 .pulse {
   flex: none;
