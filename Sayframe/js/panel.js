@@ -289,6 +289,66 @@
         "if($i){$i.Save($args[0],[System.Drawing.Imaging.ImageFormat]::Png); 'OK'} " +
         "else {$f=[System.Windows.Forms.Clipboard]::GetFileDropList(); if($f.Count -gt 0){'FILE:'+$f[0]} else {'NOIMAGE'}}";
 
+    // Сочетания во всём After Effects. Панель слышит клавиши, только пока на ней фокус, а After Effects
+    // на Windows не называет зажатую клавишу (keyboardState.keyName пустой). Поэтому рядом с панелью
+    // работает маленький наблюдатель: он спрашивает у системы, какие клавиши зажаты, и, если в этот момент
+    // впереди After Effects, пишет «HIT id». Аргументы: файл-пульс (панель обновляет его каждые
+    // несколько секунд; перестал обновляться — панель закрыта, наблюдатель выходит) и файл со списком сочетаний.
+    var JXA_KEYWATCH = [
+        'ObjC.import("AppKit");',
+        'ObjC.import("ApplicationServices");',
+        "function run(argv) {",
+        "    var hb = argv[0], keys = JSON.parse($.NSString.stringWithContentsOfFileEncodingError(argv[1], 4, null).js);",
+        "    var fm = $.NSFileManager.defaultManager, so = $.NSFileHandle.fileHandleWithStandardOutput;",
+        "    var down = '', n = 0, i, k, f, hit, app, at;",
+        "    function say(t) { so.writeData($(t + '\\n').dataUsingEncoding(4)); }",
+        "    say('READY');",
+        "    while (true) {",
+        "        if (n++ % 40 === 0) {",
+        "            at = fm.attributesOfItemAtPathError(hb, null);",
+        "            if (at.isNil() || new Date() - at.fileModificationDate.js > 15000) { return; }",
+        "        }",
+        "        f = $.CGEventSourceFlagsState(0);",
+        "        hit = '';",
+        "        for (i = 0; i < keys.length; i++) {",
+        "            k = keys[i];",
+        "            if (!!(f & 0x40000) === k.ctrl && !!(f & 0x80000) === k.alt && !!(f & 0x20000) === k.shift && !!(f & 0x100000) === k.cmd &&",
+        "                    $.CGEventSourceKeyState(0, k.code)) { hit = k.id; break; }",
+        "        }",
+        "        if (hit && hit !== down) {",
+        "            app = $.NSWorkspace.sharedWorkspace.frontmostApplication;",
+        "            if (/AfterEffects/i.test(app.isNil() ? '' : String(app.bundleIdentifier.js))) { say('HIT ' + hit); }",
+        "        }",
+        "        down = hit;",
+        "        delay(0.05);",
+        "    }",
+        "}"
+    ].join("\n");
+    var PS_KEYWATCH = [
+        "param($hb, $list)",
+        "Add-Type -Namespace SF -Name K -MemberDefinition '[DllImport(\"user32.dll\")] public static extern short GetAsyncKeyState(int v); " +
+            "[DllImport(\"user32.dll\")] public static extern System.IntPtr GetForegroundWindow(); " +
+            "[DllImport(\"user32.dll\")] public static extern int GetWindowThreadProcessId(System.IntPtr h, out int p);'",
+        // Без @(…): в PowerShell 5 это завернуло бы весь список в ещё один массив.
+        "$keys = ConvertFrom-Json (Get-Content -Raw $list)",
+        "function Held($v) { return ([SF.K]::GetAsyncKeyState($v) -band 0x8000) -ne 0 }",
+        "[Console]::Out.WriteLine('READY'); [Console]::Out.Flush()",
+        "$down = ''; $n = 0",
+        "while ($true) {",
+        "  if ($n % 40 -eq 0) { if (-not (Test-Path $hb) -or ((Get-Date) - (Get-Item $hb).LastWriteTime).TotalSeconds -gt 15) { exit } }",
+        "  $n++",
+        "  $c = Held 0x11; $a = Held 0x12; $s = Held 0x10; $hit = ''",
+        "  foreach ($k in $keys) { if ($c -eq $k.ctrl -and $a -eq $k.alt -and $s -eq $k.shift -and (Held $k.code)) { $hit = $k.id; break } }",
+        "  if ($hit -and $hit -ne $down) {",
+        "    $p = 0; [void][SF.K]::GetWindowThreadProcessId([SF.K]::GetForegroundWindow(), [ref]$p)",
+        "    $name = ''; try { $name = (Get-Process -Id $p).ProcessName } catch {}",
+        "    if ($name -match 'AfterFX') { [Console]::Out.WriteLine('HIT ' + $hit); [Console]::Out.Flush() }",
+        "  }",
+        "  $down = $hit",
+        "  Start-Sleep -Milliseconds 50",
+        "}"
+    ].join("\r\n");
+
     // ------------------------------------------------------------ platform
     // Доступ к файлам, сети и системным командам. В After Effects это Node.js, встроенный в панель.
 
@@ -519,6 +579,19 @@
                         resolve({ code: err ? (err.code || 1) : 0, stdout: String(stdout || ""), stderr: String(stderr || (err ? err.message : "")) });
                     });
                 });
+            },
+            // Долгий процесс: onLine получает каждую строку его вывода, onExit — код выхода.
+            spawn: function (file, args, onLine, onExit) {
+                var child, rest = "";
+                try { child = cp.spawn(file, args, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true }); } catch (e) { onExit(-1); return { kill: function () {} }; }
+                child.stdout.on("data", function (d) {
+                    var lines = (rest + d.toString("utf8")).split(/\r?\n/);
+                    rest = lines.pop();
+                    lines.forEach(function (l) { if (l) { onLine(l); } });
+                });
+                child.on("error", function () { onExit(-1); });
+                child.on("exit", function (code) { onExit(code === null ? -1 : code); });
+                return { kill: function () { try { child.kill(); } catch (e) {} } };
             },
             pickFile: pickFile,
             pickFiles: pickFiles,
@@ -6137,6 +6210,8 @@
         if (id) {
             e.preventDefault();
             e.stopPropagation();
+            // Это же нажатие уже пришло от наблюдателя за клавишами.
+            if (lastPanelHotkey.outside && lastPanelHotkey.id === id && Date.now() - lastPanelHotkey.at < 800) { return; }
             lastPanelHotkey = { id: id, at: Date.now() };
             runHotkey(id);
         }
@@ -6354,6 +6429,10 @@
     var HOST_KEY_EVENT = "com.sayframe.hotkey";
     var lastPanelHotkey = { id: "", at: 0 };
 
+    var KEYWATCH_BEAT_MS = 3000;
+    var hostKeyList = [];
+    var keyWatch = null;        // { proc, list, ready, timer, hb } — наблюдатель за клавишами (см. JXA_KEYWATCH)
+
     function watchHostHotkeys(map) {
         var list = [], k, parts;
         for (k in map) {
@@ -6362,15 +6441,75 @@
             list.push({ id: k, key: parts[parts.length - 1], ctrl: parts.indexOf("Ctrl") >= 0, alt: parts.indexOf("Alt") >= 0,
                 shift: parts.indexOf("Shift") >= 0, cmd: parts.indexOf("Cmd") >= 0 });
         }
-        host("setHotkeys", [list]).catch(function () {});
+        hostKeyList = list;
+        startKeyWatch(list);
+        // Пока наблюдатель не заработал, клавиши смотрит сам After Effects (на Mac он называет клавишу).
+        host("setHotkeys", [keyWatch && keyWatch.ready ? [] : list]).catch(function () {});
+    }
+
+    function stopKeyWatch() {
+        if (!keyWatch) { return; }
+        clearInterval(keyWatch.timer);
+        keyWatch.proc.kill();
+        platform.remove(keyWatch.hb);
+        keyWatch = null;
+    }
+
+    async function startKeyWatch(list) {
+        var watch = [], tmp, hb, listFile, script, w;
+        list.forEach(function (x) {
+            var code = keyCodeOf(x.key);
+            if (code !== null) { watch.push({ id: x.id, code: code, ctrl: x.ctrl, alt: x.alt, shift: x.shift, cmd: x.cmd }); }
+        });
+        if (keyWatch && JSON.stringify(keyWatch.list) === JSON.stringify(watch)) { return; }
+        stopKeyWatch();
+        if (!watch.length || !platform.available || typeof platform.spawn !== "function") { return; }
+        tmp = platform.tmpdir();
+        hb = platform.join(tmp, "sayframe_keys_" + Date.now() + ".beat");
+        listFile = hb.replace(/\.beat$/, ".json");
+        script = hb.replace(/\.beat$/, platform.isWindows() ? ".ps1" : ".js");
+        w = keyWatch = { proc: { kill: function () {} }, list: watch, ready: false, timer: 0, hb: hb };
+        try {
+            await platform.writeText(hb, String(Date.now()));
+            await platform.writeText(listFile, JSON.stringify(watch));
+            await platform.writeText(script, platform.isWindows() ? PS_KEYWATCH : JXA_KEYWATCH);
+        } catch (e) { if (keyWatch === w) { keyWatch = null; } return; }
+        if (keyWatch !== w) { return; }
+        w.timer = setInterval(function () { platform.writeText(hb, String(Date.now())).catch(function () {}); }, KEYWATCH_BEAT_MS);
+        w.proc = platform.spawn(platform.isWindows() ? "powershell" : "osascript",
+            platform.isWindows() ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, hb, listFile] : ["-l", "JavaScript", script, hb, listFile],
+            function (line) {
+                if (keyWatch !== w) { return; }
+                if (line === "READY" && !w.ready) {
+                    w.ready = true;
+                    host("setHotkeys", [[]]).catch(function () {});
+                } else if (line.indexOf("HIT ") === 0) {
+                    outsideHotkey(line.substring(4));
+                }
+            },
+            function () {
+                platform.remove(script);
+                platform.remove(listFile);
+                if (keyWatch !== w) { return; }
+                // Наблюдатель не запустился или упал — клавиши снова смотрит After Effects.
+                clearInterval(w.timer);
+                platform.remove(hb);
+                keyWatch = null;
+                host("setHotkeys", [hostKeyList]).catch(function () {});
+            });
     }
 
     function onHostHotkey(ev) {
-        var id = ev && ev.data !== undefined ? String(ev.data) : "";
+        outsideHotkey(ev && ev.data !== undefined ? String(ev.data) : "");
+    }
+
+    // Нажатие пришло не из самой панели: от After Effects или от наблюдателя.
+    function outsideHotkey(id) {
         if (!id || !HOTKEY_ACTIONS.some(function (a) { return a.id === id; })) { return; }
         if (!ui.sheet.hidden || !ui.modal.hidden) { return; }
         // Панель уже сама поймала это нажатие.
-        if (lastPanelHotkey.id === id && Date.now() - lastPanelHotkey.at < 800) { return; }
+        if (!lastPanelHotkey.outside && lastPanelHotkey.id === id && Date.now() - lastPanelHotkey.at < 800) { return; }
+        lastPanelHotkey = { id: id, at: Date.now(), outside: true };
         try { window.focus(); } catch (e) {}
         runHotkey(id);
     }
@@ -9608,6 +9747,7 @@
     enableAc();
     listenHostHotkeys();
     registerHotkeys();
+    window.addEventListener("unload", stopKeyWatch);
     hotkeyHint();
     ui.settingsBtn.addEventListener("click", openSettings);
     ui.settingsClose.addEventListener("click", function () { closeSettings(false); });

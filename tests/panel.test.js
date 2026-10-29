@@ -691,7 +691,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     });
 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false }, opts.settings || {});
-    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl }) => {
+    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
       window.__SAYFRAME_TEST_UPDATE_KEY__ = updateKey;
       window.__SAYFRAME_TEST_RETRY_MS__ = [40, 40, 40];
@@ -733,7 +733,16 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         openExternal: (u) => { window.__opened.push(u); return true; },
         reload: () => { window.__plat("reloaded", []).then(() => window.location.reload()); }
       };
-    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "" });
+      // opts.keyWatch: the platform can start long processes (the key watcher). The test plays its output.
+      if (keyWatch) {
+        window.__spawns = [];
+        window.__SAYFRAME_TEST_PLATFORM__.spawn = (file, args, onLine, onExit) => {
+          const s = { file, args, onLine, onExit, killed: false };
+          window.__spawns.push(s);
+          return { kill() { s.killed = true; } };
+        };
+      }
+    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch });
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
     // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
@@ -1924,6 +1933,48 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsClose");
   t = await holdKeys(p, { keyName: "3", altKey: true });
   check("K5 a tab shortcut from outside switches tabs", (await p.page.locator("#tabMotion").getAttribute("aria-selected")) === "true" && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  console.log("\n=== hotkeys: key watcher ===");
+  const spawns = (p) => p.page.evaluate(() => window.__spawns.map((s) => ({ file: s.file, args: s.args, killed: s.killed })));
+  const watcherSays = (p, i, line) => p.page.evaluate(({ i, line }) => window.__spawns[i].onLine(line), { i, line });
+  const hostKeys = (p) => JSON.parse(vm.runInContext("JSON.stringify($.global.__sayframeKeys)", p.ae.ctx));
+  p = await open({ keyWatch: true, selectedLayers: [mkFxLayer("A")] });
+  await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
+  t = await spawns(p);
+  c = t[0] && t[0].args;
+  check("KW1 the panel starts the key watcher (osascript on Mac) with a pulse file and the list of shortcuts", t.length === 1 && t[0].file === "osascript" && c[0] === "-l" && c[1] === "JavaScript" &&
+    /CGEventSourceKeyState/.test(fs.readFileSync(c[2], "utf8")) && fs.existsSync(c[3]) &&
+    JSON.stringify(JSON.parse(fs.readFileSync(c[4], "utf8"))) === JSON.stringify([{ id: "console", code: 49, ctrl: true, alt: false, shift: false, cmd: false }]), JSON.stringify(t));
+  await p.page.waitForTimeout(200);
+  check("KW2 until the watcher answers, After Effects keeps watching the keys", hostKeys(p).length === 1);
+  await watcherSays(p, 0, "READY");
+  await p.page.waitForTimeout(200);
+  check("KW2 once it is ready, After Effects stops polling the keyboard", hostKeys(p).length === 0 && p.ae.log.tasks.every((x) => x.cancelled), JSON.stringify(hostKeys(p)));
+  await p.page.evaluate(() => document.activeElement && document.activeElement.blur());
+  await watcherSays(p, 0, "HIT console");
+  await p.page.waitForTimeout(100);
+  check("KW3 a press reported by the watcher opens the search", await p.page.locator("#fxConsole").isVisible());
+  await p.page.keyboard.press("Control+Space");
+  await p.page.waitForTimeout(100);
+  check("KW3 the same press caught by the panel too does not close it again", await p.page.locator("#fxConsole").isVisible());
+  await p.page.keyboard.press("Escape");
+  await watcherSays(p, 0, "HIT nothing");
+  await watcherSays(p, 0, "garbage");
+  check("KW3 unknown lines are ignored", (await p.page.locator("#fxConsole").isHidden()) && p.errors.length === 0, p.errors.join(" | "));
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click('#hotkeys [data-action="tabTools"]'); await p.page.keyboard.press("Alt+Digit3");
+  await p.page.waitForFunction(() => window.__spawns.length === 2, null, { timeout: 5000 }).catch(() => {});
+  t = await spawns(p);
+  check("KW4 a changed shortcut restarts the watcher with the new list", t.length === 2 && t[0].killed && !t[1].killed && JSON.parse(fs.readFileSync(t[1].args[4], "utf8")).map((x) => x.id + ":" + x.code + ":" + x.alt).join() === "console:49:false,tabTools:20:true", JSON.stringify(t));
+  await p.page.click("#settingsClose");
+  await watcherSays(p, 1, "READY");
+  await watcherSays(p, 1, "HIT tabTools");
+  await p.page.waitForTimeout(100);
+  check("KW4 the new shortcut works from outside", (await p.page.locator("#tabMotion").getAttribute("aria-selected")) === "true");
+  await p.page.evaluate(() => window.__spawns[1].onExit(1));
+  await p.page.waitForTimeout(200);
+  check("KW5 if the watcher stops, After Effects watches the keys again", hostKeys(p).length === 2 && p.errors.length === 0, JSON.stringify(hostKeys(p)));
   await p.close();
 
   console.log("\n=== animation library ===");
