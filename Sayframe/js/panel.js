@@ -10,7 +10,7 @@
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
     // только у автора; панель ставит обновление, только если подпись сошлась. Пустая строка — подпись не проверяется.
-    var RELEASE_PUBLIC_KEY = typeof window.__SAYFRAME_TEST_UPDATE_KEY__ === "string" ? window.__SAYFRAME_TEST_UPDATE_KEY__ : "";
+    var RELEASE_PUBLIC_KEY = typeof window.__SAYFRAME_TEST_UPDATE_KEY__ === "string" ? window.__SAYFRAME_TEST_UPDATE_KEY__ : "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAv3iSH8Po5W0sMOF8hW8W\n8r0LdTLtuzja2qEzUHc6Bd0XW0PlqpIjMIZBPrrlw6VLsQ1aU31k8fSEPW9j2XWN\nTQCzDoEEMiP59d9Al1MkV9RZ1GcdxqvX9icKlM2F6U/innlB7xj9mc66XZTpukJE\nBnAC01yYYNCtVT5Jd997oFjl8TfG6LwX0lanQTQtpeNM7hTxypaCVXgAD/qA16SI\nSIdpwJrgN6v07QgkRyZYX/GMogOJGzJR0EIo2PuFwan7oPMY8nZFpVSG53tNHPvD\nYQ0OHFYF2IweGr55Z8+R1yXoUx29sZjNRsxB80d2OzzkrCg/Cic21vM1FbbEPg3O\nkCuiNon9HnmktZPWGCtw/LkV/WiPkNBa241sPcYVO11mdU22XAJ/fBfm1XSWdDPi\nqN3Fp7KOrKxFYWQK1RWHOeqhzHKrnIfl17zqxYThmWBq34NcIqqcnC6Rlx9jrX0+\ng+xBoKgd1ddFe8r8LDqgs2nimmpx0N2TZUcd1YB+j/VhAgMBAAE=\n-----END PUBLIC KEY-----\n";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
     var TAB_KEY = "sayframe.tab.v1";
     var TAB_ORDER_KEY = "sayframe.tabOrder.v1";
