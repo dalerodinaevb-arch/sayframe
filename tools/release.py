@@ -8,6 +8,12 @@
   python3 tools/release.py --build
       Пересобирает установщики и version.json для текущей версии (номер и описание не меняются).
 
+  python3 tools/release.py --set-key public.pem
+      Записывает в panel.js открытый ключ выпусков. С этого выпуска панель ставит только обновления,
+      подписанные закрытым ключом. Создать пару ключей (один раз, на своём компьютере):
+          openssl genrsa -out ~/.sayframe/release-key.pem 3072
+          openssl rsa -in ~/.sayframe/release-key.pem -pubout -out public.pem
+
   python3 tools/release.py --check
       Ничего не меняет. Проверяет, что номера версий совпадают, а version.json и установщики
       соответствуют файлам панели. Код выхода 1, если что-то разошлось.
@@ -15,7 +21,17 @@
 Как пользователи получают обновление: панель читает version.json из репозитория
 (адрес собирается из tools/config.json). Если там версия новее установленной, панель
 показывает плашку и по кнопке скачивает файлы из папки Sayframe/, сверяя sha256.
+
+Подпись: если в panel.js записан открытый ключ, version.json получает поле signed —
+{"payload": "<описание выпуска в JSON>", "sig": "<RSA-SHA256, base64>"}. Панель верит только payload
+с правильной подписью. Закрытый ключ берётся из переменной SAYFRAME_RELEASE_KEY (сам PEM или он же
+в base64), из файла по пути SAYFRAME_RELEASE_KEY_FILE или из ~/.sayframe/release-key.pem.
+Нужна программа openssl.
 """
+import base64
+import os
+import subprocess
+import tempfile
 import hashlib
 import io
 import json
@@ -43,6 +59,7 @@ VERSION_RE = re.compile(r'(var VERSION = ")(\d+\.\d+\.\d+)(";)')
 URL_RE = re.compile(r'(__SAYFRAME_TEST_UPDATE_URL__ : ")([^"]*)(";)')
 BUNDLE_RE = re.compile(r'(ExtensionBundleVersion=")(\d+\.\d+\.\d+)(")')
 EXT_RE = re.compile(r'(<Extension Id="com\.sayframe\.ae\.panel" Version=")(\d+\.\d+\.\d+)(")')
+KEY_RE = re.compile(r'(__SAYFRAME_TEST_UPDATE_KEY__ : ")([^"]*)(";)')
 PLIST_RE = re.compile(r'(<key>CFBundleShortVersionString</key>\s*<string>)(\d+\.\d+\.\d+)(</string>)')
 
 
@@ -260,6 +277,93 @@ def dump(info):
     return json.dumps(info, ensure_ascii=False, indent=2) + "\n"
 
 
+# ---------- подпись выпуска
+
+def panel_key():
+    """Открытый ключ из panel.js (PEM) или пустая строка."""
+    m = KEY_RE.search(read(PANEL_JS))
+    if not m:
+        fail("в panel.js не найдено место для открытого ключа (RELEASE_PUBLIC_KEY)")
+    return m.group(2).replace("\\n", "\n")
+
+
+def private_key():
+    """Закрытый ключ (PEM) или None."""
+    env = os.environ.get("SAYFRAME_RELEASE_KEY", "").strip()
+    if env:
+        if "BEGIN" in env:
+            return env.replace("\\n", "\n") + "\n"
+        try:
+            return base64.b64decode(env).decode("ascii")
+        except (ValueError, UnicodeDecodeError):
+            fail("SAYFRAME_RELEASE_KEY — не PEM и не base64 от PEM")
+    path = os.environ.get("SAYFRAME_RELEASE_KEY_FILE", "") or str(Path.home() / ".sayframe" / "release-key.pem")
+    if os.path.exists(path):
+        return Path(path).read_text("ascii")
+    return None
+
+
+def openssl(args, data=None):
+    try:
+        r = subprocess.run(["openssl"] + args, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except FileNotFoundError:
+        fail("для подписи выпуска нужна программа openssl")
+    return r
+
+
+def sign(payload, pem):
+    with tempfile.TemporaryDirectory() as d:
+        key = os.path.join(d, "key.pem")
+        fd = os.open(key, os.O_WRONLY | os.O_CREAT, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(pem)
+        r = openssl(["dgst", "-sha256", "-sign", key], payload.encode("utf-8"))
+    if r.returncode != 0 or not r.stdout:
+        fail("openssl не смог подписать выпуск: " + r.stderr.decode("utf-8", "replace").strip())
+    return base64.b64encode(r.stdout).decode("ascii")
+
+
+def verify(payload, sig, public_pem):
+    with tempfile.TemporaryDirectory() as d:
+        pub, sf, pf = (os.path.join(d, n) for n in ("pub.pem", "sig.bin", "payload"))
+        Path(pub).write_text(public_pem, "ascii")
+        try:
+            Path(sf).write_bytes(base64.b64decode(sig))
+        except ValueError:
+            return False
+        Path(pf).write_bytes(payload.encode("utf-8"))
+        return openssl(["dgst", "-sha256", "-verify", pub, "-signature", sf, pf]).returncode == 0
+
+
+def signed(info):
+    """version.json с подписью; без открытого ключа в panel.js — как раньше, без подписи."""
+    public_pem = panel_key()
+    if not public_pem:
+        print("ВНИМАНИЕ: в panel.js нет открытого ключа — выпуск без подписи (tools/release.py --set-key).")
+        return info
+    pem = private_key()
+    if pem is None:
+        fail("нет закрытого ключа выпусков: задайте SAYFRAME_RELEASE_KEY или положите ключ в ~/.sayframe/release-key.pem")
+    payload = json.dumps(info, ensure_ascii=False, separators=(",", ":"))
+    sig = sign(payload, pem)
+    if not verify(payload, sig, public_pem):
+        fail("закрытый ключ не подходит к открытому ключу в panel.js")
+    out = dict(info)
+    out["signed"] = {"payload": payload, "sig": sig}
+    return out
+
+
+def set_key(path):
+    pem = Path(path).read_text("ascii").strip()
+    if not pem.startswith("-----BEGIN PUBLIC KEY-----") or not pem.endswith("-----END PUBLIC KEY-----"):
+        fail("%s — не открытый ключ PEM (нужен файл от openssl rsa -pubout)" % path)
+    if openssl(["pkey", "-pubin", "-noout"], pem.encode("ascii")).returncode != 0:
+        fail("%s — openssl не узнаёт этот ключ" % path)
+    text = read(PANEL_JS)
+    write(PANEL_JS, KEY_RE.sub(lambda m: m.group(1) + pem.replace("\n", "\\n") + "\\n" + m.group(3), text, count=1))
+    print("Открытый ключ записан в panel.js. Следующий выпуск будет подписан.")
+
+
 def stamp_of(day):
     """Время файлов внутри архивов: полночь накануне даты выпуска. В архиве zip время записано без
     часового пояса, поэтому «сегодня, 12:00» у пользователя в другом поясе оказалось бы в будущем."""
@@ -269,15 +373,29 @@ def stamp_of(day):
     return (prev.year, prev.month, prev.day, 0, 0, 0)
 
 
+def key_ready():
+    """До любых изменений: если панель ждёт подпись, закрытый ключ должен быть и подходить к открытому."""
+    public_pem = panel_key()
+    if not public_pem:
+        return
+    pem = private_key()
+    if pem is None:
+        fail("нет закрытого ключа выпусков: задайте SAYFRAME_RELEASE_KEY или положите ключ в ~/.sayframe/release-key.pem")
+    if not verify("sayframe", sign("sayframe", pem), public_pem):
+        fail("закрытый ключ не подходит к открытому ключу в panel.js")
+
+
 def build(version, day, notes, c):
+    key_ready()
     set_everywhere(version, update_url(c))
     files, info = info_for(version, day, notes, c)
+    out = signed(info)  # до записи файлов: без подходящего ключа ничего не меняется
     MAC_ZIP.parent.mkdir(exist_ok=True)
     MAC_ZIP.write_bytes(build_mac(files, stamp_of(day)))
     WIN_ZIP.write_bytes(build_win(files, stamp_of(day)))
     WIN_EXE.write_bytes(build_win_exe(files, stamp_of(day)))
     write(INSTALL_SH, install_sh(c))
-    write(VERSION_JSON, dump(info))
+    write(VERSION_JSON, dump(out))
     return info
 
 
@@ -289,6 +407,16 @@ def check(c):
         problems.append("нет version.json — запустите tools/release.py с номером версии")
     else:
         versions["version.json"] = info.get("version", "?")
+    if info is not None and panel_key():
+        s = info.get("signed") or {}
+        plain = dict(info)
+        plain.pop("signed", None)
+        if not isinstance(s.get("payload"), str) or not isinstance(s.get("sig"), str):
+            problems.append("version.json не подписан, а в panel.js есть открытый ключ — запустите --build с закрытым ключом")
+        elif not verify(s["payload"], s["sig"], panel_key()):
+            problems.append("подпись version.json не сходится с открытым ключом в panel.js")
+        elif json.loads(s["payload"]) != plain:
+            problems.append("подписанное описание в version.json расходится с остальными полями — запустите --build")
     if len(set(versions.values())) != 1:
         problems.append("номера версий расходятся: " + ", ".join("%s = %s" % kv for kv in versions.items()))
     url = one(URL_RE, read(PANEL_JS), "panel.js")
@@ -325,6 +453,9 @@ def main(argv):
         if problems:
             sys.exit(1)
         print("Всё в порядке: версия %s, адрес обновлений %s" % (one(VERSION_RE, read(PANEL_JS), "panel.js"), update_url(c)))
+        return
+    if len(argv) == 2 and argv[0] == "--set-key":
+        set_key(argv[1])
         return
     if argv == ["--build"]:
         if not VERSION_JSON.exists():
