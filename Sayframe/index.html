@@ -83,6 +83,7 @@
 
     <!-- Раздел AI (внутреннее имя claude): задача словами, референс, запуск и ответ -->
     <div id="viewClaude" class="view" role="tabpanel" aria-labelledby="tabClaude">
+    <div class="claude-main">
     <section class="card composer">
       <!-- Быстрые задачи: готовые просьбы одной кнопкой; свои тоже можно сохранить -->
       <div id="quickBox" class="quick">
@@ -141,21 +142,6 @@
       <button id="newBtn" class="ghost">Новый диалог</button>
     </div>
 
-    <!-- Выражения: нейросеть ставит выражение на выделенные свойства или чинит выражения с ошибками -->
-    <section id="exprCard" class="card expr">
-      <button id="exprToggle" class="scripts-head" aria-expanded="true" aria-controls="exprBody" title="Выражения (expressions) для выделенных свойств">
-        <b>Выражения</b>
-        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg>
-      </button>
-      <div id="exprBody" class="expr-body">
-        <textarea id="exprWish" rows="2" placeholder="Что должно делать выделенное свойство? Например: пусть качается" aria-label="Что должно делать выражение"></textarea>
-        <div class="expr-actions">
-          <button id="exprApplyBtn" class="ghost" title="Выделите свойство на таймлайне (например, Position), напишите, что нужно, и нажмите">Поставить на выделенное</button>
-          <button id="exprFixBtn" class="ghost" title="Найти в открытой композиции выражения с ошибкой и починить их">Починить ошибки</button>
-        </div>
-      </div>
-    </section>
-
     <section id="replyCard" class="card reply" hidden>
       <p id="replyText"></p>
       <details id="codeBox">
@@ -172,6 +158,24 @@
       </div>
     </section>
 
+    </div>
+
+    <div class="claude-side">
+    <!-- Выражения: нейросеть ставит выражение на выделенные свойства или чинит выражения с ошибками -->
+    <section id="exprCard" class="card expr">
+      <button id="exprToggle" class="scripts-head" aria-expanded="true" aria-controls="exprBody" title="Выражения (expressions) для выделенных свойств">
+        <b>Выражения</b>
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg>
+      </button>
+      <div id="exprBody" class="expr-body">
+        <textarea id="exprWish" rows="2" placeholder="Что должно делать выделенное свойство? Например: пусть качается" aria-label="Что должно делать выражение"></textarea>
+        <div class="expr-actions">
+          <button id="exprApplyBtn" class="ghost" title="Выделите свойство на таймлайне (например, Position), напишите, что нужно, и нажмите">Поставить на выделенное</button>
+          <button id="exprFixBtn" class="ghost" title="Найти в открытой композиции выражения с ошибкой и починить их">Починить ошибки</button>
+        </div>
+      </div>
+    </section>
+
     <!-- Мои скрипты: сохранённые удачные скрипты, запускаются одной кнопкой, без нейросети -->
     <section id="scriptsCard" class="card scripts" hidden>
       <button id="scriptsToggle" class="scripts-head" aria-expanded="true" aria-controls="scriptsList">
@@ -180,6 +184,7 @@
       </button>
       <ul id="scriptsList" class="scripts-list"></ul>
     </section>
+    </div>
 
     </div>
 
@@ -397,7 +402,7 @@
       </div>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Сдвиг во времени»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
-    <section class="card tool-card paste-card" data-tool="paste" data-info="Картинка из буфера|Кладёт картинку из буфера обмена — скриншот или копию из браузера — в проект и в отдельную композицию. То же самое делает Cmd/Ctrl+V, когда курсор в панели." aria-label="Картинка из буфера" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card paste-card solo" data-tool="paste" data-info="Картинка из буфера|Кладёт картинку из буфера обмена — скриншот или копию из браузера — в проект и в отдельную композицию. То же самое делает Cmd/Ctrl+V, когда курсор в панели." aria-label="Картинка из буфера" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Картинка из буфера»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="pasteOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="pasteHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
@@ -412,12 +417,12 @@
           <path d="M7.5 16.5l3-3.2 2.4 2.2 2-1.9 1.6 2.9"/>
           <circle cx="9.3" cy="10.3" r="1.1"/>
         </svg>
-        <span>Вставить</span>
+        <span>Вставить картинку</span>
       </button>
       <small id="pasteHint" class="paste-hint">Или нажмите Cmd/Ctrl+V, когда курсор в этой панели</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Картинка из буфера»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
-    <section class="card tool-card organize-card" data-tool="organize" data-info="Порядок в проекте|Organize раскладывает окно Project по папкам: композиции, прекомпозиции, видео, аудио, картинки и солиды. Файлы на диске и связи не меняются. Отменить — Cmd/Ctrl+Z." aria-label="Порядок в проекте" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card organize-card solo" data-tool="organize" data-info="Порядок в проекте|Organize раскладывает окно Project по папкам: композиции, прекомпозиции, видео, аудио, картинки и солиды. Файлы на диске и связи не меняются. Отменить — Cmd/Ctrl+Z." aria-label="Порядок в проекте" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Порядок в проекте»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="organizeOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="organizeHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
@@ -431,12 +436,12 @@
           <path d="M8 12.5h8"/>
           <path d="M8 15.5h5"/>
         </svg>
-        <span>Organize</span>
+        <span>По папкам</span>
       </button>
       <small id="organizeHint" class="paste-hint">Композиции, прекомпозиции, видео, аудио, картинки и солиды — по своим папкам. Файлы и связи не меняются. Отменить — Cmd/Ctrl+Z</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Порядок в проекте»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
-    <section class="card tool-card decompose-card" data-tool="decompose" data-info="Декомпоз|Выделите в композиции слой-прекомпозицию и нажмите Decompose: всё, что внутри неё, встанет в композицию на её место — в том же порядке, в то же время и там же на экране. Сам слой-прекомпозиция убирается, сама прекомпозиция остаётся в проекте. Отменить — Cmd/Ctrl+Z." aria-label="Декомпоз" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card decompose-card solo" data-tool="decompose" data-info="Декомпоз|Выделите в композиции слой-прекомпозицию и нажмите Decompose: всё, что внутри неё, встанет в композицию на её место — в том же порядке, в то же время и там же на экране. Сам слой-прекомпозиция убирается, сама прекомпозиция остаётся в проекте. Отменить — Cmd/Ctrl+Z." aria-label="Декомпоз" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Декомпоз»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="decomposeOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="decomposeHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
@@ -452,12 +457,12 @@
           <path d="M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15"/>
           <path d="M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>
         </svg>
-        <span>Decompose</span>
+        <span>Разобрать</span>
       </button>
       <small id="decomposeHint" class="paste-hint">Выделите слой-прекомпозицию: всё, что внутри, встанет на её место. Отменить — Cmd/Ctrl+Z</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Декомпоз»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
-    <section class="card tool-card cache-card" data-tool="cache" data-info="Кэш|Clear cache одним щелчком очищает память After Effects: кадры RAM-превью, кэш изображений, снимки и историю отмены — то же, что Edit > Purge > All Memory. Помогает, когда After Effects тормозит или пишет, что не хватает памяти. Проект и файлы не меняются, но Cmd/Ctrl+Z после этого не вернёт прежние шаги." aria-label="Кэш" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card cache-card solo" data-tool="cache" data-info="Кэш|Clear cache одним щелчком очищает память After Effects: кадры RAM-превью, кэш изображений, снимки и историю отмены — то же, что Edit > Purge > All Memory. Помогает, когда After Effects тормозит или пишет, что не хватает памяти. Проект и файлы не меняются, но Cmd/Ctrl+Z после этого не вернёт прежние шаги." aria-label="Кэш" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Кэш»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="cacheOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="cacheHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
@@ -472,12 +477,12 @@
           <path d="M7.6 15.9l2.6-2.6"/>
           <path d="M10.4 17.9l1.6-1.6"/>
         </svg>
-        <span>Clear cache</span>
+        <span>Очистить кэш</span>
       </button>
       <small id="cacheHint" class="paste-hint">Очищает память After Effects. Проект не меняется, но прежние шаги Cmd/Ctrl+Z уже не вернёт</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Кэш»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
-    <section class="card tool-card nullp-card" data-tool="nullp" data-info="Null / Parent|Одна кнопка, действие зависит от выделения. Ничего не выделено — новый Null Object в центре композиции. Выделено несколько слоёв — новый Null встаёт посередине между ними и становится их родителем (Parent). Выделен один слой или Null — выделяются и перечисляются все его дочерние слои." aria-label="Null / Parent" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card nullp-card solo" data-tool="nullp" data-info="Null / Parent|Одна кнопка, действие зависит от выделения. Ничего не выделено — новый Null Object в центре композиции. Выделено несколько слоёв — новый Null встаёт посередине между ними и становится их родителем (Parent). Выделен один слой или Null — выделяются и перечисляются все его дочерние слои." aria-label="Null / Parent" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Null / Parent»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="nullpOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="nullpHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
@@ -497,7 +502,7 @@
       <small id="nullpHint" class="paste-hint">Ничего не выделено — новый Null. Несколько слоёв — Null станет их родителем. Один слой — покажу его детей</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Null / Parent»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
-    <section class="card tool-card unused-card" data-tool="unused" data-info="Чистка|Remove unused убирает из проекта все файлы, которые не используются ни в одной композиции: видео, картинки, звук, солиды. То же, что File > Dependencies > Remove Unused Footage. С диска ничего не удаляется — только из окна Project. Отменить — Cmd/Ctrl+Z." aria-label="Чистка" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card unused-card solo" data-tool="unused" data-info="Чистка|Remove unused убирает из проекта все файлы, которые не используются ни в одной композиции: видео, картинки, звук, солиды. То же, что File > Dependencies > Remove Unused Footage. С диска ничего не удаляется — только из окна Project. Отменить — Cmd/Ctrl+Z." aria-label="Чистка" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Чистка»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="unusedOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="unusedHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
@@ -512,12 +517,12 @@
           <path d="M6.5 7l.9 11.6a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/>
           <path d="M10 11v5M14 11v5"/>
         </svg>
-        <span>Remove unused</span>
+        <span>Удалить лишнее</span>
       </button>
       <small id="unusedHint" class="paste-hint">Убирает из проекта файлы, которые нигде не используются. С диска ничего не удаляется. Отменить — Cmd/Ctrl+Z</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Чистка»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
-    <section class="card tool-card cutout-card" data-tool="cutout" data-info="Вырезка|Выделите в композиции слой с фото и нажмите Cut out: откроется окно с этим фото. Щёлкните по тому, что нужно оставить, — фон уберётся. Alt+щелчок убирает лишнее, кисти «Оставить» и «Убрать» поправляют край. «Готово» — фото на слое заменяется вырезанным PNG с прозрачным фоном (или ложится новым слоем сверху). Оригинал остаётся в проекте. Отменить — Cmd/Ctrl+Z." aria-label="Вырезка" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card cutout-card solo" data-tool="cutout" data-info="Вырезка|Выделите в композиции слой с фото и нажмите Cut out: откроется окно с этим фото. Щёлкните по тому, что нужно оставить, — фон уберётся. Alt+щелчок убирает лишнее, кисти «Оставить» и «Убрать» поправляют край. «Готово» — фото на слое заменяется вырезанным PNG с прозрачным фоном (или ложится новым слоем сверху). Оригинал остаётся в проекте. Отменить — Cmd/Ctrl+Z." aria-label="Вырезка" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Вырезка»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="cutoutOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="cutoutHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
@@ -532,7 +537,7 @@
           <path d="M8.6 8l11.4 9.5"/>
           <path d="M8.6 16l11.4-9.5"/>
         </svg>
-        <span>Cut out</span>
+        <span>Вырезать фон</span>
       </button>
       <small id="cutoutHint" class="paste-hint">Выделите слой с фото: щёлкните по тому, что оставить, — фон уберётся. Отменить — Cmd/Ctrl+Z</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Вырезка»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
@@ -835,12 +840,21 @@
         </div>
 
         <div class="group">
-          <label for="panelWidth">Ширина полей и кнопок</label>
-          <div class="width-row">
-            <input id="panelWidth" class="range" type="range" min="280" max="640" step="10" value="380">
-            <output id="panelWidthVal" for="panelWidth">380 px</output>
+          <label class="switch">
+            <input id="panelFit" type="checkbox">
+            <span class="track"></span>
+            <span class="text">На всю ширину панели
+              <small>Поля и кнопки тянутся вместе с панелью After Effects. В широкой панели раздел AI встаёт в две колонки.</small>
+            </span>
+          </label>
+          <div id="widthRow" class="width-pick">
+            <label for="panelWidth">Ширина полей и кнопок</label>
+            <div class="width-row">
+              <input id="panelWidth" class="range" type="range" min="280" max="640" step="10" value="380">
+              <output id="panelWidthVal" for="panelWidth">380 px</output>
+            </div>
+            <p class="hint">Поля и кнопки в разделах AI и «Проекты» остаются такой ширины у левого края, даже если растянуть панель в After Effects.</p>
           </div>
-          <p class="hint">Поля и кнопки в разделах AI и «Анимация» остаются такой ширины, даже если растянуть панель в After Effects. Вкладки и раздел «Инструменты» занимают всю ширину панели.</p>
         </div>
 
         <div class="group">

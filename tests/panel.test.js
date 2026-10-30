@@ -1692,7 +1692,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     { comp: "Logo Anim", layers: ["logo.png"] }, { comp: "Main", layers: ["Logo Anim", "intro.mp4", "music.mp3"] }, { comp: "Unused idea", layers: [] }
   ];
   p = await open({ org: MESSY });
-  check("J1 a 'Project order' block on the Tools tab with the button 'Organize After Effects Project'", (await p.page.locator("#viewMotion .organize-card #organizeBtn").count()) === 1 && (await p.page.locator("#organizeBtn").innerText()).trim() === "Organize");
+  check("J1 a 'Project order' block on the Tools tab with the button 'Organize After Effects Project'", (await p.page.locator("#viewMotion .organize-card #organizeBtn").count()) === 1 && (await p.page.locator("#organizeBtn").innerText()).trim() === "По папкам");
   await organize(p);
   check("J1 short message: Project organized successfully", /^Project organized successfully\n/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
   const expect = { "intro.mp4": "Videos", "Clip 02": "Videos", "seq_[0001-0120].png": "Videos", "music.mp3": "Audio", "voice.wav": "Audio", "logo.png": "images", "photo.jpg": "images", "art.ai": "images",
@@ -1858,7 +1858,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsClose");
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   t = await p.page.locator("#hotkeys .hotkey-row span").allInnerTexts();
-  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Organize (папки проекта),Decompose (слои из прекомпозиции),Clear cache (память After Effects),Null / Parent,Remove unused (лишние файлы),Cut out (вырезать фон на фото),Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—,—,—,—,—,—", t.join());
+  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Разложить по папкам (Organize),Разобрать прекомпозицию (Decompose),Очистить кэш (Clear cache),Null / Parent,Удалить лишнее из проекта (Remove unused),Вырезать фон на фото (Cut out),Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—,—,—,—,—,—", t.join());
   await p.page.locator("#hotkeys").scrollIntoViewIfNeeded();
   await p.page.screenshot({ path: path.join(SHOTS, "25-hotkeys-settings.png") });
   await p.page.click('#hotkeys [data-action="console"]');
@@ -2599,7 +2599,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.locator("#models button", { hasText: "Opus 5.5" }).click();
   check("S0 settings open on the AI section: provider, key, model, checks and reference frames; colours and shortcuts are under 'General'", (await p.page.locator("#setTabAI").getAttribute("aria-selected")) === "true" && (await p.page.locator("#apiKey").isVisible()) && (await p.page.locator("#frames").isVisible()) && (await p.page.locator("#selfCheck").isVisible() || await p.page.locator("label.switch", { hasText: "проверяет результат" }).isVisible()) && (await p.page.locator("#accentSwatches").isHidden()) && (await p.page.locator("#hotkeys").isHidden()));
   await p.page.click("#setTabOther");
-  check("S0 'General' holds colours, width, blocks and shortcuts; the AI fields are hidden", (await p.page.locator("#accentSwatches").isVisible()) && (await p.page.locator("#panelWidth").isVisible()) && (await p.page.locator("#toolSize").isVisible()) && (await p.page.locator("#hotkeys").isVisible()) && (await p.page.locator("#apiKey").isHidden()) && (await p.page.locator("#setTabOther").getAttribute("aria-selected")) === "true");
+  check("S0 'General' holds colours, width, blocks and shortcuts; the AI fields are hidden", (await p.page.locator("#accentSwatches").isVisible()) && (await p.page.locator("#panelFit").isVisible()) && (await p.page.locator("#toolSize").isVisible()) && (await p.page.locator("#hotkeys").isVisible()) && (await p.page.locator("#apiKey").isHidden()) && (await p.page.locator("#setTabOther").getAttribute("aria-selected")) === "true");
   await p.page.screenshot({ path: path.join(SHOTS, "07b-settings-general.png") });
   await p.page.locator("#accentSwatches button").nth(1).click();
   await p.page.click("#setTabAI");
@@ -2660,7 +2660,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("W1 at 380px the panel looks as before: content fills it", (await box(p, "#tabs")).split(",")[0] === "14" && (await box(p, "#tabs")).split(",")[2] === "352" && (await box(p, "#runBtn")).split(",")[2] === "326", await box(p, "#tabs") + " | " + await box(p, "#runBtn"));
   await p.close();
 
-  p = await open({ width: 1000, replies: [msg("Создаю.\n```javascript\napp.__ran('ask');\n```")], settings: { alwaysAsk: true } });
+  p = await open({ width: 1000, replies: [msg("Создаю.\n```javascript\napp.__ran('ask');\n```")], settings: { alwaysAsk: true, panelFit: false } });
   t = await spans(p);
   check("W2 in a wide panel the fields and buttons do not stretch: they stay in the 380px column on the left", within(t, 14, 366) && (await box(p, ".composer")).split(",")[2] === "352" && (await overflow(p)) <= 0, JSON.stringify(t));
   check("W2 the header and the tab bar stretch with the panel: gear at the right edge, tabs across the whole width", (await box(p, "#tabs")).split(",")[0] === "14" && (await box(p, "#tabs")).split(",")[2] === "972" && (await box(p, ".top")).split(",")[2] === "972" && (await box(p, "#settingsBtn")).split(",")[0] === "954" && (await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); return r("tabClaude").left < r("tabTools").left && r("tabTools").left < r("tabMotion").left && r("tabMotion").left < r("tabShape").left && r("tabShape").left < r("tabBrand").left && r("tabBrand").right > 900 && r("tabClaude").width > 120; })), (await box(p, "#tabs")) + " | " + (await box(p, "#settingsBtn")) + " | " + (await p.page.evaluate(() => ["tabClaude", "tabTools", "tabMotion", "tabShape", "tabBrand"].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return Math.round(r.left) + "-" + Math.round(r.right); }).join(" "))));
@@ -2706,7 +2706,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.screenshot({ path: path.join(SHOTS, "09d-wide-panel-280.png") });
   await p.close();
 
-  p = await open({ width: 300, settings: { panelWidth: 520 } });
+  p = await open({ width: 300, settings: { panelWidth: 520, panelFit: false } });
   t = await spans(p);
   check("W4 a panel narrower than the chosen width: content shrinks to fit, no sideways scroll", within(t, 14, 286) && (await box(p, ".composer")).split(",")[2] === "272" && (await box(p, "#tabs")).split(",")[2] === "272" && (await overflow(p)) <= 0, JSON.stringify(t));
   await p.close();
@@ -2718,6 +2718,28 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("W5 a broken saved width (" + JSON.stringify(bad) + ") is made safe", t === ({ 5000: "640px", 10: "280px", 383: "380px" }[bad] || "380px") && p.errors.length === 0, t);
     await p.close();
   }
+
+  // «На всю ширину панели» (on by default): nothing sticks to the left edge of a wide panel.
+  p = await open({ width: 1000 });
+  check("FW1 by default the AI fields stretch across the panel", (await p.page.getAttribute("html", "data-fit")) === "on" && Number((await box(p, ".composer")).split(",")[2]) > 400 && (await overflow(p)) <= 0, await box(p, ".composer"));
+  t = [await box(p, ".composer"), await box(p, "#exprCard")].map((x) => x.split(",").map(Number));
+  check("FW1 a wide panel puts the request on the left and «Выражения» on the right", t[0][0] === 14 && t[1][0] > t[0][0] + t[0][2] && t[1][1] === t[0][1] && t[1][0] + t[1][2] === 986, JSON.stringify(t));
+  await p.page.click("#tabBrand");
+  check("FW1 «Проекты» uses the whole width too", (await box(p, "#brandEmpty")).split(",")[2] === "972", await box(p, "#brandEmpty"));
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  t = (await box(p, ".sheet-card")).split(",").map(Number);
+  check("FW2 settings sit in the middle, not stretched", t[2] === 560 && Math.abs(t[0] + t[2] / 2 - 500) <= 8 && (await p.page.isChecked("#panelFit")) && (await p.page.locator("#widthRow").isHidden()), JSON.stringify(t));
+  await p.page.locator("#panelFit").evaluate((el) => el.click());
+  check("FW2 switching it off shows the width slider at once", (await p.page.locator("#panelWidth").isVisible()) && (await p.page.getAttribute("html", "data-fit")) === "off");
+  await p.page.click("#saveSettings"); await p.page.click("#tabClaude");
+  check("FW2 saved: the fields are back in the 380px column", (await box(p, ".composer")).split(",")[2] === "352", await box(p, ".composer"));
+  await p.restart(); await p.page.click("#tabClaude");
+  check("FW2 the choice survives a restart", (await p.page.getAttribute("html", "data-fit")) === "off" && (await box(p, ".composer")).split(",")[2] === "352" && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+  p = await open({ width: 380 });
+  t = [await box(p, ".composer"), await box(p, "#exprCard")].map((x) => x.split(",").map(Number));
+  check("FW3 a narrow panel keeps one column: «Выражения» under the request", t[1][0] === 14 && t[1][1] > t[0][1] + t[0][3] && t[0][2] === 352, JSON.stringify(t));
+  await p.close();
 
   console.log("\n=== tabs ===");
   const vis = (p, sel) => p.page.locator(sel).isVisible();
@@ -3362,8 +3384,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 380 });
   await motionTab(p);
   c = await sizesNow(p);
-  check("E1 at 380px (8 cells): two blocks in the first row, the rest below", (await firstRow(p)) === 2 && (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 shift:8,13,8,21 paste:0,23,8,8 organize:0,31,8,12", await cellsNow(p));
-  check("E1 (scene) block sizes", c === "168x168,168x234,168x256,168x256,168x278,168x454", c);
+  check("E1 at 380px (8 cells): two blocks in the first row, the rest below", (await firstRow(p)) === 2 && (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 shift:8,13,8,21 paste:0,23,8,7 organize:0,30,8,11", await cellsNow(p));
+  check("E1 (scene) block sizes", c === "168x146,168x234,168x234,168x256,168x278,168x454", c);
   await resizeTo(p, 600);
   check("E1 stretched to 600px: three in the first row, every block exactly the same size as before", (await firstRow(p)) === 3 && (await sizesNow(p)) === c, (await firstRow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 800);
@@ -3374,7 +3396,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await resizeTo(p, 300);
   check("E1 squeezed to 300px: one under another, same sizes again", (await oneColumn(p)) && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await cellsNow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 380);
-  check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 shift:8,13,8,21 paste:0,23,8,8 organize:0,31,8,12" && (await sizesNow(p)) === c);
+  check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 shift:8,13,8,21 paste:0,23,8,7 organize:0,30,8,11" && (await sizesNow(p)) === c);
   await p.page.click("#settingsBtn"); await setWidth(p, 640); await p.page.click("#saveSettings");
   check("E2 the width setting is for fields and buttons: it changes neither the blocks nor the tab bar", (await box(p, "#tabs")).split(",")[2] === "352" && (await sizesNow(p)) === c && (await firstRow(p)) === 2);
   await resizeTo(p, 1000);
@@ -3671,7 +3693,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("F5 titles are shown unless switched off, one short word each", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность,Якорь,Выровнять,Время,Картинка,Порядок,Копия,Декомпоз,Кэш,Null,Чистка,Вырезка");
+  check("F5 titles are shown unless switched off, one short word each", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность,Якорь,Выровнять,Время,Копия");
   c = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("F5 settings have the switch, on", await p.page.isChecked("#toolTitles"));
@@ -4633,7 +4655,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
     p = await open({ decomp: {} });
     await motionTab(p);
-    check("DC1 a «Декомпоз» block on the Tools tab with a Decompose button and a short hint", (await p.page.locator('#viewMotion .tool-card[data-tool="decompose"] #decomposeBtn').count()) === 1 && (await p.page.locator("#decomposeBtn").innerText()).trim() === "Decompose" && (await vis(p, "#decomposeHint")) && (await p.page.locator('[data-tool="decompose"] .tool-head b').innerText()) === "Декомпоз");
+    check("DC1 a «Декомпоз» block on the Tools tab with a Decompose button and a short hint", (await p.page.locator('#viewMotion .tool-card[data-tool="decompose"] #decomposeBtn').count()) === 1 && (await p.page.locator("#decomposeBtn").innerText()).trim() === "Разобрать" && (await vis(p, "#decomposeHint")) && (await p.page.locator('[data-tool="decompose"] .tool-head b').innerText()) === "Декомпоз");
     await p.page.click("#decomposeBtn"); await p.idle();
     check("DC2 the inner layers stand where the precomp was, in the same order; the precomp layer is gone", names(p) === "Title,Logo,Shape,Bg2,BG" && p.ae.log.dcRemoved.join() === "PRE" && p.ae.log.dcInner.list.length === 3, names(p));
     check("DC2 one undo step", p.ae.log.undo.join() === "begin:Sayframe: decompose,end", p.ae.log.undo.join());
@@ -4774,12 +4796,17 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const chips = async () => (await p.page.locator("#brandSubs .brand-sub:not(.brand-sub-add)").allInnerTexts()).map((x) => x.replace("×", "").trim()).join();
     const projects = () => p.page.locator("#brandSelect option").allInnerTexts().then((a) => a.join());
     await p.page.click("#tabBrand");
-    check("SB1 above the project card: a row of sections with «+», even before the first one", (await vis(p, "#brandSubAdd")) && (await chips()) === "");
+    check("SB1 before the first project there is no lone «+»: only «Создать первый проект»", (await p.page.locator("#brandSubs").isHidden()) && (await vis(p, "#brandEmpty")));
+    await p.page.click("#brandFirst"); await p.page.fill("#brandName", "Alif Shop"); await p.page.press("#brandName", "Enter");
+    check("SB1 after the first project the row of sections with «+» appears", (await vis(p, "#brandSubAdd")) && (await chips()) !== "");
+    await p.page.dblclick('#brandSubs .brand-sub[aria-selected="true"]'); await p.page.fill("#brandName", "Alif"); await p.page.press("#brandName", "Enter");
     await p.page.click("#brandSubAdd");
     check("SB1 «+» asks for the section name", (await vis(p, "#brandNameRow")) && (await p.page.getAttribute("#brandName", "placeholder")) === "Название раздела");
-    await p.page.fill("#brandName", "Alif"); await p.page.press("#brandName", "Enter");
-    check("SB2 the section «Alif» opens empty: the usual «Создать первый проект»", (await chips()) === "Alif" && (await vis(p, "#brandEmpty")));
-    await p.page.click("#brandFirst"); await p.page.fill("#brandName", "Alif Shop"); await p.page.press("#brandName", "Enter");
+    await p.page.fill("#brandName", "Empty"); await p.page.press("#brandName", "Enter");
+    check("SB2 a new section opens empty: the usual «Создать первый проект»", (await chips()) === "Alif,Empty" && (await vis(p, "#brandEmpty")));
+    await p.page.click('#brandSubs .brand-sub[aria-selected="true"] .brand-sub-x');
+    if (await p.page.locator('#brandSubs .brand-sub[aria-selected="true"] .brand-sub-x').count()) { await p.page.click('#brandSubs .brand-sub[aria-selected="true"] .brand-sub-x'); }
+    await p.page.click('#brandSubs .brand-sub[data-group]:first-child');
     await p.page.fill("#brandColorHex", "#2fc16e"); await p.page.fill("#brandColorName", "Alif colour"); await p.page.click("#brandColorAdd");
     await p.page.click("#brandNew"); await p.page.fill("#brandName", "Alif Academy"); await p.page.press("#brandName", "Enter");
     check("SB3 inside the section the project card works as before: list, pencil, bin, «+ Новый»", (await projects()) === "Alif Shop,Alif Academy" && (await vis(p, "#brandRename")) && (await vis(p, "#brandDelete")) && (await vis(p, "#brandExport")));
@@ -5075,7 +5102,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   {
     p = await open({ unused: [{ name: "intro.mp4", used: true }, { name: "old.png", used: false }, { name: "music.wav", used: false }, { name: "logo.ai", used: true }] });
     await motionTab(p);
-    check("RU1 a «Чистка» block on the Tools tab with a Remove unused button and a hint that the disk is not touched", (await p.page.locator('#viewMotion .tool-card[data-tool="unused"] #unusedBtn').count()) === 1 && (await p.page.locator("#unusedBtn").innerText()).trim() === "Remove unused" && /С диска ничего не удаляется/.test(await p.page.locator("#unusedHint").innerText()));
+    check("RU1 a «Чистка» block on the Tools tab with a Remove unused button and a hint that the disk is not touched", (await p.page.locator('#viewMotion .tool-card[data-tool="unused"] #unusedBtn').count()) === 1 && (await p.page.locator("#unusedBtn").innerText()).trim() === "Удалить лишнее" && /С диска ничего не удаляется/.test(await p.page.locator("#unusedHint").innerText()));
     await p.page.click("#unusedBtn"); await p.idle();
     check("RU2 only the unused files leave the project, in one undo step", (p.ae.log.unusedRemoved || []).join() === "old.png,music.wav" && p.ae.projItems.some((x) => x.name === "intro.mp4") && p.ae.log.undo.join() === "begin:Sayframe: remove unused footage,end", (p.ae.log.unusedRemoved || []).join() + " " + p.ae.log.undo.join());
     check("RU2 the report counts and names them", (await p.status()) === "Remove unused: убрано из проекта файлов: 2 (old.png, music.wav). С диска ничего не удалено. Отменить — Cmd/Ctrl+Z.", await p.status());
@@ -5236,7 +5263,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   {
     p = await open({});
     await motionTab(p);
-    check("CC1 a «Кэш» block on the Tools tab with a Clear cache button and a hint that undo is lost", (await p.page.locator('#viewMotion .tool-card[data-tool="cache"] #cacheBtn').count()) === 1 && (await p.page.locator("#cacheBtn").innerText()).trim() === "Clear cache" && /Cmd\/Ctrl\+Z/.test(await p.page.locator("#cacheHint").innerText()));
+    check("CC1 a «Кэш» block on the Tools tab with a Clear cache button and a hint that undo is lost", (await p.page.locator('#viewMotion .tool-card[data-tool="cache"] #cacheBtn').count()) === 1 && (await p.page.locator("#cacheBtn").innerText()).trim() === "Очистить кэш" && /Cmd\/Ctrl\+Z/.test(await p.page.locator("#cacheHint").innerText()));
     await p.page.click("#cacheBtn"); await p.idle();
     check("CC2 one click purges all memory caches, as Edit > Purge > All Memory", (p.ae.log.purges || []).join() === "1012" && (await p.status()) === "Clear cache: память After Effects очищена — RAM-превью, кэш изображений, снимки и история отмены." && p.errors.length === 0, (p.ae.log.purges || []).join() + " " + await p.status());
     await p.close();

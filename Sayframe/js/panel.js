@@ -122,7 +122,8 @@
         brandPics: false,   // отправлять ли AI маленькие картинки упомянутых логотипов и иконок
         motionStyle: "normal",  // стиль анимации для AI: normal, smooth, energetic, minimal, corporate, playful
         refFrames: 8,
-        panelWidth: 380,    // ширина содержимого в пикселях; сама панель After Effects может быть шире
+        panelFit: true,     // поля и кнопки тянутся на всю ширину панели; false — держат ширину panelWidth у левого края
+        panelWidth: 380,    // ширина содержимого в пикселях, когда panelFit выключен
         toolSize: "100",    // масштаб блоков раздела «Инструменты» в процентах: "100", "90", "80", "70", "60" или "50"
         toolTitles: true,   // показывать ли названия блоков раздела «Инструменты»
         stats: true,        // отправлять ли автору анонимный сигнал «установлено» и «открыто сегодня»
@@ -889,6 +890,7 @@
         root.setProperty("--on-accent", lum > 0.5 ? "#0b0c12" : "#ffffff");
         root.setProperty("--bg", bg.hex);
         root.setProperty("--panel-w", clampPanelWidth(s.panelWidth) + "px");
+        document.documentElement.setAttribute("data-fit", s.panelFit === false ? "off" : "on");
         document.documentElement.setAttribute("data-tools", cleanToolSize(s.toolSize));
         root.setProperty("--tz", String(Number(cleanToolSize(s.toolSize)) / 100));
         document.documentElement.setAttribute("data-titles", s.toolTitles === false ? "off" : "on");
@@ -920,7 +922,7 @@
         bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
         bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"),
         bgBrandSwatches: el("bgBrandSwatches"), bgBrandHex: el("bgBrandHex"), bgBrandPick: el("bgBrandPick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), fxWhere: el("fxWhere"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
+        panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), fxWhere: el("fxWhere"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
@@ -3225,7 +3227,13 @@
             applyTheme(draft);
         });
 
-        // Ширина меняется сразу, пока тянут ползунок; без «Сохранить» вернётся прежняя.
+        // «На всю ширину» и ширина меняются сразу; без «Сохранить» вернётся прежнее.
+        ui.panelFit.addEventListener("change", function () {
+            if (!draft) { return; }
+            draft.panelFit = ui.panelFit.checked;
+            ui.widthRow.hidden = draft.panelFit;
+            applyTheme(draft);
+        });
         ui.panelWidth.addEventListener("input", function () {
             if (!draft) { return; }
             draft.panelWidth = clampPanelWidth(ui.panelWidth.value);
@@ -3273,6 +3281,8 @@
         ui.selfCheck.checked = draft.selfCheck;
         ui.alwaysAsk.checked = draft.alwaysAsk;
         ui.brandPics.checked = draft.brandPics;
+        ui.panelFit.checked = draft.panelFit !== false;
+        ui.widthRow.hidden = draft.panelFit !== false;
         ui.panelWidth.value = String(draft.panelWidth);
         ui.panelWidthVal.textContent = draft.panelWidth + " px";
         showProvider();
@@ -6171,12 +6181,12 @@
     var HOTKEY_ACTIONS = [
         { id: "console", label: "Поиск эффектов (FX Console)", def: "Ctrl+Space" },
         { id: "snapshot", label: "Снимок кадра", def: "" },
-        { id: "organize", label: "Organize (папки проекта)", def: "" },
-        { id: "decompose", label: "Decompose (слои из прекомпозиции)", def: "" },
-        { id: "cache", label: "Clear cache (память After Effects)", def: "" },
+        { id: "organize", label: "Разложить по папкам (Organize)", def: "" },
+        { id: "decompose", label: "Разобрать прекомпозицию (Decompose)", def: "" },
+        { id: "cache", label: "Очистить кэш (Clear cache)", def: "" },
         { id: "nullp", label: "Null / Parent", def: "" },
-        { id: "unused", label: "Remove unused (лишние файлы)", def: "" },
-        { id: "cutout", label: "Cut out (вырезать фон на фото)", def: "" },
+        { id: "unused", label: "Удалить лишнее из проекта (Remove unused)", def: "" },
+        { id: "cutout", label: "Вырезать фон на фото (Cut out)", def: "" },
         { id: "paste", label: "Вставить картинку из буфера", def: "" },
         { id: "tabAI", label: "Вкладка AI", def: "" },
         { id: "tabAnim", label: "Вкладка «Анимация»", def: "" },
@@ -6982,7 +6992,7 @@
         ui.brandEmpty.hidden = has || brandNaming !== null;
         ui.brandBody.hidden = !b;
         ui.brandDeleteNote.hidden = !brandDelAt;
-        ui.brandSubs.hidden = brandNaming !== null && !brands.items.length;
+        ui.brandSubs.hidden = !brands.items.length;   // пока проектов нет, хватает большой кнопки «Создать первый проект»
         renderBrandSubs();
         renderBrandHits();
         if (!b) { return; }

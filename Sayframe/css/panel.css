@@ -71,6 +71,18 @@ button { cursor: pointer; }
 #viewMotion > .status-slot { max-width: calc(var(--panel-w) - 28px); }
 #app > #viewShape { max-width: none; }
 #viewShape > .status-slot { max-width: calc(var(--panel-w) - 28px); }
+/* «На всю ширину панели» (настройка, по умолчанию включена): поля и кнопки тянутся вместе с панелью
+   After Effects, а не остаются колонкой у левого края. Окна и настройки встают по центру. */
+[data-fit="on"] #app > *, [data-fit="on"] #app > .view > .status-slot { max-width: none; }
+[data-fit="on"] .sheet-card { max-width: 560px; margin: 0 auto; }
+[data-fit="on"] .modal { justify-content: center; }
+[data-fit="on"] .modal-card, [data-fit="on"] .fx-card { max-width: 560px; }
+[data-fit="on"] .fx-console { justify-content: center; }
+/* Широкая панель: в разделе AI запрос слева, «Выражения» и «Мои скрипты» справа. */
+@media (min-width: 720px) {
+  [data-fit="on"] #viewClaude { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 14px; align-items: start; }
+  [data-fit="on"] #viewClaude > .claude-main, [data-fit="on"] #viewClaude > .claude-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+}
 
 /* ------------------------------------------------------------ шапка */
 
@@ -385,6 +397,7 @@ textarea:focus, .field:focus {
   box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.7);
 }
 .view { display: flex; flex-direction: column; gap: 12px; }
+.claude-main, .claude-side { display: contents; }
 .status-slot:empty { display: none; }
 
 /* ----------------------------------------------------------- анимация */
@@ -508,6 +521,13 @@ textarea:focus, .field:focus {
 /* Без названий (настройка «Показывать названия блоков») минус и плюс получают сверху свою полоску. */
 [data-titles="off"] .motion-tools .tool-head { display: none; }
 [data-titles="off"] .motion-tools > .tool-card { padding-top: calc(22px * var(--kz, 1)); }
+/* Блок из одной кнопки: кнопка сама говорит, что делает, поэтому заголовка над ней нет. */
+.motion-tools > .tool-card.solo { padding-top: calc(18px * var(--kz, 1)); justify-content: center; }
+.motion-tools > .tool-card.solo > .tool-head { display: none; }
+/* Булавка и «+/−» не мешают: появляются, когда курсор над блоком или фокус внутри него. */
+.motion-tools > .tool-card > .tool-pin, .motion-tools > .tool-card > .tool-toggle { transition: opacity 0.15s; }
+.motion-tools > .tool-card:not(:hover):not(:focus-within) > .tool-pin,
+.motion-tools > .tool-card:not(:hover):not(:focus-within) > .tool-toggle { opacity: 0; }
 
 /* Минус в углу прячет кривую и становится плюсом. */
 .tool-toggle {
@@ -935,6 +955,8 @@ pre {
 .switch span.text { color: var(--text); }
 .switch span.text small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
 
+.width-pick { display: flex; flex-direction: column; gap: 8px; }
+.width-pick > label { font: 600 12px/1.2 var(--round); color: var(--muted); }
 .width-row { display: flex; align-items: center; gap: 10px; }
 .width-row output { flex: none; width: 52px; text-align: right; color: var(--text); font: 600 12px/1 var(--round); }
 .range {
