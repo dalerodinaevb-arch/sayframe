@@ -229,6 +229,31 @@ var sayframeHost = (function () {
         }
     }
 
+    // Edit > Undo. After Effects keeps no step for an empty undo group, so before undoing a failed script
+    // markUndoStep() makes sure its group holds a change: otherwise Undo would take back the user's own last step.
+    var UNDO_COMMAND = 16;
+
+    function markUndoStep() {
+        var f;
+        try {
+            f = app.project.items.addFolder("Sayframe undo");
+            f.remove();
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function undoLastStep() {
+        try {
+            if (typeof app.executeCommand !== "function") { return false; }
+            app.executeCommand(UNDO_COMMAND);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
     // Kept separate so the script's variables do not mix with this file's.
     // Returns SAYFRAME_CHECK_TIMES when the script declares it.
     function executeGenerated(__sayframeCode) {
@@ -3505,10 +3530,12 @@ var sayframeHost = (function () {
         },
 
         // Runs a generated script inside one undo group and, when asked, saves frames of the result.
+        // A script that fails half way is undone, so a fix starts from a clean project (out.undone).
         run: function (code, label, wantFrames, tmpDir) {
             return reply(function () {
-                var out = { runError: null, frames: null, compName: null, captureError: null };
+                var out = { runError: null, frames: null, compName: null, captureError: null, undone: false };
                 var times = null;
+                var marked = false;
                 var target;
                 app.beginUndoGroup("Sayframe: " + label);
                 try {
@@ -3516,6 +3543,7 @@ var sayframeHost = (function () {
                         times = executeGenerated(code);
                     } catch (e) {
                         out.runError = e.toString() + (e.line ? " (line " + e.line + ")" : "");
+                        marked = markUndoStep();
                     }
                     if (out.runError === null && wantFrames) {
                         try {
@@ -3533,6 +3561,7 @@ var sayframeHost = (function () {
                 } finally {
                     app.endUndoGroup();
                 }
+                if (marked) { out.undone = undoLastStep(); }
                 return out;
             });
         },

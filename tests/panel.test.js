@@ -9,6 +9,15 @@ let chromium;
 try { ({ chromium } = require("playwright")); } catch (e) { ({ chromium } = require("/opt/node-tools/node_modules/playwright")); }
 
 const crypto = require("crypto");
+// The release key pair: updates are signed with the private key, the panel checks them with the public one.
+const RELEASE_KEYS = crypto.generateKeyPairSync("rsa", { modulusLength: 2048, publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
+const OTHER_KEYS = crypto.generateKeyPairSync("rsa", { modulusLength: 2048, publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
+// version.json as tools/release.py writes it: the plain fields for old panels plus the signed copy.
+function signRelease(info, key) {
+  const payload = JSON.stringify(info);
+  const sig = crypto.createSign("RSA-SHA256").update(payload, "utf8").sign(key || RELEASE_KEYS.privateKey, "base64");
+  return Object.assign({}, info, { signed: { payload, sig } });
+}
 const EXT = process.env.SAYFRAME_EXT || path.join(__dirname, "..", "Sayframe");
 const SHOTS = path.join(__dirname, ".tmp", "shots");
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -497,7 +506,8 @@ function makeAE(opts, tmpDir) {
       project.activeItem = it;
       return it;
     },
-    items: { addFolder(name) { const f = new FolderItem(name); f.id = 900 + log.bins.length; projItems.push(f); log.bins.push(name); return f; },
+    items: { addFolder(name) { const f = new FolderItem(name); f.id = 900 + log.bins.length; projItems.push(f); log.bins.push(name);
+        f.remove = () => { projItems.splice(projItems.indexOf(f), 1); log.bins.splice(log.bins.lastIndexOf(name), 1); log.undo.push("mark"); }; return f; },
       addComp(name, w, h, par, dur, fps) {
         const c = Object.assign(new CompItem(), { name, width: w, height: h, duration: dur, frameRate: fps, saved: [], scaleSet: null,
           openInViewer() { log.opened++; project.activeItem = c; },
@@ -533,6 +543,7 @@ function makeAE(opts, tmpDir) {
     scheduleTask: (code, ms, repeat) => { log.tasks.push({ code, ms, repeat }); return log.tasks.length; }, cancelTask: (id) => { log.tasks[id - 1].cancelled = true; },
     preferences: { getPrefAsLong: () => (opts.fileAccessOff ? 0 : 1) },
     beginUndoGroup: (n) => log.undo.push("begin:" + n), endUndoGroup: () => log.undo.push("end"), __ran: (x) => log.ran.push(x),
+    executeCommand: opts.noExecuteCommand ? undefined : (id) => { log.commands = (log.commands || []).concat([id]); },
     purge: (t) => { log.purges = (log.purges || []).concat([t]); },
     fonts: opts.noFonts ? undefined : { allFonts: [[{ postScriptName: "Inter-Regular" }, { postScriptName: "Inter-Bold" }], [{ postScriptName: "Montserrat-Bold" }]],
       getFontsByPostScriptName: (n) => (/^(Inter|Montserrat|ArialMT)/.test(n) ? [{ postScriptName: n }] : []) } };
@@ -596,7 +607,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           if (opts.offlineUpdate) throw new Error("getaddrinfo ENOTFOUND");
           const r = remote[bare(args[0])];
           if (r === undefined) return { status: 404, text: "Not Found" };
-          return { status: 200, text: typeof r === "string" ? r : JSON.stringify(r) };
+          // Objects are served signed (as a real release), unless the scenario says otherwise.
+          if (typeof r === "string") return { status: 200, text: r };
+          return { status: 200, text: JSON.stringify(opts.unsignedUpdate || r.signed ? r : signRelease(r)) };
         }
         case "download": {
           net.downloads.push(args[0]);
@@ -624,6 +637,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           net.saved = (net.saved || []).concat([base + ext]);
           return { status: 200, contentType: type, finalUrl: url, path: base + ext, size: body.length };
         }
+        case "verify": try { return crypto.createVerify("RSA-SHA256").update(args[0], "utf8").verify(args[2], args[1], "base64"); } catch (e) { return false; }
         case "reloaded": net.reloads = (net.reloads || 0) + 1; return null;
         case "pickFile": return opts.pickFile || null;
         case "pickFiles": return opts.pickFiles || (opts.pickFile ? [opts.pickFile] : []);
@@ -672,8 +686,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     });
 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false }, opts.settings || {});
-    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateState, updateEveryMs, statsUrl }) => {
+    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
+      window.__SAYFRAME_TEST_UPDATE_KEY__ = updateKey;
       if (statsUrl) window.__SAYFRAME_STATS_URL__ = statsUrl;
       window.__SAYFRAME_TEST_UPDATE_EVERY_MS__ = updateEveryMs || 0;
       window.__opened = [];
@@ -708,11 +723,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         writeBytes: (p, bytes) => window.__plat("writeBytes", [p, Array.from(bytes)]),
         remove: call("remove"), exists: call("exists"), mkdirp: call("mkdirp"), move: call("move"),
         exec: call("exec"), pickFile: call("pickFile"), pickFiles: call("pickFiles"), imageSize: call("imageSize"), postJSON: call("postJSON"),
-        getText: call("getText"), download: call("download"), fetchUrl: call("fetchUrl"),
+        getText: call("getText"), download: call("download"), fetchUrl: call("fetchUrl"), verify: call("verify"),
         openExternal: (u) => { window.__opened.push(u); return true; },
         reload: () => { window.__plat("reloaded", []).then(() => window.location.reload()); }
       };
-    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "" });
+    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "" });
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
     // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
@@ -793,6 +808,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ replies: [msg("x\n```javascript\nthrow new Error('Нет слоя');\n```"), msg("ok\n```javascript\napp.__ran('fixed');\n```")] });
   await p.run("задача");
   check("A3 runtime error shown, fix enabled", /^Ошибка при выполнении: Error: Нет слоя/.test(await p.status()) && (await p.statusKind()) === "error" && !(await p.page.locator("#fixBtn").isDisabled()) && (await p.page.locator("#fixBtn").isVisible()));
+  check("A3 the failed script is undone at once: a marker change closes its undo group, then Edit > Undo (16)", p.ae.log.undo.join("|") === "begin:Sayframe: задача|mark|end" && (p.ae.log.commands || []).join() === "16" && p.ae.log.bins.length === 0 && /\nТо, что скрипт успел изменить, отменено\. Нажмите «Исправить ошибку»\.$/.test(await p.status()), p.ae.log.undo.join("|") + " " + await p.status());
   await p.page.screenshot({ path: path.join(SHOTS, "04-error.png") });
   await p.page.click("#fixBtn"); await p.idle();
   check("A3 fix request carries the error; fixed script ran", /threw an error while running: Error: Нет слоя/.test(p.net.requests[1].body.messages[2].content) && p.ae.log.ran.join() === "fixed" && (await p.page.locator("#fixBtn").isDisabled()));
@@ -807,7 +823,39 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
   p = await open({ replies: [msg("x\n```javascript\napp.project.activeItem.layer(1).remove ( ); app.__ran('rm');\n```")] });
   await p.run("удали слой"); await p.modalClick("Запустить");
-  check("A4 accepted -> run", p.ae.log.undo.length === 2 && /Готово|Ошибка при выполнении/.test(await p.status()));
+  check("A4 accepted -> run", p.ae.log.undo.filter((x) => x !== "mark").length === 2 && /Готово|Ошибка при выполнении/.test(await p.status()));
+  await p.close();
+  // Обходные пути к system / File / eval: каждый должен открыть окно, а не запуститься молча.
+  const hidden = [
+    'system["callSystem"]("open -a Calculator");',
+    "var s = system; s.callSystem('x');",
+    "var k = 'call' + 'Sys' + 'tem'; system[k]('x');",
+    "new Function('return 1')();",
+    "var g = (function () { return this; })(); g.x = 1;",
+    "var F = [].constructor.constructor; F('x')();",
+    "$.global.sys = 1;",
+    "Folder.desktop.getFiles();",
+    "var f = Folder; f.temp;",
+    "var t = '\\u0073ystem'; app[t];",
+    "var n = String.fromCharCode(115); app[n];",
+    "this['eval']('1');",
+    "app.project.file.execute();"
+  ];
+  for (const code of hidden) {
+    p = await open({ replies: [msg("x\n```javascript\n" + code + " app.__ran('h');\n```")] });
+    await p.run("задача");
+    check("A5 hidden access asks first: " + code, !(await p.page.locator("#modal").isHidden()) && p.ae.log.ran.length === 0 && /обходным путём|удаляет что-то/.test(await p.page.locator("#modalText").innerText()), await p.status());
+    await p.close();
+  }
+  // Обычный скрипт анимации окна не вызывает.
+  p = await open({ replies: [msg("x\n```javascript\nvar comp = app.project.activeItem; var names = ['a', 'b']; for (var i = 0; i < names.length; i++) { app.__ran(names[i] + (i + 1)); }\n```")] });
+  await p.run("задача");
+  check("A5 an ordinary script still runs straight away", (await p.page.locator("#modal").isHidden()) && p.ae.log.ran.join() === "a1,b2" && (p.ae.log.commands || []).length === 0 && p.ae.log.undo.join("|") === "begin:Sayframe: задача|end", p.ae.log.ran.join());
+  await p.close();
+  // Без Edit > Undo (старый After Effects) — прежняя подсказка нажать Cmd/Ctrl+Z.
+  p = await open({ noExecuteCommand: true, replies: [msg("x\n```javascript\nthrow new Error('Нет слоя');\n```")] });
+  await p.run("задача");
+  check("A6 no executeCommand -> nothing undone, the old Cmd/Ctrl+Z hint", /нажмите Cmd\/Ctrl\+Z, затем «Исправить ошибку»\.$/.test(await p.status()), await p.status());
   await p.close();
   p = await open({ replies: [msg("x\n```javascript\napp.__ran('e');\n```")] });
   await p.run("задача"); await p.page.fill("#prompt", "ещё");
@@ -1279,7 +1327,19 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R0 the open composition is made as long as the video (10 s -> 12 s)", p.ae.comp.duration === 12, p.ae.comp && p.ae.comp.duration);
   check("R0 each scene is a separate request with only its own frames and the whole plan", m[1].filter((b) => b.type === "image").length === 8 && /^\[Scene 1 of 2\].*at 0\.25, 0\.75/.test(m[1].slice(-1)[0].text) && /Build ONLY this scene, from 0\.00 to 5\.00 s.*logo pops in/.test(m[1].slice(-1)[0].text) && /Scene 2 \(5\.00-12\.00 s\): title words rise/.test(m[1].slice(-1)[0].text) && /^\[Scene 2 of 2\].*at 5\.25/.test(m[2].slice(-1)[0].text), m[1].slice(-1)[0].text.slice(0, 200));
   check("R0 a scene whose script fails is asked again with the error; both scenes are built", /Your script for this scene failed: Error: boom/.test(JSON.stringify(m[3])) && p.ae.log.ran.join() === "s1,s2", p.ae.log.ran.join());
+  check("R0 the failed scene was undone before its fix ran", (p.ae.log.commands || []).join() === "16", JSON.stringify(p.ae.log.commands));
   check("R0 the report says the whole video is built", /^Готово: ролик 12\.0 с собран по 2 сценам — от начала до конца/.test(await p.status()) && (await p.page.locator("#replyText").innerText()).indexOf("1) 0.0–5.0 с: logo pops in") >= 0, await p.status());
+  await p.close();
+  // Сцены тоже проходят проверку: рискованный скрипт сцены показывается перед запуском.
+  p = await open({ pickFile: "/Users/x/Movies/long.mp4", footage: Object.assign({}, VIDEO, { duration: 12 }), replies: [
+    msg('{"scenes": [{"start": 0, "end": 6, "what": "a"}, {"start": 6, "end": 12, "what": "b"}]}'),
+    msg("1\n```javascript\nsystem['callSystem']('x'); app.__ran('bad');\n```"), msg("2\n```javascript\napp.__ran('b');\n```")] });
+  await p.page.click("#refBtn"); await p.idle();
+  await p.page.fill("#prompt", "повтори"); await p.page.click("#runBtn");
+  await p.page.waitForSelector("#modal:not([hidden])");
+  check("R0b a risky scene script opens the confirmation first", (await p.page.locator("#modalTitle").innerText()) === "Запустить скрипт сцены 1?" && p.ae.log.ran.length === 0);
+  await p.modalClick("Не запускать");
+  check("R0b declined scene is skipped and reported; the next scene is built", p.ae.log.ran.join() === "b" && /Не получились сцены: 1/.test(await p.status()), p.ae.log.ran.join() + " " + await p.status());
   await p.close();
   p = await open({ settings: { selfCheck: true }, pickFile: "/Users/x/Movies/long.mp4", footage: Object.assign({}, VIDEO, { duration: 12 }), replies: [
     msg('{"scenes": [{"start": 0, "end": 6, "what": "a"}, {"start": 6, "end": 12, "what": "b"}]}'),
@@ -3907,8 +3967,47 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
   p = await open({ updateUrl: U, ownExt: true, failMoveAt: 2, remote: Object.assign({ [U]: rel.info }, rel.remote) });
-  await waitBar(p); await p.page.click("#updateNow"); await waitMsg(p, /не полностью/);
-  check("U12 failure while replacing files is reported, installer offered", (await p.page.locator("#updateDownload").isVisible()) && p.net.reloads === undefined);
+  await waitBar(p); await p.page.click("#updateNow"); await waitMsg(p, /осталась на прежней версии/);
+  check("U12 failure while replacing files rolls every file back, installer offered", sameAsShipped(p) && !fs.existsSync(path.join(p.extDir, "img/new.txt")) && (await p.page.locator("#updateDownload").isVisible()) && p.net.reloads === undefined);
+  check("U12 nothing left behind in the temporary folder", fs.readdirSync(p.tmpDir).filter((f) => /^sayframe-update-/.test(f)).every((d) => fs.readdirSync(path.join(p.tmpDir, d)).length === 0));
+  await p.close();
+  for (const at of [0, 5, 9]) {
+    p = await open({ updateUrl: U, ownExt: true, failMoveAt: at, remote: Object.assign({ [U]: rel.info }, rel.remote) });
+    await waitBar(p); await p.page.click("#updateNow"); await waitMsg(p, /осталась на прежней версии/);
+    check("U12 a failure at move " + at + " still leaves the old version whole", sameAsShipped(p) && !fs.existsSync(path.join(p.extDir, "img/new.txt")));
+    await p.close();
+  }
+
+  // signatures
+  rel = nextRelease("9.9.9");
+  p = await open({ updateUrl: U, ownExt: true, unsignedUpdate: true, remote: Object.assign({ [U]: rel.info }, rel.remote) });
+  await settle(p);
+  check("U23 an unsigned version.json is ignored: no banner, nothing downloaded", !(await barVisible(p)) && p.net.downloads.length === 0 && p.errors.length === 0);
+  await p.page.click("#settingsBtn"); await p.page.click("#checkUpdate");
+  await p.page.waitForFunction(() => /без подписи/.test(document.getElementById("updateHint").textContent));
+  check("U23 the manual check says the update is not signed", (await p.page.locator("#updateHint").getAttribute("class")) === "hint bad");
+  await p.close();
+  p = await open({ updateUrl: U, ownExt: true, remote: Object.assign({ [U]: signRelease(rel.info, OTHER_KEYS.privateKey) }, rel.remote) });
+  await settle(p);
+  check("U23 signed with another key -> ignored", !(await barVisible(p)) && p.net.downloads.length === 0);
+  await p.close();
+  t = signRelease({ version: CUR, files: [] });
+  p = await open({ updateUrl: U, ownExt: true, remote: Object.assign({ [U]: Object.assign({}, rel.info, { signed: t.signed }) }, rel.remote) });
+  await settle(p);
+  check("U23 only the signed copy counts: plain fields saying 9.9.9 next to a signed " + CUR + " -> no update", !(await barVisible(p)));
+  await p.close();
+  t = signRelease(rel.info); t.signed.payload = t.signed.payload.replace(rel.info.files[0].sha256, sha(Buffer.from("evil")));
+  p = await open({ updateUrl: U, ownExt: true, remote: Object.assign({ [U]: t }, rel.remote) });
+  await settle(p);
+  check("U23 a payload changed after signing -> ignored", !(await barVisible(p)));
+  await p.close();
+  p = await open({ updateUrl: U, ownExt: true, updateState: { base: U, lastCheck: Date.now(), latest: { info: rel.info, url: U } }, remote: { [U]: { version: CUR, files: [] } } });
+  await settle(p);
+  check("U23 an offer remembered by an older panel (not checked) is not trusted: it asks the server", p.net.gets.length === 1 && !(await barVisible(p)));
+  await p.close();
+  p = await open({ updateUrl: U, ownExt: true, updateKey: "", unsignedUpdate: true, remote: Object.assign({ [U]: rel.info }, rel.remote) });
+  await waitBar(p);
+  check("U23 without a built-in key (old builds) an unsigned version.json still works", await barVisible(p));
   await p.close();
 
   for (const evil of ["../evil.js", "/etc/evil", "js/../../evil.js", ".hidden", "js\\evil.js", "C:/evil.js", ""]) {
@@ -3954,7 +4053,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await waitBar(p);
   check("U14 dead remembered address falls back to the built-in one", p.net.gets.length === 2 && p.net.gets[0].indexOf(NEW) === 0 && p.net.gets[1].indexOf(U) === 0);
   await p.close();
-  p = await open({ updateUrl: U, updateState: { base: "https://old.example.com/version.json", url: NEW, lastCheck: Date.now(), latest: { info: { version: "9.9.9" }, url: NEW } }, remote: { [U]: { version: CUR } } });
+  p = await open({ updateUrl: U, updateState: { signed: true, base: "https://old.example.com/version.json", url: NEW, lastCheck: Date.now(), latest: { info: { version: "9.9.9" }, url: NEW } }, remote: { [U]: { version: CUR } } });
   await settle(p);
   check("U14 state saved for another built-in address is discarded", p.net.gets.length === 1 && p.net.gets[0].indexOf(U) === 0 && !(await barVisible(p)));
   await p.close();
@@ -3974,11 +4073,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
   // throttling
-  p = await open({ updateUrl: U, updateState: { base: U, lastCheck: Date.now() - 60000, latest: { info: { version: "9.9.9", notes: ["из кэша"] }, url: U } }, remote: { [U]: { version: CUR } } });
+  p = await open({ updateUrl: U, updateState: { signed: true, base: U, lastCheck: Date.now() - 60000, latest: { info: { version: "9.9.9", notes: ["из кэша"] }, url: U } }, remote: { [U]: { version: CUR } } });
   await waitBar(p);
   check("U16 recent check -> no request, banner from the saved answer", p.net.gets.length === 0 && (await p.page.locator("#updateNotes li").innerText()) === "из кэша");
   await p.close();
-  p = await open({ updateUrl: U, updateState: { base: U, lastCheck: Date.now() - 7 * 3600 * 1000, latest: { info: { version: "9.9.9" }, url: U } }, remote: { [U]: { version: CUR } } });
+  p = await open({ updateUrl: U, updateState: { signed: true, base: U, lastCheck: Date.now() - 7 * 3600 * 1000, latest: { info: { version: "9.9.9" }, url: U } }, remote: { [U]: { version: CUR } } });
   await settle(p);
   check("U16 old check -> asks the server again", p.net.gets.length === 1 && !(await barVisible(p)));
   await p.close();
@@ -4020,7 +4119,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.waitForSelector("#updateBar:not([hidden])", { timeout: 6000 }).catch(() => {});
   check("U21 coming back later does, and the banner appears", (await barVisible(p)) && p.net.gets.length === c + 1);
   await p.close();
-  p = await open({ updateUrl: U, updateState: { base: U, lastCheck: Date.now() - 6 * 60000, latest: { info: { version: CUR }, url: U } }, remote: { [U]: { version: "9.9.9", files: [] } } });
+  p = await open({ updateUrl: U, updateState: { signed: true, base: U, lastCheck: Date.now() - 6 * 60000, latest: { info: { version: CUR }, url: U } }, remote: { [U]: { version: "9.9.9", files: [] } } });
   await settle(p);
   check("U22 a start six minutes after the last check asks the server (it used to wait six hours)", p.net.gets.length === 1 && (await barVisible(p)));
   await p.close();
@@ -4031,9 +4130,18 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const repo = path.join(__dirname, "..");
     const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "sayframe-release-"));
     for (const d of ["Sayframe", "installer", "tools", "version.json"]) fs.cpSync(path.join(repo, d), path.join(scratch, d), { recursive: true });
-    const made = spawnSync("python3", ["tools/release.py", "99.0.0", "Проверочный выпуск"], { cwd: scratch, encoding: "utf8" });
+    const env = Object.assign({}, process.env, { HOME: scratch, SAYFRAME_RELEASE_KEY: "", SAYFRAME_RELEASE_KEY_FILE: "" });
+    fs.writeFileSync(path.join(scratch, "public.pem"), RELEASE_KEYS.publicKey);
+    const keyed = spawnSync("python3", ["tools/release.py", "--set-key", "public.pem"], { cwd: scratch, encoding: "utf8", env });
+    check("U18 --set-key puts the public key into panel.js", keyed.status === 0 && fs.readFileSync(path.join(scratch, "Sayframe/js/panel.js"), "utf8").indexOf(RELEASE_KEYS.publicKey.trim().split("\n")[1]) > 0, keyed.stdout + keyed.stderr);
+    const nokey = spawnSync("python3", ["tools/release.py", "99.0.0", "Проверочный выпуск"], { cwd: scratch, encoding: "utf8", env });
+    check("U18 with a key in panel.js, a release without the private key is refused and changes nothing", nokey.status === 1 && /нет закрытого ключа/.test(nokey.stdout) && JSON.parse(fs.readFileSync(path.join(scratch, "version.json"), "utf8")).version === CUR, nokey.stdout);
+    const wrong = spawnSync("python3", ["tools/release.py", "99.0.0", "Проверочный выпуск"], { cwd: scratch, encoding: "utf8", env: Object.assign({}, env, { SAYFRAME_RELEASE_KEY: OTHER_KEYS.privateKey }) });
+    check("U18 a private key that does not match is refused", wrong.status === 1 && /не подходит/.test(wrong.stdout), wrong.stdout);
+    const made = spawnSync("python3", ["tools/release.py", "99.0.0", "Проверочный выпуск"], { cwd: scratch, encoding: "utf8", env: Object.assign({}, env, { SAYFRAME_RELEASE_KEY: Buffer.from(RELEASE_KEYS.privateKey).toString("base64") }) });
     check("U18 release tool builds the next version", made.status === 0 && fs.existsSync(path.join(scratch, "downloads/Install-Sayframe-Mac.zip")), made.stdout + made.stderr);
     const info = JSON.parse(fs.readFileSync(path.join(scratch, "version.json"), "utf8"));
+    check("U18 version.json carries a signature the panel's key accepts", !!info.signed && crypto.createVerify("RSA-SHA256").update(info.signed.payload, "utf8").verify(RELEASE_KEYS.publicKey, info.signed.sig, "base64") && JSON.parse(info.signed.payload).version === "99.0.0");
     const built = { [U]: info };
     for (const f of info.files) built[BASE + f.path] = fs.readFileSync(path.join(scratch, "Sayframe", f.path));
     p = await open({ updateUrl: U, ownExt: true, remote: built });
@@ -4045,6 +4153,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
     const again = spawnSync("python3", ["tools/release.py", "99.0.0", "x"], { cwd: scratch, encoding: "utf8" });
     check("U18 release tool refuses to reuse a version number", again.status === 1 && /должна быть больше/.test(again.stdout));
+    const vj = fs.readFileSync(path.join(scratch, "version.json"), "utf8");
+    fs.writeFileSync(path.join(scratch, "version.json"), vj.replace('"Проверочный выпуск"', '"Подменено"'));
+    const forged = spawnSync("python3", ["tools/release.py", "--check"], { cwd: scratch, encoding: "utf8", env });
+    check("U18 --check notices a version.json edited after signing", forged.status === 1 && /подпис/.test(forged.stdout), forged.stdout);
+    fs.writeFileSync(path.join(scratch, "version.json"), vj);
     fs.appendFileSync(path.join(scratch, "Sayframe/css/panel.css"), "\n/* edit */\n");
     const stale = spawnSync("python3", ["tools/release.py", "--check"], { cwd: scratch, encoding: "utf8" });
     check("U18 --check notices panel files edited after a release", stale.status === 1 && /css\/panel\.css/.test(stale.stdout), stale.stdout);

@@ -89,6 +89,21 @@ curl -fsSL https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/in
 
 Правило: любое изменение в `Sayframe/`, отправленное в GitHub, должно идти вместе с новым выпуском. Иначе контрольные суммы в `version.json` перестанут совпадать с файлами и обновление у пользователей не установится. `python3 tools/release.py --check` показывает, всё ли согласовано.
 
+### Подпись выпусков
+
+Панель ставит обновление, только если `version.json` подписан закрытым ключом автора, а подпись сходится с открытым ключом внутри `panel.js`. Так никто, кроме владельца ключа, не разошлёт свой код всем пользователям, даже получив доступ к репозиторию.
+
+Один раз, на своём компьютере:
+
+```
+mkdir -p ~/.sayframe
+openssl genrsa -out ~/.sayframe/release-key.pem 3072
+openssl rsa -in ~/.sayframe/release-key.pem -pubout -out public.pem
+python3 tools/release.py --set-key public.pem
+```
+
+Закрытый ключ `release-key.pem` никому не отправляйте и не кладите в репозиторий. `release.py` берёт его из `~/.sayframe/release-key.pem`, из файла по пути `SAYFRAME_RELEASE_KEY_FILE` или из переменной `SAYFRAME_RELEASE_KEY` (сам PEM или он же в base64). Потеряете ключ — новые выпуски придётся ставить установщиком.
+
 ### Переезд на свой сервер
 
 1. Выложите на сервер по https файл `version.json` и рядом папку `Sayframe/` (те же, что в репозитории).

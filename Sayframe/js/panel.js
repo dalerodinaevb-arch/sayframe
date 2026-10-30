@@ -5,9 +5,12 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.53.0";
+    var VERSION = "1.55.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
+    // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
+    // только у автора; панель ставит обновление, только если подпись сошлась. Пустая строка — подпись не проверяется.
+    var RELEASE_PUBLIC_KEY = typeof window.__SAYFRAME_TEST_UPDATE_KEY__ === "string" ? window.__SAYFRAME_TEST_UPDATE_KEY__ : "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEApsiGAbh60o5bZxiGsQYN\n8a/1bGysik5YINiRkx2fz3tmcKBQMNVfuWF/+YWitR2ALljg2olLtuG8xE+azU9g\n/BEJ/oeaDzSeDFNSjqKl9gJpGa1FDAuhBNiM2lliCU7Oq0eJC7Jl5JszdkL9K3zq\nMHIqT0uWVGu/QNE71J21SW6KdJgl8G1IEWK4HuARlxVKvhOTUxnomMbchDiXZ9Ui\nWMd0Z1CHEbmKFo60WyRlQFdzqgvAtzl4fMBOcFQCtsoG6eng9xW/6sGZAqvW7b/M\n6vU8oxxuCdCpwS2BY0nsxLsBDL2uHdXn9ag3mTrCa3EIl43G1JRas4Jz7/EcbJ2H\n7cMY3uOkEh/1yF6wN44SQtp7R+Ap1iiM2/tOPYgHAiSZTZVDN8snuCHwLORZMXB0\nmrxJtBhVGA6oiqjUQMKUfdlb6Sm1wN/u+L4WTgaZ67X3nOn6pKHbjR4+Ieny2YEi\n1aGVLVEwMcAjygyNUDjY5mCbom27OLn7AHyqruYGRuHtAgMBAAE=\n-----END PUBLIC KEY-----\n";
     var UPDATE_STATE_KEY = "sayframe.update.v1";
     var TAB_KEY = "sayframe.tab.v1";
     var TAB_ORDER_KEY = "sayframe.tabOrder.v1";
@@ -438,6 +441,7 @@
                 },
                 download: need,
                 fetchUrl: need,
+                verify: function () { return Promise.resolve(false); },
                 postJSON: function (url, headers, body) {
                     var h = {};
                     var k;
@@ -523,6 +527,14 @@
                             return { status: 200, sha256: crypto.createHash("sha256").update(r.body).digest("hex"), size: r.body.length };
                         });
                 });
+            },
+            // Подпись выпуска: RSA-SHA256 над текстом, подпись в base64, ключ в PEM.
+            verify: function (text, sig, pem) {
+                try {
+                    return Promise.resolve(crypto.createVerify("RSA-SHA256").update(String(text), "utf8").verify(pem, String(sig), "base64"));
+                } catch (e) {
+                    return Promise.resolve(false);
+                }
             },
             // Ссылка-референс: страница возвращается текстом, картинка или видео — файлом во временной папке.
             // destBase — путь без расширения: расширение берётся из типа файла или из адреса.
@@ -1189,8 +1201,42 @@
         return (idx >= 0 ? text.substring(0, idx) : text).replace(/^\s+|\s+$/g, "");
     }
 
-    function needsConfirmation(code) {
-        return /system\s*\.\s*callSystem|\bFile\s*\(|\bFolder\s*\(|\bSocket\s*\(|\$\s*\.\s*evalFile|\beval\s*\(|app\s*\.\s*quit|app\s*\.\s*newProject|app\s*\.\s*open\s*\(|project\s*\.\s*close|project\s*\.\s*save|renderQueue\s*\.\s*render|\.importFile\s*\(|\.remove\s*\(\s*\)/.test(code);
+    var RISK_PLAIN = /system\s*\.\s*callSystem|\bFile\s*\(|\bFolder\s*\(|\bSocket\s*\(|\$\s*\.\s*evalFile|\beval\s*\(|app\s*\.\s*quit|app\s*\.\s*newProject|app\s*\.\s*open\s*\(|project\s*\.\s*close|project\s*\.\s*save|renderQueue\s*\.\s*render|\.importFile\s*\(|\.remove\s*\(\s*\)/;
+    // Обходные пути к тем же объектам: имя собрано из кусков строки, взято через [""], псевдоним, глобальный объект,
+    // конструктор Function. Обычному скрипту анимации всё это не нужно, поэтому такой скрипт тоже показываем перед запуском.
+    var RISK_HIDDEN = new RegExp([
+        "callSystem", "evalFile", "ExternalObject", "fromCharCode", "\\bunescape\\b", "\\bdecodeURI", "\\bFunction\\b", "\\bconstructor\\b", "__\\w+__",
+        "\\bsystem\\s*[.\\[]", "\\b(File|Folder|Socket)\\s*\\.", "\\.\\s*execute\\s*\\(", "[=(,:\\[]\\s*(system|File|Folder|Socket|eval)\\s*[;,)\\]}]", "[=(,:\\[]\\s*(system|File|Folder|Socket|eval)\\s*$",
+        "[\"'](system|File|Folder|Socket|eval|quit|open|close|save|render|remove|importFile)[\"']",
+        "\\$\\s*\\.\\s*global", "\\$\\s*\\[", "\\bthis\\s*\\[", "=\\s*this\\b", "return\\s+this\\b", "[(,]\\s*this\\s*[),]",
+        "\\[[^\\]\\n]*[\"'][^\\]\\n]*\\+[^\\]\\n]*\\]", "\\[[^\\]\\n]*\\+[^\\]\\n]*[\"'][^\\]\\n]*\\]"
+    ].join("|"), "m");
+    var RISK_PLAIN_TEXT = "Этот скрипт удаляет что-то или обращается к файлам, сети, рендеру или проекту целиком. Проверьте его перед запуском.";
+    var RISK_HIDDEN_TEXT = "Этот скрипт обращается к объектам After Effects обходным путём: так можно спрятать доступ к файлам или командам системы. Проверьте его перед запуском.";
+
+    // Почему скрипт нужно показать перед запуском; пустая строка — можно запускать сразу.
+    // \u0073 и \x73 в строках сначала раскрываются, чтобы имя нельзя было спрятать за кодами символов.
+    function scriptRisk(code) {
+        var plain = String(code).replace(/\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})/g, function (m, u, x) {
+            return String.fromCharCode(parseInt(u || x, 16));
+        });
+        if (RISK_PLAIN.test(plain)) { return RISK_PLAIN_TEXT; }
+        if (RISK_HIDDEN.test(plain)) { return RISK_HIDDEN_TEXT; }
+        return "";
+    }
+
+    function needsConfirmation(code) { return scriptRisk(code) !== ""; }
+
+    // Спрашивает перед запуском скрипта, если он рискованный. true — можно запускать.
+    async function allowScript(code, title) {
+        var why = scriptRisk(code);
+        if (!why) { return true; }
+        return !!(await modal({
+            title: title || "Запустить этот скрипт?",
+            text: why,
+            code: code,
+            buttons: [{ label: "Не запускать", value: false }, { label: "Запустить", value: true, primary: true }]
+        }));
     }
 
     function trimHistory() {
@@ -1464,10 +1510,8 @@
                 break;
             }
 
-            reason = null;
-            if (needsConfirmation(code)) {
-                reason = "Этот скрипт удаляет что-то или обращается к файлам, сети, рендеру или проекту целиком. Проверьте его перед запуском.";
-            } else if (settings.alwaysAsk) {
+            reason = scriptRisk(code) || null;
+            if (reason === null && settings.alwaysAsk) {
                 reason = expl || aiName() + " подготовил скрипт.";
             }
             if (reason !== null) {
@@ -1500,7 +1544,8 @@
             if (res.runError) {
                 lastError = res.runError;
                 finish("Ошибка при выполнении" + (scriptsRun > 0 ? " правки" : "") + ": " + lastError +
-                    "\nЕсли скрипт успел что-то изменить, нажмите Cmd/Ctrl+Z, затем «Исправить ошибку».", "error");
+                    (res.undone ? "\nТо, что скрипт успел изменить, отменено. Нажмите «Исправить ошибку»." :
+                        "\nЕсли скрипт успел что-то изменить, нажмите Cmd/Ctrl+Z, затем «Исправить ошибку»."), "error");
                 return;
             }
 
@@ -1654,6 +1699,7 @@
                 if (code === null) { fails.push(i + 1); break; }
                 try { syn = (await host("syntax", [code])).error; } catch (e2) { syn = humanError(e2); }
                 if (!syn) {
+                    if (!(await allowScript(code, "Запустить скрипт сцены " + (i + 1) + "?"))) { fails.push(i + 1); break; }
                     if (settings.motionStyle !== "normal") { code = 'try { SF.style("' + settings.motionStyle + '"); } catch (eSF) {} ' + code; }
                     setStatus("Сцена " + (i + 1) + " из " + plan.scenes.length + ": выполняю скрипт…", "busy");
                     try { res = await host("run", [code, "сцена " + (i + 1), false, platform.tmpdir()]); } catch (e3) { res = { runError: humanError(e3) }; }
@@ -1690,7 +1736,7 @@
                 if (code !== null) {
                     try {
                         syn = (await host("syntax", [code])).error;
-                        if (!syn) { res = await host("run", [code, "правка после проверки", false, platform.tmpdir()]); if (!res.runError) { codes.push(code); } }
+                        if (!syn && await allowScript(code)) { res = await host("run", [code, "правка после проверки", false, platform.tmpdir()]); if (!res.runError) { codes.push(code); } }
                     } catch (e5) {}
                 }
             }
@@ -1911,7 +1957,7 @@
         if (it.codes.some(needsConfirmation)) {
             ok = await modal({
                 title: "Запустить «" + it.name + "»?",
-                text: "Этот скрипт удаляет что-то или обращается к файлам, сети, рендеру или проекту целиком. Проверьте его перед запуском.",
+                text: it.codes.map(scriptRisk).filter(Boolean)[0],
                 code: all,
                 buttons: [{ label: "Не запускать", value: false }, { label: "Запустить", value: true, primary: true }]
             });
@@ -1930,7 +1976,8 @@
             if (res.runError) {
                 setBusy(false);
                 setStatus("Ошибка в «" + it.name + "»" + (it.codes.length > 1 ? " (шаг " + (i + 1) + " из " + it.codes.length + ")" : "") + ": " + res.runError +
-                    "\nСкрипт мог рассчитывать на другую композицию или слои. Если он успел что-то изменить, нажмите Cmd/Ctrl+Z.", "error");
+                    "\nСкрипт мог рассчитывать на другую композицию или слои." +
+                    (res.undone ? " То, что этот шаг успел изменить, отменено." : " Если он успел что-то изменить, нажмите Cmd/Ctrl+Z."), "error");
                 return;
             }
         }
@@ -9051,13 +9098,33 @@
         try { window.localStorage.setItem(UPDATE_STATE_KEY, JSON.stringify(s)); } catch (e) {}
     }
 
+    // Подписанный version.json: { …поля для старых версий панели…, signed: { payload: "<JSON>", sig: "<base64>" } }.
+    // Верим только payload, и только если подпись сошлась с RELEASE_PUBLIC_KEY.
+    function signedInfo(raw) {
+        var s = raw && raw.signed;
+        if (RELEASE_PUBLIC_KEY === "") { return Promise.resolve(raw); }
+        if (!s || typeof s.payload !== "string" || typeof s.sig !== "string" || typeof platform.verify !== "function") {
+            return Promise.reject(new Error("UPDATE_UNSIGNED"));
+        }
+        return platform.verify(s.payload, s.sig, RELEASE_PUBLIC_KEY).then(function (ok) {
+            var info;
+            if (ok !== true) { throw new Error("UPDATE_UNSIGNED"); }
+            try { info = JSON.parse(s.payload); } catch (e) { throw new Error("UPDATE_BAD_INFO"); }
+            return info;
+        });
+    }
+
     // Читает version.json. Поле moved ведёт на новый адрес этого файла (переезд на другой сервер).
     function fetchUpdateInfo(url, hops) {
         var fresh = url + (url.indexOf("?") < 0 ? "?" : "&") + "t=" + Date.now();
         return platform.getText(fresh, 20000).then(function (r) {
-            var info, moved;
+            var raw;
             if (r.status !== 200) { throw new Error("UPDATE_HTTP_" + r.status); }
-            try { info = JSON.parse(r.text); } catch (e) { throw new Error("UPDATE_BAD_INFO"); }
+            try { raw = JSON.parse(r.text); } catch (e) { throw new Error("UPDATE_BAD_INFO"); }
+            if (!raw || typeof raw !== "object") { throw new Error("UPDATE_BAD_INFO"); }
+            return signedInfo(raw);
+        }).then(function (info) {
+            var moved;
             if (!info || typeof info !== "object") { throw new Error("UPDATE_BAD_INFO"); }
             moved = httpsUrl(info.moved);
             if (moved && moved !== url && hops < 2) { return fetchUpdateInfo(moved, hops + 1); }
@@ -9131,6 +9198,8 @@
         if (!updateConfigured()) { return Promise.resolve(null); }
         state = loadUpdateState();
         if (state.base !== UPDATE_URL) { state = { base: UPDATE_URL, justUpdated: state.justUpdated }; }
+        // Запомненное прежней версией панели (без проверки подписи) не годится.
+        if (RELEASE_PUBLIC_KEY !== "" && state.signed !== true) { delete state.latest; }
         if (!manual && state.latest && typeof state.lastCheck === "number" &&
                 Date.now() >= state.lastCheck && Date.now() - state.lastCheck < UPDATE_THROTTLE_MS) {
             considerOffer(state.latest, false);
@@ -9145,6 +9214,7 @@
             state.lastCheck = Date.now();
             state.url = offer.url !== UPDATE_URL ? offer.url : "";
             state.latest = offer;
+            state.signed = RELEASE_PUBLIC_KEY !== "";
             storeUpdateState(state);
             considerOffer(offer, manual);
             return offer;
@@ -9157,6 +9227,7 @@
         if (m === "UPDATE_BAD_INFO") { return "Описание обновления на сервере повреждено. Попробуйте позже."; }
         if (m === "UPDATE_NO_ACCESS") { return "Нет прав на запись в папку панели. Установите новую версию установщиком."; }
         if (m === "UPDATE_SIGNED") { return "Эта копия панели установлена из подписанного пакета. Установите новую версию установщиком."; }
+        if (m === "UPDATE_ROLLED_BACK") { return "Обновление не установилось, панель осталась на прежней версии. Попробуйте ещё раз позже."; }
         if (m === "UPDATE_INSTALL_FAILED") { return "Обновление установилось не полностью. Переустановите панель установщиком."; }
         return "Не удалось скачать обновление. Проверьте интернет и попробуйте ещё раз.";
     }
@@ -9181,13 +9252,16 @@
                 url: httpsUrl(f.path + "?v=" + String(f.sha256).slice(0, 12), base),
                 sha: String(f.sha256).toLowerCase(),
                 tmp: platform.join(tmp, "file" + i),
-                dest: platform.join.apply(null, [ext].concat(f.path.split("/")))
+                bak: platform.join(tmp, "old" + i),
+                dest: platform.join.apply(null, [ext].concat(f.path.split("/"))),
+                saved: false,     // прежний файл отложен в bak
+                placed: false     // новый файл стоит на месте
             });
         }
 
         function cleanup() {
             var k;
-            for (k = 0; k < plan.length; k++) { platform.remove(plan[k].tmp); }
+            for (k = 0; k < plan.length; k++) { platform.remove(plan[k].tmp); platform.remove(plan[k].bak); }
         }
 
         chain = platform.exists(platform.join(ext, "META-INF", "signatures.xml")).then(function (signed) {
@@ -9207,10 +9281,30 @@
                 });
             };
         }
+        // Прежний файл сначала откладывается, потом на его место встаёт новый. Если что-то не получилось,
+        // rollback() возвращает все отложенные файлы: панель остаётся целиком на прежней версии.
         function placeOne(p) {
             return function () {
-                return platform.mkdirp(platform.dirname(p.dest)).then(function () { return platform.move(p.tmp, p.dest); });
+                return platform.exists(p.dest).then(function (had) {
+                    if (!had) { return null; }
+                    return platform.move(p.dest, p.bak).then(function () { p.saved = true; });
+                }).then(function () {
+                    return platform.mkdirp(platform.dirname(p.dest));
+                }).then(function () {
+                    return platform.move(p.tmp, p.dest);
+                }).then(function () { p.placed = true; });
             };
+        }
+        function rollback() {
+            var back = Promise.resolve(true);
+            plan.slice().reverse().forEach(function (p) {
+                back = back.then(function (ok) {
+                    var step = p.placed ? platform.remove(p.dest) : Promise.resolve();
+                    return step.then(function () { return p.saved ? platform.move(p.bak, p.dest) : null; })
+                        .then(function () { return ok; }, function () { return false; });
+                });
+            });
+            return back;
         }
         for (i = 0; i < plan.length; i++) { chain = chain.then(fetchOne(plan[i], i)); }
         chain = chain.then(function () {
@@ -9218,7 +9312,9 @@
             var k;
             updateMessage("Устанавливаю обновление…", false);
             for (k = 0; k < plan.length; k++) { placing = placing.then(placeOne(plan[k])); }
-            return placing.catch(function () { throw new Error("UPDATE_INSTALL_FAILED"); });
+            return placing.catch(function () {
+                return rollback().then(function (ok) { throw new Error(ok ? "UPDATE_ROLLED_BACK" : "UPDATE_INSTALL_FAILED"); });
+            });
         }).then(function () {
             // Новая версия host.jsx должна заменить загруженную в After Effects.
             hostReady = {};
@@ -9284,9 +9380,11 @@
             } else {
                 hint("У вас последняя версия.", "ok");
             }
-        }).catch(function () {
+        }).catch(function (e) {
             ui.checkUpdate.disabled = false;
-            hint("Не удалось проверить обновления. Проверьте интернет и попробуйте ещё раз.", "bad");
+            hint(e && e.message === "UPDATE_UNSIGNED" ?
+                "На сервере лежит обновление без подписи автора. Панель его не ставит. Сообщите автору Sayframe." :
+                "Не удалось проверить обновления. Проверьте интернет и попробуйте ещё раз.", "bad");
         });
     }
 
