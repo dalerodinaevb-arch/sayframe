@@ -311,6 +311,8 @@
         "    var down = '', n = 0, i, k, f, hit, app, at;",
         "    function say(t) { so.writeData($(t + '\\n').dataUsingEncoding(4)); }",
         "    say('READY');",
+        // macOS 10.15+: без разрешения «Мониторинг ввода» система не показывает чужие нажатия. Просим его один раз.
+        "    try { if (!$.CGPreflightListenEventAccess()) { $.CGRequestListenEventAccess(); say('NOACCESS'); } } catch (e) {}",
         "    while (true) {",
         "        if (n++ % 40 === 0) {",
         "            at = fm.attributesOfItemAtPathError(hb, null);",
@@ -588,17 +590,19 @@
                     });
                 });
             },
-            // Долгий процесс: onLine получает каждую строку его вывода, onExit — код выхода.
+            // Долгий процесс: onLine получает каждую строку его вывода, onExit — код выхода и конец текста ошибки.
             spawn: function (file, args, onLine, onExit) {
                 var child, rest = "";
-                try { child = cp.spawn(file, args, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true }); } catch (e) { onExit(-1); return { kill: function () {} }; }
+                var err = "";
+                try { child = cp.spawn(file, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true }); } catch (e) { onExit(-1, String(e && e.message || e)); return { kill: function () {} }; }
+                child.stderr.on("data", function (d) { err = (err + d.toString("utf8")).slice(-400); });
                 child.stdout.on("data", function (d) {
                     var lines = (rest + d.toString("utf8")).split(/\r?\n/);
                     rest = lines.pop();
                     lines.forEach(function (l) { if (l) { onLine(l); } });
                 });
-                child.on("error", function () { onExit(-1); });
-                child.on("exit", function (code) { onExit(code === null ? -1 : code); });
+                child.on("error", function (e) { onExit(-1, String(e && e.message || e)); });
+                child.on("exit", function (code) { onExit(code === null ? -1 : code, err); });
                 return { kill: function () { try { child.kill(); } catch (e) {} } };
             },
             pickFile: pickFile,
@@ -910,7 +914,7 @@
         bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
         bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"),
         bgBrandSwatches: el("bgBrandSwatches"), bgBrandHex: el("bgBrandHex"), bgBrandPick: el("bgBrandPick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
+        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
@@ -6456,6 +6460,12 @@
 
     var KEYWATCH_BEAT_MS = 3000;
     var keyWatch = null;        // { proc, list, timer, hb } — наблюдатель за клавишами (см. JXA_KEYWATCH)
+    var keyWatchState = "";     // что показать в настройках под сочетаниями
+
+    function showKeyWatchState(text) {
+        keyWatchState = text;
+        ui.keyWatchState.textContent = text;
+    }
 
     function watchHostHotkeys(map) {
         var list = [], k, parts;
@@ -6491,7 +6501,12 @@
         }
         if (keyWatch && JSON.stringify(keyWatch.list) === JSON.stringify(watch)) { return; }
         stopKeyWatch();
-        if (!watch.length || !platform.available || typeof platform.spawn !== "function") { return; }
+        if (!watch.length) { showKeyWatchState(""); return; }
+        if (!platform.available || typeof platform.spawn !== "function") {
+            showKeyWatchState("Помощник за клавишами недоступен: сочетания работают, пока фокус на панели.");
+            return;
+        }
+        showKeyWatchState("Запускаю помощника за клавишами…");
         tmp = platform.tmpdir();
         hb = platform.join(tmp, "sayframe_keys_" + Date.now() + ".beat");
         listFile = hb.replace(/\.beat$/, ".json");
@@ -6507,12 +6522,21 @@
         w.proc = platform.spawn(platform.isWindows() ? "powershell" : "osascript",
             platform.isWindows() ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, hb, listFile] : ["-l", "JavaScript", script, hb, listFile],
             function (line) {
-                if (keyWatch === w && line.indexOf("HIT ") === 0) { outsideHotkey(line.substring(4), "watch"); }
+                if (keyWatch !== w) { return; }
+                if (line.indexOf("HIT ") === 0) { outsideHotkey(line.substring(4), "watch"); }
+                else if (line === "READY") { showKeyWatchState("Помощник за клавишами работает: сочетания срабатывают во всём After Effects."); }
+                else if (line === "NOACCESS") {
+                    showKeyWatchState("macOS не даёт помощнику видеть клавиши вне панели. Откройте «Системные настройки» → «Конфиденциальность и безопасность» → " +
+                        "«Мониторинг ввода» и включите там Adobe After Effects (или osascript), затем закройте и снова откройте панель.");
+                    setStatus("Чтобы сочетания работали во всём After Effects, разрешите «Мониторинг ввода» (подробнее — в настройках панели, раздел «Общие»).", "");
+                }
             },
-            function () {
+            function (code, err) {
                 platform.remove(script);
                 platform.remove(listFile);
                 if (keyWatch !== w) { return; }
+                showKeyWatchState("Помощник за клавишами не запустился" + (err ? ": " + String(err).replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "").slice(-200) : " (код " + code + ")") +
+                    ". Сочетания работают, пока фокус на панели" + (isMac() ? ", и через After Effects." : "."));
                 // Наблюдатель не запустился или упал — остаются After Effects и сама панель.
                 clearInterval(w.timer);
                 platform.remove(hb);

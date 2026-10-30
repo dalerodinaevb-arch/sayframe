@@ -1948,7 +1948,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("KW1 the panel starts the key watcher (osascript on Mac) with a pulse file and the list of shortcuts", t.length === 1 && t[0].file === "osascript" && c[0] === "-l" && c[1] === "JavaScript" &&
     /CGEventSourceKeyState/.test(fs.readFileSync(c[2], "utf8")) && fs.existsSync(c[3]) &&
     JSON.stringify(JSON.parse(fs.readFileSync(c[4], "utf8"))) === JSON.stringify([{ id: "console", code: 49, ctrl: true, alt: false, shift: false, cmd: false }, { id: "pasteAny", code: 9, ctrl: false, alt: false, shift: false, cmd: true }]), JSON.stringify(t));
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  check("KW1 settings say the helper is starting", (await p.page.locator("#keyWatchState").innerText()) === "Запускаю помощника за клавишами…");
   await watcherSays(p, 0, "READY");
+  check("KW1 and then that it works", (await p.page.locator("#keyWatchState").innerText()) === "Помощник за клавишами работает: сочетания срабатывают во всём After Effects.");
+  await p.page.click("#settingsClose");
   await p.page.waitForTimeout(200);
   check("KW2 After Effects keeps watching the keys too (a spare on Mac)", hostKeys(p).length === 1 && p.ae.log.tasks.some((x) => !x.cancelled), JSON.stringify(hostKeys(p)));
   await p.page.evaluate(() => document.activeElement && document.activeElement.blur());
@@ -1983,9 +1987,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await watcherSays(p, 1, "HIT tabTools");
   await p.page.waitForTimeout(100);
   check("KW4 the new shortcut works from outside", (await p.page.locator("#tabMotion").getAttribute("aria-selected")) === "true");
-  await p.page.evaluate(() => window.__spawns[1].onExit(1));
+  await watcherSays(p, 1, "NOACCESS");
+  check("KW6 macOS without 'Input Monitoring': the status tells where to allow it", /Мониторинг ввода/.test(await p.status()));
+  await p.page.evaluate(() => window.__spawns[1].onExit(1, "execution error: CGEventSourceKeyState is not defined (-2700)\n"));
   await p.page.waitForTimeout(200);
   check("KW5 if the watcher stops, After Effects still watches the keys", hostKeys(p).length === 2 && p.errors.length === 0, JSON.stringify(hostKeys(p)));
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  t = await p.page.locator("#keyWatchState").innerText();
+  check("KW5 settings say why it stopped", t === "Помощник за клавишами не запустился: execution error: CGEventSourceKeyState is not defined (-2700). Сочетания работают, пока фокус на панели, и через After Effects.", t);
   await p.close();
 
   console.log("\n=== paste dialog on Cmd/Ctrl+V anywhere in After Effects ===");
