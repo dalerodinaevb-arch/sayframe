@@ -679,16 +679,22 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           if (opts.offline) throw new Error("getaddrinfo ENOTFOUND api.anthropic.com");
           const r = net.replies.shift();
           if (r === undefined) return { status: 500, text: "" };
-          return { status: r.type === "error" ? 400 : 200, text: JSON.stringify(r) };
+          // { hang: true } — the server never answers (until «Стоп»); { netError } — the connection breaks;
+          // { httpStatus, retryAfter } — an error with that status (429, 529…).
+          if (r.hang) return new Promise(() => {});
+          if (r.netError) throw new Error(r.netError);
+          const reply = Object.assign({}, r); delete reply.httpStatus; delete reply.retryAfter;
+          return { status: r.httpStatus || (r.type === "error" ? 400 : 200), text: JSON.stringify(reply), retryAfter: r.retryAfter || "" };
         }
       }
       throw new Error("unknown platform call " + name);
     });
 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false }, opts.settings || {});
-    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl }) => {
+    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
       window.__SAYFRAME_TEST_UPDATE_KEY__ = updateKey;
+      window.__SAYFRAME_TEST_RETRY_MS__ = [40, 40, 40];
       if (statsUrl) window.__SAYFRAME_STATS_URL__ = statsUrl;
       window.__SAYFRAME_TEST_UPDATE_EVERY_MS__ = updateEveryMs || 0;
       window.__opened = [];
@@ -722,12 +728,21 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         readBase64: call("readBase64"), readText: call("readText"), writeText: call("writeText"),
         writeBytes: (p, bytes) => window.__plat("writeBytes", [p, Array.from(bytes)]),
         remove: call("remove"), exists: call("exists"), mkdirp: call("mkdirp"), move: call("move"),
-        exec: call("exec"), pickFile: call("pickFile"), pickFiles: call("pickFiles"), imageSize: call("imageSize"), postJSON: call("postJSON"),
+        exec: call("exec"), pickFile: call("pickFile"), pickFiles: call("pickFiles"), imageSize: call("imageSize"), postJSON: (u, h, b, t) => window.__plat("postJSON", [u, h, b, t]),
         getText: call("getText"), download: call("download"), fetchUrl: call("fetchUrl"), verify: call("verify"),
         openExternal: (u) => { window.__opened.push(u); return true; },
         reload: () => { window.__plat("reloaded", []).then(() => window.location.reload()); }
       };
-    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "" });
+      // opts.keyWatch: the platform can start long processes (the key watcher). The test plays its output.
+      if (keyWatch) {
+        window.__spawns = [];
+        window.__SAYFRAME_TEST_PLATFORM__.spawn = (file, args, onLine, onExit) => {
+          const s = { file, args, onLine, onExit, killed: false };
+          window.__spawns.push(s);
+          return { kill() { s.killed = true; } };
+        };
+      }
+    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch });
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
     // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
@@ -792,7 +807,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ replies: [msg("Создаю слой.\n```javascript\napp.__ran('one');\nvar a = 1;\n```\n")] });
   await p.run('  сделай текст «Привет» \\ с "кавычками"\nи второй строкой  ');
   c = p.net.requests[0];
-  check("A1 one request with key, version and model", p.net.requests.length === 1 && c.url === "https://api.anthropic.com/v1/messages" && c.headers["x-api-key"] === "sk-ant-test" && c.headers["anthropic-version"] === "2023-06-01" && c.body.model === "claude-sonnet-5-5" && c.body.max_tokens === 16384 && c.body.system.length > 500);
+  check("A1 one request with key, version and model", p.net.requests.length === 1 && c.url === "https://api.anthropic.com/v1/messages" && c.headers["x-api-key"] === "sk-ant-test" && c.headers["anthropic-version"] === "2023-06-01" && c.body.model === "claude-sonnet-5-5" && c.body.max_tokens === 16384 && c.body.system[0].text.length > 500);
   check("A1 prompt and snapshot reach Claude intact", /\[Request\]\nсделай текст «Привет» \\ с "кавычками"\nи второй строкой$/.test(c.body.messages[0].content) && /#1 \[text\] "Заголовок" SELECTED/.test(c.body.messages[0].content) && /#2 \[solid\] "Фон"/.test(c.body.messages[0].content));
   check("A1 script ran inside one undo group named after the request", p.ae.log.ran.join() === "one" && p.ae.log.undo.length === 2 && /^begin:Sayframe: сделай текст «Привет» \\ с "кавычками" и /.test(p.ae.log.undo[0]) && p.ae.log.undo[0].indexOf("\n") < 0);
   check("A1 status and reply card", (await p.status()) === "Готово: Создаю слой.\nОтменить всё: Cmd/Ctrl+Z." && (await p.statusKind()) === "done" && (await p.page.locator("#replyText").isHidden()) && (await p.page.locator("#fixBtn").isHidden()) && /app\.__ran\('one'\)/.test(await p.page.locator("#replyCode").textContent()));
@@ -1029,7 +1044,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#exprApplyBtn"); await p.idle();
   c = p.net.requests[0].body;
   check("E2 the AI gets the wish and each selected property with its layer, path, value and keyframes (groups are skipped)", /\[Request\]\nпусть качается, а поворот крутится/.test(c.messages[0].content) && /1\. Layer 1 "Logo" > Transform > Position \(matchName ADBE Position\), value \[960, 540\], keyframes: 2, no expression yet/.test(c.messages[0].content) && /2\. Layer 1 "Logo" > Transform > Rotation/.test(c.messages[0].content) && !/3\./.test(c.messages[0].content), c.messages[0].content);
-  check("E2 with its own instructions for expressions, not the script ones", /You write Adobe After Effects expressions/.test(c.system) && !/writing a script that the panel runs/.test(c.system));
+  check("E2 with its own instructions for expressions, not the script ones", /You write Adobe After Effects expressions/.test(c.system[0].text) && !/writing a script that the panel runs/.test(c.system[0].text));
   check("E3 the expressions are on the properties", X.pos.expression === "var freq = 2;\nwiggle(freq, 30)" && X.rot.expression === "time * 90" && X.op.sets.length === 0);
   check("E3 one undo step, the status lists what got an expression", p.ae.log.undo.join() === "begin:Sayframe: expression,end" && /^Выражение стоит: Transform > Position, Transform > Rotation\.\nПозиция качается, поворот крутится\.\nОтменить: Cmd\/Ctrl\+Z\.$/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
   check("E3 the expressions are shown in the reply card, nothing to save as a script", /\/\/ Transform > Position\nvar freq = 2;/.test(await p.page.locator("#replyCode").textContent()) && (await p.page.locator("#saveRow").isHidden()));
@@ -1295,6 +1310,92 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("C8 an unknown saved OpenAI model falls back to the first one", (await p.page.getAttribute('#models button[data-value="gpt-6.1-sol"]', "aria-pressed")) === "true");
   await p.close();
 
+  console.log("\n=== AI requests: cache, retry, stop, cost ===");
+  const overloaded = { type: "error", error: { type: "overloaded_error", message: "Overloaded" }, httpStatus: 529 };
+  const limited = { type: "error", error: { type: "rate_limit_error", message: "Rate limited" }, httpStatus: 429 };
+  const withUsage = (m, u) => Object.assign(m, { usage: u });
+  p = await open({ replies: [overloaded, msg("Ок.\n```javascript\napp.__ran('again');\n```")] });
+  await p.run("сделай слой");
+  c = p.net.requests[0].body;
+  check("AI1 the instructions and the dialog are marked for Claude's cache", c.system.length === 1 && c.system[0].cache_control.type === "ephemeral" && c.cache_control.type === "ephemeral" && typeof c.messages[0].content === "string", JSON.stringify(c.system).slice(0, 80));
+  check("AI2 an overloaded server (529) is asked again, the script runs", p.net.requests.length === 2 && p.ae.log.ran.join() === "again" && (await p.statusKind()) === "done" && JSON.stringify(p.net.requests[1].body.messages) === JSON.stringify(p.net.requests[0].body.messages), await p.status());
+  await p.close();
+
+  p = await open({ replies: [limited, overloaded, overloaded, overloaded] });
+  await p.run("сделай слой");
+  check("AI3 after 3 retries it gives up with a plain message, nothing runs", p.net.requests.length === 4 && p.ae.log.ran.length === 0 && (await p.statusKind()) === "error" && (await p.status()) === "Сервер Claude сейчас перегружен. Повторите через минуту.", await p.status());
+  p.net.replies.push(msg("x\n```js\napp.__ran('next');\n```"));
+  await p.run("другое");
+  check("AI3 the failed question is not left in the history", p.net.requests[4].body.messages.length === 1 && p.ae.log.ran.join() === "next");
+  await p.close();
+
+  p = await open({ replies: [{ type: "error", error: { type: "invalid_request_error", message: "bad" } }] });
+  await p.run("сделай слой");
+  check("AI4 a real error (400) is not retried", p.net.requests.length === 1 && (await p.status()) === "Claude API: bad", await p.status());
+  await p.close();
+
+  p = await open({ replies: [Object.assign({}, limited, { retryAfter: "1" }), msg("Ок.\n```javascript\napp.__ran('later');\n```")] });
+  await p.page.fill("#prompt", "сделай слой"); await p.page.click("#runBtn");
+  t = await p.page.waitForFunction(() => /повторю через/.test(document.getElementById("status").textContent), null, { timeout: 5000 }).then(() => p.status(), () => "");
+  check("AI5 while waiting the status says why and when it retries", t === "Claude: слишком много запросов подряд, повторю через 1 с (попытка 2 из 4)…", t);
+  await p.idle();
+  check("AI5 then it goes on as usual", p.ae.log.ran.join() === "later" && /^Готово/.test(await p.status()));
+  await p.close();
+
+  p = await open({ replies: [{ hang: true }] });
+  check("AI6 no Stop button while idle", await p.page.locator("#stopBtn").isHidden());
+  await p.page.fill("#prompt", "долгая задача"); await p.page.click("#runBtn");
+  await p.page.waitForSelector("#stopBtn:not([hidden])", { timeout: 5000 }).catch(() => {});
+  t = await p.page.locator("#stopBtn").isVisible();
+  await p.page.click("#stopBtn");
+  await p.idle();
+  check("AI6 Stop during a request: it ends at once, nothing runs", t && p.ae.log.ran.length === 0 && (await p.status()) === "Остановлено, скрипт не запускался." && (await p.page.locator("#stopBtn").isHidden()) && !(await p.page.locator("#runBtn").isDisabled()), await p.status());
+  p.net.replies.push(msg("x\n```js\napp.__ran('after stop');\n```"));
+  await p.run("другое");
+  check("AI6 the next request works and the stopped question is gone", p.ae.log.ran.join() === "after stop" && p.net.requests[1].body.messages.length === 1 && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  p = await open({ replies: [Object.assign({}, overloaded, { retryAfter: "3" })] });
+  await p.page.fill("#prompt", "задача"); await p.page.click("#runBtn");
+  await p.page.waitForFunction(() => /повторю через/.test(document.getElementById("status").textContent), null, { timeout: 5000 }).catch(() => {});
+  await p.page.click("#stopBtn").catch(() => {});
+  await p.idle();
+  check("AI7 Stop also works while waiting to retry", p.net.requests.length === 1 && (await p.status()) === "Остановлено, скрипт не запускался.", await p.status());
+  await p.close();
+
+  p = await open({ replies: [
+    withUsage(msg("Ок.\n```javascript\napp.__ran('a');\n```"), { input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 10000, cache_creation_input_tokens: 2000 }),
+    withUsage(msg("Ок.\n```javascript\napp.__ran('b');\n```"), { input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 10000, cache_creation_input_tokens: 2000 })] });
+  check("AI8 no cost line before the first request", await p.page.locator("#spendLine").isHidden());
+  await p.run("первое");
+  t = await p.page.locator("#spendLine").innerText();
+  // Sonnet 5.5: 1000 × $2 + 2000 × $2.5 (cache write) + 10000 × $0.2 (cache read) + 500 × $10 = $0.014
+  check("AI8 the cost of the request and of the month", t === "Расход: $0.014 за этот запрос, $0.014 за месяц.", t);
+  await p.run("второе");
+  t = await p.page.locator("#spendLine").innerText();
+  check("AI8 the month adds up, the request starts from zero", t === "Расход: $0.014 за этот запрос, $0.028 за месяц.", t);
+  await p.restart();
+  p.net.replies.push(withUsage(msg("Ок."), { input_tokens: 100000, output_tokens: 0 }));
+  await p.run("третье");
+  t = await p.page.locator("#spendLine").innerText();
+  check("AI8 the month total survives a restart", t === "Расход: $0.200 за этот запрос, $0.228 за месяц.", t);
+  await p.tab("motion"); await p.page.click("#organizeBtn"); await p.idle();
+  check("AI8 a tool without AI hides the cost line", await p.page.locator("#spendLine").isHidden());
+  await p.close();
+
+  p = await open({ settings: { provider: "openai", openaiKey: "sk-openai-test" }, replies: [Object.assign(gpt("Ок.\n```javascript\napp.__ran('g');\n```"), { usage: { prompt_tokens: 1200, completion_tokens: 300 } })] });
+  await p.run("сделай слой");
+  t = await p.page.locator("#spendLine").innerText();
+  check("AI9 with ChatGPT the line counts tokens", t === "Расход: 1 500 токенов за этот запрос." && p.ae.log.ran.join() === "g", t);
+  await p.close();
+
+  p = await open({ replies: [overloaded] });
+  await p.page.click("#settingsBtn");
+  await p.page.click("#testKey");
+  await p.page.waitForFunction(() => /работает|API|связи|перегружен/.test(document.getElementById("keyHint").textContent));
+  check("AI10 the key test is one quick request, no retries, no cost line", p.net.requests.length === 1 && /перегружен/.test(await p.page.locator("#keyHint").innerText()) && (await p.page.locator("#spendLine").isHidden()));
+  await p.close();
+
   console.log("\n=== motion style ===");
   p = await open({ replies: [msg("Делаю.\n```javascript\napp.__ran('ms');\n```"), msg("Делаю.\n```javascript\napp.__ran('ms2');\n```")] });
   t = await p.page.locator("#styleRow .style-chip").allInnerTexts();
@@ -1302,7 +1403,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click('#styleRow [data-style="energetic"]');
   await p.run("сделай заставку");
   c = p.net.requests[0].body;
-  check("MS2 the AI is told the style, and knows the SF library and the motion rules", /\[Motion style\] Energetic and punchy/.test(JSON.stringify(c.messages[0].content)) && /SF\.popIn\(layer, t/.test(c.system) && /Nothing moves linearly/.test(c.system) && /SF\.textIn\(textLayer/.test(c.system), JSON.stringify(c.messages[0].content).slice(0, 300));
+  check("MS2 the AI is told the style, and knows the SF library and the motion rules", /\[Motion style\] Energetic and punchy/.test(JSON.stringify(c.messages[0].content)) && /SF\.popIn\(layer, t/.test(c.system[0].text) && /Nothing moves linearly/.test(c.system[0].text) && /SF\.textIn\(textLayer/.test(c.system[0].text), JSON.stringify(c.messages[0].content).slice(0, 300));
   check("MS2 the script runs with that style set in the SF library", vm.runInContext("SF.defaults.name", p.ae.ctx) === "energetic" && p.ae.log.ran.join() === "ms");
   await p.restart();
   check("MS3 the style is remembered", (await p.page.getAttribute('#styleRow [data-style="energetic"]', "aria-checked")) === "true");
@@ -1832,6 +1933,77 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsClose");
   t = await holdKeys(p, { keyName: "3", altKey: true });
   check("K5 a tab shortcut from outside switches tabs", (await p.page.locator("#tabMotion").getAttribute("aria-selected")) === "true" && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  console.log("\n=== hotkeys: key watcher ===");
+  const spawns = (p) => p.page.evaluate(() => window.__spawns.map((s) => ({ file: s.file, args: s.args, killed: s.killed })));
+  const watcherSays = (p, i, line) => p.page.evaluate(({ i, line }) => window.__spawns[i].onLine(line), { i, line });
+  const hostKeys = (p) => JSON.parse(vm.runInContext("JSON.stringify($.global.__sayframeKeys)", p.ae.ctx));
+  p = await open({ keyWatch: true, selectedLayers: [mkFxLayer("A")] });
+  await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
+  t = await spawns(p);
+  c = t[0] && t[0].args;
+  check("KW1 the panel starts the key watcher (osascript on Mac) with a pulse file and the list of shortcuts", t.length === 1 && t[0].file === "osascript" && c[0] === "-l" && c[1] === "JavaScript" &&
+    /CGEventSourceKeyState/.test(fs.readFileSync(c[2], "utf8")) && fs.existsSync(c[3]) &&
+    JSON.stringify(JSON.parse(fs.readFileSync(c[4], "utf8"))) === JSON.stringify([{ id: "console", code: 49, ctrl: true, alt: false, shift: false, cmd: false }]), JSON.stringify(t));
+  await watcherSays(p, 0, "READY");
+  await p.page.waitForTimeout(200);
+  check("KW2 After Effects keeps watching the keys too (a spare on Mac)", hostKeys(p).length === 1 && p.ae.log.tasks.some((x) => !x.cancelled), JSON.stringify(hostKeys(p)));
+  await p.page.evaluate(() => document.activeElement && document.activeElement.blur());
+  await watcherSays(p, 0, "HIT console");
+  await p.page.waitForTimeout(100);
+  check("KW3 a press reported by the watcher opens the search", await p.page.locator("#fxConsole").isVisible());
+  await p.page.keyboard.press("Control+Space");
+  await p.page.waitForTimeout(100);
+  check("KW3 the same press caught by the panel too does not close it again", await p.page.locator("#fxConsole").isVisible());
+  await p.page.keyboard.press("Escape");
+  await p.page.waitForTimeout(900);
+  await p.page.evaluate(() => document.activeElement && document.activeElement.blur());
+  Object.assign(p.ae.keyboardState, { keyName: "Space", ctrlKey: true, altKey: false, shiftKey: false, metaKey: false });
+  vm.runInContext("sayframeHost.pollKeys()", p.ae.ctx);
+  for (const ev of p.ae.log.events.splice(0)) await p.page.evaluate((ev) => window.__cepListeners[ev.type] && window.__cepListeners[ev.type](ev), ev);
+  await watcherSays(p, 0, "HIT console");
+  await p.page.waitForTimeout(100);
+  check("KW3 the same press seen by After Effects and by the watcher runs once", await p.page.locator("#fxConsole").isVisible());
+  Object.assign(p.ae.keyboardState, { keyName: "", ctrlKey: false });
+  vm.runInContext("sayframeHost.pollKeys()", p.ae.ctx);
+  await p.page.keyboard.press("Escape");
+  await watcherSays(p, 0, "HIT nothing");
+  await watcherSays(p, 0, "garbage");
+  check("KW3 unknown lines are ignored", (await p.page.locator("#fxConsole").isHidden()) && p.errors.length === 0, p.errors.join(" | "));
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click('#hotkeys [data-action="tabTools"]'); await p.page.keyboard.press("Alt+Digit3");
+  await p.page.waitForFunction(() => window.__spawns.length === 2, null, { timeout: 5000 }).catch(() => {});
+  t = await spawns(p);
+  check("KW4 a changed shortcut restarts the watcher with the new list", t.length === 2 && t[0].killed && !t[1].killed && JSON.parse(fs.readFileSync(t[1].args[4], "utf8")).map((x) => x.id + ":" + x.code + ":" + x.alt).join() === "console:49:false,tabTools:20:true", JSON.stringify(t));
+  await p.page.click("#settingsClose");
+  await watcherSays(p, 1, "READY");
+  await watcherSays(p, 1, "HIT tabTools");
+  await p.page.waitForTimeout(100);
+  check("KW4 the new shortcut works from outside", (await p.page.locator("#tabMotion").getAttribute("aria-selected")) === "true");
+  await p.page.evaluate(() => window.__spawns[1].onExit(1));
+  await p.page.waitForTimeout(200);
+  check("KW5 if the watcher stops, After Effects still watches the keys", hostKeys(p).length === 2 && p.errors.length === 0, JSON.stringify(hostKeys(p)));
+  await p.close();
+
+  console.log("\n=== tab icons in a narrow panel ===");
+  const tabState = (p) => p.page.evaluate(() => ({ icons: document.getElementById("tabs").classList.contains("tabs-icons"),
+    shown: [...document.querySelectorAll(".tab")].map((b) => getComputedStyle(b.querySelector(".tab-icon")).display + "/" + getComputedStyle(b.querySelector(".tab-label")).display).join() }));
+  p = await open({ width: 380 });
+  t = await tabState(p);
+  check("TI1 when the names fit, the tabs show words", !t.icons && /^(none\/inline,){4}none\/inline$/.test(t.shown) && (await p.page.locator("#tabTools").innerText()) === "Анимация", JSON.stringify(t));
+  await p.page.setViewportSize({ width: 330, height: 760 });
+  await p.page.waitForTimeout(200);
+  t = await tabState(p);
+  check("TI2 when a name would be cut, every tab becomes an icon, with its name in the tooltip and for screen readers", t.icons && /^(block\/none,){4}block\/none$/.test(t.shown) &&
+    (await p.page.getAttribute("#tabMotion", "title")) === "Инструменты\nДвойной щелчок — поменять вкладки местами" && (await p.page.getAttribute("#tabMotion", "aria-label")) === "Инструменты", JSON.stringify(t));
+  await p.page.click("#tabMotion");
+  check("TI2 icon tabs still switch views", (await p.page.locator("#tabMotion").getAttribute("aria-selected")) === "true" && (await p.page.locator("#viewMotion").isVisible()));
+  await p.page.screenshot({ path: path.join(SHOTS, "16-tab-icons.png") });
+  await p.page.setViewportSize({ width: 420, height: 760 });
+  await p.page.waitForTimeout(200);
+  t = await tabState(p);
+  check("TI3 widening the panel brings the words back", !t.icons && (await p.page.getAttribute("#tabMotion", "title")) === "Двойной щелчок — поменять вкладки местами" && p.errors.length === 0, JSON.stringify(t));
   await p.close();
 
   console.log("\n=== animation library ===");
