@@ -865,6 +865,16 @@
 
         <div class="group">
           <label class="switch">
+            <input id="pasteAnywhere" type="checkbox">
+            <span class="track"></span>
+            <span class="text">Вставка картинки по Cmd/Ctrl+V во всём After Effects
+              <small>Если в буфере картинка или снимок экрана, панель спросит: прекомпозить или оставить как есть.</small>
+            </span>
+          </label>
+        </div>
+
+        <div class="group">
+          <label class="switch">
             <input id="infoTipsOn" type="checkbox">
             <span class="track"></span>
             <span class="text">Подсказки при наведении
@@ -887,6 +897,13 @@
           <span class="label">Горячие клавиши</span>
           <div id="hotkeys" class="hotkeys"></div>
           <p id="hotkeyNote" class="hint bad" aria-live="polite"></p>
+          <p id="keyWatchState" class="hint" aria-live="polite"></p>
+          <span class="label">Поиск эффектов по сочетанию открывается</span>
+          <div id="fxWhere" class="frames">
+            <button data-value="panel">В панели Sayframe</button>
+            <button data-value="cursor">У курсора</button>
+          </div>
+          <p class="hint">«У курсора» — маленькое окно поиска прямо там, где мышь, как в FX Console. Если сочетание нажато в самой панели, поиск откроется в ней.</p>
           <button id="hotkeysReset" class="ghost">Вернуть стандартные</button>
           <p class="hint">Нажмите на сочетание, чтобы изменить его: нажмите новое на клавиатуре или выберите клавиши мышью. Сохраняется сразу. Сочетания работают во всём After Effects — чуть подержите их, как в FX Console. Панель Sayframe должна быть открыта и видна на экране.</p>
         </div>

@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.56.0";
+    var VERSION = "1.57.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -127,6 +127,8 @@
         toolTitles: true,   // показывать ли названия блоков раздела «Инструменты»
         stats: true,        // отправлять ли автору анонимный сигнал «установлено» и «открыто сегодня»
         infoTips: true,     // подсказки-окошки при наведении курсора на секунду
+        pasteAnywhere: true,    // Cmd/Ctrl+V с картинкой в буфере где угодно в After Effects открывает окно вставки
+        fxWhere: "panel",   // где открывается поиск эффектов по сочетанию вне панели: "panel" или "cursor"
         hotkeys: ""         // горячие клавиши: "console=Ctrl+Space;snapshot=;…"; пусто — стандартные
     };
     // Стили анимации: подпись в панели и что это значит для AI (библиотека SF получает то же имя).
@@ -206,12 +208,17 @@
 
     // Скрипт для macOS: сохраняет картинку из буфера обмена в PNG.
     // Аргументы: путь для PNG и путь для файла с результатом (OK, FILE:<путь> или NOIMAGE).
+    // Третий аргумент "strict": если в буфере что-то скопировано в самом After Effects (слои, ключи), — NOIMAGE.
     var JXA_CLIPBOARD = [
         'ObjC.import("AppKit");',
         "function run(argv) {",
         "    var out = argv[0];",
         '    var res = "NOIMAGE";',
         "    var pb = $.NSPasteboard.generalPasteboard;",
+        '    if (argv[2] === "strict" && /adobe|aftereffects/i.test(ObjC.deepUnwrap(pb.types).join(" "))) {',
+        "        if (argv.length > 1) { $(res).writeToFileAtomicallyEncodingError(argv[1], true, $.NSUTF8StringEncoding, null); }",
+        "        return res;",
+        "    }",
         '    var d = pb.dataForType("public.png");',
         "    if (d.isNil()) {",
         '        var t = pb.dataForType("public.tiff");',
@@ -285,6 +292,8 @@
     ].join("\n");
 
     var PS_CLIPBOARD = "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; " +
+        "$o=[System.Windows.Forms.Clipboard]::GetDataObject(); " +
+        "if($args[1] -eq 'strict' -and $o -and (($o.GetFormats() -join ' ') -match 'Adobe|AfterFX|After Effects')){'NOIMAGE'; return} " +
         "$i=[System.Windows.Forms.Clipboard]::GetImage(); " +
         "if($i){$i.Save($args[0],[System.Drawing.Imaging.ImageFormat]::Png); 'OK'} " +
         "else {$f=[System.Windows.Forms.Clipboard]::GetFileDropList(); if($f.Count -gt 0){'FILE:'+$f[0]} else {'NOIMAGE'}}";
@@ -303,6 +312,8 @@
         "    var down = '', n = 0, i, k, f, hit, app, at;",
         "    function say(t) { so.writeData($(t + '\\n').dataUsingEncoding(4)); }",
         "    say('READY');",
+        // macOS 10.15+: без разрешения «Мониторинг ввода» система не показывает чужие нажатия. Просим его один раз.
+        "    try { if (!$.CGPreflightListenEventAccess()) { $.CGRequestListenEventAccess(); say('NOACCESS'); } } catch (e) {}",
         "    while (true) {",
         "        if (n++ % 40 === 0) {",
         "            at = fm.attributesOfItemAtPathError(hb, null);",
@@ -317,7 +328,11 @@
         "        }",
         "        if (hit && hit !== down) {",
         "            app = $.NSWorkspace.sharedWorkspace.frontmostApplication;",
-        "            if (/AfterEffects/i.test(app.isNil() ? '' : String(app.bundleIdentifier.js))) { say('HIT ' + hit); }",
+        // Где мышь: в точках экрана, от левого верхнего угла главного экрана (как у окон After Effects).
+        "            if (/AfterEffects/i.test(app.isNil() ? '' : String(app.bundleIdentifier.js))) {",
+        "                var m = $.NSEvent.mouseLocation, h = $.NSScreen.screens.objectAtIndex(0).frame.size.height;",
+        "                say('HIT ' + hit + ' ' + Math.round(m.x) + ' ' + Math.round(h - m.y));",
+        "            }",
         "        }",
         "        down = hit;",
         "        delay(0.05);",
@@ -331,6 +346,7 @@
             "[DllImport(\"user32.dll\")] public static extern int GetWindowThreadProcessId(System.IntPtr h, out int p);'",
         // Без @(…): в PowerShell 5 это завернуло бы весь список в ещё один массив.
         "$keys = ConvertFrom-Json (Get-Content -Raw $list)",
+        "Add-Type -AssemblyName System.Windows.Forms",
         "function Held($v) { return ([SF.K]::GetAsyncKeyState($v) -band 0x8000) -ne 0 }",
         "[Console]::Out.WriteLine('READY'); [Console]::Out.Flush()",
         "$down = ''; $n = 0",
@@ -342,7 +358,7 @@
         "  if ($hit -and $hit -ne $down) {",
         "    $p = 0; [void][SF.K]::GetWindowThreadProcessId([SF.K]::GetForegroundWindow(), [ref]$p)",
         "    $name = ''; try { $name = (Get-Process -Id $p).ProcessName } catch {}",
-        "    if ($name -match 'AfterFX') { [Console]::Out.WriteLine('HIT ' + $hit); [Console]::Out.Flush() }",
+        "    if ($name -match 'AfterFX') { $m = [System.Windows.Forms.Cursor]::Position; [Console]::Out.WriteLine('HIT ' + $hit + ' ' + $m.X + ' ' + $m.Y); [Console]::Out.Flush() }",
         "  }",
         "  $down = $hit",
         "  Start-Sleep -Milliseconds 50",
@@ -580,17 +596,19 @@
                     });
                 });
             },
-            // Долгий процесс: onLine получает каждую строку его вывода, onExit — код выхода.
+            // Долгий процесс: onLine получает каждую строку его вывода, onExit — код выхода и конец текста ошибки.
             spawn: function (file, args, onLine, onExit) {
                 var child, rest = "";
-                try { child = cp.spawn(file, args, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true }); } catch (e) { onExit(-1); return { kill: function () {} }; }
+                var err = "";
+                try { child = cp.spawn(file, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true }); } catch (e) { onExit(-1, String(e && e.message || e)); return { kill: function () {} }; }
+                child.stderr.on("data", function (d) { err = (err + d.toString("utf8")).slice(-400); });
                 child.stdout.on("data", function (d) {
                     var lines = (rest + d.toString("utf8")).split(/\r?\n/);
                     rest = lines.pop();
                     lines.forEach(function (l) { if (l) { onLine(l); } });
                 });
-                child.on("error", function () { onExit(-1); });
-                child.on("exit", function (code) { onExit(code === null ? -1 : code); });
+                child.on("error", function (e) { onExit(-1, String(e && e.message || e)); });
+                child.on("exit", function (code) { onExit(code === null ? -1 : code, err); });
                 return { kill: function () { try { child.kill(); } catch (e) {} } };
             },
             pickFile: pickFile,
@@ -902,7 +920,7 @@
         bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
         bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"),
         bgBrandSwatches: el("bgBrandSwatches"), bgBrandHex: el("bgBrandHex"), bgBrandPick: el("bgBrandPick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
+        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), fxWhere: el("fxWhere"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
@@ -2887,7 +2905,8 @@
 
     // Одно чтение буфера.
     // { kind: "png", path } — временный PNG; { kind: "file", path } — скопированный файл; { kind: "none" }.
-    async function readClipboardOnce() {
+    // strict — вставка из любого места After Effects: то, что скопировано в самом After Effects, не трогаем.
+    async function readClipboardOnce(strict) {
         var stamp = String(new Date().getTime());
         var tmp = platform.tmpdir();
         var png = platform.join(tmp, "sayframe_clip_" + stamp + ".png");
@@ -2897,11 +2916,11 @@
 
         if (platform.isWindows()) {
             r = await platform.exec("powershell", ["-NoProfile", "-STA", "-Command",
-                "& {" + PS_CLIPBOARD + "} '" + png.replace(/'/g, "''") + "'"], 20000);
+                "& {" + PS_CLIPBOARD + "} '" + png.replace(/'/g, "''") + "'" + (strict ? " strict" : "")], 20000);
             out = r.stdout;
         } else {
             await platform.writeText(jsFile, JXA_CLIPBOARD);
-            r = await platform.exec("osascript", ["-l", "JavaScript", jsFile, png, resFile], 20000);
+            r = await platform.exec("osascript", ["-l", "JavaScript", jsFile, png, resFile].concat(strict ? ["strict"] : []), 20000);
             out = "";
             try { out = await platform.readText(resFile); } catch (e) { out = ""; }
             if (out.replace(/\s/g, "") === "") { out = r.stdout; }
@@ -3193,6 +3212,13 @@
             applyTheme(draft);
         });
 
+        ui.fxWhere.addEventListener("click", function (e) {
+            var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
+            if (!draft || (v !== "panel" && v !== "cursor")) { return; }
+            draft.fxWhere = v;
+            pressGroup(ui.fxWhere, v);
+        });
+
         ui.toolTitles.addEventListener("change", function () {
             if (!draft) { return; }
             draft.toolTitles = ui.toolTitles.checked;
@@ -3254,6 +3280,8 @@
         pressGroup(ui.frames, draft.refFrames);
         pressGroup(ui.toolSize, draft.toolSize);
         ui.toolTitles.checked = draft.toolTitles;
+        ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
+        pressGroup(ui.fxWhere, draft.fxWhere === "cursor" ? "cursor" : "panel");
         ui.statsOn.checked = draft.stats !== false;
         ui.infoTipsOn.checked = draft.infoTips !== false;
         closeFxConsole();
@@ -3272,6 +3300,7 @@
             draft.alwaysAsk = ui.alwaysAsk.checked;
             draft.brandPics = ui.brandPics.checked;
             draft.toolTitles = ui.toolTitles.checked;
+            draft.pasteAnywhere = ui.pasteAnywhere.checked;
             draft.stats = ui.statsOn.checked;
             draft.infoTips = ui.infoTipsOn.checked;
             settings = draft;
@@ -5909,6 +5938,37 @@
         }
     }
 
+    // Поиск у курсора: отдельное маленькое окно After Effects (host fxPopup). Выбранное оно добавляет само
+    // и присылает панели событие FX_EVENT — панель запоминает недавнее и пишет, что сделано.
+    var FX_EVENT = "com.sayframe.fx";
+
+    async function fxPopupAt(pos) {
+        if (busy || !ui.modal.hidden) { return; }
+        try {
+            await host("fxPopup", [pos.x, pos.y, fxState.fav, fxState.recent]);
+        } catch (e) {
+            // Окно не открылось — поиск в панели, как раньше.
+            try { window.focus(); } catch (e2) {}
+            openFxConsole();
+        }
+    }
+
+    function onFxPopupApplied(ev) {
+        var r, what;
+        try { r = JSON.parse(ev && ev.data !== undefined ? String(ev.data) : ""); } catch (e) { return; }
+        if (!r || typeof r.id !== "string") { return; }
+        what = r.kind === "effect" ? "Эффект" : "Пресет";
+        if (r.error) { setStatus(humanError(new Error(r.error)), "error"); return; }
+        fxState.recent = [r.id].concat(fxState.recent.filter(function (x) { return x !== r.id; })).slice(0, FX_RECENT_MAX);
+        storeFxState();
+        if (!r.applied) {
+            setStatus(what + " «" + r.name + "» нельзя добавить на выделенные слои: камерам и свету эффекты не ставятся.", "");
+        } else {
+            setStatus(what + " «" + r.name + "» добавлен на " + fxApplied(r.applied) + "." +
+                (r.skipped ? " Пропущено: " + fxApplied(r.skipped) + " (камера или свет)." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
+        }
+    }
+
     function onFxKey(e) {
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
             e.preventDefault();
@@ -6445,6 +6505,12 @@
 
     var KEYWATCH_BEAT_MS = 3000;
     var keyWatch = null;        // { proc, list, timer, hb } — наблюдатель за клавишами (см. JXA_KEYWATCH)
+    var keyWatchState = "";     // что показать в настройках под сочетаниями
+
+    function showKeyWatchState(text) {
+        keyWatchState = text;
+        ui.keyWatchState.textContent = text;
+    }
 
     function watchHostHotkeys(map) {
         var list = [], k, parts;
@@ -6474,9 +6540,18 @@
             var code = keyCodeOf(x.key);
             if (code !== null) { watch.push({ id: x.id, code: code, ctrl: x.ctrl, alt: x.alt, shift: x.shift, cmd: x.cmd }); }
         });
+        // Обычная вставка (Cmd+V на Mac, Ctrl+V на Windows): с картинкой в буфере — окно вставки.
+        if (settings.pasteAnywhere !== false) {
+            watch.push({ id: PASTE_ANYWHERE, code: keyCodeOf("V"), ctrl: !isMac(), alt: false, shift: false, cmd: isMac() });
+        }
         if (keyWatch && JSON.stringify(keyWatch.list) === JSON.stringify(watch)) { return; }
         stopKeyWatch();
-        if (!watch.length || !platform.available || typeof platform.spawn !== "function") { return; }
+        if (!watch.length) { showKeyWatchState(""); return; }
+        if (!platform.available || typeof platform.spawn !== "function") {
+            showKeyWatchState("Помощник за клавишами недоступен: сочетания работают, пока фокус на панели.");
+            return;
+        }
+        showKeyWatchState("Запускаю помощника за клавишами…");
         tmp = platform.tmpdir();
         hb = platform.join(tmp, "sayframe_keys_" + Date.now() + ".beat");
         listFile = hb.replace(/\.beat$/, ".json");
@@ -6492,17 +6567,46 @@
         w.proc = platform.spawn(platform.isWindows() ? "powershell" : "osascript",
             platform.isWindows() ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, hb, listFile] : ["-l", "JavaScript", script, hb, listFile],
             function (line) {
-                if (keyWatch === w && line.indexOf("HIT ") === 0) { outsideHotkey(line.substring(4), "watch"); }
+                var parts;
+                if (keyWatch !== w) { return; }
+                if (line.indexOf("HIT ") === 0) {
+                    parts = line.substring(4).split(" ");
+                    outsideHotkey(parts[0], "watch", parts.length >= 3 && isFinite(parts[1]) && isFinite(parts[2]) ? { x: +parts[1], y: +parts[2] } : null);
+                }
+                else if (line === "READY") { w.ready = true; showKeyWatchState("Помощник за клавишами работает: сочетания срабатывают во всём After Effects."); }
+                else if (line === "NOACCESS") {
+                    w.ready = false;
+                    showKeyWatchState("macOS не даёт помощнику видеть клавиши вне панели. Откройте «Системные настройки» → «Конфиденциальность и безопасность» → " +
+                        "«Мониторинг ввода» и включите там Adobe After Effects (или osascript), затем закройте и снова откройте панель.");
+                    setStatus("Чтобы сочетания работали во всём After Effects, разрешите «Мониторинг ввода» (подробнее — в настройках панели, раздел «Общие»).", "");
+                }
             },
-            function () {
+            function (code, err) {
                 platform.remove(script);
                 platform.remove(listFile);
                 if (keyWatch !== w) { return; }
+                showKeyWatchState("Помощник за клавишами не запустился" + (err ? ": " + String(err).replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "").slice(-200) : " (код " + code + ")") +
+                    ". Сочетания работают, пока фокус на панели" + (isMac() ? ", и через After Effects." : "."));
                 // Наблюдатель не запустился или упал — остаются After Effects и сама панель.
                 clearInterval(w.timer);
                 platform.remove(hb);
                 keyWatch = null;
             });
+    }
+
+    var PASTE_ANYWHERE = "pasteAny";
+
+    // Cmd/Ctrl+V где-то в After Effects (не в панели). Слои и текст After Effects вставит сам,
+    // панель вмешивается, только если в буфере картинка.
+    async function pasteAnywhere() {
+        var got;
+        if (busy || !ui.modal.hidden || !ui.sheet.hidden || document.hasFocus()) { return; }
+        try { got = await readClipboardOnce(true); } catch (e) { return; }
+        // Скопированный в Finder или Проводнике файл — только если это картинка.
+        if (got.kind === "none" || (got.kind === "file" && !/\.(png|jpe?g|gif|webp|bmp|tiff?|heic|psd)$/i.test(got.path))) { return; }
+        if (busy || !ui.modal.hidden) { if (got.kind === "png") { platform.remove(got.path); } return; }
+        try { window.focus(); } catch (e2) {}
+        pasteImage(got);
     }
 
     function onHostHotkey(ev) {
@@ -6511,12 +6615,17 @@
 
     // Нажатие пришло не из самой панели: от After Effects (src "host") или от наблюдателя ("watch").
     // Одно нажатие могут заметить и они, и панель — второй раз его не выполняем.
-    function outsideHotkey(id, src) {
+    function outsideHotkey(id, src, pos) {
+        // Поиск у курсора: место мыши знает только наблюдатель, поэтому ждём его, а не After Effects.
+        if (id === "console" && src === "host" && settings.fxWhere === "cursor" && keyWatch && keyWatch.ready) { return; }
+        if (id === PASTE_ANYWHERE && src === "watch") { pasteAnywhere(); return; }
         if (!id || !HOTKEY_ACTIONS.some(function (a) { return a.id === id; })) { return; }
         if (!ui.sheet.hidden || !ui.modal.hidden) { return; }
         // Панель уже сама поймала это нажатие.
         if (lastPanelHotkey.src !== src && lastPanelHotkey.id === id && Date.now() - lastPanelHotkey.at < 800) { return; }
         lastPanelHotkey = { id: id, at: Date.now(), src: src };
+        // Поиск у курсора открывается окном After Effects, панель при этом фокус не забирает.
+        if (id === "console" && pos && settings.fxWhere === "cursor" && !fxOpen()) { fxPopupAt(pos); return; }
         try { window.focus(); } catch (e) {}
         runHotkey(id);
     }
@@ -6525,6 +6634,7 @@
         var cep = window.__adobe_cep__;
         if (cep && typeof cep.addEventListener === "function") {
             try { cep.addEventListener(HOST_KEY_EVENT, onHostHotkey); } catch (e) {}
+            try { cep.addEventListener(FX_EVENT, onFxPopupApplied); } catch (e2) {}
         }
     }
 
