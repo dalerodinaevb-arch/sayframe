@@ -359,6 +359,12 @@ textarea:focus, .field:focus {
   white-space: nowrap;
 }
 .tab:hover { color: var(--text); }
+.tab-label { display: inline; }
+/* Узкая панель: названия не помещаются — вкладки становятся иконками (класс ставит panel.js). */
+.tab-icon { display: none; width: 18px; height: 18px; margin: 0 auto; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tabs-icons .tab { flex: 1 1 0; padding: 0; }
+.tabs-icons .tab-icon { display: block; }
+.tabs-icons .tab-label { display: none; }
 .tabs { -webkit-user-select: none; user-select: none; }
 
 /* Перестановка: включается двойным щелчком по вкладке или блоку. Всё, что можно двигать, обведено пунктиром. */

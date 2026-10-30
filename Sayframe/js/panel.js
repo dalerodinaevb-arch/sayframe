@@ -1016,6 +1016,20 @@
         return Array.prototype.slice.call(ui.tabs.querySelectorAll(".tab"));
     }
 
+    // Узкая панель: если хоть одно название вкладки не помещается целиком, все вкладки показывают иконки.
+    // Подсказка при наведении тогда начинается с названия.
+    var TAB_TITLE = "Двойной щелчок — поменять вкладки местами";
+    function fitTabs() {
+        var buttons = tabButtons(), icons;
+        ui.tabs.classList.remove("tabs-icons");
+        icons = buttons.some(function (b) {
+            var label = b.querySelector(".tab-label");
+            return label && label.getBoundingClientRect().width > b.clientWidth - 12 + 0.5;
+        });
+        ui.tabs.classList.toggle("tabs-icons", icons);
+        buttons.forEach(function (b) { b.title = icons ? b.getAttribute("aria-label") + "\n" + TAB_TITLE : TAB_TITLE; });
+    }
+
     function tabOf(node) {
         while (node && node !== ui.tabs) {
             if (node.className && typeof node.className === "string" && /(^|\s)tab(\s|$)/.test(node.className)) { return node; }
@@ -9739,6 +9753,9 @@
     document.addEventListener("keydown", onHotkeyDown, true);
     enableAc();
     listenHostHotkeys();
+    fitTabs();
+    if (typeof window.ResizeObserver === "function") { new window.ResizeObserver(fitTabs).observe(ui.tabs); }
+    if (document.fonts && document.fonts.ready) { document.fonts.ready.then(fitTabs); }
     registerHotkeys();
     window.addEventListener("unload", stopKeyWatch);
     hotkeyHint();

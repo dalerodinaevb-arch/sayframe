@@ -1986,6 +1986,26 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("KW5 if the watcher stops, After Effects still watches the keys", hostKeys(p).length === 2 && p.errors.length === 0, JSON.stringify(hostKeys(p)));
   await p.close();
 
+  console.log("\n=== tab icons in a narrow panel ===");
+  const tabState = (p) => p.page.evaluate(() => ({ icons: document.getElementById("tabs").classList.contains("tabs-icons"),
+    shown: [...document.querySelectorAll(".tab")].map((b) => getComputedStyle(b.querySelector(".tab-icon")).display + "/" + getComputedStyle(b.querySelector(".tab-label")).display).join() }));
+  p = await open({ width: 380 });
+  t = await tabState(p);
+  check("TI1 when the names fit, the tabs show words", !t.icons && /^(none\/inline,){4}none\/inline$/.test(t.shown) && (await p.page.locator("#tabTools").innerText()) === "Анимация", JSON.stringify(t));
+  await p.page.setViewportSize({ width: 330, height: 760 });
+  await p.page.waitForTimeout(200);
+  t = await tabState(p);
+  check("TI2 when a name would be cut, every tab becomes an icon, with its name in the tooltip and for screen readers", t.icons && /^(block\/none,){4}block\/none$/.test(t.shown) &&
+    (await p.page.getAttribute("#tabMotion", "title")) === "Инструменты\nДвойной щелчок — поменять вкладки местами" && (await p.page.getAttribute("#tabMotion", "aria-label")) === "Инструменты", JSON.stringify(t));
+  await p.page.click("#tabMotion");
+  check("TI2 icon tabs still switch views", (await p.page.locator("#tabMotion").getAttribute("aria-selected")) === "true" && (await p.page.locator("#viewMotion").isVisible()));
+  await p.page.screenshot({ path: path.join(SHOTS, "16-tab-icons.png") });
+  await p.page.setViewportSize({ width: 420, height: 760 });
+  await p.page.waitForTimeout(200);
+  t = await tabState(p);
+  check("TI3 widening the panel brings the words back", !t.icons && (await p.page.getAttribute("#tabMotion", "title")) === "Двойной щелчок — поменять вкладки местами" && p.errors.length === 0, JSON.stringify(t));
+  await p.close();
+
   console.log("\n=== animation library ===");
   const acCards = (p) => p.page.locator("#acGrid .ac-card .ac-name").allInnerTexts();
   const acClick = async (p, name) => { await p.page.locator("#acGrid .ac-card", { has: p.page.locator(".ac-name", { hasText: name }) }).first().click(); await p.idle(); };
