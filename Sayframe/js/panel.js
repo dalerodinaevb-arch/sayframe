@@ -127,6 +127,7 @@
         toolTitles: true,   // показывать ли названия блоков раздела «Инструменты»
         stats: true,        // отправлять ли автору анонимный сигнал «установлено» и «открыто сегодня»
         infoTips: true,     // подсказки-окошки при наведении курсора на секунду
+        pasteAnywhere: true,    // Cmd/Ctrl+V с картинкой в буфере где угодно в After Effects открывает окно вставки
         hotkeys: ""         // горячие клавиши: "console=Ctrl+Space;snapshot=;…"; пусто — стандартные
     };
     // Стили анимации: подпись в панели и что это значит для AI (библиотека SF получает то же имя).
@@ -206,12 +207,17 @@
 
     // Скрипт для macOS: сохраняет картинку из буфера обмена в PNG.
     // Аргументы: путь для PNG и путь для файла с результатом (OK, FILE:<путь> или NOIMAGE).
+    // Третий аргумент "strict": если в буфере что-то скопировано в самом After Effects (слои, ключи), — NOIMAGE.
     var JXA_CLIPBOARD = [
         'ObjC.import("AppKit");',
         "function run(argv) {",
         "    var out = argv[0];",
         '    var res = "NOIMAGE";',
         "    var pb = $.NSPasteboard.generalPasteboard;",
+        '    if (argv[2] === "strict" && /adobe|aftereffects/i.test(ObjC.deepUnwrap(pb.types).join(" "))) {',
+        "        if (argv.length > 1) { $(res).writeToFileAtomicallyEncodingError(argv[1], true, $.NSUTF8StringEncoding, null); }",
+        "        return res;",
+        "    }",
         '    var d = pb.dataForType("public.png");',
         "    if (d.isNil()) {",
         '        var t = pb.dataForType("public.tiff");',
@@ -285,6 +291,8 @@
     ].join("\n");
 
     var PS_CLIPBOARD = "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; " +
+        "$o=[System.Windows.Forms.Clipboard]::GetDataObject(); " +
+        "if($args[1] -eq 'strict' -and $o -and (($o.GetFormats() -join ' ') -match 'Adobe|AfterFX|After Effects')){'NOIMAGE'; return} " +
         "$i=[System.Windows.Forms.Clipboard]::GetImage(); " +
         "if($i){$i.Save($args[0],[System.Drawing.Imaging.ImageFormat]::Png); 'OK'} " +
         "else {$f=[System.Windows.Forms.Clipboard]::GetFileDropList(); if($f.Count -gt 0){'FILE:'+$f[0]} else {'NOIMAGE'}}";
@@ -902,7 +910,7 @@
         bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
         bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"),
         bgBrandSwatches: el("bgBrandSwatches"), bgBrandHex: el("bgBrandHex"), bgBrandPick: el("bgBrandPick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
+        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
@@ -2887,7 +2895,8 @@
 
     // Одно чтение буфера.
     // { kind: "png", path } — временный PNG; { kind: "file", path } — скопированный файл; { kind: "none" }.
-    async function readClipboardOnce() {
+    // strict — вставка из любого места After Effects: то, что скопировано в самом After Effects, не трогаем.
+    async function readClipboardOnce(strict) {
         var stamp = String(new Date().getTime());
         var tmp = platform.tmpdir();
         var png = platform.join(tmp, "sayframe_clip_" + stamp + ".png");
@@ -2897,11 +2906,11 @@
 
         if (platform.isWindows()) {
             r = await platform.exec("powershell", ["-NoProfile", "-STA", "-Command",
-                "& {" + PS_CLIPBOARD + "} '" + png.replace(/'/g, "''") + "'"], 20000);
+                "& {" + PS_CLIPBOARD + "} '" + png.replace(/'/g, "''") + "'" + (strict ? " strict" : "")], 20000);
             out = r.stdout;
         } else {
             await platform.writeText(jsFile, JXA_CLIPBOARD);
-            r = await platform.exec("osascript", ["-l", "JavaScript", jsFile, png, resFile], 20000);
+            r = await platform.exec("osascript", ["-l", "JavaScript", jsFile, png, resFile].concat(strict ? ["strict"] : []), 20000);
             out = "";
             try { out = await platform.readText(resFile); } catch (e) { out = ""; }
             if (out.replace(/\s/g, "") === "") { out = r.stdout; }
@@ -3254,6 +3263,7 @@
         pressGroup(ui.frames, draft.refFrames);
         pressGroup(ui.toolSize, draft.toolSize);
         ui.toolTitles.checked = draft.toolTitles;
+        ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
         ui.statsOn.checked = draft.stats !== false;
         ui.infoTipsOn.checked = draft.infoTips !== false;
         closeFxConsole();
@@ -3272,6 +3282,7 @@
             draft.alwaysAsk = ui.alwaysAsk.checked;
             draft.brandPics = ui.brandPics.checked;
             draft.toolTitles = ui.toolTitles.checked;
+            draft.pasteAnywhere = ui.pasteAnywhere.checked;
             draft.stats = ui.statsOn.checked;
             draft.infoTips = ui.infoTipsOn.checked;
             settings = draft;
@@ -6474,6 +6485,10 @@
             var code = keyCodeOf(x.key);
             if (code !== null) { watch.push({ id: x.id, code: code, ctrl: x.ctrl, alt: x.alt, shift: x.shift, cmd: x.cmd }); }
         });
+        // Обычная вставка (Cmd+V на Mac, Ctrl+V на Windows): с картинкой в буфере — окно вставки.
+        if (settings.pasteAnywhere !== false) {
+            watch.push({ id: PASTE_ANYWHERE, code: keyCodeOf("V"), ctrl: !isMac(), alt: false, shift: false, cmd: isMac() });
+        }
         if (keyWatch && JSON.stringify(keyWatch.list) === JSON.stringify(watch)) { return; }
         stopKeyWatch();
         if (!watch.length || !platform.available || typeof platform.spawn !== "function") { return; }
@@ -6505,6 +6520,21 @@
             });
     }
 
+    var PASTE_ANYWHERE = "pasteAny";
+
+    // Cmd/Ctrl+V где-то в After Effects (не в панели). Слои и текст After Effects вставит сам,
+    // панель вмешивается, только если в буфере картинка.
+    async function pasteAnywhere() {
+        var got;
+        if (busy || !ui.modal.hidden || !ui.sheet.hidden || document.hasFocus()) { return; }
+        try { got = await readClipboardOnce(true); } catch (e) { return; }
+        // Скопированный в Finder или Проводнике файл — только если это картинка.
+        if (got.kind === "none" || (got.kind === "file" && !/\.(png|jpe?g|gif|webp|bmp|tiff?|heic|psd)$/i.test(got.path))) { return; }
+        if (busy || !ui.modal.hidden) { if (got.kind === "png") { platform.remove(got.path); } return; }
+        try { window.focus(); } catch (e2) {}
+        pasteImage(got);
+    }
+
     function onHostHotkey(ev) {
         outsideHotkey(ev && ev.data !== undefined ? String(ev.data) : "", "host");
     }
@@ -6512,6 +6542,7 @@
     // Нажатие пришло не из самой панели: от After Effects (src "host") или от наблюдателя ("watch").
     // Одно нажатие могут заметить и они, и панель — второй раз его не выполняем.
     function outsideHotkey(id, src) {
+        if (id === PASTE_ANYWHERE && src === "watch") { pasteAnywhere(); return; }
         if (!id || !HOTKEY_ACTIONS.some(function (a) { return a.id === id; })) { return; }
         if (!ui.sheet.hidden || !ui.modal.hidden) { return; }
         // Панель уже сама поймала это нажатие.

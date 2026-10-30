@@ -662,6 +662,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           sys.jxa = fs.readFileSync(js, "utf8");
           // opts.clipEmptyReads: the system says "nothing there" this many times before it hands the picture over.
           if (sys.exec.filter((x) => x.file === "osascript").length <= (opts.clipEmptyReads || 0)) { fs.writeFileSync(res, "NOIMAGE"); return { code: 0, stdout: "NOIMAGE\n", stderr: "" }; }
+          // opts.clipFromAE: what is on the clipboard was copied inside After Effects (layers, keys).
+          if (opts.clipFromAE && args[1].indexOf("strict") >= 0) { fs.writeFileSync(res, "NOIMAGE"); return { code: 0, stdout: "NOIMAGE\n", stderr: "" }; }
           const clip = opts.clip || "none";
           if (clip === "png") { fs.writeFileSync(png, fakePng(0)); fs.writeFileSync(res, "OK"); return { code: 0, stdout: "OK\n", stderr: "" }; }
           if (clip === "error") return { code: 1, stdout: "", stderr: "execution error: Error: TypeError (-2700)" };
@@ -1945,7 +1947,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   c = t[0] && t[0].args;
   check("KW1 the panel starts the key watcher (osascript on Mac) with a pulse file and the list of shortcuts", t.length === 1 && t[0].file === "osascript" && c[0] === "-l" && c[1] === "JavaScript" &&
     /CGEventSourceKeyState/.test(fs.readFileSync(c[2], "utf8")) && fs.existsSync(c[3]) &&
-    JSON.stringify(JSON.parse(fs.readFileSync(c[4], "utf8"))) === JSON.stringify([{ id: "console", code: 49, ctrl: true, alt: false, shift: false, cmd: false }]), JSON.stringify(t));
+    JSON.stringify(JSON.parse(fs.readFileSync(c[4], "utf8"))) === JSON.stringify([{ id: "console", code: 49, ctrl: true, alt: false, shift: false, cmd: false }, { id: "pasteAny", code: 9, ctrl: false, alt: false, shift: false, cmd: true }]), JSON.stringify(t));
   await watcherSays(p, 0, "READY");
   await p.page.waitForTimeout(200);
   check("KW2 After Effects keeps watching the keys too (a spare on Mac)", hostKeys(p).length === 1 && p.ae.log.tasks.some((x) => !x.cancelled), JSON.stringify(hostKeys(p)));
@@ -1975,7 +1977,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click('#hotkeys [data-action="tabTools"]'); await p.page.keyboard.press("Alt+Digit3");
   await p.page.waitForFunction(() => window.__spawns.length === 2, null, { timeout: 5000 }).catch(() => {});
   t = await spawns(p);
-  check("KW4 a changed shortcut restarts the watcher with the new list", t.length === 2 && t[0].killed && !t[1].killed && JSON.parse(fs.readFileSync(t[1].args[4], "utf8")).map((x) => x.id + ":" + x.code + ":" + x.alt).join() === "console:49:false,tabTools:20:true", JSON.stringify(t));
+  check("KW4 a changed shortcut restarts the watcher with the new list", t.length === 2 && t[0].killed && !t[1].killed && JSON.parse(fs.readFileSync(t[1].args[4], "utf8")).map((x) => x.id + ":" + x.code + ":" + x.alt).join() === "console:49:false,tabTools:20:true,pasteAny:9:false", JSON.stringify(t));
   await p.page.click("#settingsClose");
   await watcherSays(p, 1, "READY");
   await watcherSays(p, 1, "HIT tabTools");
@@ -1984,6 +1986,55 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.evaluate(() => window.__spawns[1].onExit(1));
   await p.page.waitForTimeout(200);
   check("KW5 if the watcher stops, After Effects still watches the keys", hostKeys(p).length === 2 && p.errors.length === 0, JSON.stringify(hostKeys(p)));
+  await p.close();
+
+  console.log("\n=== paste dialog on Cmd/Ctrl+V anywhere in After Effects ===");
+  const pasteFromAE = async (p, focused) => {
+    await p.page.evaluate((f) => { document.hasFocus = () => f; }, !!focused);
+    await p.page.evaluate(() => window.__spawns[window.__spawns.length - 1].onLine("HIT pasteAny"));
+    await p.page.waitForTimeout(400);
+  };
+  const watched = (p) => p.page.evaluate(() => window.__spawns.length).then(async (n) => {
+    const s = (await spawns(p))[n - 1];
+    return JSON.parse(fs.readFileSync(s.args[4], "utf8"));
+  });
+  p = await open({ keyWatch: true, clip: "png", footage: IMG });
+  await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
+  t = await watched(p);
+  check("PA1 the key watcher also listens for Cmd+V (the usual paste on Mac)", t.some((x) => x.id === "pasteAny" && x.code === 9 && x.cmd && !x.ctrl && !x.alt && !x.shift), JSON.stringify(t));
+  await pasteFromAE(p, false);
+  check("PA2 Cmd+V in After Effects with a picture on the clipboard opens the paste dialog", (await p.page.locator("#modalTitle").innerText()) === "Вставка картинки" && p.sys.exec[0].args.indexOf("strict") >= 0, JSON.stringify(p.sys.exec[0] && p.sys.exec[0].args));
+  await p.modalClick("Оставить как есть");
+  check("PA2 'Оставить как есть' places the picture as a layer", p.ae.log.imports.length === 1 && p.ae.log.precomposes.length === 0 && /^Картинка вставлена слоем/.test(await p.status()), await p.status());
+  t = p.sys.exec.length;
+  await pasteFromAE(p, true);
+  check("PA3 when the panel itself has the focus, it is left to the panel's own paste", p.sys.exec.length === t && (await p.page.locator("#modal").isHidden()));
+  await p.close();
+
+  p = await open({ keyWatch: true, clip: "none" });
+  await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
+  t = await p.status();
+  await pasteFromAE(p, false);
+  check("PA4 no picture on the clipboard: the panel stays quiet (After Effects pastes as usual)", p.sys.exec.length === 1 && (await p.page.locator("#modal").isHidden()) && (await p.status()) === t, await p.status());
+  await p.close();
+
+  p = await open({ keyWatch: true, clip: "png", clipFromAE: true });
+  await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
+  await pasteFromAE(p, false);
+  check("PA5 layers or keys copied inside After Effects: no dialog", p.sys.exec.length === 1 && (await p.page.locator("#modal").isHidden()) && p.tempLeft().filter((f) => /\.png$/.test(f)).length === 0);
+  await p.close();
+
+  p = await open({ keyWatch: true, clip: { file: "/Users/me/Movies/clip.mp4" } });
+  await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
+  await pasteFromAE(p, false);
+  check("PA6 a copied file that is not a picture: no dialog", (await p.page.locator("#modal").isHidden()));
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  check("PA7 settings: the switch is on by default", await p.page.locator("#pasteAnywhere").isChecked());
+  await p.page.locator("#pasteAnywhere").evaluate((el) => el.click());
+  await p.page.click("#saveSettings");
+  await p.page.waitForFunction(() => window.__spawns.length === 2, null, { timeout: 5000 }).catch(() => {});
+  t = await watched(p);
+  check("PA7 switched off: Cmd+V is no longer watched, the shortcuts still are", !t.some((x) => x.id === "pasteAny") && t.some((x) => x.id === "console") && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).pasteAnywhere)) === false, JSON.stringify(t));
   await p.close();
 
   console.log("\n=== tab icons in a narrow panel ===");
