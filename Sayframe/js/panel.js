@@ -128,6 +128,7 @@
         stats: true,        // отправлять ли автору анонимный сигнал «установлено» и «открыто сегодня»
         infoTips: true,     // подсказки-окошки при наведении курсора на секунду
         pasteAnywhere: true,    // Cmd/Ctrl+V с картинкой в буфере где угодно в After Effects открывает окно вставки
+        fxWhere: "panel",   // где открывается поиск эффектов по сочетанию вне панели: "panel" или "cursor"
         hotkeys: ""         // горячие клавиши: "console=Ctrl+Space;snapshot=;…"; пусто — стандартные
     };
     // Стили анимации: подпись в панели и что это значит для AI (библиотека SF получает то же имя).
@@ -327,7 +328,11 @@
         "        }",
         "        if (hit && hit !== down) {",
         "            app = $.NSWorkspace.sharedWorkspace.frontmostApplication;",
-        "            if (/AfterEffects/i.test(app.isNil() ? '' : String(app.bundleIdentifier.js))) { say('HIT ' + hit); }",
+        // Где мышь: в точках экрана, от левого верхнего угла главного экрана (как у окон After Effects).
+        "            if (/AfterEffects/i.test(app.isNil() ? '' : String(app.bundleIdentifier.js))) {",
+        "                var m = $.NSEvent.mouseLocation, h = $.NSScreen.screens.objectAtIndex(0).frame.size.height;",
+        "                say('HIT ' + hit + ' ' + Math.round(m.x) + ' ' + Math.round(h - m.y));",
+        "            }",
         "        }",
         "        down = hit;",
         "        delay(0.05);",
@@ -341,6 +346,7 @@
             "[DllImport(\"user32.dll\")] public static extern int GetWindowThreadProcessId(System.IntPtr h, out int p);'",
         // Без @(…): в PowerShell 5 это завернуло бы весь список в ещё один массив.
         "$keys = ConvertFrom-Json (Get-Content -Raw $list)",
+        "Add-Type -AssemblyName System.Windows.Forms",
         "function Held($v) { return ([SF.K]::GetAsyncKeyState($v) -band 0x8000) -ne 0 }",
         "[Console]::Out.WriteLine('READY'); [Console]::Out.Flush()",
         "$down = ''; $n = 0",
@@ -352,7 +358,7 @@
         "  if ($hit -and $hit -ne $down) {",
         "    $p = 0; [void][SF.K]::GetWindowThreadProcessId([SF.K]::GetForegroundWindow(), [ref]$p)",
         "    $name = ''; try { $name = (Get-Process -Id $p).ProcessName } catch {}",
-        "    if ($name -match 'AfterFX') { [Console]::Out.WriteLine('HIT ' + $hit); [Console]::Out.Flush() }",
+        "    if ($name -match 'AfterFX') { $m = [System.Windows.Forms.Cursor]::Position; [Console]::Out.WriteLine('HIT ' + $hit + ' ' + $m.X + ' ' + $m.Y); [Console]::Out.Flush() }",
         "  }",
         "  $down = $hit",
         "  Start-Sleep -Milliseconds 50",
@@ -914,7 +920,7 @@
         bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
         bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"),
         bgBrandSwatches: el("bgBrandSwatches"), bgBrandHex: el("bgBrandHex"), bgBrandPick: el("bgBrandPick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
+        panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), fxWhere: el("fxWhere"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
@@ -3206,6 +3212,13 @@
             applyTheme(draft);
         });
 
+        ui.fxWhere.addEventListener("click", function (e) {
+            var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
+            if (!draft || (v !== "panel" && v !== "cursor")) { return; }
+            draft.fxWhere = v;
+            pressGroup(ui.fxWhere, v);
+        });
+
         ui.toolTitles.addEventListener("change", function () {
             if (!draft) { return; }
             draft.toolTitles = ui.toolTitles.checked;
@@ -3268,6 +3281,7 @@
         pressGroup(ui.toolSize, draft.toolSize);
         ui.toolTitles.checked = draft.toolTitles;
         ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
+        pressGroup(ui.fxWhere, draft.fxWhere === "cursor" ? "cursor" : "panel");
         ui.statsOn.checked = draft.stats !== false;
         ui.infoTipsOn.checked = draft.infoTips !== false;
         closeFxConsole();
@@ -5924,6 +5938,37 @@
         }
     }
 
+    // Поиск у курсора: отдельное маленькое окно After Effects (host fxPopup). Выбранное оно добавляет само
+    // и присылает панели событие FX_EVENT — панель запоминает недавнее и пишет, что сделано.
+    var FX_EVENT = "com.sayframe.fx";
+
+    async function fxPopupAt(pos) {
+        if (busy || !ui.modal.hidden) { return; }
+        try {
+            await host("fxPopup", [pos.x, pos.y, fxState.fav, fxState.recent]);
+        } catch (e) {
+            // Окно не открылось — поиск в панели, как раньше.
+            try { window.focus(); } catch (e2) {}
+            openFxConsole();
+        }
+    }
+
+    function onFxPopupApplied(ev) {
+        var r, what;
+        try { r = JSON.parse(ev && ev.data !== undefined ? String(ev.data) : ""); } catch (e) { return; }
+        if (!r || typeof r.id !== "string") { return; }
+        what = r.kind === "effect" ? "Эффект" : "Пресет";
+        if (r.error) { setStatus(humanError(new Error(r.error)), "error"); return; }
+        fxState.recent = [r.id].concat(fxState.recent.filter(function (x) { return x !== r.id; })).slice(0, FX_RECENT_MAX);
+        storeFxState();
+        if (!r.applied) {
+            setStatus(what + " «" + r.name + "» нельзя добавить на выделенные слои: камерам и свету эффекты не ставятся.", "");
+        } else {
+            setStatus(what + " «" + r.name + "» добавлен на " + fxApplied(r.applied) + "." +
+                (r.skipped ? " Пропущено: " + fxApplied(r.skipped) + " (камера или свет)." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
+        }
+    }
+
     function onFxKey(e) {
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
             e.preventDefault();
@@ -6522,10 +6567,15 @@
         w.proc = platform.spawn(platform.isWindows() ? "powershell" : "osascript",
             platform.isWindows() ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, hb, listFile] : ["-l", "JavaScript", script, hb, listFile],
             function (line) {
+                var parts;
                 if (keyWatch !== w) { return; }
-                if (line.indexOf("HIT ") === 0) { outsideHotkey(line.substring(4), "watch"); }
-                else if (line === "READY") { showKeyWatchState("Помощник за клавишами работает: сочетания срабатывают во всём After Effects."); }
+                if (line.indexOf("HIT ") === 0) {
+                    parts = line.substring(4).split(" ");
+                    outsideHotkey(parts[0], "watch", parts.length >= 3 && isFinite(parts[1]) && isFinite(parts[2]) ? { x: +parts[1], y: +parts[2] } : null);
+                }
+                else if (line === "READY") { w.ready = true; showKeyWatchState("Помощник за клавишами работает: сочетания срабатывают во всём After Effects."); }
                 else if (line === "NOACCESS") {
+                    w.ready = false;
                     showKeyWatchState("macOS не даёт помощнику видеть клавиши вне панели. Откройте «Системные настройки» → «Конфиденциальность и безопасность» → " +
                         "«Мониторинг ввода» и включите там Adobe After Effects (или osascript), затем закройте и снова откройте панель.");
                     setStatus("Чтобы сочетания работали во всём After Effects, разрешите «Мониторинг ввода» (подробнее — в настройках панели, раздел «Общие»).", "");
@@ -6565,13 +6615,17 @@
 
     // Нажатие пришло не из самой панели: от After Effects (src "host") или от наблюдателя ("watch").
     // Одно нажатие могут заметить и они, и панель — второй раз его не выполняем.
-    function outsideHotkey(id, src) {
+    function outsideHotkey(id, src, pos) {
+        // Поиск у курсора: место мыши знает только наблюдатель, поэтому ждём его, а не After Effects.
+        if (id === "console" && src === "host" && settings.fxWhere === "cursor" && keyWatch && keyWatch.ready) { return; }
         if (id === PASTE_ANYWHERE && src === "watch") { pasteAnywhere(); return; }
         if (!id || !HOTKEY_ACTIONS.some(function (a) { return a.id === id; })) { return; }
         if (!ui.sheet.hidden || !ui.modal.hidden) { return; }
         // Панель уже сама поймала это нажатие.
         if (lastPanelHotkey.src !== src && lastPanelHotkey.id === id && Date.now() - lastPanelHotkey.at < 800) { return; }
         lastPanelHotkey = { id: id, at: Date.now(), src: src };
+        // Поиск у курсора открывается окном After Effects, панель при этом фокус не забирает.
+        if (id === "console" && pos && settings.fxWhere === "cursor" && !fxOpen()) { fxPopupAt(pos); return; }
         try { window.focus(); } catch (e) {}
         runHotkey(id);
     }
@@ -6580,6 +6634,7 @@
         var cep = window.__adobe_cep__;
         if (cep && typeof cep.addEventListener === "function") {
             try { cep.addEventListener(HOST_KEY_EVENT, onHostHotkey); } catch (e) {}
+            try { cep.addEventListener(FX_EVENT, onFxPopupApplied); } catch (e2) {}
         }
     }
 

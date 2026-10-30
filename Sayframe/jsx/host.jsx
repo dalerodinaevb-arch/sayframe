@@ -2116,6 +2116,212 @@ var sayframeHost = (function () {
         return layers;
     }
 
+    function fxApplyEffect(matchName, label) {
+        var layers = fxSelectedLayers();
+        var applied = 0, skipped = 0, i, fx;
+        app.beginUndoGroup("Sayframe: " + (label || "effect"));
+        try {
+            for (i = 0; i < layers.length; i++) {
+                fx = null;
+                try { fx = layers[i].property("ADBE Effect Parade"); } catch (e0) {}
+                if (fx && fx.canAddProperty(matchName)) { fx.addProperty(matchName); applied++; } else { skipped++; }
+            }
+        } finally {
+            app.endUndoGroup();
+        }
+        return { applied: applied, skipped: skipped };
+    }
+
+    function fxApplyPreset(path, label) {
+        var layers = fxSelectedLayers();
+        var file = new File(path);
+        var applied = 0, skipped = 0, i;
+        if (!file.exists) { throw new Error("PRESET_NOT_FOUND"); }
+        app.beginUndoGroup("Sayframe: " + (label || "preset"));
+        try {
+            for (i = 0; i < layers.length; i++) {
+                if (layers[i] instanceof CameraLayer || layers[i] instanceof LightLayer) { skipped++; continue; }
+                try { layers[i].applyPreset(file); applied++; } catch (e1) { skipped++; }
+            }
+        } finally {
+            app.endUndoGroup();
+        }
+        return { applied: applied, skipped: skipped };
+    }
+
+    // Search items for the popup, built once per session: { id, kind, name, cat, key, catKey, m | p }.
+    function fxPopupItems() {
+        var g = $.global, cat, items = [], i, e, pr;
+        if (g.__sayframeFxItems) { return g.__sayframeFxItems; }
+        cat = fxCatalogData();
+        for (i = 0; i < cat.effects.length; i++) {
+            e = cat.effects[i];
+            items.push({ id: "e:" + e.m, kind: "effect", name: e.n, cat: e.c, m: e.m, key: e.n.toLowerCase(), catKey: e.c.toLowerCase() });
+        }
+        for (i = 0; i < cat.presets.length; i++) {
+            pr = cat.presets[i];
+            items.push({ id: "p:" + pr.p, kind: "preset", name: pr.n, cat: pr.u ? "\u041c\u043e\u0438 \u043f\u0440\u0435\u0441\u0435\u0442\u044b" : pr.g, p: pr.p, key: pr.n.toLowerCase(), catKey: String(pr.g).toLowerCase() });
+        }
+        g.__sayframeFxItems = items;
+        return items;
+    }
+
+    // Same order as the panel's search: start of the name, start of a word, anywhere, the category.
+    function fxPopupSearch(items, query, favMap) {
+        var whole = String(query).toLowerCase().replace(/^\s+|\s+$/g, "");
+        var words = whole ? whole.split(/\s+/) : [];
+        var found = [], i, j, it, sc, w, at, ok;
+        for (i = 0; i < items.length; i++) {
+            it = items[i];
+            sc = 0;
+            ok = true;
+            for (j = 0; j < words.length && ok; j++) {
+                w = words[j];
+                at = it.key.indexOf(w);
+                if (at === 0) { sc += 0; }
+                else if (at > 0 && /[\s\-_(]/.test(it.key.charAt(at - 1))) { sc += 1; }
+                else if (at > 0) { sc += 3; }
+                else if (it.catKey.indexOf(w) >= 0) { sc += 6; }
+                else { ok = false; }
+            }
+            if (!ok) { continue; }
+            if (it.key === whole) { sc -= 5; }
+            if (favMap[it.id]) { sc -= 2; }
+            if (it.kind === "preset") { sc += 1; }
+            found.push({ it: it, sc: sc });
+        }
+        found.sort(function (a, b) { return a.sc - b.sc || a.it.name.length - b.it.name.length || (a.it.name < b.it.name ? -1 : 1); });
+        return found;
+    }
+
+    function fxPopupShow(x, y, fav, recent) {
+        var g = $.global, items, byId = {}, favMap = {}, shown = [], w, q, list, note, i, scr, b, left, top;
+        if (g.__sayframeFxWin) {
+            try { g.__sayframeFxWin.close(); } catch (e0) {}
+            g.__sayframeFxWin = null;
+            return { closed: true };
+        }
+        items = fxPopupItems();
+        for (i = 0; i < items.length; i++) { byId[items[i].id] = items[i]; }
+        for (i = 0; i < fav.length; i++) { favMap[fav[i]] = true; }
+
+        w = new Window("palette", "Sayframe FX", undefined, { closeButton: true });
+        w.orientation = "column";
+        w.alignChildren = ["fill", "top"];
+        w.margins = 8;
+        w.spacing = 6;
+        q = w.add("edittext", undefined, "");
+        q.preferredSize = [340, 24];
+        list = w.add("listbox", undefined, [], { numberOfColumns: 2, showHeaders: false, columnWidths: [230, 100] });
+        list.preferredSize = [340, 260];
+        note = w.add("statictext", undefined, "\u041f\u0435\u0447\u0430\u0442\u0430\u0439\u0442\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435, \u0441\u0442\u0440\u0435\u043b\u043a\u0438 \u2014 \u0432\u044b\u0431\u043e\u0440, Enter \u2014 \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043d\u0430 \u0432\u044b\u0434\u0435\u043b\u0435\u043d\u043d\u044b\u0435 \u0441\u043b\u043e\u0438, Esc \u2014 \u0437\u0430\u043a\u0440\u044b\u0442\u044c.", { multiline: true });
+        note.preferredSize = [340, 32];
+
+        function fill() {
+            var r, k, row, it;
+            list.removeAll();
+            shown = [];
+            if (q.text.replace(/\s/g, "") === "") {
+                for (k = 0; k < fav.length; k++) { if (byId[fav[k]]) { shown.push(byId[fav[k]]); } }
+                for (k = 0; k < recent.length; k++) { if (byId[recent[k]] && !favMap[recent[k]]) { shown.push(byId[recent[k]]); } }
+            } else {
+                r = fxPopupSearch(items, q.text, favMap);
+                for (k = 0; k < r.length && k < 40; k++) { shown.push(r[k].it); }
+            }
+            for (k = 0; k < shown.length; k++) {
+                it = shown[k];
+                row = list.add("item", (favMap[it.id] ? "\u2605 " : "") + it.name);
+                row.subItems[0].text = it.kind === "effect" ? it.cat : "\u043f\u0440\u0435\u0441\u0435\u0442 \u00b7 " + it.cat;
+            }
+            if (list.items.length) { list.selection = 0; }
+        }
+        function move(d) {
+            var n = list.items.length, at;
+            if (!n) { return; }
+            at = list.selection ? list.selection.index + d : 0;
+            if (at < 0) { at = 0; }
+            if (at >= n) { at = n - 1; }
+            list.selection = at;
+        }
+        function close() {
+            g.__sayframeFxWin = null;
+            try { w.close(); } catch (e1) {}
+        }
+        function apply() {
+            var it = list.selection ? shown[list.selection.index] : null, res, msg;
+            if (!it) { return; }
+            close();
+            try {
+                res = it.kind === "effect" ? fxApplyEffect(it.m, it.name) : fxApplyPreset(it.p, it.name);
+                msg = { id: it.id, name: it.name, kind: it.kind, applied: res.applied, skipped: res.skipped };
+            } catch (e2) {
+                msg = { id: it.id, name: it.name, kind: it.kind, error: (e2 && e2.message) ? e2.message : String(e2) };
+            }
+            sayframeDispatch("com.sayframe.fx", toJSON(msg));
+        }
+        function onKey(e) {
+            if (e.keyName === "Down") { move(1); e.preventDefault(); }
+            else if (e.keyName === "Up") { move(-1); e.preventDefault(); }
+            else if (e.keyName === "Enter" || e.keyName === "Return") { apply(); e.preventDefault(); }
+            else if (e.keyName === "Escape") { close(); e.preventDefault(); }
+        }
+        q.onChanging = fill;
+        q.addEventListener("keydown", onKey);
+        list.addEventListener("keydown", onKey);
+        list.onDoubleClick = apply;
+        w.onClose = function () { g.__sayframeFxWin = null; };
+        fill();
+        w.layout.layout(true);
+
+        // At the mouse, but fully on the screen it is on.
+        b = w.frameBounds || w.bounds;
+        left = Math.round(x - 30);
+        top = Math.round(y - 20);
+        scr = $.screens || [];
+        for (i = 0; i < scr.length; i++) {
+            if (x >= scr[i].left && x < scr[i].right && y >= scr[i].top && y < scr[i].bottom) {
+                left = Math.max(scr[i].left, Math.min(left, scr[i].right - (b.right - b.left)));
+                top = Math.max(scr[i].top, Math.min(top, scr[i].bottom - (b.bottom - b.top)));
+            }
+        }
+        w.location = [left, top];
+        g.__sayframeFxWin = w;
+        w.show();
+        try { w.active = true; q.active = true; } catch (e3) {}
+        return { shown: true, count: items.length };
+    }
+
+    function fxCatalogData() {
+        var list = app.effects || [];
+        var effects = [], presets = [], seen = {}, roots = [], i, e, f;
+        for (i = 0; i < list.length; i++) {
+            e = list[i];
+            if (!e || !e.displayName || !e.matchName) { continue; }
+            effects.push({ n: String(e.displayName), m: String(e.matchName), c: String(e.category || "") });
+        }
+        f = Folder.appPackage;
+        if (f) {
+            roots.push({ dir: new Folder(f.fsName + "/Presets"), user: false });
+            if (f.parent) { roots.push({ dir: new Folder(f.parent.fsName + "/Presets"), user: false }); }
+        }
+        f = new Folder(Folder.myDocuments.fsName + "/Adobe");
+        if (f.exists) {
+            list = f.getFiles();
+            for (i = 0; i < list.length; i++) {
+                if (list[i] instanceof Folder && /^After Effects/.test(decodeURI(list[i].name))) {
+                    roots.push({ dir: new Folder(list[i].fsName + "/User Presets"), user: true });
+                }
+            }
+        }
+        for (i = 0; i < roots.length; i++) {
+            if (roots[i].dir.exists && !seen[roots[i].dir.fsName]) {
+                seen[roots[i].dir.fsName] = true;
+                fxScanPresets(roots[i].dir, roots[i].user, presets, 0);
+            }
+        }
+        return { effects: effects, presets: presets };
+    }
+
     function fxScanPresets(dir, user, out, depth) {
         var list, i, name;
         if (depth > 6 || out.length > 4000) { return; }
@@ -4157,74 +4363,22 @@ var sayframeHost = (function () {
         // FX Console: every installed effect plus the animation presets (.ffx) After Effects ships with
         // and the ones the user saved.
         fxCatalog: function () {
-            return reply(function () {
-                var list = app.effects || [];
-                var effects = [], presets = [], seen = {}, roots = [], i, e, f;
-                for (i = 0; i < list.length; i++) {
-                    e = list[i];
-                    if (!e || !e.displayName || !e.matchName) { continue; }
-                    effects.push({ n: String(e.displayName), m: String(e.matchName), c: String(e.category || "") });
-                }
-                f = Folder.appPackage;
-                if (f) {
-                    roots.push({ dir: new Folder(f.fsName + "/Presets"), user: false });
-                    if (f.parent) { roots.push({ dir: new Folder(f.parent.fsName + "/Presets"), user: false }); }
-                }
-                f = new Folder(Folder.myDocuments.fsName + "/Adobe");
-                if (f.exists) {
-                    list = f.getFiles();
-                    for (i = 0; i < list.length; i++) {
-                        if (list[i] instanceof Folder && /^After Effects/.test(decodeURI(list[i].name))) {
-                            roots.push({ dir: new Folder(list[i].fsName + "/User Presets"), user: true });
-                        }
-                    }
-                }
-                for (i = 0; i < roots.length; i++) {
-                    if (roots[i].dir.exists && !seen[roots[i].dir.fsName]) {
-                        seen[roots[i].dir.fsName] = true;
-                        fxScanPresets(roots[i].dir, roots[i].user, presets, 0);
-                    }
-                }
-                return { effects: effects, presets: presets };
-            });
+            return reply(fxCatalogData);
         },
 
         // Adds the effect to every selected layer that can take effects (not cameras or lights).
         applyEffect: function (matchName, label) {
-            return reply(function () {
-                var layers = fxSelectedLayers();
-                var applied = 0, skipped = 0, i, fx;
-                app.beginUndoGroup("Sayframe: " + (label || "effect"));
-                try {
-                    for (i = 0; i < layers.length; i++) {
-                        fx = null;
-                        try { fx = layers[i].property("ADBE Effect Parade"); } catch (e0) {}
-                        if (fx && fx.canAddProperty(matchName)) { fx.addProperty(matchName); applied++; } else { skipped++; }
-                    }
-                } finally {
-                    app.endUndoGroup();
-                }
-                return { applied: applied, skipped: skipped };
-            });
+            return reply(function () { return fxApplyEffect(matchName, label); });
         },
 
         applyPreset: function (path, label) {
-            return reply(function () {
-                var layers = fxSelectedLayers();
-                var file = new File(path);
-                var applied = 0, skipped = 0, i;
-                if (!file.exists) { throw new Error("PRESET_NOT_FOUND"); }
-                app.beginUndoGroup("Sayframe: " + (label || "preset"));
-                try {
-                    for (i = 0; i < layers.length; i++) {
-                        if (layers[i] instanceof CameraLayer || layers[i] instanceof LightLayer) { skipped++; continue; }
-                        try { layers[i].applyPreset(file); applied++; } catch (e1) { skipped++; }
-                    }
-                } finally {
-                    app.endUndoGroup();
-                }
-                return { applied: applied, skipped: skipped };
-            });
+            return reply(function () { return fxApplyPreset(path, label); });
+        },
+
+        // The effect search as a small After Effects window at the mouse (x, y in screen points).
+        // fav and recent are item ids ("e:<matchName>" or "p:<path>"). The same key again closes it.
+        fxPopup: function (x, y, fav, recent) {
+            return reply(function () { return fxPopupShow(x, y, fav || [], recent || []); });
         },
 
         // Saves the frame at the time indicator of the open comp as a PNG in the given folder.

@@ -537,6 +537,32 @@ function makeAE(opts, tmpDir) {
   Object.defineProperty(File.prototype, "parent", { configurable: true, get() { return new Folder(path.dirname(this.fsName)); } });
   const keyboardState = { keyName: "", ctrlKey: false, altKey: false, shiftKey: false, metaKey: false };
   function CSXSEvent() {} CSXSEvent.prototype.dispatch = function () { log.events.push({ type: this.type, data: this.data }); };
+  // ScriptUI, just enough for the effect search window at the mouse: controls keep their state, the test
+  // types and presses keys through them. log.windows holds every window made.
+  log.windows = [];
+  function SuiControl(type, text) {
+    const c = { type, text: text || "", listeners: {}, items: [], _sel: null, children: [] };
+    c.addEventListener = (t, fn) => { (c.listeners[t] = c.listeners[t] || []).push(fn); };
+    c.add = (kind, label) => { const it = { text: label, index: c.items.length, subItems: [{ text: "" }] }; c.items.push(it); return it; };
+    c.removeAll = () => { c.items = []; c._sel = null; };
+    Object.defineProperty(c, "selection", { get: () => c._sel, set: (v) => { c._sel = typeof v === "number" ? c.items[v] || null : v; } });
+    return c;
+  }
+  function Window(type, title) {
+    const w = SuiControl("window", title);
+    w.add = (kind, a, b) => { const c = SuiControl(kind, kind === "listbox" ? "" : b); w.children.push(c); return c; };
+    w.layout = { layout() {} };
+    w.bounds = { left: 0, top: 0, right: 356, bottom: 340 };
+    w.shown = false; w.closed = false;
+    w.show = () => { w.shown = true; };
+    w.close = () => { if (w.closed) return; w.closed = true; if (w.onClose) w.onClose(); };
+    w.find = (kind) => w.children.find((c) => c.type === kind);
+    w.key = (name) => { const ev = { keyName: name, preventDefault() {} }; (w.find("edittext").listeners.keydown || []).forEach((fn) => fn(ev)); };
+    w.type_ = (text) => { const q = w.find("edittext"); q.text = text; q.onChanging(); };
+    w.rows = () => w.find("listbox").items.map((it) => it.text + " | " + it.subItems[0].text);
+    log.windows.push(w);
+    return w;
+  }
   function ExternalObject() {}
   comp.saveFrameToPng = function (t, file) { log.snaps.push({ t, path: file.fsName }); if (!opts.snapFails) fs.writeFileSync(file.fsName, fakePng(0)); };
   const app = { version: "26.0", project, effects: opts.effects || FX_EFFECTS,
@@ -547,7 +573,7 @@ function makeAE(opts, tmpDir) {
     purge: (t) => { log.purges = (log.purges || []).concat([t]); },
     fonts: opts.noFonts ? undefined : { allFonts: [[{ postScriptName: "Inter-Regular" }, { postScriptName: "Inter-Bold" }], [{ postScriptName: "Montserrat-Bold" }]],
       getFontsByPostScriptName: (n) => (/^(Inter|Montserrat|ArialMT)/.test(n) ? [{ postScriptName: n }] : []) } };
-  const ctx = vm.createContext({ app, PurgeTarget: opts.noPurge ? undefined : { ALL_CACHES: 1012, UNDO_CACHES: 1013, SNAPSHOT_CACHES: 1014, IMAGE_CACHES: 1015 }, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {} },
+  const ctx = vm.createContext({ app, PurgeTarget: opts.noPurge ? undefined : { ALL_CACHES: 1012, UNDO_CACHES: 1013, SNAPSHOT_CACHES: 1014, IMAGE_CACHES: 1015 }, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, Window, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {}, screens: [{ left: 0, top: 0, right: 1440, bottom: 900 }] },
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   ctx.$.global = ctx;
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
@@ -1995,6 +2021,56 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   t = await p.page.locator("#keyWatchState").innerText();
   check("KW5 settings say why it stopped", t === "Помощник за клавишами не запустился: execution error: CGEventSourceKeyState is not defined (-2700). Сочетания работают, пока фокус на панели, и через After Effects.", t);
+  await p.close();
+
+  console.log("\n=== effect search at the mouse ===");
+  const forwardEvents = async (p) => { for (const ev of p.ae.log.events.splice(0)) await p.page.evaluate((ev) => window.__cepListeners[ev.type] && window.__cepListeners[ev.type](ev), ev); await p.page.waitForTimeout(60); };
+  let SL1 = mkFxLayer("Фон");
+  p = await open({ keyWatch: true, selectedLayers: [SL1] });
+  await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
+  await watcherSays(p, 0, "READY");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  check("FC1 settings: the search opens in the panel by default, 'У курсора' is the other choice", (await p.page.locator("#fxWhere button").allInnerTexts()).join() === "В панели Sayframe,У курсора" && (await p.page.getAttribute('#fxWhere [data-value="panel"]', "aria-pressed")) === "true");
+  await p.page.click("#settingsClose");
+  await p.page.evaluate(() => { document.hasFocus = () => false; document.activeElement && document.activeElement.blur(); });
+  await watcherSays(p, 0, "HIT console 700 400");
+  await p.page.waitForTimeout(150);
+  check("FC1 by default the shortcut from outside opens the search in the panel", (await p.page.locator("#fxConsole").isVisible()) && p.ae.log.windows.length === 0);
+  await p.page.keyboard.press("Escape");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click('#fxWhere [data-value="cursor"]');
+  await p.page.click("#saveSettings");
+  check("FC2 'У курсора' is saved", (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).fxWhere)) === "cursor");
+  await p.page.waitForTimeout(900);
+  await watcherSays(p, 0, "HIT console 700 400");
+  await p.page.waitForTimeout(200);
+  let W = p.ae.log.windows[0];
+  check("FC2 now the shortcut opens a small After Effects window at the mouse, the panel stays closed", !!W && W.shown && W.location[0] === 670 && W.location[1] === 380 && (await p.page.locator("#fxConsole").isHidden()), JSON.stringify(W && W.location));
+  W.type_("blur");
+  t = W.rows();
+  check("FC3 typing searches effects like the panel does", t[0] === "Fast Box Blur | Blur & Sharpen" && t.indexOf("Gaussian Blur | Blur & Sharpen") > 0 && t.length >= 3 && W.find("listbox").selection === W.find("listbox").items[0], JSON.stringify(t));
+  W.key("Down");
+  check("FC3 arrows move the choice", W.find("listbox").selection.index === 1);
+  t = W.rows()[1].split(" | ")[0];
+  W.key("Enter");
+  await forwardEvents(p);
+  check("FC4 Enter adds the effect to the selected layers and closes the window", W.closed && SL1.effects.length === 1 && /^Эффект «.+» добавлен на 1 слой\. Отменить — Cmd\/Ctrl\+Z\.$/.test(await p.status()) && (await p.status()).indexOf(t) >= 0, await p.status());
+  await p.page.waitForTimeout(900);
+  await watcherSays(p, 0, "HIT console 1430 890");
+  await p.page.waitForTimeout(200);
+  W = p.ae.log.windows[1];
+  check("FC5 near the screen edge the window stays on the screen; an empty search shows recent effects", !!W && W.location[0] === 1440 - 356 && W.location[1] === 900 - 340 && W.rows().length === 1 && W.rows()[0].indexOf(t) === 0, JSON.stringify([W && W.location, W && W.rows()]));
+  await p.page.waitForTimeout(900);
+  await watcherSays(p, 0, "HIT console 1430 890");
+  await p.page.waitForTimeout(200);
+  check("FC5 the same shortcut again closes it", W.closed && p.ae.log.windows.length === 2);
+  await p.page.waitForTimeout(900);
+  Object.assign(p.ae.keyboardState, { keyName: "Space", ctrlKey: true, altKey: false, shiftKey: false, metaKey: false });
+  vm.runInContext("sayframeHost.pollKeys()", p.ae.ctx);
+  await forwardEvents(p);
+  Object.assign(p.ae.keyboardState, { keyName: "", ctrlKey: false });
+  vm.runInContext("sayframeHost.pollKeys()", p.ae.ctx);
+  check("FC6 the same press reported by After Effects (no mouse position) is left to the watcher", (await p.page.locator("#fxConsole").isHidden()) && p.ae.log.windows.length === 2 && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
   console.log("\n=== paste dialog on Cmd/Ctrl+V anywhere in After Effects ===");
