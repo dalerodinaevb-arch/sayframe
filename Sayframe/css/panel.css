@@ -1604,3 +1604,76 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .style-chip { height: 24px; padding: 0 9px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--muted); font: 600 11.5px/1 var(--round); cursor: pointer; }
 .style-chip:hover { color: var(--text); background: var(--glass); }
 .style-chip[aria-checked="true"] { color: var(--text); border-color: rgba(var(--accent-rgb), 0.9); background: rgba(var(--accent-rgb), 0.2); }
+
+/* ------------------------------------------------ дизайн «After Effects» */
+/* Та же раскладка и те же блоки, но вид как у родных панелей After Effects: серый, плоский,
+   прямые углы, синий акцент. Включается в настройках (data-design="ae" ставит panel.js). */
+html[data-design="ae"] {
+  --bg: #232323 !important; --text: #d6d6d6 !important; --muted: #a3a3a3 !important; --faint: #767676 !important;
+  --line: #3a3a3a !important; --glass: #2a2a2a !important; --glass-strong: #313131 !important;
+  --accent: #2d8ceb !important; --accent-hi: #5aa8f5 !important; --accent-rgb: 45, 140, 235 !important; --on-accent: #fff !important;
+  --round: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --ae-in: #1a1a1a; --ae-btn: #383838; --ae-btn-hi: #424242; --ae-edge: #474747; --ae-hot: #3d9cff;
+}
+html[data-design="ae"], html[data-design="ae"] body { font-size: 12px; background: #232323 !important; }
+html[data-design="ae"] .glow { display: none !important; }
+html[data-design="ae"] #app { gap: 8px; padding: 8px 8px 16px; }
+/* шапка — как заголовок панели */
+html[data-design="ae"] .top { background: #1e1e1e !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; border-bottom: 1px solid #141414; padding: 6px 10px !important; margin: -8px -8px 0; }
+html[data-design="ae"] .top .brand, html[data-design="ae"] .top b, html[data-design="ae"] .top h1 { font-size: 12.5px !important; font-weight: 600 !important; letter-spacing: 0 !important; color: #e0e0e0; }
+html[data-design="ae"] .top .spark { color: #2d8ceb; }
+html[data-design="ae"] .icon-btn { width: 26px !important; height: 24px !important; border-radius: 3px !important; background: transparent !important; border: 1px solid transparent !important; color: #b5b5b5 !important; }
+html[data-design="ae"] .icon-btn:hover { background: #333 !important; border-color: #444 !important; }
+/* вкладки — как вкладки панелей AE: текст и синяя полоска снизу */
+html[data-design="ae"] .tabs { background: transparent !important; border: 0 !important; border-bottom: 1px solid #141414 !important; border-radius: 0 !important; padding: 0 !important; gap: 0 !important; margin: 0 -8px; }
+html[data-design="ae"] .tab { height: 26px !important; border-radius: 0 !important; font: 500 11.5px/1 var(--round) !important; color: #9a9a9a !important; padding: 0 8px !important; }
+html[data-design="ae"] .tab:hover { color: #d6d6d6 !important; }
+html[data-design="ae"] .tab[aria-selected="true"] { background: transparent !important; color: #ececec !important; box-shadow: inset 0 -2px 0 #2d8ceb !important; }
+/* карточки — плоские группы с тонкой рамкой */
+html[data-design="ae"] .card { border-radius: 4px !important; background: #282828 !important; border: 1px solid #1a1a1a !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+html[data-design="ae"] .tool-head b, html[data-design="ae"] .scripts-head b, html[data-design="ae"] .quick-title { font: 600 11.5px/1.2 var(--round) !important; color: #dcdcdc !important; letter-spacing: 0 !important; }
+/* кнопки */
+html[data-design="ae"] .primary { height: 30px !important; border-radius: 3px !important; background: #2d8ceb !important; color: #fff !important; box-shadow: none !important; font: 600 12px/1 var(--round) !important; letter-spacing: 0 !important; }
+html[data-design="ae"] .primary:hover { background: #3b97f0 !important; }
+html[data-design="ae"] .ghost, html[data-design="ae"] .chip-btn, html[data-design="ae"] .paste-do, html[data-design="ae"] .shift-do, html[data-design="ae"] .ease-apply, html[data-design="ae"] .align-btn, html[data-design="ae"] .anchor-cell, html[data-design="ae"] .shift-arrow {
+  border-radius: 3px !important; background: var(--ae-btn) !important; border: 1px solid var(--ae-edge) !important; color: #dcdcdc !important; box-shadow: none !important; }
+html[data-design="ae"] .ghost:hover, html[data-design="ae"] .paste-do:hover, html[data-design="ae"] .align-btn:hover, html[data-design="ae"] .anchor-cell:hover { background: var(--ae-btn-hi) !important; }
+html[data-design="ae"] .ghost { height: 24px !important; font-size: 11.5px !important; }
+html[data-design="ae"] .quick-chip, html[data-design="ae"] .chip { border-radius: 3px !important; background: #333 !important; border: 1px solid #444 !important; color: #d6d6d6 !important; font: 500 11.5px/1.2 var(--round) !important; }
+html[data-design="ae"] .chip[aria-pressed="true"], html[data-design="ae"] .chip.on, html[data-design="ae"] .frames button[aria-pressed="true"] { background: #2d8ceb !important; border-color: #2d8ceb !important; color: #fff !important; }
+/* поля ввода — тёмные утопленные */
+html[data-design="ae"] textarea, html[data-design="ae"] .field, html[data-design="ae"] select { border-radius: 3px !important; background: var(--ae-in) !important; border: 1px solid #3a3a3a !important; color: #e0e0e0 !important; box-shadow: none !important; font-size: 12px !important; }
+html[data-design="ae"] textarea:focus, html[data-design="ae"] .field:focus, html[data-design="ae"] select:focus { border-color: #2d8ceb !important; outline: none; }
+/* иконки — серые и тоньше, как в AE; синие только у выбранного */
+html[data-design="ae"] .card svg, html[data-design="ae"] .paste-do svg, html[data-design="ae"] .tool svg { color: #c4c4c4 !important; stroke-width: 1.5 !important; }
+/* «горячие» числа, как в AE: синие */
+html[data-design="ae"] .ease-num, html[data-design="ae"] .shift-num, html[data-design="ae"] .shift-count, html[data-design="ae"] .ease-nums b, html[data-design="ae"] #panelWidthVal { color: var(--ae-hot) !important; }
+/* ползунки */
+html[data-design="ae"] input[type="range"] { accent-color: #2d8ceb; }
+/* блоки инструментов */
+html[data-design="ae"] .motion-tools > .tool-card { border-radius: 4px !important; }
+html[data-design="ae"] .tool-pin, html[data-design="ae"] .tool-toggle { color: #8a8a8a !important; }
+html[data-design="ae"] .tool-pin[aria-pressed="true"] { color: #2d8ceb !important; }
+/* строка состояния */
+html[data-design="ae"] .status p { color: #a3a3a3 !important; font-size: 11.5px; }
+html[data-design="ae"] .pulse { background: #2d8ceb !important; box-shadow: none !important; }
+/* настройки и окна */
+html[data-design="ae"] .sheet { background: #232323 !important; }
+html[data-design="ae"] .sheet-card, html[data-design="ae"] .modal-card { border-radius: 4px !important; background: #282828 !important; }
+html[data-design="ae"] .switch .track { border-radius: 3px !important; }
+html[data-design="ae"] hr, html[data-design="ae"] .pin-line { border-color: #1a1a1a !important; }
+html[data-design="ae"] .style-chip { border-radius: 3px !important; height: 22px !important; background: transparent !important; border-color: #444 !important; font-weight: 500 !important; }
+html[data-design="ae"] .style-chip[aria-checked="true"] { background: #2d8ceb !important; border-color: #2d8ceb !important; color: #fff !important; }
+html[data-design="ae"] .paste-do { min-height: 32px !important; padding: 5px 8px !important; font: 500 12px/1.2 var(--round) !important; gap: 6px !important; }
+html[data-design="ae"] .ec-buttons .paste-do { min-height: 32px !important; font-size: 11.5px !important; }
+html[data-design="ae"] .motion-tools > .tool-card { padding: 10px 10px 10px !important; gap: 8px !important; }
+html[data-design="ae"] .motion-tools > .tool-card.solo { padding-top: calc(16px * var(--kz, 1)) !important; }
+html[data-design="ae"] .quick-chip { height: 24px; }
+/* всё прямоугольное, скругление как в AE */
+html[data-design="ae"] button:not(.tab), html[data-design="ae"] .models > *, html[data-design="ae"] .ac-card, html[data-design="ae"] .ac-thumb, html[data-design="ae"] [class*="ac-"] { border-radius: 3px !important; }
+html[data-design="ae"] .ac-tabs button[aria-selected="true"], html[data-design="ae"] .ac-tab[aria-selected="true"], html[data-design="ae"] .set-tabs button[aria-selected="true"] { background: #2d8ceb !important; border-color: #2d8ceb !important; color: #fff !important; box-shadow: none !important; }
+html[data-design="ae"] .models > * { background: #1f1f1f !important; border-color: #3a3a3a !important; }
+html[data-design="ae"] .models > [aria-pressed="true"], html[data-design="ae"] .models > [aria-checked="true"] { border-color: #2d8ceb !important; background: rgba(45,140,235,.12) !important; box-shadow: none !important; }
+/* превью анимаций — спокойные тёмно-синие кадры вместо фиолетовых */
+html[data-design="ae"] .trv-a { background: radial-gradient(circle at 30% 30%, #4f6d92, #1d2836 75%) !important; }
+html[data-design="ae"] .trv-b { background: radial-gradient(circle at 70% 60%, #5d8a7c, #1c2d29 75%) !important; }

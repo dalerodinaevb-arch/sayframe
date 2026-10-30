@@ -2741,6 +2741,24 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("FW3 a narrow panel keeps one column: «Выражения» under the request", t[1][0] === 14 && t[1][1] > t[0][1] + t[0][3] && t[0][2] === 352, JSON.stringify(t));
   await p.close();
 
+  // Design: «Стекло» (default) or «After Effects» — same layout, AE-like look.
+  p = await open({ width: 380 });
+  t = () => p.page.evaluate(() => [document.documentElement.getAttribute("data-design"), getComputedStyle(document.body).backgroundColor, getComputedStyle(document.querySelector(".glow")).display]);
+  check("DS1 by default the panel keeps its glass look", JSON.stringify(await t()) === JSON.stringify(["glass", "rgb(11, 12, 18)", "block"]), JSON.stringify(await t()));
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  check("DS1 settings offer «Стекло» and «After Effects», glass chosen", (await p.page.locator("#designPick button").allInnerTexts()).join() === "Стекло,After Effects" && (await p.page.getAttribute('#designPick [data-value="glass"]', "aria-pressed")) === "true");
+  await p.page.click('#designPick [data-value="ae"]');
+  check("DS2 picking «After Effects» shows at once: grey, no glow", JSON.stringify(await t()) === JSON.stringify(["ae", "rgb(35, 35, 35)", "none"]), JSON.stringify(await t()));
+  await p.page.click("#settingsClose");
+  check("DS2 closing without saving brings the glass back", (await t())[0] === "glass");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="ae"]'); await p.page.click("#saveSettings");
+  await p.restart();
+  check("DS3 the design survives a restart and the layout stays the same", (await t())[0] === "ae" && (await p.page.locator("#tabs .tab").count()) === 5 && (await p.page.locator("#runBtn").isVisible()) && p.errors.length === 0, p.errors.join(" | "));
+  await p.page.click("#tabMotion");
+  check("DS3 the Tools tab works the same in the new look", (await p.page.locator('#motionTools .tool-card[data-tool="paste"] #pasteBtn').isVisible()) && (await overflow(p)) <= 0);
+  await p.page.screenshot({ path: path.join(SHOTS, "09e-design-ae.png") });
+  await p.close();
+
   console.log("\n=== tabs ===");
   const vis = (p, sel) => p.page.locator(sel).isVisible();
   p = await open({ replies: [msg("Создаю слой.\n```javascript\napp.__ran('one');\n```")], clip: "png", footage: IMG });
