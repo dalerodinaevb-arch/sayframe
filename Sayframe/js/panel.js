@@ -122,7 +122,7 @@
         brandPics: false,   // отправлять ли AI маленькие картинки упомянутых логотипов и иконок
         motionStyle: "normal",  // стиль анимации для AI: normal, smooth, energetic, minimal, corporate, playful
         refFrames: 8,
-        design: "glass",    // вид панели: "glass" (стекло) или "ae" (как родные панели After Effects)
+        design: "glass",    // вид панели: "glass" (стекло), "ae" (как родные панели After Effects) или "studio" (Студия)
         panelFit: true,     // поля и кнопки тянутся на всю ширину панели; false — держат ширину panelWidth у левого края
         panelWidth: 380,    // ширина содержимого в пикселях, когда panelFit выключен
         toolSize: "100",    // масштаб блоков раздела «Инструменты» в процентах: "100", "90", "80", "70", "60" или "50"
@@ -879,6 +879,8 @@
     var SECTION_BG = { claude: "bg", tools: "bgTools", motion: "bgMotion", shape: "bgShape", brand: "bgBrand" };
     var currentTab = "claude";
 
+    var DESIGNS = ["glass", "ae", "studio"];
+
     function applyTheme(s) {
         var a = parseHex(s.accent) || parseHex(DEFAULTS.accent);
         var key = SECTION_BG[currentTab] || "bg";
@@ -891,7 +893,7 @@
         root.setProperty("--on-accent", lum > 0.5 ? "#0b0c12" : "#ffffff");
         root.setProperty("--bg", bg.hex);
         root.setProperty("--panel-w", clampPanelWidth(s.panelWidth) + "px");
-        document.documentElement.setAttribute("data-design", s.design === "ae" ? "ae" : "glass");
+        document.documentElement.setAttribute("data-design", DESIGNS.indexOf(s.design) >= 0 ? s.design : "glass");
         document.documentElement.setAttribute("data-fit", s.panelFit === false ? "off" : "on");
         document.documentElement.setAttribute("data-tools", cleanToolSize(s.toolSize));
         root.setProperty("--tz", String(Number(cleanToolSize(s.toolSize)) / 100));
@@ -3219,7 +3221,7 @@
         // Дизайн меняется сразу; без «Сохранить» вернётся прежний.
         ui.designPick.addEventListener("click", function (e) {
             var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
-            if (!draft || (v !== "glass" && v !== "ae")) { return; }
+            if (!draft || DESIGNS.indexOf(v) < 0) { return; }
             draft.design = v;
             pressGroup(ui.designPick, v);
             applyTheme(draft);
@@ -3302,7 +3304,7 @@
         ui.toolTitles.checked = draft.toolTitles;
         ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
         pressGroup(ui.fxWhere, draft.fxWhere === "cursor" ? "cursor" : "panel");
-        pressGroup(ui.designPick, draft.design === "ae" ? "ae" : "glass");
+        pressGroup(ui.designPick, DESIGNS.indexOf(draft.design) >= 0 ? draft.design : "glass");
         ui.statsOn.checked = draft.stats !== false;
         ui.infoTipsOn.checked = draft.infoTips !== false;
         closeFxConsole();

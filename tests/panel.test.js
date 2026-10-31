@@ -2782,7 +2782,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = () => p.page.evaluate(() => [document.documentElement.getAttribute("data-design"), getComputedStyle(document.body).backgroundColor, getComputedStyle(document.querySelector(".glow")).display]);
   check("DS1 by default the panel keeps its glass look", JSON.stringify(await t()) === JSON.stringify(["glass", "rgb(11, 12, 18)", "block"]), JSON.stringify(await t()));
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
-  check("DS1 settings offer «Стекло» and «After Effects», glass chosen", (await p.page.locator("#designPick button").allInnerTexts()).join() === "Стекло,After Effects" && (await p.page.getAttribute('#designPick [data-value="glass"]', "aria-pressed")) === "true");
+  check("DS1 settings offer «Стекло», «After Effects» and «Студия», glass chosen", (await p.page.locator("#designPick button").allInnerTexts()).join() === "Стекло,After Effects,Студия" && (await p.page.getAttribute('#designPick [data-value="glass"]', "aria-pressed")) === "true");
   await p.page.click('#designPick [data-value="ae"]');
   check("DS2 picking «After Effects» shows at once: grey, no glow", JSON.stringify(await t()) === JSON.stringify(["ae", "rgb(35, 35, 35)", "none"]), JSON.stringify(await t()));
   await p.page.click("#settingsClose");
@@ -2793,6 +2793,22 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#tabMotion");
   check("DS3 the Tools tab works the same in the new look", (await p.page.locator('#motionTools .tool-card[data-tool="paste"] #pasteBtn').isVisible()) && (await overflow(p)) <= 0);
   await p.page.screenshot({ path: path.join(SHOTS, "09e-design-ae.png") });
+  await p.close();
+
+  // «Студия»: same layout, dark with a dot grid, icons in tinted squares.
+  p = await open({ width: 380 });
+  t = () => p.page.evaluate(() => [document.documentElement.getAttribute("data-design"), getComputedStyle(document.documentElement).backgroundColor, getComputedStyle(document.querySelector(".glow")).display,
+    getComputedStyle(document.body, "::before").backgroundImage.indexOf("radial-gradient") >= 0]);
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click('#designPick [data-value="studio"]');
+  check("DS4 picking «Студия» shows at once: dark, dotted background, no glow", JSON.stringify(await t()) === JSON.stringify(["studio", "rgb(17, 18, 21)", "none", true]), JSON.stringify(await t()));
+  check("DS4 the settings window stays on top in «Студия»", await p.page.evaluate(() => { document.querySelector("#saveSettings").scrollIntoView({ block: "center" }); const b = document.querySelector("#saveSettings").getBoundingClientRect(); const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !!el && !!el.closest("#saveSettings"); }));
+  await p.page.click("#saveSettings");
+  await p.restart();
+  await p.page.click("#tabMotion");
+  t = await p.page.evaluate(() => { const a = document.querySelector('.easecopy-card').getBoundingClientRect(), n = document.querySelector('.easecopy-card').nextElementSibling; const row = [...document.querySelectorAll('.easecopy-card .paste-do')].map((x) => x.getBoundingClientRect()); return [document.documentElement.getAttribute("data-design"), row.every((r) => r.bottom <= a.bottom), getComputedStyle(document.querySelector("#pasteBtn svg")).borderRadius]; });
+  check("DS5 «Студия» survives a restart; the Tools tab keeps its blocks, buttons fit their cards, icons sit in rounded squares", t[0] === "studio" && t[1] && t[2] === "8px" && (await p.page.locator('#motionTools .tool-card[data-tool="paste"] #pasteBtn').isVisible()) && (await overflow(p)) <= 0 && p.errors.length === 0, JSON.stringify(t));
+  await p.page.screenshot({ path: path.join(SHOTS, "09f-design-studio.png") });
   await p.close();
 
   console.log("\n=== tabs ===");
