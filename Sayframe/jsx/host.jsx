@@ -2214,8 +2214,17 @@ var sayframeHost = (function () {
         q.preferredSize = [340, 24];
         list = w.add("listbox", undefined, [], { numberOfColumns: 2, showHeaders: false, columnWidths: [230, 100] });
         list.preferredSize = [340, 260];
-        note = w.add("statictext", undefined, "\u041f\u0435\u0447\u0430\u0442\u0430\u0439\u0442\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435, \u0441\u0442\u0440\u0435\u043b\u043a\u0438 \u2014 \u0432\u044b\u0431\u043e\u0440, Enter \u2014 \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043d\u0430 \u0432\u044b\u0434\u0435\u043b\u0435\u043d\u043d\u044b\u0435 \u0441\u043b\u043e\u0438, Esc \u2014 \u0437\u0430\u043a\u0440\u044b\u0442\u044c.", { multiline: true });
+        note = w.add("statictext", undefined, "", { multiline: true });
         note.preferredSize = [340, 32];
+
+        // With no layers selected the window still opens: search works, and the note says no layer is selected.
+        function layerCount() {
+            var c = app.project ? app.project.activeItem : null;
+            return c instanceof CompItem && c.selectedLayers ? c.selectedLayers.length : 0;
+        }
+        function hint() {
+            note.text = layerCount() ? "\u041f\u0435\u0447\u0430\u0442\u0430\u0439\u0442\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435, \u0441\u0442\u0440\u0435\u043b\u043a\u0438 \u2014 \u0432\u044b\u0431\u043e\u0440, Enter \u2014 \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043d\u0430 \u0432\u044b\u0434\u0435\u043b\u0435\u043d\u043d\u044b\u0435 \u0441\u043b\u043e\u0438, Esc \u2014 \u0437\u0430\u043a\u0440\u044b\u0442\u044c." : "\u0421\u043b\u043e\u0439 \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d. \u0412\u044b\u0434\u0435\u043b\u0438\u0442\u0435 \u0441\u043b\u043e\u0438 \u0432 \u043a\u043e\u043c\u043f\u043e\u0437\u0438\u0446\u0438\u0438 \u2014 \u0442\u043e\u0433\u0434\u0430 Enter \u0434\u043e\u0431\u0430\u0432\u0438\u0442 \u044d\u0444\u0444\u0435\u043a\u0442. \u0418\u0441\u043a\u0430\u0442\u044c \u043c\u043e\u0436\u043d\u043e \u0443\u0436\u0435 \u0441\u0435\u0439\u0447\u0430\u0441.";
+        }
 
         function fill() {
             var r, k, row, it;
@@ -2250,6 +2259,7 @@ var sayframeHost = (function () {
         function apply() {
             var it = list.selection ? shown[list.selection.index] : null, res, msg;
             if (!it) { return; }
+            if (!layerCount()) { hint(); return; }
             close();
             try {
                 res = it.kind === "effect" ? fxApplyEffect(it.m, it.name) : fxApplyPreset(it.p, it.name);
@@ -2270,23 +2280,31 @@ var sayframeHost = (function () {
         list.addEventListener("keydown", onKey);
         list.onDoubleClick = apply;
         w.onClose = function () { g.__sayframeFxWin = null; };
+        w.onActivate = hint;
         fill();
+        hint();
         w.layout.layout(true);
 
-        // At the mouse, but fully on the screen it is on.
-        b = w.frameBounds || w.bounds;
-        left = Math.round(x - 30);
-        top = Math.round(y - 20);
-        scr = $.screens || [];
-        for (i = 0; i < scr.length; i++) {
-            if (x >= scr[i].left && x < scr[i].right && y >= scr[i].top && y < scr[i].bottom) {
-                left = Math.max(scr[i].left, Math.min(left, scr[i].right - (b.right - b.left)));
-                top = Math.max(scr[i].top, Math.min(top, scr[i].bottom - (b.bottom - b.top)));
+        // At the mouse, but fully on the screen it is on. On macOS a palette placed before show() can be
+        // put back where After Effects likes, so the place is set again once the window is up.
+        function place() {
+            var k;
+            b = w.frameBounds || w.bounds;
+            left = Math.round(x - 30);
+            top = Math.round(y - 20);
+            scr = $.screens || [];
+            for (k = 0; k < scr.length; k++) {
+                if (x >= scr[k].left && x < scr[k].right && y >= scr[k].top && y < scr[k].bottom && b) {
+                    left = Math.max(scr[k].left, Math.min(left, scr[k].right - (b.right - b.left)));
+                    top = Math.max(scr[k].top, Math.min(top, scr[k].bottom - (b.bottom - b.top)));
+                }
             }
+            w.location = [left, top];
         }
-        w.location = [left, top];
+        place();
         g.__sayframeFxWin = w;
         w.show();
+        try { place(); } catch (e4) {}
         try { w.active = true; q.active = true; } catch (e3) {}
         return { shown: true, count: items.length };
     }

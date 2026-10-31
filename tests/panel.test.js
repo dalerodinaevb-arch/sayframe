@@ -554,7 +554,10 @@ function makeAE(opts, tmpDir) {
     w.layout = { layout() {} };
     w.bounds = { left: 0, top: 0, right: 356, bottom: 340 };
     w.shown = false; w.closed = false;
-    w.show = () => { w.shown = true; };
+    w.places = [];
+    Object.defineProperty(w, "location", { get: () => w._loc, set: (v) => { w._loc = v; w.places.push({ at: v, shown: w.shown }); } });
+    // opts.popupMoves: like macOS, show() puts the palette back in the middle of the screen.
+    w.show = () => { w.shown = true; if (opts.popupMoves) w._loc = [542, 280]; };
     w.close = () => { if (w.closed) return; w.closed = true; if (w.onClose) w.onClose(); };
     w.find = (kind) => w.children.find((c) => c.type === kind);
     w.key = (name) => { const ev = { keyName: name, preventDefault() {} }; (w.find("edittext").listeners.keydown || []).forEach((fn) => fn(ev)); };
@@ -2107,6 +2110,29 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await forwardEvents(p);
   await p.page.waitForTimeout(300);
   check("FC8 if the system does not say where the mouse is, the search opens in the panel as before", (await p.page.locator("#fxConsole").isVisible()) && p.ae.log.windows.length === 0 && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+
+  // No layer selected: the window still opens and says so; Enter adds nothing until a layer is selected.
+  const SL9 = mkFxLayer("Фон");
+  p = await open({ keyWatch: true, selectedLayers: [], settings: { fxWhere: "cursor" }, popupMoves: true });
+  await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
+  await watcherSays(p, 0, "READY");
+  await p.page.evaluate(() => { document.hasFocus = () => false; document.activeElement && document.activeElement.blur(); });
+  await watcherSays(p, 0, "HIT console 700 400");
+  await p.page.waitForTimeout(200);
+  W = p.ae.log.windows[0];
+  t = W && W.find("statictext").text;
+  check("FC9 no layer selected: the search window opens anyway, at the mouse, and says no layer is selected", !!W && W.shown && W.location[0] === 670 && W.location[1] === 380 && W.places.some((x) => x.shown) && /^Слой не выбран/.test(t), JSON.stringify([W && W.location, t]));
+  W.type_("blur");
+  W.key("Enter");
+  await forwardEvents(p);
+  check("FC9 Enter without a layer keeps the window open and adds nothing", !W.closed && p.ae.log.events.length === 0 && /^Слой не выбран/.test(W.find("statictext").text));
+  p.ae.comp.selectedLayers.push(SL9);
+  W.onActivate();
+  check("FC10 once a layer is selected, the note goes back to the usual hint", /^Печатайте название/.test(W.find("statictext").text), W.find("statictext").text);
+  W.key("Enter");
+  await forwardEvents(p);
+  check("FC10 and Enter adds the effect", W.closed && SL9.effects.length === 1 && /^Эффект «.+» добавлен на 1 слой/.test(await p.status()) && p.errors.length === 0, await p.status());
   await p.close();
 
   console.log("\n=== paste dialog on Cmd/Ctrl+V anywhere in After Effects ===");
