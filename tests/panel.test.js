@@ -671,6 +671,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         case "exec": {
           sys.exec.push({ file: args[0], args: args[1] });
           if (args[0] !== "osascript") return { code: 1, stdout: "", stderr: "unknown command" };
+          // Where the mouse is (the effect search at the mouse). opts.mouse: [x, y], or nothing — the system does not answer.
+          if (args[1][0] === "-l" && args[1][2] === "-e" && /mouseLocation/.test(args[1][3])) return opts.mouse ? { code: 0, stdout: opts.mouse.join(" ") + "\n", stderr: "" } : { code: 1, stdout: "", stderr: "execution error" };
           if (args[1][0] === "-e") { sys.copied = (sys.copied || []).concat([args[1][1]]); return opts.copyFails ? { code: 1, stdout: "", stderr: "no" } : { code: 0, stdout: "", stderr: "" }; }
           if (/vision\.js$/.test(args[1][2] || "")) {
             // The cut-out window asks macOS for the objects on the photo. opts.vision: undefined — an older macOS,
@@ -2070,7 +2072,41 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await forwardEvents(p);
   Object.assign(p.ae.keyboardState, { keyName: "", ctrlKey: false });
   vm.runInContext("sayframeHost.pollKeys()", p.ae.ctx);
-  check("FC6 the same press reported by After Effects (no mouse position) is left to the watcher", (await p.page.locator("#fxConsole").isHidden()) && p.ae.log.windows.length === 2 && p.errors.length === 0, p.errors.join(" | "));
+  await watcherSays(p, 0, "HIT console 500 300");
+  await p.page.waitForTimeout(400);
+  check("FC6 the same press reported by After Effects (no mouse position) and then by the watcher opens one window, at the watcher's mouse", (await p.page.locator("#fxConsole").isHidden()) && p.ae.log.windows.length === 3 && p.ae.log.windows[2].location[0] === 470 &&
+    !p.sys.exec.some((x) => /mouseLocation/.test(x.args.join(" "))) && p.errors.length === 0, JSON.stringify([p.ae.log.windows.length, p.errors]));
+  await p.close();
+
+  // macOS without "Input Monitoring": the watcher sees no presses, only After Effects does — the panel asks where the mouse is.
+  p = await open({ keyWatch: true, selectedLayers: [mkFxLayer("Фон")], mouse: [800, 450], settings: { fxWhere: "cursor" } });
+  await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
+  await watcherSays(p, 0, "READY");
+  await watcherSays(p, 0, "NOACCESS");
+  await p.page.evaluate(() => { document.hasFocus = () => false; document.activeElement && document.activeElement.blur(); });
+  await p.page.waitForTimeout(900);
+  Object.assign(p.ae.keyboardState, { keyName: "Space", ctrlKey: true, altKey: false, shiftKey: false, metaKey: false });
+  vm.runInContext("sayframeHost.pollKeys()", p.ae.ctx);
+  await forwardEvents(p);
+  Object.assign(p.ae.keyboardState, { keyName: "", ctrlKey: false });
+  vm.runInContext("sayframeHost.pollKeys()", p.ae.ctx);
+  await p.page.waitForTimeout(300);
+  W = p.ae.log.windows[0];
+  t = p.sys.exec.filter((x) => /mouseLocation/.test(x.args.join(" ")));
+  check("FC7 the watcher cannot see the keys: a press caught by After Effects opens the window at the mouse anyway", !!W && W.shown && W.location[0] === 770 && W.location[1] === 430 && t.length === 1 && t[0].file === "osascript" &&
+    (await p.page.locator("#fxConsole").isHidden()) && p.errors.length === 0, JSON.stringify([W && W.location, t.length, p.errors]));
+  await p.close();
+  p = await open({ keyWatch: true, selectedLayers: [mkFxLayer("Фон")], settings: { fxWhere: "cursor" } });
+  await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
+  await watcherSays(p, 0, "READY");
+  await watcherSays(p, 0, "NOACCESS");
+  await p.page.evaluate(() => { document.hasFocus = () => false; document.activeElement && document.activeElement.blur(); });
+  await p.page.waitForTimeout(900);
+  Object.assign(p.ae.keyboardState, { keyName: "Space", ctrlKey: true, altKey: false, shiftKey: false, metaKey: false });
+  vm.runInContext("sayframeHost.pollKeys()", p.ae.ctx);
+  await forwardEvents(p);
+  await p.page.waitForTimeout(300);
+  check("FC8 if the system does not say where the mouse is, the search opens in the panel as before", (await p.page.locator("#fxConsole").isVisible()) && p.ae.log.windows.length === 0 && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
   console.log("\n=== paste dialog on Cmd/Ctrl+V anywhere in After Effects ===");

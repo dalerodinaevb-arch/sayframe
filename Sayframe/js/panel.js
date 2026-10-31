@@ -6637,8 +6637,20 @@
     // Нажатие пришло не из самой панели: от After Effects (src "host") или от наблюдателя ("watch").
     // Одно нажатие могут заметить и они, и панель — второй раз его не выполняем.
     function outsideHotkey(id, src, pos) {
-        // Поиск у курсора: место мыши знает только наблюдатель, поэтому ждём его, а не After Effects.
-        if (id === "console" && src === "host" && settings.fxWhere === "cursor" && keyWatch && keyWatch.ready) { return; }
+        // Поиск у курсора: After Effects не говорит, где мышь. Даём наблюдателю время прислать нажатие
+        // с местом мыши; если он молчит (на Mac без «Мониторинга ввода» он нажатий не видит) — спрашиваем
+        // место мыши у системы сами, на это разрешение не нужно.
+        if (id === "console" && src === "host" && !pos && settings.fxWhere === "cursor" && !fxOpen()) {
+            clearTimeout(hostConsoleWait);
+            hostConsoleWait = setTimeout(function () {
+                hostConsoleWait = 0;
+                if (lastPanelHotkey.id === id && Date.now() - lastPanelHotkey.at < 800) { return; }
+                mousePosition().then(function (at) { outsideHotkey(id, "host", at || { none: true }); });
+            }, keyWatch && keyWatch.ready ? WATCH_WAIT_MS : 0);
+            return;
+        }
+        if (pos && pos.none) { pos = null; }
+        if (id === "console" && src === "watch" && hostConsoleWait) { clearTimeout(hostConsoleWait); hostConsoleWait = 0; }
         if (id === PASTE_ANYWHERE && src === "watch") { pasteAnywhere(); return; }
         if (!id || !HOTKEY_ACTIONS.some(function (a) { return a.id === id; })) { return; }
         if (!ui.sheet.hidden || !ui.modal.hidden) { return; }
@@ -6649,6 +6661,24 @@
         if (id === "console" && pos && settings.fxWhere === "cursor" && !fxOpen()) { fxPopupAt(pos); return; }
         try { window.focus(); } catch (e) {}
         runHotkey(id);
+    }
+
+    var WATCH_WAIT_MS = 250;
+    var hostConsoleWait = 0;
+
+    // Где сейчас мышь, в точках экрана от левого верхнего угла главного экрана (как у окон After Effects).
+    async function mousePosition() {
+        var r, m;
+        if (!platform.available || typeof platform.exec !== "function") { return null; }
+        try {
+            r = platform.isWindows() ?
+                await platform.exec("powershell", ["-NoProfile", "-Command",
+                    "Add-Type -AssemblyName System.Windows.Forms; $m = [System.Windows.Forms.Cursor]::Position; [Console]::Out.WriteLine('' + $m.X + ' ' + $m.Y)"], 5000) :
+                await platform.exec("osascript", ["-l", "JavaScript", "-e",
+                    'ObjC.import("AppKit"); var m = $.NSEvent.mouseLocation, h = $.NSScreen.screens.objectAtIndex(0).frame.size.height; Math.round(m.x) + " " + Math.round(h - m.y)'], 5000);
+        } catch (e) { return null; }
+        m = /(-?\d+)\s+(-?\d+)/.exec(r && r.code === 0 ? r.stdout : "");
+        return m ? { x: +m[1], y: +m[2] } : null;
     }
 
     function listenHostHotkeys() {
