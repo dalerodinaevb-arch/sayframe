@@ -1677,3 +1677,52 @@ html[data-design="ae"] .models > [aria-pressed="true"], html[data-design="ae"] .
 /* превью анимаций — спокойные тёмно-синие кадры вместо фиолетовых */
 html[data-design="ae"] .trv-a { background: radial-gradient(circle at 30% 30%, #4f6d92, #1d2836 75%) !important; }
 html[data-design="ae"] .trv-b { background: radial-gradient(circle at 70% 60%, #5d8a7c, #1c2d29 75%) !important; }
+
+/* ------------------------------------------------ дизайн «Студия» */
+html[data-design="studio"] {
+  --bg: #111215 !important; --text: #ececf1 !important; --muted: #8d8f9a !important; --faint: #5f616c !important;
+  --line: #24252b !important; --glass: #17181c !important; --glass-strong: #1f2027 !important;
+  --st-card: #17181c; --st-edge: #24252b; --st-in: #0f1013; --st-btn: #1d1e23;
+}
+html[data-design="studio"] { background: #111215 !important; }
+html[data-design="studio"] body { background: transparent !important; }
+html[data-design="studio"] body::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: -1;
+  background-image: radial-gradient(rgba(255,255,255,.07) 1px, transparent 1.2px); background-size: 14px 14px; }
+html[data-design="studio"] .glow { display: none !important; }
+html[data-design="studio"] .top { background: rgba(13,14,16,.92) !important; border-bottom: 1px solid #1d1e23; }
+html[data-design="studio"] .top .spark { width: 22px; height: 22px; padding: 4px; border-radius: 8px; background: linear-gradient(135deg, var(--accent-hi), var(--accent)); color: #fff; box-sizing: border-box; }
+html[data-design="studio"] .icon-btn { border-radius: 9px !important; background: transparent !important; border-color: transparent !important; color: #7d7f8a !important; }
+html[data-design="studio"] .icon-btn:hover { background: #1f2027 !important; color: #fff !important; }
+/* вкладки: иконка + подпись, выбранная — тёмная плашка с цветной чертой */
+html[data-design="studio"] .tabs { background: #0d0e10 !important; border: 1px solid #1d1e23 !important; border-radius: 12px !important; padding: 4px !important; }
+html[data-design="studio"] .tab { border-radius: 9px !important; color: #7d7f8a !important; font-weight: 550 !important; position: relative; }
+html[data-design="studio"] .tab[aria-selected="true"] { background: #1f2027 !important; color: #fff !important; box-shadow: none !important; }
+html[data-design="studio"] .tab[aria-selected="true"]::after { content: ""; position: absolute; left: 30%; right: 30%; bottom: 3px; height: 2px; border-radius: 2px; background: var(--accent); }
+/* карточки */
+html[data-design="studio"] .card { background: var(--st-card) !important; border: 1px solid var(--st-edge) !important; border-radius: 14px !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+/* заголовки блоков — маленькие заглавные с разрядкой */
+html[data-design="studio"] .tool-head b, html[data-design="studio"] .scripts-head b, html[data-design="studio"] .quick-title span, html[data-design="studio"] .group > .label, html[data-design="studio"] .group > label:not(.switch) {
+  font: 600 10.5px/1.2 var(--plain) !important; text-transform: uppercase; letter-spacing: .12em; color: #6c6e79 !important; }
+/* иконки — в цветных квадратиках, с лёгкой заливкой */
+html[data-design="studio"] .paste-do svg, html[data-design="studio"] .align-btn svg {
+  box-sizing: content-box; width: 17px !important; height: 17px !important; padding: 6px; border-radius: 8px;
+  background: rgba(var(--accent-rgb), .14); color: var(--accent-hi) !important; flex: none; }
+html[data-design="studio"] .paste-do svg * { fill: rgba(var(--accent-rgb), .16); }
+html[data-design="studio"] .paste-do { justify-content: flex-start !important; text-align: left; background: var(--st-btn) !important; border: 1px solid #26272d !important; border-radius: 11px !important; font: 550 12.5px/1.2 var(--plain) !important; gap: 10px !important; padding: 6px 10px 6px 6px !important; }
+html[data-design="studio"] .paste-do:hover { background: #24252b !important; border-color: #30313a !important; }
+html[data-design="studio"] .ec-buttons .paste-do { font-size: 11.5px !important; gap: 6px !important; padding: 5px 6px 5px 5px !important; min-height: 40px !important; }
+html[data-design="studio"] .ec-buttons .paste-do svg { width: 14px !important; height: 14px !important; padding: 5px; border-radius: 7px; }
+/* кнопки и поля */
+html[data-design="studio"] .primary { border-radius: 11px !important; background: var(--accent) !important; box-shadow: 0 8px 22px -12px rgba(var(--accent-rgb), .9) !important; letter-spacing: 0 !important; }
+html[data-design="studio"] .ghost, html[data-design="studio"] .shift-do, html[data-design="studio"] .anchor-cell, html[data-design="studio"] .shift-arrow, html[data-design="studio"] .align-btn { border-radius: 8px !important; background: var(--st-btn) !important; border: 1px solid #2a2b31 !important; color: #c9cad2 !important; }
+html[data-design="studio"] .quick-chip, html[data-design="studio"] .style-chip, html[data-design="studio"] .chip { border-radius: 8px !important; background: transparent !important; border: 1px solid #2c2d34 !important; color: #c9cad2 !important; font-weight: 500 !important; }
+html[data-design="studio"] .style-chip[aria-checked="true"], html[data-design="studio"] .frames button[aria-pressed="true"] { background: rgba(var(--accent-rgb), .16) !important; border-color: rgba(var(--accent-rgb), .7) !important; color: #fff !important; }
+html[data-design="studio"] textarea, html[data-design="studio"] .field, html[data-design="studio"] select { background: var(--st-in) !important; border: 1px solid #24252b !important; border-radius: 10px !important; }
+html[data-design="studio"] textarea:focus, html[data-design="studio"] .field:focus { border-color: rgba(var(--accent-rgb), .7) !important; }
+/* числа — моноширинные, как в коде */
+html[data-design="studio"] .ease-num, html[data-design="studio"] .shift-num, html[data-design="studio"] .shift-count, html[data-design="studio"] #panelWidthVal { font-family: var(--mono) !important; color: var(--accent-hi) !important; }
+html[data-design="studio"] .status p { color: #8d8f9a !important; }
+html[data-design="studio"] .sheet { background: #111215 !important; }
+html[data-design="studio"] .sheet-card, html[data-design="studio"] .modal-card { background: #17181c !important; border-radius: 16px !important; }
+html[data-design="studio"] .models > * { border-radius: 12px !important; background: #131417 !important; border-color: #24252b !important; }
+html[data-design="studio"] .trv-a { background: radial-gradient(circle at 30% 30%, rgba(var(--accent-rgb), .9), #1a1630 75%) !important; }

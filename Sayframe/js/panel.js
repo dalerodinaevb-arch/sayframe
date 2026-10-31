@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.58.0";
+    var VERSION = "1.59.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -122,7 +122,7 @@
         brandPics: false,   // отправлять ли AI маленькие картинки упомянутых логотипов и иконок
         motionStyle: "normal",  // стиль анимации для AI: normal, smooth, energetic, minimal, corporate, playful
         refFrames: 8,
-        design: "glass",    // вид панели: "glass" (стекло) или "ae" (как родные панели After Effects)
+        design: "glass",    // вид панели: "glass" (стекло), "ae" (как родные панели After Effects) или "studio" (Студия)
         panelFit: true,     // поля и кнопки тянутся на всю ширину панели; false — держат ширину panelWidth у левого края
         panelWidth: 380,    // ширина содержимого в пикселях, когда panelFit выключен
         toolSize: "100",    // масштаб блоков раздела «Инструменты» в процентах: "100", "90", "80", "70", "60" или "50"
@@ -879,6 +879,8 @@
     var SECTION_BG = { claude: "bg", tools: "bgTools", motion: "bgMotion", shape: "bgShape", brand: "bgBrand" };
     var currentTab = "claude";
 
+    var DESIGNS = ["glass", "ae", "studio"];
+
     function applyTheme(s) {
         var a = parseHex(s.accent) || parseHex(DEFAULTS.accent);
         var key = SECTION_BG[currentTab] || "bg";
@@ -891,7 +893,7 @@
         root.setProperty("--on-accent", lum > 0.5 ? "#0b0c12" : "#ffffff");
         root.setProperty("--bg", bg.hex);
         root.setProperty("--panel-w", clampPanelWidth(s.panelWidth) + "px");
-        document.documentElement.setAttribute("data-design", s.design === "ae" ? "ae" : "glass");
+        document.documentElement.setAttribute("data-design", DESIGNS.indexOf(s.design) >= 0 ? s.design : "glass");
         document.documentElement.setAttribute("data-fit", s.panelFit === false ? "off" : "on");
         document.documentElement.setAttribute("data-tools", cleanToolSize(s.toolSize));
         root.setProperty("--tz", String(Number(cleanToolSize(s.toolSize)) / 100));
@@ -3219,7 +3221,7 @@
         // Дизайн меняется сразу; без «Сохранить» вернётся прежний.
         ui.designPick.addEventListener("click", function (e) {
             var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
-            if (!draft || (v !== "glass" && v !== "ae")) { return; }
+            if (!draft || DESIGNS.indexOf(v) < 0) { return; }
             draft.design = v;
             pressGroup(ui.designPick, v);
             applyTheme(draft);
@@ -3302,7 +3304,7 @@
         ui.toolTitles.checked = draft.toolTitles;
         ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
         pressGroup(ui.fxWhere, draft.fxWhere === "cursor" ? "cursor" : "panel");
-        pressGroup(ui.designPick, draft.design === "ae" ? "ae" : "glass");
+        pressGroup(ui.designPick, DESIGNS.indexOf(draft.design) >= 0 ? draft.design : "glass");
         ui.statsOn.checked = draft.stats !== false;
         ui.infoTipsOn.checked = draft.infoTips !== false;
         closeFxConsole();
@@ -6637,8 +6639,20 @@
     // Нажатие пришло не из самой панели: от After Effects (src "host") или от наблюдателя ("watch").
     // Одно нажатие могут заметить и они, и панель — второй раз его не выполняем.
     function outsideHotkey(id, src, pos) {
-        // Поиск у курсора: место мыши знает только наблюдатель, поэтому ждём его, а не After Effects.
-        if (id === "console" && src === "host" && settings.fxWhere === "cursor" && keyWatch && keyWatch.ready) { return; }
+        // Поиск у курсора: After Effects не говорит, где мышь. Даём наблюдателю время прислать нажатие
+        // с местом мыши; если он молчит (на Mac без «Мониторинга ввода» он нажатий не видит) — спрашиваем
+        // место мыши у системы сами, на это разрешение не нужно.
+        if (id === "console" && src === "host" && !pos && settings.fxWhere === "cursor" && !fxOpen()) {
+            clearTimeout(hostConsoleWait);
+            hostConsoleWait = setTimeout(function () {
+                hostConsoleWait = 0;
+                if (lastPanelHotkey.id === id && Date.now() - lastPanelHotkey.at < 800) { return; }
+                mousePosition().then(function (at) { outsideHotkey(id, "host", at || { none: true }); });
+            }, keyWatch && keyWatch.ready ? WATCH_WAIT_MS : 0);
+            return;
+        }
+        if (pos && pos.none) { pos = null; }
+        if (id === "console" && src === "watch" && hostConsoleWait) { clearTimeout(hostConsoleWait); hostConsoleWait = 0; }
         if (id === PASTE_ANYWHERE && src === "watch") { pasteAnywhere(); return; }
         if (!id || !HOTKEY_ACTIONS.some(function (a) { return a.id === id; })) { return; }
         if (!ui.sheet.hidden || !ui.modal.hidden) { return; }
@@ -6649,6 +6663,24 @@
         if (id === "console" && pos && settings.fxWhere === "cursor" && !fxOpen()) { fxPopupAt(pos); return; }
         try { window.focus(); } catch (e) {}
         runHotkey(id);
+    }
+
+    var WATCH_WAIT_MS = 250;
+    var hostConsoleWait = 0;
+
+    // Где сейчас мышь, в точках экрана от левого верхнего угла главного экрана (как у окон After Effects).
+    async function mousePosition() {
+        var r, m;
+        if (!platform.available || typeof platform.exec !== "function") { return null; }
+        try {
+            r = platform.isWindows() ?
+                await platform.exec("powershell", ["-NoProfile", "-Command",
+                    "Add-Type -AssemblyName System.Windows.Forms; $m = [System.Windows.Forms.Cursor]::Position; [Console]::Out.WriteLine('' + $m.X + ' ' + $m.Y)"], 5000) :
+                await platform.exec("osascript", ["-l", "JavaScript", "-e",
+                    'ObjC.import("AppKit"); var m = $.NSEvent.mouseLocation, h = $.NSScreen.screens.objectAtIndex(0).frame.size.height; Math.round(m.x) + " " + Math.round(h - m.y)'], 5000);
+        } catch (e) { return null; }
+        m = /(-?\d+)\s+(-?\d+)/.exec(r && r.code === 0 ? r.stdout : "");
+        return m ? { x: +m[1], y: +m[2] } : null;
     }
 
     function listenHostHotkeys() {
