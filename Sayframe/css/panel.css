@@ -1726,3 +1726,11 @@ html[data-design="studio"] .sheet { background: #111215 !important; }
 html[data-design="studio"] .sheet-card, html[data-design="studio"] .modal-card { background: #17181c !important; border-radius: 16px !important; }
 html[data-design="studio"] .models > * { border-radius: 12px !important; background: #131417 !important; border-color: #24252b !important; }
 html[data-design="studio"] .trv-a { background: radial-gradient(circle at 30% 30%, rgba(var(--accent-rgb), .9), #1a1630 75%) !important; }
+/* «Студия»: у кнопок внутри блока нет своей рамки; одиночная кнопка — без фона, свёрнутые блоки — крупные иконки */
+html[data-design="studio"] .paste-do { border-color: transparent !important; }
+html[data-design="studio"] .paste-do:hover { border-color: transparent !important; }
+html[data-design="studio"] .motion-tools > .tool-card.solo .paste-do { background: transparent !important; }
+html[data-design="studio"] .motion-tools > .tool-card.solo .paste-do:hover { background: #1f2026 !important; }
+html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do { background: transparent !important; border-color: transparent !important; padding: 0 !important; justify-content: center !important; }
+html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do svg { width: 22px !important; height: 22px !important; padding: 9px !important; border-radius: 11px !important; }
+html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:not(:disabled) svg { background: rgba(var(--accent-rgb), .26); }

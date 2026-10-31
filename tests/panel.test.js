@@ -2834,6 +2834,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#tabMotion");
   t = await p.page.evaluate(() => { const a = document.querySelector('.easecopy-card').getBoundingClientRect(), n = document.querySelector('.easecopy-card').nextElementSibling; const row = [...document.querySelectorAll('.easecopy-card .paste-do')].map((x) => x.getBoundingClientRect()); return [document.documentElement.getAttribute("data-design"), row.every((r) => r.bottom <= a.bottom), getComputedStyle(document.querySelector("#pasteBtn svg")).borderRadius]; });
   check("DS5 «Студия» survives a restart; the Tools tab keeps its blocks, buttons fit their cards, icons sit in rounded squares", t[0] === "studio" && t[1] && t[2] === "8px" && (await p.page.locator('#motionTools .tool-card[data-tool="paste"] #pasteBtn').isVisible()) && (await overflow(p)) <= 0 && p.errors.length === 0, JSON.stringify(t));
+  t = await p.page.evaluate(() => { const cs = (sel) => getComputedStyle(document.querySelector(sel)); return [cs("#pasteBtn").borderTopColor, cs("#pasteBtn").backgroundColor, cs("#ecCopy").borderTopColor]; });
+  check("DS6 «Студия»: buttons inside a block have no frame of their own; a one-button block has no second background", t.join("|") === "rgba(0, 0, 0, 0)|rgba(0, 0, 0, 0)|rgba(0, 0, 0, 0)", t.join("|"));
   await p.page.screenshot({ path: path.join(SHOTS, "09f-design-studio.png") });
   await p.close();
 
