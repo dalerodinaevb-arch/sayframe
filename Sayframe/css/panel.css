@@ -1851,3 +1851,17 @@ html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:
 /* Настройки сохраняются сами: вместо кнопки «Сохранить» — тихая строка, которая на миг говорит «Сохранено ✓». */
 .settings-saved { text-align: center; margin: 4px 0 2px; transition: color 0.2s; }
 .settings-saved.ok { color: var(--ok, #4ade80); }
+
+/* Настройки → какие инструменты показывать: кнопки-«галочки», спрятанный блок пропадает из сетки. */
+.tool-card.tool-off { display: none !important; }
+.tool-picker { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 2px; }
+.tool-picker-head { color: var(--muted); font: 600 10.5px/1.2 var(--round); letter-spacing: 0.06em; text-transform: uppercase; margin-top: 4px; }
+.tool-picker-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.tool-picker button { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 5px 11px 5px 8px; border: 1px solid var(--line); border-radius: 9px;
+  background: rgba(0, 0, 0, 0.2); color: var(--muted); font: 600 12px/1.2 var(--round); cursor: pointer; text-align: left; }
+.tool-picker button:hover { color: var(--text); border-color: rgba(var(--accent-rgb), 0.6); }
+.tool-picker-mark { flex: none; width: 15px; height: 15px; border-radius: 5px; border: 1.5px solid currentColor; opacity: 0.6; position: relative; }
+.tool-picker button[aria-pressed="true"] { color: var(--text); background: rgba(var(--accent-rgb), 0.16); border-color: rgba(var(--accent-rgb), 0.55); }
+.tool-picker button[aria-pressed="true"] .tool-picker-mark { opacity: 1; background: var(--accent); border-color: var(--accent); }
+.tool-picker button[aria-pressed="true"] .tool-picker-mark::after { content: ""; position: absolute; left: 4.5px; top: 1.5px; width: 3.5px; height: 7px; border: solid var(--on-accent, #fff); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.tool-picker button[aria-pressed="false"] span:last-child { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.25); }

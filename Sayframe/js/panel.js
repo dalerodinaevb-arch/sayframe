@@ -128,6 +128,7 @@
         panelWidth: 380,    // ширина содержимого в пикселях, когда panelFit выключен
         toolSize: "100",    // масштаб блоков раздела «Инструменты» в процентах: "100", "90", "80", "70", "60" или "50"
         toolTitles: true,   // показывать ли названия блоков раздела «Инструменты»
+        hiddenTools: "",    // спрятанные блоки «Инструментов» и «Шейпа», через запятую: "cache,nullp"
         stats: true,        // отправлять ли автору анонимный сигнал «установлено» и «открыто сегодня»
         infoTips: true,     // подсказки-окошки при наведении курсора на секунду
         pasteAnywhere: true,    // Cmd/Ctrl+V с картинкой в буфере где угодно в After Effects открывает окно вставки
@@ -914,6 +915,10 @@
         root.setProperty("--tz", String(Number(cleanToolSize(s.toolSize)) / 100));
         document.documentElement.setAttribute("data-titles", s.toolTitles === false ? "off" : "on");
         applyHostSkin(s.design === "ae");
+        toolsHidden = hiddenToolList(s.hiddenTools);
+        Array.prototype.forEach.call(document.querySelectorAll(".motion-tools .tool-card[data-tool]"), function (c) {
+            c.classList.toggle("tool-off", toolsHidden.indexOf(c.getAttribute("data-tool")) >= 0);
+        });
         relayoutTools();
     }
 
@@ -991,7 +996,7 @@
         bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
         bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"),
         bgBrandSwatches: el("bgBrandSwatches"), bgBrandHex: el("bgBrandHex"), bgBrandPick: el("bgBrandPick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        designPick: el("designPick"), panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), fxWhere: el("fxWhere"), fxWhereState: el("fxWhereState"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
+        designPick: el("designPick"), panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), toolPicker: el("toolPicker"), fxWhere: el("fxWhere"), fxWhereState: el("fxWhereState"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
@@ -3371,6 +3376,7 @@
         pressGroup(ui.frames, draft.refFrames);
         pressGroup(ui.toolSize, draft.toolSize);
         ui.toolTitles.checked = draft.toolTitles;
+        showToolPicker();
         ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
         pressGroup(ui.fxWhere, draft.fxWhere === "cursor" ? "cursor" : "panel");
         pressGroup(ui.designPick, DESIGNS.indexOf(draft.design) >= 0 ? draft.design : "studio");
@@ -9136,7 +9142,66 @@
     // ---- сетка блоков раздела «Инструменты»
 
     function toolCards() {
-        return Array.prototype.slice.call(G.el.querySelectorAll(".tool-card"));
+        return Array.prototype.slice.call(G.el.querySelectorAll(".tool-card:not(.tool-off)"));
+    }
+
+    // ---- какие блоки показывать: Настройки → Общие → «Какие инструменты показывать»
+
+    var toolsHidden = [];
+
+    function hiddenToolList(text) {
+        var all = TOOL_NAMES.concat(SHAPE_TOOL_NAMES), out = [];
+        String(text || "").split(",").forEach(function (n) {
+            n = n.replace(/\s/g, "");
+            if (all.indexOf(n) >= 0 && out.indexOf(n) < 0) { out.push(n); }
+        });
+        return out;
+    }
+
+    function toolPickerName(card) {
+        var b = card.querySelector(".tool-head b");
+        var name = card.getAttribute("aria-label") || (b ? b.textContent : "") || card.getAttribute("data-tool");
+        return name.replace(/^\s+|\s+$/g, "");
+    }
+
+    // Список строится один раз: заголовок раздела и кнопки-«галочки» его инструментов.
+    function buildToolPicker() {
+        [["Инструменты", "motionTools", TOOL_NAMES], ["Шейп", "shapeTools", SHAPE_TOOL_NAMES]].forEach(function (g) {
+            var head = document.createElement("small"), box = document.getElementById(g[1]), row = document.createElement("div");
+            head.className = "tool-picker-head";
+            head.textContent = g[0];
+            row.className = "tool-picker-row";
+            g[2].forEach(function (name) {
+                var card = box && box.querySelector('.tool-card[data-tool="' + name + '"]'), b;
+                if (!card) { return; }
+                b = document.createElement("button");
+                b.type = "button";
+                b.setAttribute("data-tool", name);
+                b.innerHTML = "<span class=\"tool-picker-mark\" aria-hidden=\"true\"></span><span></span>";
+                b.lastChild.textContent = toolPickerName(card);
+                b.addEventListener("click", function () {
+                    var list;
+                    if (!draft) { return; }
+                    list = hiddenToolList(draft.hiddenTools);
+                    if (list.indexOf(name) >= 0) { list.splice(list.indexOf(name), 1); } else { list.push(name); }
+                    draft.hiddenTools = list.join(",");
+                    showToolPicker();
+                    applyTheme(draft);
+                });
+                row.appendChild(b);
+            });
+            ui.toolPicker.appendChild(head);
+            ui.toolPicker.appendChild(row);
+        });
+    }
+
+    function showToolPicker() {
+        var list = hiddenToolList((draft || settings).hiddenTools);
+        Array.prototype.forEach.call(ui.toolPicker.querySelectorAll("button[data-tool]"), function (b) {
+            var on = list.indexOf(b.getAttribute("data-tool")) < 0;
+            b.setAttribute("aria-pressed", on ? "true" : "false");
+            b.title = on ? "Показан. Щёлкните, чтобы спрятать" : "Спрятан. Щёлкните, чтобы показать";
+        });
     }
 
     function toolOf(node) {
@@ -9291,6 +9356,8 @@
         for (i = 0; i < names.length; i++) {
             card = cardByName(names[i]);
             if (!card) { continue; }
+            card.classList.toggle("tool-off", toolsHidden.indexOf(names[i]) >= 0);
+            if (toolsHidden.indexOf(names[i]) >= 0) { continue; }
             cards[names[i]] = card;
             z = sizeOf(names[i]);
             it = { name: names[i], index: i, w: Math.min(Math.max(z.w, Math.min(TOOL_MIN_COLS, cols)), cols), h: z.h };
@@ -9399,6 +9466,8 @@
             for (i = 0; i < G.names.length; i++) {
                 q = G.last.pos[G.names[i]];
                 if (q) { places[G.names[i]] = { x: q.x, y: q.y }; }
+                // Спрятанный блок помнит своё место: вернётся туда же.
+                else if (toolsHidden.indexOf(G.names[i]) >= 0 && placesNow() && placesNow()[G.names[i]]) { places[G.names[i]] = placesNow()[G.names[i]]; }
             }
             G.st.places = placesText(places);
         }
@@ -10240,6 +10309,7 @@
 
     applyTheme(settings);
     buildSettings();
+    buildToolPicker();
     showRef();
     applyTabOrder();
     showTab(savedTab());

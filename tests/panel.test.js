@@ -5718,6 +5718,31 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.screenshot({ path: path.join(SHOTS, "15-settings-version.png") });
   await p.close();
 
+  // Settings → which tools to show: a hidden block leaves its grid, the choice is saved and survives a restart.
+  {
+    const shown = (p) => p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll("#motionTools .tool-card, #shapeTools .tool-card"), (c) => getComputedStyle(c).display !== "none").map((c) => c.getAttribute("data-tool")).sort().join());
+    p = await open({});
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+    t = await p.page.locator("#toolPicker button").evaluateAll((l) => l.map((b) => b.getAttribute("data-tool") + ":" + b.getAttribute("aria-pressed")));
+    check("TP1 settings list every tool of both tabs, all shown", t.length === 14 && t.every((x) => /:true$/.test(x)) && t.indexOf("split:true") >= 0 && (await p.page.locator(".tool-picker-head").evaluateAll((l) => l.map((x) => x.textContent))).join() === "Инструменты,Шейп", t.join());
+    const before = await shown(p);
+    await p.page.click('#toolPicker button[data-tool="cache"]'); await p.page.click('#toolPicker button[data-tool="split"]');
+    await p.page.waitForTimeout(100);
+    check("TP2 a click hides the block at once and is saved without «Сохранить»", (await p.page.getAttribute('#toolPicker button[data-tool="cache"]', "aria-pressed")) === "false" && (await shown(p)).split(",").indexOf("cache") < 0 && (await shown(p)).split(",").indexOf("split") < 0 && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).hiddenTools)) === "cache,split", [await p.page.getAttribute('#toolPicker button[data-tool="cache"]', "aria-pressed"), await shown(p), await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).hiddenTools)].join(" | "));
+    await p.page.click("#settingsClose"); await p.page.click("#tabMotion");
+    check("TP2 the rest of the grid closes up: no overlap, nothing outside", (await p.page.locator('#motionTools [data-tool="cache"]').isHidden()) && (await p.page.locator('#motionTools [data-tool="ease"]').isVisible()) && (await overflow(p)) <= 0);
+    await p.restart();
+    check("TP3 hidden stays hidden after a restart", (await shown(p)).split(",").indexOf("cache") < 0 && p.errors.length === 0, p.errors.join(" | "));
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+    await p.page.click('#toolPicker button[data-tool="cache"]'); await p.page.click('#toolPicker button[data-tool="split"]');
+    await p.page.click("#settingsClose");
+    check("TP3 a second click brings every block back", (await shown(p)) === before && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).hiddenTools)) === "");
+    await p.page.evaluate(() => { const s = JSON.parse(localStorage.getItem("sayframe.settings.v1")); s.hiddenTools = "nope, ease ,ease"; localStorage.setItem("sayframe.settings.v1", JSON.stringify(s)); });
+    await p.restart();
+    check("TP4 a broken saved list is cleaned: unknown names ignored", (await shown(p)).split(",").indexOf("ease") < 0 && (await shown(p)).split(",").length === before.split(",").length - 1 && p.errors.length === 0);
+    await p.close();
+  }
+
   await browser.close();
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
