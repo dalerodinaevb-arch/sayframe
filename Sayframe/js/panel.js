@@ -810,6 +810,7 @@
         if (m === "SM_NOT_SHAPE") { return "Разделить можно шейп-слой с несколькими группами или слой с несколькими масками. Чтобы собрать, выделите несколько шейп-слоёв."; }
         if (m === "SM_NEED_SHAPES") { return "Чтобы собрать в один, выделите хотя бы два шейп-слоя."; }
         if (m === "PF_NEED_SHAPES") { return "Для Pathfinder выделите хотя бы два шейп-слоя."; }
+        if (m === "GRID_TOO_TIGHT") { return "Отступы больше самой сетки: уменьшите отступ или число строк и столбцов."; }
         if (m === "SM_LOCKED") { return "Слой заблокирован (замок на таймлайне). Снимите замок и нажмите ещё раз."; }
         if (m === "DC_NO_PRECOMP") { return "Выделите слой-прекомпозицию (слой, внутри которого другая композиция) и нажмите ещё раз."; }
         if (m === "CO_NOT_PHOTO") { return "Cut out работает с фото: выделите слой, у которого источник — файл-картинка (JPG, PNG, PSD…), и нажмите ещё раз."; }
@@ -1007,6 +1008,11 @@
         orbitMode: el("orbitMode"), orbitLess: el("orbitLess"), orbitMore: el("orbitMore"), orbitCount: el("orbitCount"),
         orbitRadius: el("orbitRadius"), orbitRadiusVal: el("orbitRadiusVal"), orbitW: el("orbitW"), orbitWVal: el("orbitWVal"), orbitH: el("orbitH"), orbitHVal: el("orbitHVal"),
         orbitNumbers: el("orbitNumbers"), orbitCamera: el("orbitCamera"), orbitBtn: el("orbitBtn"),
+        gridStage: el("gridStage"), gridW: el("gridW"), gridH: el("gridH"), gridFit: el("gridFit"), gridRows: el("gridRows"), gridRowsLess: el("gridRowsLess"), gridRowsMore: el("gridRowsMore"),
+        gridCols: el("gridCols"), gridColsLess: el("gridColsLess"), gridColsMore: el("gridColsMore"), gridGap: el("gridGap"), gridGapVal: el("gridGapVal"), gridGapName: el("gridGapName"),
+        gridGapV: el("gridGapV"), gridGapVVal: el("gridGapVVal"), gridGapVRow: el("gridGapVRow"), gridRound: el("gridRound"), gridRoundVal: el("gridRoundVal"),
+        gridRand: el("gridRand"), gridRandVal: el("gridRandVal"), gridSplit: el("gridSplit"), gridSeed: el("gridSeed"), gridDice: el("gridDice"), gridMode: el("gridMode"),
+        gridNumbers: el("gridNumbers"), gridStagger: el("gridStagger"), gridBtn: el("gridBtn"),
         acBody: el("acBody"),
         acTabs: el("acTabs"), acSearch: el("acSearch"), acFavOnly: el("acFavOnly"), acModeRow: el("acModeRow"), acMode: el("acMode"),
         acDurRow: el("acDurRow"), acDur: el("acDur"), acDurVal: el("acDurVal"), acColorRow: el("acColorRow"), acColor: el("acColor"),
@@ -1322,6 +1328,7 @@
         ui.splitBtn.disabled = on;
         Array.prototype.forEach.call(ui.pfModes.querySelectorAll("button"), function (b) { b.disabled = on; });
         if (ui.orbitBtn) { ui.orbitBtn.disabled = on; }
+        if (ui.gridBtn) { ui.gridBtn.disabled = on; }
         ui.unusedBtn.disabled = on;
         ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
@@ -4063,7 +4070,7 @@
         { id: "graphic", label: "Графика" },
         { id: "kit", label: "Заготовки" },
         { id: "sfx", label: "Звуки" },
-        { id: "orbit", label: "3D" }
+        { id: "orbit", label: "Макеты" }
     ];
     var AC_PRESETS = {
         trans: [],
@@ -4496,7 +4503,9 @@
         if (orbitOn) {
             renderSfFolders("");
             if (ui.acSndRow) { ui.acSndRow.hidden = true; }
+            drawMkFolds();
             drawOrbitPreview();
+            drawGridPreview();
             return;
         }
         renderSfFolders(!searching && !editing && (sec === "anim" || sec === "trans" || sec === "text" || sec === "sfx" || sec === "graphic" || sec === "kit") ? sec : "");
@@ -6172,7 +6181,170 @@
         return out;
     }
 
-    // ---- Раздел «3D»: карусель. Настройки хранятся отдельно; превью — те же карточки в CSS 3D, его можно крутить мышкой.
+    // ---- Grid: бенто-сетка из скруглённых плиток. Раскладка — тот же код, что в host.jsx (gridLayout):
+    // одно и то же «Вариант» даёт одну и ту же раскладку и в превью, и в After Effects.
+    var GRID_DEFAULTS = { rows: 4, cols: 5, gap: 20, split: false, gapV: 20, round: 20, rand: 100, seed: 12345, fit: true, w: 1920, h: 1080, mode: "shape", numbers: true, stagger: true };
+
+    function gridImul(a, b) {
+        var ah = (a >>> 16) & 0xffff, al = a & 0xffff, bh = (b >>> 16) & 0xffff, bl = b & 0xffff;
+        return ((al * bl) + ((((ah * bl + al * bh) & 0xffff) << 16) >>> 0)) | 0;
+    }
+
+    function gridRng(seed) {
+        var a = Math.floor(Number(seed) || 0) >>> 0;
+        return function () {
+            var t;
+            a = (a + 0x6D2B79F5) >>> 0;
+            t = a;
+            t = gridImul(t ^ (t >>> 15), t | 1);
+            t ^= t + gridImul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    function gridLayout(rows, cols, rand, seed) {
+        var rng = gridRng(seed), occ = [], boxes = [], r, c, w, h, i, j, p = Math.max(0, Math.min(100, rand)) / 100;
+        var maxW = Math.max(1, Math.min(cols, 1 + Math.round(p * 2))), maxH = Math.max(1, Math.min(rows, 1 + Math.round(p)));
+        for (r = 0; r < rows; r++) { occ.push([]); for (c = 0; c < cols; c++) { occ[r].push(false); } }
+        function clear(r0, c0, ww, hh) {
+            var y, x;
+            if (r0 + hh > rows || c0 + ww > cols) { return false; }
+            for (y = r0; y < r0 + hh; y++) { for (x = c0; x < c0 + ww; x++) { if (occ[y][x]) { return false; } } }
+            return true;
+        }
+        for (r = 0; r < rows; r++) {
+            for (c = 0; c < cols; c++) {
+                if (occ[r][c]) { continue; }
+                w = 1; h = 1;
+                if (rng() < p * 0.6) { w = 1 + Math.floor(rng() * maxW); h = 1 + Math.floor(rng() * maxH); }
+                while (w > 1 && !clear(r, c, w, 1)) { w--; }
+                while (h > 1 && !clear(r, c, w, h)) { h--; }
+                for (i = r; i < r + h; i++) { for (j = c; j < c + w; j++) { occ[i][j] = true; } }
+                boxes.push({ r: r, c: c, w: w, h: h });
+            }
+        }
+        return boxes;
+    }
+
+    function drawGridPreview() {
+        var g = orbit.grid, st = ui.gridStage, boxes, W, H, sw, sh, k, gx, gy, cw, ch, html = "", pad = 10, ox, oy;
+        if (!st || st.offsetParent === null) { return; }
+        boxes = gridLayout(g.rows, g.cols, g.rand, g.seed);
+        W = g.fit ? 1920 : g.w; H = g.fit ? 1080 : g.h;
+        sw = st.clientWidth - pad * 2; sh = st.clientHeight - pad * 2;
+        k = Math.min(sw / W, sh / H);
+        gx = g.gap * k; gy = (g.split ? g.gapV : g.gap) * k;
+        cw = (W * k - gx * (g.cols - 1)) / g.cols; ch = (H * k - gy * (g.rows - 1)) / g.rows;
+        ox = pad + (sw - W * k) / 2; oy = pad + (sh - H * k) / 2;
+        boxes.forEach(function (b, i) {
+            var bw = b.w * cw + (b.w - 1) * gx, bh = b.h * ch + (b.h - 1) * gy;
+            html += "<div class=\"gr-box\" style=\"--h:" + (250 + i * 9) + ";left:" + (ox + b.c * (cw + gx)).toFixed(1) + "px;top:" + (oy + b.r * (ch + gy)).toFixed(1) +
+                "px;width:" + Math.max(1, bw).toFixed(1) + "px;height:" + Math.max(1, bh).toFixed(1) + "px;border-radius:" + Math.min(g.round * k, Math.min(bw, bh) / 2).toFixed(1) + "px\">" +
+                (g.numbers && bh > 12 ? "<span style=\"font-size:" + Math.round(Math.max(9, Math.min(15, Math.min(bw, bh) * 0.35))) + "px\">" + (i + 1) + "</span>" : "") + "</div>";
+        });
+        st.innerHTML = html;
+    }
+
+    function drawGrid() {
+        var g = orbit.grid;
+        if (!ui.gridStage) { return; }
+        ui.gridRows.value = String(g.rows);
+        ui.gridCols.value = String(g.cols);
+        ui.gridW.value = String(g.w); ui.gridH.value = String(g.h);
+        ui.gridW.disabled = g.fit; ui.gridH.disabled = g.fit;
+        ui.gridFit.setAttribute("aria-pressed", String(g.fit));
+        ui.gridGap.value = String(g.gap); ui.gridGapVal.textContent = String(g.gap);
+        ui.gridGapV.value = String(g.gapV); ui.gridGapVVal.textContent = String(g.gapV);
+        ui.gridGapVRow.hidden = !g.split;
+        ui.gridGapName.textContent = g.split ? "По горизонтали" : "Отступ";
+        ui.gridSplit.checked = g.split;
+        ui.gridRound.value = String(g.round); ui.gridRoundVal.textContent = String(g.round);
+        ui.gridRand.value = String(g.rand); ui.gridRandVal.textContent = g.rand + "%";
+        ui.gridSeed.value = String(g.seed);
+        pressGroupV(ui.gridMode, g.mode);
+        ui.gridNumbers.checked = g.numbers;
+        ui.gridStagger.checked = g.stagger;
+        drawGridPreview();
+    }
+
+    function setGrid(k, v) { orbit.grid[k] = v; storeOrbit(); drawGrid(); }
+
+    function gridInt(v, lo, hi, def) {
+        v = Math.round(Number(v));
+        return isNaN(v) ? def : Math.max(lo, Math.min(hi, v));
+    }
+
+    async function onGrid() {
+        var res, g = orbit.grid;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Строю сетку…", "busy");
+        try {
+            res = await host("gridMake", [{ rows: g.rows, cols: g.cols, gap: g.gap, split: g.split, gapV: g.gapV, round: g.round, rand: g.rand, seed: g.seed,
+                fit: g.fit, w: g.w, h: g.h, mode: g.mode, numbers: g.numbers, stagger: g.stagger },
+                { tile: "Плитка ", number: "Номер плитки ", ctrl: "Grid: управление", folder: "Grid", shape: "Форма" }]);
+            setBusy(false);
+            setStatus("Сетка готова: " + plural(res.tiles, "плитка", "плитки", "плиток") + ", " + res.w + "×" + res.h + ". Двигайте всю сетку слоем «" + res.ctrl + "»." +
+                (res.precomp ? " Каждая плитка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео." : "") +
+                (res.stagger ? " Плитки появляются по очереди от указателя времени." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function enableGrid() {
+        if (!ui.gridStage) { return; }
+        var step = function (btn, key, d, lo, hi) { btn.addEventListener("click", function () { setGrid(key, gridInt(orbit.grid[key] + d, lo, hi, orbit.grid[key])); }); };
+        step(ui.gridRowsLess, "rows", -1, 1, 20); step(ui.gridRowsMore, "rows", 1, 1, 20);
+        step(ui.gridColsLess, "cols", -1, 1, 20); step(ui.gridColsMore, "cols", 1, 1, 20);
+        [["gridRows", "rows", 1, 20], ["gridCols", "cols", 1, 20], ["gridW", "w", 16, 16000], ["gridH", "h", 16, 16000], ["gridSeed", "seed", 0, 999999]].forEach(function (f) {
+            ui[f[0]].addEventListener("change", function () { setGrid(f[1], gridInt(ui[f[0]].value, f[2], f[3], orbit.grid[f[1]])); });
+            ui[f[0]].addEventListener("keydown", function (e) { if (e.key === "Enter") { setGrid(f[1], gridInt(ui[f[0]].value, f[2], f[3], orbit.grid[f[1]])); } });
+        });
+        [["gridGap", "gap"], ["gridGapV", "gapV"], ["gridRound", "round"], ["gridRand", "rand"]].forEach(function (s) {
+            ui[s[0]].addEventListener("input", function () { setGrid(s[1], Math.round(Number(ui[s[0]].value))); });
+        });
+        ui.gridFit.addEventListener("click", function () { setGrid("fit", !orbit.grid.fit); });
+        ui.gridSplit.addEventListener("change", function () { setGrid("split", ui.gridSplit.checked); });
+        ui.gridNumbers.addEventListener("change", function () { setGrid("numbers", ui.gridNumbers.checked); });
+        ui.gridStagger.addEventListener("change", function () { setGrid("stagger", ui.gridStagger.checked); });
+        ui.gridDice.addEventListener("click", function () { setGrid("seed", Math.floor(Math.random() * 99999) + 1); });
+        Array.prototype.forEach.call(ui.gridMode.querySelectorAll("button[data-v]"), function (b) {
+            b.addEventListener("click", function () { setGrid("mode", b.getAttribute("data-v")); });
+        });
+        ui.gridBtn.addEventListener("click", onGrid);
+        drawGrid();
+    }
+
+    // Блоки раздела «Макеты» сворачиваются щелчком по заголовку; в широкой панели встают в две колонки.
+    function drawMkFolds() {
+        var folded = (orbit.fold || "").split(",");
+        Array.prototype.forEach.call(document.querySelectorAll("#orbitPane .mk-card"), function (c) {
+            var on = folded.indexOf(c.getAttribute("data-mk")) >= 0, b = c.querySelector(".mk-fold");
+            c.classList.toggle("mk-folded", on);
+            if (b) { b.setAttribute("aria-expanded", String(!on)); b.setAttribute("aria-label", on ? "Развернуть" : "Свернуть"); }
+        });
+        if (ui.orbitPane) { ui.orbitPane.classList.toggle("mk-wide", ui.orbitPane.getBoundingClientRect().width >= 620); }
+    }
+
+    function enableMkFolds() {
+        Array.prototype.forEach.call(document.querySelectorAll("#orbitPane .mk-card"), function (c) {
+            var name = c.getAttribute("data-mk");
+            c.querySelector(".mk-head").addEventListener("click", function () {
+                var list = (orbit.fold || "").split(",").filter(function (x) { return x && x !== name; });
+                if (!c.classList.contains("mk-folded")) { list.push(name); }
+                orbit.fold = list.join(",");
+                storeOrbit();
+                drawMkFolds();
+                drawOrbitPreview();
+                drawGridPreview();
+            });
+        });
+        window.addEventListener("resize", function () { if (ui.orbitPane && !ui.orbitPane.hidden) { drawMkFolds(); drawOrbitPreview(); drawGridPreview(); } });
+        drawMkFolds();
+    }
+
+    // ---- Раздел «Макеты»: карусель. Настройки хранятся отдельно; превью — те же карточки в CSS 3D, его можно крутить мышкой.
     var ORBIT_KEY = "sayframe.orbit.v1";
     var ORBIT_DEFAULTS = { layout: "ring", shape: "rect", corners: 20, mode: "shape", count: 8, radius: 600, w: 400, h: 560, numbers: true, camera: true };
     var ORBIT_LAYOUT_NAMES = { ring: "кольцо", half: "полукруг", spiral: "спираль", wave: "волна" };
@@ -6194,6 +6366,18 @@
         out.radius = Math.max(100, Math.min(3000, Math.round(out.radius) || 600));
         out.w = Math.max(50, Math.min(2000, Math.round(out.w) || 400));
         out.h = Math.max(50, Math.min(2000, Math.round(out.h) || 560));
+        out.fold = typeof s.fold === "string" ? s.fold : "";
+        out.grid = {};
+        var g = s.grid && typeof s.grid === "object" ? s.grid : {};
+        for (k in GRID_DEFAULTS) {
+            if (GRID_DEFAULTS.hasOwnProperty(k)) { out.grid[k] = typeof g[k] === typeof GRID_DEFAULTS[k] ? g[k] : GRID_DEFAULTS[k]; }
+        }
+        g = out.grid;
+        g.rows = gridInt(g.rows, 1, 20, 4); g.cols = gridInt(g.cols, 1, 20, 5);
+        g.gap = gridInt(g.gap, 0, 200, 20); g.gapV = gridInt(g.gapV, 0, 200, 20); g.round = gridInt(g.round, 0, 200, 20);
+        g.rand = gridInt(g.rand, 0, 100, 100); g.seed = gridInt(g.seed, 0, 999999, 12345);
+        g.w = gridInt(g.w, 16, 16000, 1920); g.h = gridInt(g.h, 16, 16000, 1080);
+        if (g.mode !== "precomp") { g.mode = "shape"; }
         return out;
     }
 
@@ -9371,7 +9555,7 @@
 
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -10933,6 +11117,8 @@
     document.addEventListener("keydown", onHotkeyDown, true);
     enableAc();
     enableOrbit();
+    enableGrid();
+    enableMkFolds();
     listenHostHotkeys();
     fitTabs();
     if (typeof window.ResizeObserver === "function") { new window.ResizeObserver(fitTabs).observe(ui.tabs); }

@@ -458,7 +458,7 @@ function mkBrComp(log, layers) {
 }
 // A comp for the carousel: layers on a list, as After Effects adds them (new ones on top).
 function mkOrbitComp(log, name, w, h, layers) {
-  const c = Object.assign(new CompItem(), { name, width: w, height: h, duration: 10, frameRate: 30, pixelAspect: 1, list: [] });
+  const c = Object.assign(new CompItem(), { name, width: w, height: h, duration: 10, frameRate: 30, frameDuration: 1 / 30, time: 0, pixelAspect: 1, list: [] });
   Object.defineProperty(c, "numLayers", { get: () => c.list.length });
   c.layer = (i) => c.list[i - 1] || null;
   const put = (l) => { c.list.unshift(l); l.containingComp = c; return l; };
@@ -2783,14 +2783,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.locator("#models button", { hasText: "Opus 5.5" }).click();
   check("S0 settings open on the AI section: provider, key, model, checks and reference frames; colours and shortcuts are under 'General'", (await p.page.locator("#setTabAI").getAttribute("aria-selected")) === "true" && (await p.page.locator("#apiKey").isVisible()) && (await p.page.locator("#frames").isVisible()) && (await p.page.locator("#selfCheck").isVisible() || await p.page.locator("label.switch", { hasText: "проверяет результат" }).isVisible()) && (await p.page.locator("#accentSwatches").isHidden()) && (await p.page.locator("#hotkeys").isHidden()));
   await p.page.click("#setTabTheme");
-  check("S0 five sections with icons: AI, Темы, Инструменты, Клавиши, Прочее", (await p.page.locator("#setTabs button").allInnerTexts()).join() === "AI,Темы,Инструменты,Клавиши,Прочее" && (await p.page.locator("#setTabs button svg").count()) === 5);
+  check("S0 five sections with icons: AI, Темы, Блоки, Клавиши, Прочее", (await p.page.locator("#setTabs button").allInnerTexts()).join() === "AI,Темы,Блоки,Клавиши,Прочее" && (await p.page.locator("#setTabs button svg").count()) === 5);
   check("S0 «Темы»: three theme cards and the width; «Студия» has its own colours, so no accent or section backgrounds; the AI fields are hidden", (await p.page.locator("#designPick button").count()) === 3 && (await p.page.locator("#panelFit").isVisible()) && !(await p.page.locator("#accentSwatches").isVisible()) && !(await p.page.locator("#bgSwatches").isVisible()) && /свои цвета/.test(await p.page.locator("#themeNote").innerText()) && (await p.page.locator("#apiKey").isHidden()) && (await p.page.locator("#setTabTheme").getAttribute("aria-selected")) === "true");
   await p.page.click('#designPick [data-value="ae"]');
   check("S0 «After Effects» has its own colours too", !(await p.page.locator("#accentSwatches").isVisible()) && /After Effects/.test(await p.page.locator("#themeNote").innerText()));
   await p.page.click('#designPick [data-value="glass"]');
   check("S0 «Стекло»: the accent colour and the section backgrounds show up, the note goes", (await p.page.locator("#accentSwatches").isVisible()) && (await p.page.locator("#bgSwatches").isVisible()) && !(await p.page.locator("#themeNote").isVisible()));
   await p.page.click("#setTabTools");
-  check("S0 «Инструменты» holds block size and which tools; «Клавиши» the shortcuts; «Прочее» hints and statistics", (await p.page.locator("#toolSize").isVisible()) && (await p.page.locator("#toolPicker").isVisible()) && !(await p.page.locator("#panelFit").isVisible()));
+  check("S0 «Блоки» holds block size and which tools; «Клавиши» the shortcuts; «Прочее» hints and statistics", (await p.page.locator("#toolSize").isVisible()) && (await p.page.locator("#toolPicker").isVisible()) && !(await p.page.locator("#panelFit").isVisible()));
   await p.page.click("#setTabKeys");
   check("S0 «Клавиши»", (await p.page.locator("#hotkeys").isVisible()) && (await p.page.locator("#fxWhere").isVisible()));
   await p.page.click("#setTabMore");
@@ -3012,7 +3012,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T2 Tools tab shows only the tools", (await vis(p, "#viewTools #acGrid")) && !(await vis(p, "#prompt")) && !(await vis(p, "#runBtn")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#newBtn")) && !(await vis(p, "#fixBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "false");
   check("T2 status line moved to the Tools tab", (await p.page.locator("#viewTools #statusBox").count()) === 1 && (await p.page.locator("#statusBox").count()) === 1 && (await vis(p, "#status")));
   await p.page.screenshot({ path: path.join(SHOTS, "17-tab-tools.png") });
-  check("T2 the Animation tab holds the preset library with seven sections (3D last); the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Заготовки,Звуки,3D,✎ Изменить");
+  check("T2 the Animation tab holds the preset library with seven sections (Макеты last); the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Заготовки,Звуки,Макеты,✎ Изменить");
   await p.paste(); await p.idle(); await p.modalClick("Оставить как есть");
   check("T3 the paste block reports its result on its tab", /^Картинка вставлена/.test(await p.status()) && (await vis(p, "#status")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1 && p.ae.log.imports.length === 1, await p.status());
   t = await p.status();
@@ -5037,7 +5037,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const setRange = (p, sel, v) => p.page.evaluate(([s, x]) => { const r = document.querySelector(s); r.value = String(x); r.dispatchEvent(new Event("input", { bubbles: true })); }, [sel, v]);
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await orbitTab(p);
-    check("OR1 a «3D» section last in «Анимация»: the carousel block instead of the preset cards, no footer", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#acTabs button"), (b) => b.textContent).join("|"))).indexOf("Звуки|3D") >= 0 &&
+    check("OR1 a «Макеты» section last in «Анимация»: the carousel block instead of the preset cards, no footer", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#acTabs button"), (b) => b.textContent).join("|"))).indexOf("Звуки|Макеты") >= 0 &&
       (await vis(p, "#orbitPane")) && !(await vis(p, "#acGrid")) && !(await vis(p, "#acFoot")) && !(await vis(p, "#acHint")) && (await vis(p, "#orbitBtn")));
     check("OR1 defaults: ring, square cards, 8 of them, 20% corners, numbers and camera on; the preview shows 8 cards", (await p.page.getAttribute('#orbitLayout [data-v="ring"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#orbitShape [data-v="rect"]', "aria-pressed")) === "true" &&
       (await p.page.inputValue("#orbitCount")) === "8" && (await p.page.locator("#orbitCornersVal").innerText()) === "20%" && (await p.page.isChecked("#orbitNumbers")) && (await p.page.isChecked("#orbitCamera")) && (await p.page.locator("#orbitRing .kr-it").count()) === 8 && (await overflow(p)) <= 0);
@@ -5081,6 +5081,57 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("OR3 «Шейп + прекомп»: 3 card comps in a «Карусель» folder, each with the shape (a rounded triangle path) and no number", comps.map((c) => c.name).sort().join() === "Карточка 1,Карточка 2,Карточка 3" && p.ae.log.bins.indexOf("Карусель") >= 0 &&
       comps.every((c) => c.list.length === 1 && c.list[0].name === "Форма" && acAt(c.list[0], "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length === 6), comps.map((c) => c.name + ":" + c.list.map((l) => l.name)).join(" "));
     check("OR3 half ring: the first card at −90°, the last at 90°; a camera was there, no second one", !!t && t.source && tf(t, "ADBE Rotate Y") === -90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === 90 && names(p) === "Карусель: управление,Карточка 1,Карточка 2,Карточка 3,Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
+    await p.close();
+  }
+
+  // «Макеты»: the Grid block — a bento grid of rounded tiles; and both blocks fold by their title.
+  {
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const tf = (l, n) => acAt(l, "ADBE Transform Group", n).value;
+    const mkTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    const setRange = (p, sel, v) => p.page.evaluate(([s, x]) => { const r = document.querySelector(s); r.value = String(x); r.dispatchEvent(new Event("input", { bubbles: true })); }, [sel, v]);
+    const tiles = (p) => p.page.locator("#gridStage .gr-box").count();
+    const rect = (l) => acAt(l, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect");
+    p = await open({ orbit: { layers: [{ name: "BG" }] } });
+    await mkTab(p);
+    check("GR1 «Макеты»: two blocks, «Карусель» and «Grid», open; the grid preview shows numbered tiles", (await p.page.locator("#orbitPane .mk-card").evaluateAll((l) => l.map((c) => c.getAttribute("data-mk")).join())) === "carousel,grid" &&
+      (await p.page.isVisible("#orbitStage")) && (await p.page.isVisible("#gridStage")) && (await tiles(p)) > 4 && (await tiles(p)) < 20 && (await p.page.locator("#gridStage .gr-box span").first().innerText()) === "1" && (await overflow(p)) <= 0);
+    check("GR1 defaults: 4 rows, 5 columns, gap 20, roundness 20, spread 100%, variant 12345, the comp size, numbers and one-by-one on", (await p.page.inputValue("#gridRows")) === "4" && (await p.page.inputValue("#gridCols")) === "5" && (await p.page.locator("#gridGapVal").innerText()) === "20" &&
+      (await p.page.locator("#gridRandVal").innerText()) === "100%" && (await p.page.inputValue("#gridSeed")) === "12345" && (await p.page.getAttribute("#gridFit", "aria-pressed")) === "true" && (await p.page.isDisabled("#gridW")) && (await p.page.isChecked("#gridNumbers")) && (await p.page.isChecked("#gridStagger")));
+    const n0 = await tiles(p);
+    await p.page.click('#orbitPane [data-mk="carousel"] .mk-head');
+    check("GR2 a click on «Карусель» folds it to one line; Grid stays open", !(await p.page.isVisible("#orbitStage")) && (await p.page.isVisible("#gridStage")) && (await p.page.getAttribute('#orbitPane [data-mk="carousel"] .mk-fold', "aria-expanded")) === "false");
+    await setRange(p, "#gridRand", 0);
+    check("GR3 spread 0: every cell is its own tile, 4×5 = 20", (await tiles(p)) === 20);
+    await setRange(p, "#gridRand", 100);
+    check("GR3 back to 100%: the same variant gives the same layout", (await tiles(p)) === n0);
+    await p.page.locator("label.switch", { has: p.page.locator("#gridSplit") }).locator(".track").click();
+    check("GR3 separate gaps: a second slider for the vertical gap", (await p.page.isVisible("#gridGapV")) && (await p.page.locator("#gridGapName").innerText()) === "По горизонтали");
+    await p.page.locator("label.switch", { has: p.page.locator("#gridSplit") }).locator(".track").click();
+    await p.page.click("#gridDice");
+    check("GR3 «Другой вариант» picks a new number", (await p.page.inputValue("#gridSeed")) !== "12345");
+    await p.page.fill("#gridSeed", "12345"); await p.page.press("#gridSeed", "Enter");
+    await p.restart(); await mkTab(p);
+    check("GR4 the fold and the grid settings survive a restart", !(await p.page.isVisible("#orbitStage")) && (await p.page.inputValue("#gridSeed")) === "12345" && (await tiles(p)) === n0);
+    await p.page.click("#gridBtn"); await p.idle();
+    const ctrl = Lx(p, "Grid: управление"), t1 = Lx(p, "Плитка 1");
+    const made = p.ae.log.dcMain.list.filter((l) => /^Плитка \d+$/.test(l.name)).length;
+    check("GR5 «Создать сетку»: as many tiles as in the preview, each with its number, all hanging on «Grid: управление»; one undo step", made === n0 && !!ctrl && ctrl.nullLayer && t1.parent === ctrl && Lx(p, "Номер плитки 1").parent === t1 && p.ae.log.undo.join() === "begin:Sayframe: grid,end", names(p));
+    check("GR5 tiles come in one after another: opacity and scale keys, 2 frames apart", acAt(t1, "ADBE Transform Group", "ADBE Opacity").keys.length === 2 && Math.abs(acAt(Lx(p, "Плитка 2"), "ADBE Transform Group", "ADBE Opacity").keys[0].t - 2 / 30) < 1e-6 && /^Сетка готова: \d+ плит/.test(await p.status()), await p.status());
+    await p.close();
+
+    p = await open({ orbit: { layers: [{ name: "BG" }] } });
+    await mkTab(p);
+    await setRange(p, "#gridRand", 0);
+    await p.page.click('#gridMode [data-v="precomp"]');
+    await p.page.locator("label.switch", { has: p.page.locator("#gridNumbers") }).locator(".track").click();
+    await p.page.locator("label.switch", { has: p.page.locator("#gridStagger") }).locator(".track").click();
+    await p.page.click("#gridBtn"); await p.idle();
+    t = Lx(p, "Плитка 1");
+    const comps = p.ae.log.orbitComps || [];
+    check("GR6 «Шейп + прекомп», spread 0: 20 tile comps (368×255) in a «Grid» folder, no numbers, no keys; tile 1 sits in the top-left cell", comps.length === 20 && comps.every((c) => c.width === 368 && c.height === 255 && c.list.length === 1) && p.ae.log.bins.indexOf("Grid") >= 0 &&
+      !!t && t.source && JSON.stringify(tf(t, "ADBE Position")) === "[184,127.5]" && !((acAt(t, "ADBE Transform Group", "ADBE Opacity") || {}).keys || []).length && !Lx(p, "Номер плитки 1") && JSON.stringify(rect(comps.find((c) => c.name === "Плитка 1").list[0]).property("ADBE Vector Rect Size").value) === "[368,255]" && p.errors.length === 0, JSON.stringify(t && tf(t, "ADBE Position")));
     await p.close();
   }
 

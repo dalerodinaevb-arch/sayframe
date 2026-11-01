@@ -2859,6 +2859,131 @@ var sayframeHost = (function () {
         return { cards: n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
     }
 
+    // ---- Grid (section "Layouts"): a bento grid of rounded tiles. rows x cols cells; with "rand" some
+    // neighbouring cells merge into bigger tiles. The same seed always gives the same layout (the panel
+    // draws its preview with the very same code), so what is in the preview is what gets built.
+    // Math.imul is not in ExtendScript (ES3): the same 32-bit multiply by halves.
+    function gridImul(a, b) {
+        var ah = (a >>> 16) & 0xffff, al = a & 0xffff, bh = (b >>> 16) & 0xffff, bl = b & 0xffff;
+        return ((al * bl) + ((((ah * bl + al * bh) & 0xffff) << 16) >>> 0)) | 0;
+    }
+
+    function gridRng(seed) {
+        var a = Math.floor(Number(seed) || 0) >>> 0;
+        return function () {
+            var t;
+            a = (a + 0x6D2B79F5) >>> 0;
+            t = a;
+            t = gridImul(t ^ (t >>> 15), t | 1);
+            t ^= t + gridImul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    function gridLayout(rows, cols, rand, seed) {
+        var rng = gridRng(seed), occ = [], boxes = [], r, c, w, h, i, j, free, p = Math.max(0, Math.min(100, rand)) / 100;
+        var maxW = Math.max(1, Math.min(cols, 1 + Math.round(p * 2))), maxH = Math.max(1, Math.min(rows, 1 + Math.round(p)));
+        for (r = 0; r < rows; r++) { occ.push([]); for (c = 0; c < cols; c++) { occ[r].push(false); } }
+        function clear(r0, c0, ww, hh) {
+            var y, x;
+            if (r0 + hh > rows || c0 + ww > cols) { return false; }
+            for (y = r0; y < r0 + hh; y++) { for (x = c0; x < c0 + ww; x++) { if (occ[y][x]) { return false; } } }
+            return true;
+        }
+        for (r = 0; r < rows; r++) {
+            for (c = 0; c < cols; c++) {
+                if (occ[r][c]) { continue; }
+                w = 1; h = 1;
+                if (rng() < p * 0.6) { w = 1 + Math.floor(rng() * maxW); h = 1 + Math.floor(rng() * maxH); }
+                while (w > 1 && !clear(r, c, w, 1)) { w--; }
+                while (h > 1 && !clear(r, c, w, h)) { h--; }
+                for (i = r; i < r + h; i++) { for (j = c; j < c + w; j++) { occ[i][j] = true; } }
+                free = { r: r, c: c, w: w, h: h };
+                boxes.push(free);
+            }
+        }
+        return boxes;
+    }
+
+    function gridColor(i) {
+        var hue = (250 + i * 9) % 360, s = 0.75, l = 0.6, c = (1 - Math.abs(2 * l - 1)) * s, hp = hue / 60;
+        var x = c * (1 - Math.abs(hp % 2 - 1)), m = l - c / 2, rgb;
+        if (hp < 1) { rgb = [c, x, 0]; } else if (hp < 2) { rgb = [x, c, 0]; } else if (hp < 3) { rgb = [0, c, x]; }
+        else if (hp < 4) { rgb = [0, x, c]; } else if (hp < 5) { rgb = [x, 0, c]; } else { rgb = [c, 0, x]; }
+        return [rgb[0] + m, rgb[1] + m, rgb[2] + m, 1];
+    }
+
+    function gridTileShape(l, w, h, round, color) {
+        var gi = acGroup(l), si;
+        try { acP(l, ["ADBE Root Vectors Group", gi]).name = "Tile"; } catch (e0) {}
+        si = acIn(l, gi, "ADBE Vector Shape - Rect");
+        acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Rect Size"]).setValue([w, h]);
+        acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Rect Roundness"]).setValue(Math.min(round, Math.min(w, h) / 2));
+        acFill(l, gi, color);
+    }
+
+    // Tiles come in one after another: opacity 0 -> 100 and scale 85 -> 100 over 10 frames, 2 frames apart.
+    function gridReveal(l, comp, k) {
+        var f = comp.frameDuration || 1 / 30, t0 = comp.time + k * 2 * f, t1 = t0 + 10 * f;
+        try {
+            acKeys(acTransform(l, "ADBE Opacity"), [t0, t1], [0, 100], 70);
+            acKeys(acTransform(l, "ADBE Scale"), [t0, t1], [[85, 85, 100], [100, 100, 100]], 70);
+        } catch (e0) {}
+    }
+
+    function gridBuild(comp, o, labels) {
+        var rows = Math.round(orbitNum(o.rows, 1, 20, 4)), cols = Math.round(orbitNum(o.cols, 1, 20, 5));
+        var W = o.fit ? comp.width : Math.round(orbitNum(o.w, 16, 16000, 1920)), H = o.fit ? comp.height : Math.round(orbitNum(o.h, 16, 16000, 1080));
+        var gx = orbitNum(o.gap, 0, 1000, 20), gy = o.split ? orbitNum(o.gapV, 0, 1000, 20) : gx, round = orbitNum(o.round, 0, 2000, 20);
+        var boxes = gridLayout(rows, cols, orbitNum(o.rand, 0, 100, 100), o.seed), pre = o.mode === "precomp";
+        var cw = (W - gx * (cols - 1)) / cols, ch = (H - gy * (rows - 1)) / rows, ox = (comp.width - W) / 2, oy = (comp.height - H) / 2;
+        var tiles = [], nums = [], i, b, bw, bh, x, y, L, cc, inner, txt, folder = null, ctrl, fs, base = labels.tile || "Tile ";
+        if (cw < 1 || ch < 1) { throw new Error("GRID_TOO_TIGHT"); }
+        if (pre) { try { folder = app.project.items.addFolder(labels.folder || "Grid"); } catch (eF) { folder = null; } }
+        for (i = boxes.length - 1; i >= 0; i--) {
+            b = boxes[i];
+            bw = Math.round(b.w * cw + (b.w - 1) * gx); bh = Math.round(b.h * ch + (b.h - 1) * gy);
+            x = ox + b.c * (cw + gx) + bw / 2; y = oy + b.r * (ch + gy) + bh / 2;
+            fs = Math.round(Math.max(12, Math.min(bw, bh) * 0.28));
+            if (pre) {
+                cc = app.project.items.addComp(base + (i + 1), Math.max(4, bw), Math.max(4, bh), comp.pixelAspect || 1, comp.duration, comp.frameRate);
+                if (folder) { try { cc.parentFolder = folder; } catch (eP) {} }
+                inner = cc.layers.addShape();
+                inner.name = labels.shape || "Shape";
+                gridTileShape(inner, bw, bh, round, gridColor(i));
+                orbitSet(inner, "ADBE Position", [bw / 2, bh / 2]);
+                if (o.numbers) {
+                    txt = orbitNumber(cc, String(i + 1), fs);
+                    orbitSet(txt, "ADBE Position", [bw / 2, bh / 2 + fs * 0.35]);
+                }
+                L = comp.layers.add(cc);
+            } else {
+                L = comp.layers.addShape();
+                gridTileShape(L, bw, bh, round, gridColor(i));
+            }
+            L.name = base + (i + 1);
+            orbitSet(L, "ADBE Position", [x, y]);
+            tiles.unshift(L);
+            if (o.numbers && !pre) {
+                txt = orbitNumber(comp, String(i + 1), fs);
+                txt.name = (labels.number || "Number ") + (i + 1);
+                orbitSet(txt, "ADBE Position", [x, y + fs * 0.35]);
+                nums.unshift(txt);
+            }
+        }
+        ctrl = comp.layers.addNull(comp.duration);
+        ctrl.name = labels.ctrl || "Grid Control";
+        orbitSet(ctrl, "ADBE Position", [comp.width / 2, comp.height / 2]);
+        for (i = 0; i < tiles.length; i++) {
+            if (nums[i]) { nums[i].parent = tiles[i]; }
+            tiles[i].parent = ctrl;
+            if (o.stagger) { gridReveal(tiles[i], comp, i); }
+            try { tiles[i].selected = false; if (nums[i]) { nums[i].selected = false; } } catch (eS) {}
+        }
+        ctrl.selected = true;
+        return { tiles: tiles.length, ctrl: ctrl.name, precomp: pre, folder: folder ? folder.name : "", w: W, h: H, stagger: !!o.stagger };
+    }
+
     // ---- Split / merge shapes (the Shape tab).
     // One shape layer: every group of its Contents becomes its own layer (a copy of the layer that keeps only
     // that group, so transform, effects, keys and expressions stay as they were). A layer with several masks
@@ -5640,6 +5765,22 @@ var sayframeHost = (function () {
                 app.beginUndoGroup(sel.length === 1 ? "Sayframe: split shape" : "Sayframe: merge shapes");
                 try {
                     res = sel.length === 1 ? smSplit(comp, sel[0]) : smMerge(comp, sel);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Grid: o = { rows, cols, gap, split, gapV, round, rand, seed, fit, w, h, mode, numbers, stagger }; labels - layer names.
+        gridMake: function (o, labels) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (!o || typeof o !== "object") { throw new Error("BAD_GRID"); }
+                app.beginUndoGroup("Sayframe: grid");
+                try {
+                    res = gridBuild(comp, o, labels || {});
                 } finally {
                     app.endUndoGroup();
                 }
