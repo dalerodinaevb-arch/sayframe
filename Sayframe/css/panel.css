@@ -1894,3 +1894,41 @@ html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:
 [data-tab="tools"] .ac-body { flex: 1 1 auto; min-height: 120px; grid-template-rows: minmax(0, 1fr); }
 [data-tab="tools"] .ac-body > .ac-grid, [data-tab="tools"] .ac-body > .ac-folders { min-height: 0; overflow-y: auto; }
 [data-tab="tools"] .ac-hint, [data-tab="tools"] .ac-foot, [data-tab="tools"] .ac-tabs, [data-tab="tools"] .ac-bar { flex: none; }
+
+/* «Студия»: «Инструменты» без сетки — сверху кнопки «в один клик», ниже блоки с настройками столбиком
+   (в широкой панели — в 2–3 колонки); блок сворачивается в строку по заголовку. */
+.flow-part, .flow-ico, .flow-fold { display: none; }
+.motion-tools.tool-flow { display: block !important; }
+.tool-flow > .grid-cells, .tool-flow > .pin-line { display: none !important; }
+.tool-flow > .flow-cap:not([hidden]) { display: block; margin: 2px 2px 8px; font: 600 10.5px/1.2 var(--plain); text-transform: uppercase; letter-spacing: .12em; color: #6c6e79; }
+.tool-flow > .flow-tiles:not([hidden]) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 14px; }
+.tool-flow > .flow-tiles[data-wide="true"] { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.tool-flow > .flow-cols:not([hidden]) { display: block; column-gap: 8px; }
+.tool-flow > .flow-cols[data-cols="2"] { -webkit-columns: 2; columns: 2; }
+.tool-flow > .flow-cols[data-cols="3"] { -webkit-columns: 3; columns: 3; }
+.tool-flow .tool-card { grid-column: auto !important; grid-row: auto !important; align-self: auto !important; position: relative; }
+.tool-flow .tool-card.tool-off { display: none !important; }
+.tool-flow .tool-grip, .tool-flow .tool-pin, .tool-flow .tool-toggle, .tool-flow .tool-resize, .tool-flow .tool-resize-y, .tool-flow .tool-resize-xy, .tool-flow .ec-toggle { display: none !important; }
+/* плитки «в один клик» */
+.tool-flow .flow-tiles .tool-card { min-height: 68px; padding: 6px 4px !important; justify-content: center; cursor: pointer; }
+.tool-flow .flow-tiles .tool-head, .tool-flow .flow-tiles .paste-hint { display: none !important; }
+html[data-design="studio"] .tool-flow .flow-tiles .paste-do { flex-direction: column; justify-content: center !important; align-items: center; gap: 6px !important; padding: 2px !important; background: transparent !important; border-color: transparent !important; text-align: center; font: 500 11px/1.15 var(--plain) !important; color: var(--text) !important; min-height: 0 !important; width: 100%; }
+html[data-design="studio"] .tool-flow .flow-tiles .paste-do > span { display: none; }
+html[data-design="studio"] .tool-flow .flow-tiles .paste-do::after { content: attr(data-short); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover { border-color: rgba(var(--accent-rgb), .5) !important; }
+html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover .paste-do svg { background: rgba(var(--accent-rgb), .26); }
+/* блоки с настройками */
+.tool-flow .flow-cols .tool-card { width: 100%; box-sizing: border-box; margin: 0 0 8px; -webkit-column-break-inside: avoid; break-inside: avoid; }
+.tool-flow .flow-cols .tool-head { cursor: pointer; padding-right: 30px; }
+.tool-flow .flow-cols .flow-fold { display: flex; align-items: center; justify-content: center; position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.tool-flow .flow-cols .flow-fold:hover { background: rgba(255, 255, 255, .06); color: var(--text); }
+.tool-flow .flow-cols .flow-fold svg { width: 12px; height: 12px; transform: rotate(180deg); }
+.tool-flow .flow-cols .flow-folded .flow-fold svg { transform: none; }
+.tool-flow .flow-cols .tool-card.flow-folded { padding: 9px 14px !important; gap: 0; }
+.tool-flow .flow-cols .tool-card.flow-folded > :not(.tool-head):not(.flow-fold) { display: none !important; }
+.tool-flow .flow-cols .flow-folded .flow-fold { top: 50%; margin-top: -13px; }
+.tool-flow .flow-cols .flow-folded .tool-head { display: flex; align-items: center; justify-content: flex-start; align-self: stretch; text-align: left; gap: 10px; margin: 0; }
+.tool-flow .flow-cols .flow-folded .flow-ico { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; background: rgba(var(--accent-rgb), .16); color: var(--accent-hi, var(--accent)); flex: none; }
+.tool-flow .flow-cols .flow-folded .flow-ico svg { width: 15px; height: 15px; }
+html[data-design="studio"] .tool-flow .flow-cols .flow-folded .tool-head b { font: 500 12.5px/1.2 var(--plain) !important; text-transform: none; letter-spacing: 0; color: var(--text) !important; }
+.tool-flow .flow-cols .tool-head::before { display: none; }

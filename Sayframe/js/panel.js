@@ -3477,7 +3477,7 @@
     var MOTION_LEGACY = { curve: true, order: "ease,anchor,align,paste,organize,easecopy,decompose,cache,nullp,unused,cutout", sizes: "", places: "", pins: "",
         ecOpts: true, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, cutoutOpts: true, splitOpts: true, anchorOpts: true, alignOpts: true, staggerOpts: true };
 
-    // Так «Инструменты» выглядят после новой установки: блоки-кнопки закреплены сверху, под линией — «Время»,
+    // Так «Инструменты» выглядят после новой установки: блоки-кнопки закреплены сверху, под линией — «Лесенка»,
     // «Якорь», «Выровнять» и «Плавность»; подсказки и списки свёрнуты (их открывает плюс в углу блока).
     // У тех, кто уже настроил панель, сохранённое не меняется; новые блоки встают сверху, ближе к середине.
     var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: false, easeView: "speed", anchorKeys: "key", alignTo: "comp",
@@ -3487,7 +3487,8 @@
         pins: "paste,unused,easecopy,decompose,organize,cache,nullp,cutout", grid: GRID_VERSION,
         ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false, cutoutOpts: false, splitOpts: false,
         anchorOpts: false, alignOpts: false,
-        staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", staggerOpts: true };
+        staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", staggerOpts: true,
+        flowFold: "easecopy,anchor,align" };
     var STAGGER_ORDERS = ["asc", "random", "desc", "align"];
     var STAGGER_TARGETS = ["layer", "keys"];
     var MAX_STEP_FRAMES = 999;
@@ -3725,7 +3726,7 @@
         var i, j, f, open, label, opt;
         for (i = 0; i < parts.length; i++) {
             f = parts[i];
-            open = motion[f.key] !== false;
+            open = motion[f.key] !== false || (ui.motionTools.classList.contains("tool-flow") && ui.motionTools.contains(f.part));
             label = open ? f.hide : f.show;
             if (!open && f.select) {
                 opt = f.select.options[f.select.selectedIndex];
@@ -9606,8 +9607,126 @@
     function relayoutTools() {
         var keep = G;
         if (!toolGridReady) { return; }
-        GRIDS.forEach(function (g) { G = g; layoutTools(placesNow(), null); });
+        GRIDS.forEach(function (g) {
+            G = g;
+            if (g.name === "motion" && flowOn()) { layoutFlow(g); return; }
+            unflow(g);
+            layoutTools(placesNow(), null);
+        });
         G = keep;
+    }
+
+    // ---- «Студия»: раздел «Инструменты» без сетки. Сверху кнопки «в один клик» по четыре в ряд,
+    // ниже блоки с настройками друг под другом (в широкой панели — в две или три колонки).
+    // Блок сворачивается в одну строку щелчком по заголовку. Перестановки и растягивания здесь нет.
+    var FLOW_TILES = { paste: "Картинка", organize: "По папкам", unused: "Лишнее", cache: "Кэш", nullp: "Null", decompose: "Декомпоз", cutout: "Вырезка" };
+    var FLOW_ICONS = {
+        ease: '<path d="M4 19C11 19 13 5 20 5"/><circle cx="4" cy="19" r="1.5"/><circle cx="20" cy="5" r="1.5"/>',
+        easecopy: '<rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V6a1 1 0 0 1 1-1h9"/>',
+        stagger: '<path d="M4 6h8M8 12h8M12 18h8"/>',
+        anchor: '<circle cx="12" cy="12" r="6"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',
+        align: '<path d="M5 4v16M9 8h10M9 16h6"/>'
+    };
+
+    var FLOW_ORDER = ["paste", "organize", "unused", "cache", "nullp", "decompose", "cutout", "ease", "easecopy", "stagger", "anchor", "align"];
+
+    function flowOn() { return document.documentElement.getAttribute("data-design") === "studio"; }
+
+    function flowFolded() {
+        return String(motion.flowFold).split(",").filter(function (n) { return !!FLOW_ICONS[n]; });
+    }
+
+    function setFlowFold(name, folded) {
+        var list = flowFolded().filter(function (n) { return n !== name; });
+        if (folded) { list.push(name); }
+        motion.flowFold = list.join(",");
+        storeMotion();
+        relayoutTools();
+    }
+
+    function buildFlow(g) {
+        var box = {};
+        [["tilesCap", "small", "flow-cap", "В один клик"], ["tiles", "div", "flow-tiles", ""], ["colsCap", "small", "flow-cap", "С настройками"], ["cols", "div", "flow-cols", ""]].forEach(function (d) {
+            var el = document.createElement(d[1]);
+            el.className = "flow-part " + d[2];
+            el.textContent = d[3];
+            g.el.appendChild(el);
+            box[d[0]] = el;
+        });
+        Object.keys(FLOW_TILES).forEach(function (name) {
+            var card = cardByName(name), btn = card && card.querySelector(".paste-do");
+            if (!btn) { return; }
+            btn.setAttribute("data-short", FLOW_TILES[name]);
+            // Плитка нажимается целиком, не только кнопка в ней.
+            card.addEventListener("click", function (e) {
+                if (g.flow && !btn.contains(e.target) && !btn.disabled) { btn.click(); }
+            });
+        });
+        Object.keys(FLOW_ICONS).forEach(function (name) {
+            var card = cardByName(name), head = card && card.querySelector(".tool-head"), b;
+            if (!head) { return; }
+            head.insertAdjacentHTML("afterbegin", '<span class="flow-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + FLOW_ICONS[name] + "</svg></span>");
+            b = document.createElement("button");
+            b.type = "button";
+            b.className = "flow-fold";
+            b.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg>';
+            b.addEventListener("click", function (e) { e.stopPropagation(); setFlowFold(name, !card.classList.contains("flow-folded")); });
+            head.addEventListener("click", function () { if (g.flow) { setFlowFold(name, !card.classList.contains("flow-folded")); } });
+            card.appendChild(b);
+        });
+        g.flowBox = box;
+    }
+
+    function layoutFlow(g) {
+        var folded = flowFolded();
+        var k = Number(document.documentElement.getAttribute("data-tools")) / 100;
+        var w = g.el.clientWidth, tiles = 0, sets = 0;
+        if (!g.flowBox) { buildFlow(g); }
+        if (!g.flow) {
+            g.flow = true;
+            g.el.classList.add("tool-flow");
+            if (arranging) { setArranging(false); }
+        }
+        if (!(k > 0 && k <= 1)) { k = 1; }
+        g.el.style.gridTemplateColumns = "";
+        g.el.style.gridAutoRows = "";
+        g.el.style.gap = "";
+        g.line.hidden = true;
+        FLOW_ORDER.forEach(function (name) {
+            var card = cardByName(name), off, isTile, f;
+            if (!card) { return; }
+            off = toolsHidden.indexOf(name) >= 0;
+            isTile = !!FLOW_TILES[name];
+            card.classList.toggle("tool-off", off);
+            card.removeAttribute("data-icons");
+            card.style.setProperty("--kz", String(k));
+            (isTile ? g.flowBox.tiles : g.flowBox.cols).appendChild(card);
+            if (isTile) { if (!off) { tiles++; } return; }
+            if (!off) { sets++; }
+            f = folded.indexOf(name) >= 0;
+            card.classList.toggle("flow-folded", f);
+            card.querySelector(".flow-fold").setAttribute("aria-expanded", f ? "false" : "true");
+            card.querySelector(".flow-fold").title = f ? "Развернуть" : "Свернуть";
+        });
+        g.flowBox.tilesCap.hidden = g.flowBox.tiles.hidden = !tiles;
+        g.flowBox.colsCap.hidden = g.flowBox.cols.hidden = !sets;
+        g.flowBox.cols.setAttribute("data-cols", w >= 980 ? "3" : w >= 620 ? "2" : "1");
+        g.flowBox.tiles.setAttribute("data-wide", w >= 980 ? "true" : "false");
+        showFoldParts();
+        showEcFold();
+    }
+
+    // Обратно к сетке (дизайн сменили на другой): блоки снова прямо в разделе, сетка их расставит.
+    function unflow(g) {
+        if (!g.flow) { return; }
+        g.flow = false;
+        g.el.classList.remove("tool-flow");
+        Array.prototype.forEach.call(g.el.querySelectorAll(".tool-card"), function (card) {
+            card.classList.remove("flow-folded");
+            g.el.appendChild(card);
+        });
+        showFoldParts();
+        showEcFold();
     }
 
     // Запоминает, где блоки стоят сейчас: с этого момента они держат свои клетки.
@@ -9724,6 +9843,7 @@
         }
 
         g.el.addEventListener("mousedown", function (e) {
+            if (g.flow) { return; }
             var card, r;
             G = g;
             card = toolOf(e.target);
@@ -9737,6 +9857,7 @@
 
         // Двойной щелчок по свободному месту блока включает перестановку; по ползунку, числу или кнопке — нет.
         g.el.addEventListener("dblclick", function (e) {
+            if (g.flow) { return; }
             var card;
             G = g;
             card = toolOf(e.target);
@@ -9777,6 +9898,7 @@
 
         // С клавиатуры: фокус на полоске, стрелки двигают блок на клетку.
         g.el.addEventListener("keydown", function (e) {
+            if (g.flow) { return; }
             var grip = e.target;
             G = g;
             var dx = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
@@ -9839,6 +9961,7 @@
         }
 
         g.el.addEventListener("mousedown", function (e) {
+            if (g.flow) { return; }
             var card, r, mode;
             if (e.button !== 0 || !isResizeHandle(e.target)) { return; }
             G = g;
@@ -9872,6 +9995,7 @@
         // С клавиатуры: на правом крае стрелки влево-вправо меняют ширину, на нижнем вверх-вниз — высоту.
         // Home — обычный размер, End — на всю ширину.
         g.el.addEventListener("keydown", function (e) {
+            if (g.flow) { return; }
             var card, name, z, now;
             if (!isResizeHandle(e.target) || e.metaKey || e.ctrlKey || e.altKey) { return; }
             G = g;
@@ -9979,7 +10103,7 @@
     }
 
     function showEcFold() {
-        var open = motion.ecOpts !== false, label = open ? "Скрыть настройку" : "Показать настройку";
+        var open = motion.ecOpts !== false || ui.motionTools.classList.contains("tool-flow"), label = open ? "Скрыть настройку" : "Показать настройку";
         if (!open) { label += " (сквозная скорость: " + (motion.ecThrough ? "вкл." : "выкл.") + ")"; }
         if (open) { ui.ecOpts.removeAttribute("hidden"); } else { ui.ecOpts.setAttribute("hidden", ""); }
         ui.ecOptsToggle.setAttribute("aria-expanded", open ? "true" : "false");

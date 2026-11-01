@@ -4400,6 +4400,54 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
 
+  // ---------------------------------------------------------------- «Студия»: tools without the grid
+  console.log("\n=== studio: tools in a column ===");
+  const flowState = (p) => p.page.evaluate(() => {
+    const mt = document.getElementById("motionTools");
+    const names = (sel) => Array.prototype.map.call(mt.querySelectorAll(sel + " > .tool-card:not(.tool-off)"), (c) => c.getAttribute("data-tool")).join();
+    return { flow: mt.classList.contains("tool-flow"), tiles: names(".flow-tiles"), cols: names(".flow-cols"), folded: Array.prototype.map.call(mt.querySelectorAll(".flow-folded"), (c) => c.getAttribute("data-tool")).join(),
+      n: mt.querySelector(".flow-cols") ? mt.querySelector(".flow-cols").getAttribute("data-cols") : "", direct: mt.querySelectorAll(":scope > .tool-card").length };
+  });
+  p = await open({ width: 420, height: 1200, settings: { design: "studio" } });
+  await motionTab(p);
+  t = await flowState(p);
+  check("FL1 «Студия»: one-click tools as tiles on top, the tools with settings below, one column", t.flow && t.tiles === "paste,organize,unused,cache,nullp,decompose,cutout" && t.cols === "ease,easecopy,stagger,anchor,align" && t.n === "1" && t.direct === 0, JSON.stringify(t));
+  check("FL1 Копия, Якорь and Выровнять start folded; no handles, pins or minus buttons", t.folded === "easecopy,anchor,align" && (await p.page.locator("#motionTools .tool-grip:visible, #motionTools .tool-pin:visible, #motionTools .tool-toggle:visible").count()) === 0 && !(await vis(p, "#ecCopy")) && (await vis(p, "#easeIn")) && (await vis(p, "#staggerBtn")));
+  check("FL1 tiles: four in a row with a short name", await p.page.evaluate(() => { const r = Array.prototype.map.call(document.querySelectorAll(".flow-tiles .tool-card"), (c) => Math.round(c.getBoundingClientRect().top)); return r[0] === r[3] && r[4] > r[3]; }) && (await p.page.getAttribute("#pasteBtn", "data-short")) === "Картинка" && (await overflow(p)) <= 0);
+  check("FL1 hints folded in the grid are shown here (the curve too)", (await vis(p, "#easeCurve")) && (await vis(p, "#staggerPrevText")));
+  await p.page.click('.flow-cols [data-tool="easecopy"] .tool-head');
+  check("FL2 a click on a folded title opens the block and remembers it", (await vis(p, "#ecCopy")) && (await vis(p, "#ecOpts")) && !/easecopy/.test(await savedMotion(p, "flowFold")), await savedMotion(p, "flowFold"));
+  await p.page.click('.flow-cols [data-tool="ease"] .flow-fold');
+  check("FL2 the arrow folds an open block into one line", !(await vis(p, "#easeIn")) && (await vis(p, '.flow-cols [data-tool="ease"] .tool-head')) && (await p.page.evaluate(() => document.querySelector('.flow-cols [data-tool="ease"]').getBoundingClientRect().height)) < 60);
+  await p.restart(); await motionTab(p);
+  check("FL2 folding survives a restart", (await flowState(p)).folded === "ease,anchor,align" && (await vis(p, "#ecCopy")));
+  await p.page.click('.flow-cols [data-tool="ease"] .flow-fold');
+  before = p.ae.log.undo.length;
+  c = await p.page.evaluate(() => { const r = document.querySelector('.flow-tiles [data-tool="nullp"]').getBoundingClientRect(); return { x: r.left + 6, y: r.top + 6 }; });
+  await p.page.mouse.click(c.x, c.y); await p.idle();
+  check("FL3 a click anywhere on a tile runs its tool", p.ae.log.undo.length > before && /null/i.test(p.ae.log.undo.slice(before).join()), p.ae.log.undo.slice(before).join());
+  await p.page.dblclick('.flow-cols [data-tool="stagger"] .stagger-card, .flow-cols [data-tool="stagger"] .shift-row-step');
+  check("FL3 a double click does not start rearranging", !(await arrangingNow(p)));
+  await p.page.setViewportSize({ width: 760, height: 1000 }); await p.page.waitForTimeout(150);
+  t = await flowState(p);
+  check("FL4 a wider panel: two columns", t.n === "2" && (await overflow(p)) <= 0, JSON.stringify(t));
+  await p.page.setViewportSize({ width: 1100, height: 1000 }); await p.page.waitForTimeout(150);
+  t = await flowState(p);
+  check("FL4 a very wide panel: three columns, all tiles in one row", t.n === "3" && (await p.page.evaluate(() => new Set(Array.prototype.map.call(document.querySelectorAll(".flow-tiles .tool-card"), (c) => Math.round(c.getBoundingClientRect().top))).size)) === 1 && (await overflow(p)) <= 0, JSON.stringify(t));
+  await p.page.setViewportSize({ width: 420, height: 1200 }); await p.page.waitForTimeout(150);
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="glass"]'); await p.page.click("#settingsClose");
+  await motionTab(p);
+  t = await flowState(p);
+  check("FL5 another design: the usual grid is back, every block in its cell", !t.flow && t.direct === 12 && /^\d+ \/ span \d+$/.test(await p.page.evaluate(() => document.querySelector('#motionTools > [data-tool="ease"]').style.gridRow)) && (await vis(p, '#motionTools [data-tool="ease"] .tool-grip')) && (await p.page.locator("#motionTools .flow-part:visible").count()) === 0, JSON.stringify(t));
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="studio"]'); await p.page.click("#settingsClose");
+  await motionTab(p);
+  check("FL5 and back to «Студия»", (await flowState(p)).flow && (await flowState(p)).cols === "ease,easecopy,stagger,anchor,align" && p.errors.length === 0, p.errors.join(" | "));
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolPicker button[data-tool="cache"]'); await p.page.click('#toolPicker button[data-tool="anchor"]'); await p.page.click("#settingsClose");
+  await motionTab(p);
+  t = await flowState(p);
+  check("FL6 hidden tools are hidden here too", t.tiles === "paste,organize,unused,nullp,decompose,cutout" && t.cols === "ease,easecopy,stagger,align", JSON.stringify(t));
+  await p.close();
+
   console.log("\n=== updates ===");
   const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
   const U = "https://raw.example.com/acme/sayframe/main/version.json";
