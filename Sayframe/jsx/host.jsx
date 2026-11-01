@@ -2306,7 +2306,11 @@ var sayframeHost = (function () {
         w.show();
         try { place(); } catch (e4) {}
         try { w.active = true; q.active = true; } catch (e3) {}
-        return { shown: true, count: items.length };
+        // For the panel's settings: where the window was asked to go and where it actually is.
+        var real = null, scrList = [];
+        try { real = [Math.round(w.location[0]), Math.round(w.location[1])]; } catch (e5) {}
+        try { for (i = 0; i < (($.screens || []).length); i++) { scrList.push([$.screens[i].left, $.screens[i].top, $.screens[i].right, $.screens[i].bottom]); } } catch (e6) {}
+        return { shown: true, count: items.length, asked: [left, top], at: real, screens: scrList };
     }
 
     function fxCatalogData() {

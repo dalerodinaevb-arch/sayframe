@@ -2098,6 +2098,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = p.sys.exec.filter((x) => /mouseLocation/.test(x.args.join(" ")));
   check("FC7 the watcher cannot see the keys: a press caught by After Effects opens the window at the mouse anyway", !!W && W.shown && W.location[0] === 770 && W.location[1] === 430 && t.length === 1 && t[0].file === "osascript" &&
     (await p.page.locator("#fxConsole").isHidden()) && p.errors.length === 0, JSON.stringify([W && W.location, t.length, p.errors]));
+  t = await p.page.evaluate(() => document.getElementById("fxWhereState").textContent);
+  check("FC7 settings show where the mouse was and where the window went", t === "Последний вызов: мышь 800, 450 (система), окно поставлено в 770, 430; экраны: 0,0,1440,900.", t);
   await p.close();
   p = await open({ keyWatch: true, selectedLayers: [mkFxLayer("Фон")], settings: { fxWhere: "cursor" } });
   await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
@@ -2110,6 +2112,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await forwardEvents(p);
   await p.page.waitForTimeout(300);
   check("FC8 if the system does not say where the mouse is, the search opens in the panel as before", (await p.page.locator("#fxConsole").isVisible()) && p.ae.log.windows.length === 0 && p.errors.length === 0, p.errors.join(" | "));
+  t = await p.page.evaluate(() => document.getElementById("fxWhereState").textContent);
+  check("FC8 settings say the system did not tell where the mouse is", /^Последний вызов: система не сказала, где мышь \(execution error\), поиск открыт в панели\.$/.test(t), t);
   await p.close();
 
   // No layer selected: the window still opens and says so; Enter adds nothing until a layer is selected.

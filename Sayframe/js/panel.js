@@ -926,7 +926,7 @@
         bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
         bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"),
         bgBrandSwatches: el("bgBrandSwatches"), bgBrandHex: el("bgBrandHex"), bgBrandPick: el("bgBrandPick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        designPick: el("designPick"), panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), fxWhere: el("fxWhere"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
+        designPick: el("designPick"), panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), fxWhere: el("fxWhere"), fxWhereState: el("fxWhereState"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
@@ -5966,9 +5966,15 @@
     var FX_EVENT = "com.sayframe.fx";
 
     async function fxPopupAt(pos) {
+        var r;
         if (busy || !ui.modal.hidden) { return; }
         try {
-            await host("fxPopup", [pos.x, pos.y, fxState.fav, fxState.recent]);
+            r = await host("fxPopup", [pos.x, pos.y, fxState.fav, fxState.recent]);
+            if (r && r.shown) {
+                showFxWhereState("Последний вызов: мышь " + pos.x + ", " + pos.y + " (" + (pos.from || "помощник") + "), окно поставлено в " +
+                    (r.at ? r.at.join(", ") : "?") + (r.asked && r.at && (r.asked[0] !== r.at[0] || r.asked[1] !== r.at[1]) ? " вместо " + r.asked.join(", ") : "") +
+                    "; экраны: " + (r.screens || []).map(function (x) { return x.join(","); }).join(" | ") + ".");
+            }
         } catch (e) {
             // Окно не открылось — поиск в панели, как раньше.
             try { window.focus(); } catch (e2) {}
@@ -6665,6 +6671,12 @@
         runHotkey(id);
     }
 
+    // Что произошло при последнем поиске «у курсора» — видно в настройках, под выбором места поиска.
+    function showFxWhereState(text) {
+        ui.fxWhereState.textContent = text;
+        ui.fxWhereState.hidden = !text;
+    }
+
     var WATCH_WAIT_MS = 250;
     var hostConsoleWait = 0;
 
@@ -6678,9 +6690,10 @@
                     "Add-Type -AssemblyName System.Windows.Forms; $m = [System.Windows.Forms.Cursor]::Position; [Console]::Out.WriteLine('' + $m.X + ' ' + $m.Y)"], 5000) :
                 await platform.exec("osascript", ["-l", "JavaScript", "-e",
                     'ObjC.import("AppKit"); var m = $.NSEvent.mouseLocation, h = $.NSScreen.screens.objectAtIndex(0).frame.size.height; Math.round(m.x) + " " + Math.round(h - m.y)'], 5000);
-        } catch (e) { return null; }
+        } catch (e) { showFxWhereState("Последний вызов: система не сказала, где мышь (" + String(e && e.message || e).slice(0, 160) + "), поиск открыт в панели."); return null; }
         m = /(-?\d+)\s+(-?\d+)/.exec(r && r.code === 0 ? r.stdout : "");
-        return m ? { x: +m[1], y: +m[2] } : null;
+        if (!m) { showFxWhereState("Последний вызов: система не сказала, где мышь (" + String(r && (r.stderr || r.stdout) || "").replace(/\s+/g, " ").slice(0, 160) + "), поиск открыт в панели."); return null; }
+        return { x: +m[1], y: +m[2], from: "система" };
     }
 
     function listenHostHotkeys() {
