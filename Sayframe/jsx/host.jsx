@@ -5396,6 +5396,30 @@ var sayframeHost = (function () {
             });
         },
 
+        // What easing the selected keys have, for the graph in the panel: the out influence of the first selected
+        // key and the in influence of the next one (first property that has two). mixed: other pairs differ.
+        easeRead: function () {
+            return reply(function () {
+                var item = app.project.activeItem, groups, g, k, p, a, b, pair = null, out = { keys: 0 };
+                if (!item || !(item instanceof CompItem)) { return out; }
+                groups = ecGroups(item);
+                for (g = 0; g < groups.length; g++) {
+                    p = groups[g].prop;
+                    out.keys += groups[g].keys.length;
+                    for (k = 0; k + 1 < groups[g].keys.length; k++) {
+                        try {
+                            a = Math.round(p.keyOutTemporalEase(groups[g].keys[k])[0].influence);
+                            b = Math.round(p.keyInTemporalEase(groups[g].keys[k + 1])[0].influence);
+                        } catch (e) { continue; }
+                        if (!pair) { pair = { name: String(p.name), out: a, "in": b }; }
+                        else if (pair.out !== a || pair["in"] !== b) { pair.mixed = true; }
+                    }
+                }
+                if (pair) { out.name = pair.name; out.out = pair.out; out["in"] = pair["in"]; out.mixed = !!pair.mixed; }
+                return out;
+            });
+        },
+
         // Eases the selected keyframes. Influences are percentages (0.1-100); mode is "both", "in" or "out".
         ease: function (inInfluence, outInfluence, mode) {
             return reply(function () {

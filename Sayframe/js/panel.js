@@ -1038,7 +1038,8 @@
         ecThrough: el("ecThrough"), ecClip: el("ecClip"),
         easeIn: el("easeIn"), easeOut: el("easeOut"), easeInVal: el("easeInVal"), easeOutVal: el("easeOutVal"),
         easeLink: el("easeLink"), easeBothBtn: el("easeBothBtn"),
-        motionTools: el("motionTools"), alignGrid: el("alignGrid"), alignTo: el("alignTo"), easeCurve: el("easeCurve"), easeCurveToggle: el("easeCurveToggle"), easeCurvePath: el("easeCurvePath"), easeHandles: el("easeHandles"),
+        motionTools: el("motionTools"), alignGrid: el("alignGrid"), alignTo: el("alignTo"), easeCurve: el("easeCurve"), easeCurveToggle: el("easeCurveToggle"), easeCurvePath: el("easeCurvePath"), easeView: el("easeView"), easeState: el("easeState"),
+        easeSpeedFill: el("easeSpeedFill"), easeSpeedPath: el("easeSpeedPath"), easeSpeedHandles: el("easeSpeedHandles"), easeSpeedPeak: el("easeSpeedPeak"), easeSpeedEnds: el("easeSpeedEnds"), easeHandles: el("easeHandles"),
         anchorGrid: el("anchorGrid"), anchorKeys: el("anchorKeys")
     };
 
@@ -3433,7 +3434,7 @@
     // Так «Инструменты» выглядят после новой установки: блоки-кнопки закреплены сверху, под линией — «Время»,
     // «Якорь», «Выровнять» и «Плавность»; подсказки и списки свёрнуты (их открывает плюс в углу блока).
     // У тех, кто уже настроил панель, сохранённое не меняется; новые блоки встают сверху, ближе к середине.
-    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: false, anchorKeys: "key", alignTo: "comp",
+    var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: false, easeView: "speed", anchorKeys: "key", alignTo: "comp",
         order: "paste,unused,easecopy,decompose,organize,cache,nullp,cutout,shift,stagger,anchor,align,ease",
         sizes: "ease=14x0;shift=12x0;stagger=12x0;easecopy=17x0",
         places: "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;stagger=12,12;anchor=24,12;align=32,12;ease=40,12",
@@ -3614,6 +3615,7 @@
         m.easeOut = clampPercent(m.easeOut);
         if (m.anchorKeys !== "shift" && m.anchorKeys !== "skip") { m.anchorKeys = "key"; }
         if (m.alignTo !== "selection") { m.alignTo = "comp"; }
+        if (m.easeView !== "value") { m.easeView = "speed"; }
         if (SHIFT_TARGETS.indexOf(m.shiftWhat) < 0) { m.shiftWhat = "in"; }
         if (SHIFT_TARGETS.indexOf(m.staggerWhat) < 0) { m.staggerWhat = "layer"; }
         if (TIME_POINTS.indexOf(m.timeAlign) < 0) { m.timeAlign = "inStart"; }
@@ -3788,6 +3790,72 @@
         ui.easeLink.checked = motion.link;
         ui.easeCurvePath.setAttribute("d", "M" + x0 + " " + y0 + " C" + c1.toFixed(1) + " " + y0 + " " + c2.toFixed(1) + " " + y1 + " " + x1 + " " + y1);
         ui.easeHandles.setAttribute("d", "M" + x0 + " " + y0 + "H" + c1.toFixed(1) + "M" + x1 + " " + y1 + "H" + c2.toFixed(1));
+        drawEaseSpeed();
+        pressGroupV(ui.easeView, motion.easeView);
+        ui.easeCurve.setAttribute("data-view", motion.easeView);
+        showEaseState();
+    }
+
+    // График скорости, как Speed Graph в After Effects: та же кривая Безье, но по высоте — скорость.
+    // Слева выход из первого ключа (easeOut), справа вход во второй (easeIn); скорость у ключей — ноль.
+    function easeSpeedPoints(o, i) {
+        var pts = [], k, t, u, dx, dy;
+        o = Math.max(0.001, o / 100);
+        i = Math.max(0.001, i / 100);
+        for (k = 0; k <= 80; k++) {
+            t = k / 80; u = 1 - t;
+            dx = 3 * u * u * o + 6 * u * t * (1 - i - o) + 3 * t * t * i;
+            dy = 6 * u * t;
+            pts.push({ x: 3 * u * u * t * o + 3 * u * t * t * (1 - i) + t * t * t, s: dx > 1e-6 ? dy / dx : 0 });
+        }
+        return pts;
+    }
+
+    function drawEaseSpeed() {
+        var x0 = 12, x1 = 188, base = 76, top = 12, pts = easeSpeedPoints(motion.easeOut, motion.easeIn), max = 0, d = "", pk = null;
+        pts.forEach(function (q) { if (q.s > max) { max = q.s; pk = q; } });
+        pts.forEach(function (q, k) {
+            d += (k ? "L" : "M") + (x0 + q.x * (x1 - x0)).toFixed(1) + " " + (base - (max ? q.s / max : 0) * (base - top)).toFixed(1);
+        });
+        ui.easeSpeedPath.setAttribute("d", d);
+        ui.easeSpeedFill.setAttribute("d", d + "L" + x1 + " " + base + "L" + x0 + " " + base + "Z");
+        ui.easeSpeedHandles.setAttribute("d", "M" + x0 + " " + base + "H" + (x0 + (x1 - x0) * motion.easeOut / 100).toFixed(1) + "M" + x1 + " " + base + "H" + (x1 - (x1 - x0) * motion.easeIn / 100).toFixed(1));
+        ui.easeSpeedEnds.setAttribute("d", "M" + (x0 + (x1 - x0) * motion.easeOut / 100).toFixed(1) + " " + base + "h0M" + (x1 - (x1 - x0) * motion.easeIn / 100).toFixed(1) + " " + base + "h0");
+        ui.easeSpeedPeak.setAttribute("d", pk ? "M" + (x0 + pk.x * (x1 - x0)).toFixed(1) + " " + top + "h0" : "");
+    }
+
+    // Что показывает график: выделенные ключи (их плавность читается из After Effects) или ползунки.
+    var easeSeen = { sig: "", keys: 0, name: "", mixed: false };
+
+    function showEaseState() {
+        var t;
+        if (easeSeen.keys >= 2 && easeSeen.name) {
+            t = "Выделено " + plural(easeSeen.keys, "ключ", "ключа", "ключей") + ", «" + easeSeen.name + "»: выход " + motion.easeOut + "%, вход " + motion.easeIn + "%." +
+                (easeSeen.mixed ? " У других пар плавность другая — показана первая." : "");
+        } else if (easeSeen.keys === 1) {
+            t = "Выделен один ключ: выделите два и больше, чтобы увидеть их плавность.";
+        } else {
+            t = "";   // ничего не выделено: график показывает ползунки, строка не нужна
+        }
+        ui.easeState.textContent = t;
+        ui.easeCurve.title = t || "Ключи не выделены — график показывает настройку ползунков. Выделите ключи, и он покажет их плавность.";
+    }
+
+    // Раз в секунду, пока открыты «Инструменты»: какие ключи выделены. Новое выделение — ползунки и график встают по нему.
+    async function pollEaseState() {
+        var r, sig;
+        if (busy || liveEase.running || liveEase.pending || ui.viewMotion.hidden || document.hidden || motion.curve === false) { return; }
+        try { r = await host("easeRead", []); } catch (e) { return; }
+        sig = r.keys + "|" + (r.name || "") + "|" + (r.out === undefined ? "" : r.out + "/" + r["in"]);
+        if (sig === easeSeen.sig) { return; }
+        easeSeen = { sig: sig, keys: r.keys || 0, name: r.name || "", mixed: !!r.mixed };
+        if (r.name && typeof r.out === "number" && typeof r["in"] === "number") {
+            motion.easeOut = clampPercent(r.out);
+            motion.easeIn = clampPercent(r["in"]);
+            if (motion.easeOut !== motion.easeIn) { motion.link = false; }
+            storeMotion();
+        }
+        drawEase();
     }
 
     function setEase(which, v) {
@@ -9717,6 +9785,10 @@
         enableToolResizing(mg);
         ui.anchorKeys.value = motion.anchorKeys;
         drawEase();
+        Array.prototype.forEach.call(ui.easeView.querySelectorAll("button[data-v]"), function (b) {
+            b.addEventListener("click", function () { motion.easeView = b.getAttribute("data-v") === "value" ? "value" : "speed"; storeMotion(); drawEase(); });
+        });
+        setInterval(pollEaseState, 1000);
         ui.easeIn.addEventListener("input", function () { onEaseSlider("in"); });
         ui.easeOut.addEventListener("input", function () { onEaseSlider("out"); });
         ui.easeInVal.addEventListener("change", function () { onEaseNumber("in"); });

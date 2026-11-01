@@ -241,11 +241,28 @@
       <button id="easeCurveToggle" class="tool-toggle" aria-expanded="true" aria-controls="easeCurve" aria-label="Скрыть кривую" title="Скрыть кривую">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
       </button>
-      <svg id="easeCurve" class="ease-curve" viewBox="0 0 200 84" preserveAspectRatio="none" aria-hidden="true">
+      <div id="easeCurve" class="ease-graph">
+        <div id="easeView" class="seg ease-view" role="group" aria-label="Какой график показать">
+          <button type="button" data-v="speed" title="Скорость: как быстро движется объект в каждый момент (как Speed Graph в After Effects)">Скорость</button>
+          <button type="button" data-v="value" title="Значение: где объект в каждый момент (как Value Graph в After Effects)">Значение</button>
+        </div>
+        <svg id="easeSpeed" class="ease-curve ease-speed" viewBox="0 0 200 84" preserveAspectRatio="none" aria-hidden="true">
+          <path class="ease-grid" d="M70.7 0V84M129.3 0V84M0 43H200"/>
+          <path class="ease-base" d="M0 76H200"/>
+          <path id="easeSpeedFill" class="ease-speed-fill" d=""/>
+          <path id="easeSpeedPath" class="ease-line" d=""/>
+          <path id="easeSpeedHandles" class="ease-infl" d=""/>
+          <path id="easeSpeedEnds" class="ease-infl-end" d=""/>
+          <path id="easeSpeedKeys" class="ease-keys" d="M12 76h0M188 76h0"/>
+          <path id="easeSpeedPeak" class="ease-peak" d=""/>
+        </svg>
+        <svg class="ease-curve ease-value" viewBox="0 0 200 84" preserveAspectRatio="none" aria-hidden="true">
         <path class="ease-guide" d="M12 72H188M12 12H188"/>
         <path id="easeHandles" class="ease-handles" d=""/>
         <path id="easeCurvePath" class="ease-line" d=""/>
       </svg>
+        <small id="easeState" class="ease-state" aria-live="polite"></small>
+      </div>
       <!-- Как у ключа в редакторе графиков: слева входящая сторона, справа исходящая, длина ползунка — влияние -->
       <div class="ease-bar">
         <input id="easeIn" class="ease-slider ease-slider-in" type="range" min="0" max="100" step="1" value="60" aria-label="Влияние на входе в ключ, процентов" title="Вход в ключ: как плавно движение останавливается">

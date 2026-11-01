@@ -3093,7 +3093,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("M1 no horizontal overflow at 380px", t <= 0, t);
   await p.page.screenshot({ path: path.join(SHOTS, "21-tab-motion.png") });
   check("M2 sliders start linked at 60", (await p.page.inputValue("#easeIn")) === "60" && (await p.page.inputValue("#easeOut")) === "60" && (await p.page.isChecked("#easeLink")) && (await p.page.inputValue("#easeInVal")) === "60" && (await p.page.inputValue("#easeOutVal")) === "60");
-  check("M2 the easing block: a title, the apply button, the curve toggle and the keyboard handle, no slider labels", (await p.page.locator("#viewMotion .ease-card button").count()) === 4 && (await p.page.locator("#viewMotion .ease-card .tool-pin").count()) === 1 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link)").count()) === 0 && (await p.page.locator(".ease-card .tool-head b").innerText()) === "Плавность" && (await p.page.locator("#showCurve").count()) === 0);
+  check("M2 the easing block: a title, the apply button, the curve toggle, the keyboard handle and the graph switch, no slider labels", (await p.page.locator("#viewMotion .ease-card button:not(#easeView button)").count()) === 4 && (await p.page.locator("#easeView button").count()) === 2 && (await p.page.locator("#viewMotion .ease-card .tool-pin").count()) === 1 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link)").count()) === 0 && (await p.page.locator(".ease-card .tool-head b").innerText()) === "Плавность" && (await p.page.locator("#showCurve").count()) === 0);
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); const a = r("easeIn"), b = r("easeBothBtn"), c = r("easeOut"), n1 = r("easeInVal"), l = document.querySelector(".ease-link").getBoundingClientRect(), n2 = r("easeOutVal"); return { row: a.right <= b.left && b.right <= c.left && Math.abs((a.top + a.bottom) - (c.top + c.bottom)) < 2, equal: Math.abs(a.width - c.width) < 2, nums: n1.right <= l.left && l.right <= n2.left && n1.top >= b.bottom - 1, centered: Math.abs((l.left + l.right) / 2 - (b.left + b.right) / 2) < 2, rtl: getComputedStyle(document.getElementById("easeIn")).direction }; });
   check("M2 layout: slider, button, slider in one row; numbers and link centred under the button", t.row && t.equal && t.nums && t.centered, JSON.stringify(t));
   check("M2 the left slider grows away from the button", t.rtl === "rtl" && (await fillOf(p, "easeIn")) === "0.6" && (await fillOf(p, "easeOut")) === "0.6", t.rtl);
@@ -4824,6 +4824,27 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.locator("label.switch", { has: p.page.locator("#infoTipsOn") }).click(); await p.page.click("#saveSettings");
     await p.page.mouse.move(b3.x + 20, b3.y + 10); await p.page.waitForTimeout(1300);
     check("IT5 switched off: no window", (await tip()) === "" && p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
+  }
+
+  // The ease graph: speed (as in AE's Speed Graph) or value; it reads the easing of the selected keys.
+  {
+    const clockG = { time: 0 };
+    const POS = new Prop([0, 0], clockG, { name: "Position" }).addKey(0, [0, 0], { selected: true }).addKey(1, [500, 0], { selected: true });
+    POS.keys[0].outEase = POS._ease(0, 15); POS.keys[1].inEase = POS._ease(0, 85);
+    p = await open({ selectedProperties: [POS] });
+    await p.page.click("#tabMotion");
+    await p.page.waitForFunction(() => /Выделено/.test(document.getElementById("easeState").textContent), null, { timeout: 4000 }).catch(() => {});
+    check("EG1 the graph shows speed by default, with the switch «Скорость / Значение»", (await vis(p, "#easeSpeed")) && !(await vis(p, ".ease-value")) && (await p.page.getAttribute('#easeView button[aria-pressed="true"]', "data-v")) === "speed");
+    check("EG1 selected keys: the sliders and the graph take their easing, the line under the graph says so", (await p.page.inputValue("#easeOutVal")) === "15" && (await p.page.inputValue("#easeInVal")) === "85" && (await p.page.locator("#easeState").innerText()) === "Выделено 2 ключа, «Position»: выход 15%, вход 85%." && !(await p.page.isChecked("#easeLink")), await p.page.locator("#easeState").innerText());
+    t = await p.page.getAttribute("#easeSpeedPeak", "d");
+    check("EG1 fast start, long braking: the top of the speed curve is in the first third", Number(/^M([\d.]+)/.exec(t)[1]) < 12 + 176 / 3, t);
+    await p.page.screenshot({ path: path.join(SHOTS, "79-ease-speed.png") });
+    await p.page.click('#easeView button[data-v="value"]');
+    check("EG2 «Значение» shows the old value curve; the choice is remembered", (await vis(p, ".ease-value")) && !(await vis(p, "#easeSpeed")) && (await savedMotion(p, "easeView")) === "value");
+    POS.keys.forEach((k) => { k.selected = false; });
+    await p.page.waitForFunction(() => document.getElementById("easeState").textContent === "", null, { timeout: 4000 }).catch(() => {});
+    check("EG3 nothing selected: the line goes away, the graph shows the sliders", (await p.page.locator("#easeState").innerText()) === "" && /Ключи не выделены/.test(await p.page.getAttribute("#easeCurve", "title")) && (await p.page.inputValue("#easeOutVal")) === "15" && p.errors.length === 0, await p.page.locator("#easeState").innerText());
     await p.close();
   }
 
