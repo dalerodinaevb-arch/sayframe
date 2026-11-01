@@ -2222,7 +2222,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   let AL = mkAcLayer("Логотип", "av"), ACam = mkAcLayer("Камера", "camera");
   p = await open({ selectedLayers: [AL, ACam] });
   await p.tab("tools");
-  check("AC1 the Animation tab: five sections, 'Transitions' open, search, timing and a card grid", (await p.page.locator('#acTabs button[aria-selected="true"]').innerText()) === "Переходы" && (await acCards(p)).length === 26 && (await p.page.locator("#acSearch").isVisible()) && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acDurVal").innerText()) === "0,8 с" && (await p.page.locator("#acColorRow").isVisible()) && (await p.page.locator("#acFolders button").allInnerTexts()).join() === "Все,Зум,Панорама,Поворот,Тряска,Глитч,Засветки,Размытие и затемнение,Шейпы");
+  check("AC1 the Animation tab: five sections, 'Transitions' open, search, timing and a card grid", (await p.page.locator('#acTabs button[aria-selected="true"]').innerText()) === "Переходы" && (await acCards(p)).length === 26 && (await p.page.locator("#acSearch").isVisible()) && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acDurVal").innerText()) === "0,8 с" && (await p.page.locator("#acColorRow").isHidden()) && (await p.page.locator("#acFolders button").allInnerTexts()).join() === "Все,Зум,Панорама,Поворот,Тряска,Глитч,Засветки,Размытие и затемнение,Шейпы");
+  t = await p.page.evaluate(() => { const side = document.getElementById("acFolders").getBoundingClientRect(), grid = document.getElementById("acGrid").getBoundingClientRect(), foot = document.getElementById("acFoot").getBoundingClientRect(), dur = document.getElementById("acDurRow").getBoundingClientRect(); return [side.right <= grid.left, Math.abs(side.top - grid.top) < 2, dur.top >= foot.top && dur.bottom <= foot.bottom, foot.top >= grid.bottom, document.querySelector("#acFolders .ac-side-h").textContent]; });
+  check("AC1 kinds are a list on the left of the cards, duration sits in the bar at the bottom", t.join() === "true,true,true,true,Виды", t.join());
+  await p.page.click('#acFolders button[data-folder="shapes"]');
+  check("AC1 the colour shows in Transitions only for shapes (wipes and the circle)", await p.page.locator("#acColorRow").isVisible());
+  await p.page.click('#acFolders button[data-folder="all"]');
   await p.page.locator("#acGrid .ac-card").first().hover();
   await p.page.waitForTimeout(400);
   await p.page.screenshot({ path: path.join(SHOTS, "28-animation-library.png") });

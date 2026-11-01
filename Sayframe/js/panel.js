@@ -4300,9 +4300,11 @@
         });
         ui.acFavOnly.setAttribute("aria-pressed", acState.favOnly ? "true" : "false");
         ui.acModeRow.hidden = editing || !(searching || sec === "text" || sec === "anim");
-        ui.acColorRow.hidden = editing || !(searching || sec === "graphic" || sec === "trans");
+        // Цвет нужен только графике и переходам-шейпам (шторки, круг).
+        ui.acColorRow.hidden = editing || !(searching || sec === "graphic" || (sec === "trans" && acState.tfolder === "shapes"));
         ui.acDurRow.hidden = editing || (!searching && (sec === "sfx" || sec === "graphic"));
         ui.acFoot.hidden = editing;
+        ui.acHint.hidden = editing;
         renderSfFolders(!searching && !editing && (sec === "anim" || sec === "trans" || sec === "text" || sec === "sfx" || sec === "graphic") ? sec : "");
         if (ui.acSndRow) {
             ui.acSndRow.hidden = editing || !(searching || sec === "sfx");
@@ -4344,8 +4346,16 @@
         var box = ui.acFolders, key = sec === "trans" ? "tfolder" : (sec === "text" ? "xfolder" : (sec === "sfx" ? "sfolder" : (sec === "graphic" ? "gfolder" : "folder")));
         if (!box) { return; }
         box.hidden = !sec;
+        box.parentNode.classList.toggle("with-side", !!sec);
         if (!sec) { return; }
         box.innerHTML = "";
+        function head(text) {
+            var h = document.createElement("div");
+            h.className = "ac-side-h";
+            h.textContent = text;
+            box.appendChild(h);
+        }
+        head("Виды");
         function chips(list, k, attr) {
             list.forEach(function (f) {
                 var b = document.createElement("button");
@@ -4362,6 +4372,7 @@
             var br = document.createElement("span");
             br.className = "ac-folder-break";
             box.appendChild(br);
+            head("По чему");
             chips(TX_UNITS, "xunit", "data-unit");
         }
     }
@@ -5613,7 +5624,7 @@
         row.className = "ac-row ac-snd";
         row.innerHTML = '<label class="ac-slider">Высота тона <input id="acPitch" class="range" type="range" min="-12" max="12" step="1" aria-label="Высота тона"><output id="acPitchVal"></output></label>' +
             '<label class="ac-slider">Громкость <input id="acVol" class="range" type="range" min="-24" max="6" step="1" aria-label="Громкость"><output id="acVolVal"></output></label>';
-        ui.acFolders.parentNode.insertBefore(row, ui.acFolders);
+        ui.acFoot.querySelector(".ac-opts").appendChild(row);
         ui.acSndRow = row;
         ui.acPitch = row.querySelector("#acPitch"); ui.acPitchVal = row.querySelector("#acPitchVal");
         ui.acVol = row.querySelector("#acVol"); ui.acVolVal = row.querySelector("#acVolVal");
