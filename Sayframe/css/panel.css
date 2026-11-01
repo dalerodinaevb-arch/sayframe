@@ -65,7 +65,7 @@ button { cursor: pointer; }
 #app > * { flex: none; align-self: flex-start; width: 100%; max-width: calc(var(--panel-w) - 28px); }
 /* Шапка и вкладки прилипают к верху, когда раздел прокручивают. Под ними — подложка #topShade цвета фона
    (видна только после прокрутки), чтобы прокрученное не просвечивало в промежутках. */
-#app { --app-pad: 14px; --app-gap: 12px; }
+#app { --app-pad: 14px; --app-gap: 12px; isolation: isolate; }  /* прилипшие шапка и вкладки не встают поверх окон (поиск эффектов, диалоги) */
 #app > .top { position: sticky; top: 0; z-index: 7; }
 #app > #tabs { position: sticky; top: calc(var(--top-h, 30px) + var(--app-gap)); z-index: 6; }
 #app > #topShade { position: sticky; top: calc(-1 * var(--app-pad)); z-index: 5; display: block; width: auto; max-width: none; align-self: stretch; pointer-events: none;
