@@ -4419,7 +4419,14 @@
             thumb.appendChild(bar);
         }
         if (p.sec === "sfx") {
-            for (i = 0; i < 5; i++) { bar = document.createElement("i"); obj.appendChild(bar); }
+            // Настоящая волна звука (из sfx/peaks.json); пока она не прочитана — пять полосок-эквалайзер.
+            if (SFX_PEAKS && SFX_PEAKS[p.id]) {
+                obj.className = "ac-obj ac-wave";
+                thumb.classList.add("ac-thumb-wave");
+                obj.innerHTML = sfxWaveSvg(SFX_PEAKS[p.id].p, "") + sfxWaveSvg(SFX_PEAKS[p.id].p, "ac-wave-done") + "<i class=\"ac-wave-head\"></i>";
+            } else {
+                for (i = 0; i < 5; i++) { bar = document.createElement("i"); obj.appendChild(bar); }
+            }
         }
         if (p.sec === "kit") {
             // Стекло над цветной картинкой: под ним всё размыто и чуть увеличено, по краю — блик.
@@ -4435,6 +4442,7 @@
         var searching = !!ui.acSearch.value.replace(/\s/g, "") || acState.favOnly;
         var sec = acState.sec;
         var editing = sec === "edit" && !searching;
+        if (sec === "sfx" || searching) { loadSfxPeaks(); }
         if (acSeen) { acSeen.disconnect(); }
         grLive = [];
         ui.acGrid.innerHTML = "";
@@ -5339,6 +5347,14 @@
             play.setAttribute("aria-label", "Послушать «" + p.name + "»");
             play.addEventListener("click", function (e) { e.stopPropagation(); acPreviewSound(p); });
             card.appendChild(play);
+            if (SFX_PEAKS && SFX_PEAKS[p.id]) {
+                badge = document.createElement("span");
+                badge.className = "ac-dur";
+                card.classList.add("has-dur");
+                badge.setAttribute("data-id", p.id);
+                badge.textContent = sfxDurText(p.id);
+                card.appendChild(badge);
+            }
         }
         if (p.motion) {
             badge = document.createElement("span");
@@ -5902,7 +5918,51 @@
             gain.gain.value = Math.pow(10, acState.vol / 20);
             acSrc.connect(gain); gain.connect(acCtx.destination);
             acSrc.start();
+            sfxShowPlaying(p.id, buf.duration * acState.len / 100);
         } catch (e) {}
+    }
+
+    // Волны карточек «Звуки»: длина и 48 уровней громкости на каждый звук, читаются один раз.
+    var SFX_PEAKS = null, sfxPeaksLoading = false;
+    function loadSfxPeaks() {
+        if (SFX_PEAKS || sfxPeaksLoading) { return; }
+        sfxPeaksLoading = true;
+        platform.readText(platform.join(extensionDir(), "sfx", "peaks.json")).then(function (text) {
+            var d = JSON.parse(text);
+            if (d && typeof d === "object") { SFX_PEAKS = d; if (acState.sec === "sfx" || ui.acSearch.value) { renderAc(); } }
+        }).catch(function () {});
+    }
+
+    function sfxWaveSvg(pk, cls) {
+        var out = "", i, a;
+        for (i = 0; i < pk.length; i++) {
+            a = Math.max(0.6, (Number(pk[i]) || 0) / 100 * 19);
+            out += "<rect x=\"" + (i * 2 + 0.3) + "\" y=\"" + (20 - a).toFixed(1) + "\" width=\"1.4\" height=\"" + (2 * a).toFixed(1) + "\" rx=\"0.5\"/>";
+        }
+        return "<svg class=\"ac-wave-svg" + (cls ? " " + cls : "") + "\" viewBox=\"0 0 " + pk.length * 2 + " 40\" preserveAspectRatio=\"none\" aria-hidden=\"true\">" +
+            "<line x1=\"0\" x2=\"" + pk.length * 2 + "\" y1=\"20\" y2=\"20\"/>" + out + "</svg>";
+    }
+
+    // Длина звука на карточке — с учётом ползунка «Длина».
+    function sfxDurText(id) {
+        var d = SFX_PEAKS && SFX_PEAKS[id] ? SFX_PEAKS[id].dur * acState.len / 100 : 0;
+        return d ? (Math.round(d * 10) / 10).toFixed(1).replace(".", ",") + " с" : "";
+    }
+
+    function sfxUpdateDurs() {
+        Array.prototype.forEach.call(document.querySelectorAll("#acGrid .ac-dur"), function (el) { el.textContent = sfxDurText(el.getAttribute("data-id")); });
+    }
+
+    // Пока звук играет, пройденная часть волны подсвечивается и по ней бежит линия.
+    function sfxShowPlaying(id, seconds) {
+        Array.prototype.forEach.call(document.querySelectorAll("#acGrid .ac-card.playing"), function (c) { c.classList.remove("playing"); });
+        var card = document.querySelector('#acGrid .ac-card[data-key="sfx:' + id + '"]');
+        if (!card || !seconds) { return; }
+        void card.offsetWidth;
+        card.style.setProperty("--play", seconds.toFixed(3) + "s");
+        card.classList.add("playing");
+        clearTimeout(card.playTimer);
+        card.playTimer = setTimeout(function () { card.classList.remove("playing"); }, seconds * 1000 + 100);
     }
 
     function pitchText(v) { v = Math.round(v * 10) / 10; return (v > 0 ? "+" : "") + String(v).replace(".", ",") + " пт"; }
@@ -5922,7 +5982,7 @@
         ui.acPitch = row.querySelector("#acPitch"); ui.acPitchVal = row.querySelector("#acPitchVal");
         ui.acVol = row.querySelector("#acVol"); ui.acVolVal = row.querySelector("#acVolVal");
         ui.acLen = row.querySelector("#acLen"); ui.acLenVal = row.querySelector("#acLenVal");
-        ui.acLen.addEventListener("input", function () { acState.len = Number(ui.acLen.value); ui.acLenVal.textContent = lenText(acState.len); storeAcState(); });
+        ui.acLen.addEventListener("input", function () { acState.len = Number(ui.acLen.value); ui.acLenVal.textContent = lenText(acState.len); storeAcState(); sfxUpdateDurs(); });
         ui.acLen.addEventListener("change", function () { sndToSelected({ len: acState.len }); });
         ui.acPitch.addEventListener("input", function () { acState.pitch = Number(ui.acPitch.value); ui.acPitchVal.textContent = pitchText(acState.pitch); storeAcState(); });
         ui.acVol.addEventListener("input", function () { acState.vol = Number(ui.acVol.value); ui.acVolVal.textContent = volText(acState.vol); storeAcState(); });

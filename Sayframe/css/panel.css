@@ -1375,6 +1375,20 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .ac-sfx { display: flex; align-items: center; gap: 4px; height: 40%; }
 .ac-sfx i { display: block; width: 5px; height: 40%; border-radius: 3px; background: var(--accent-hi); }
 .ac-sfx i:nth-child(2) { height: 80%; } .ac-sfx i:nth-child(3) { height: 100%; } .ac-sfx i:nth-child(4) { height: 60%; } .ac-sfx i:nth-child(5) { height: 30%; }
+/* Звуки: настоящая волна на карточке, пройденная часть подсвечивается, пока звук играет */
+.ac-wave { position: absolute; inset: 22% 8px; display: block; }
+.ac-wave-svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: var(--accent-hi); }
+.ac-wave-svg line { stroke: var(--accent-hi); stroke-opacity: 0.35; stroke-width: 0.6; vector-effect: non-scaling-stroke; }
+.ac-wave-done { fill: #f9a8d4; clip-path: inset(0 100% 0 0); }
+.ac-wave-done line { stroke: #f9a8d4; }
+.ac-wave-head { position: absolute; top: -4px; bottom: -4px; left: 0; width: 2px; border-radius: 1px; background: #fff; opacity: 0; }
+.ac-card.playing .ac-wave-done { animation: wave-done var(--play, 1s) linear forwards; }
+.ac-card.playing .ac-wave-head { opacity: 1; animation: wave-head var(--play, 1s) linear forwards; }
+@keyframes wave-done { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes wave-head { from { left: 0; } to { left: calc(100% - 2px); } }
+.ac-card.has-dur .ac-name { padding-right: 40px; }
+.ac-thumb.ac-thumb-wave { background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.22), rgba(var(--accent-rgb), 0.06)), #120e1a; }
+.ac-dur { position: absolute; right: 2px; bottom: 0; font: 600 11px/1.25 var(--round); color: var(--muted); opacity: 0.8; pointer-events: none; }
 .ac-card:hover .ac-sfx i, .ac-card:focus-visible .ac-sfx i { animation: pv-eq 0.6s ease-in-out infinite alternate; }
 .ac-card:hover .ac-sfx i:nth-child(2n), .ac-card:focus-visible .ac-sfx i:nth-child(2n) { animation-delay: -0.3s; }
 @keyframes pv-eq { from { transform: scaleY(0.3); } to { transform: scaleY(1); } }

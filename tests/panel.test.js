@@ -2555,6 +2555,17 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const listed = await p.page.evaluate(() => Array.from(document.querySelectorAll("#acGrid .ac-card")).map((c) => c.getAttribute("data-key").replace(/^sfx:/, "") + ".wav").sort());
   check("AC13 every sound in the panel has its file and every file is in the panel", JSON.stringify(listed) === JSON.stringify(t.slice().sort()), listed.length + " vs " + t.length);
   check("AC13 all 94 sounds are real WAV files", t.length === 94 && t.every((n) => fs.readFileSync(path.join(EXT, "sfx", n)).subarray(0, 4).toString() === "RIFF" && fs.readFileSync(path.join(EXT, "sfx", n)).subarray(8, 12).toString() === "WAVE"), t.join());
+  // Cards show the sound's real waveform (sfx/peaks.json, made by tools/sfx_peaks.py) and its length.
+  const PEAKS = JSON.parse(fs.readFileSync(path.join(EXT, "sfx", "peaks.json"), "utf8"));
+  check("AC14 peaks.json has a waveform for every sound file (run tools/sfx_peaks.py after changing sounds)", t.every((n) => { const k = PEAKS[n.replace(/\.wav$/, "")]; return k && k.p.length === 48 && Math.max(...k.p) === 100 && k.dur > 0; }) && Object.keys(PEAKS).length === t.length);
+  const whooshWav = fs.readFileSync(path.join(EXT, "sfx", "whoosh.wav"));
+  check("AC14 the stored length is the file's length", Math.abs(PEAKS.whoosh.dur - whooshWav.readUInt32LE(40) / 2 / 44100) < 0.002, PEAKS.whoosh.dur);
+  check("AC14 every card draws its own waveform, 48 bars, and shows its length", (await p.page.locator("#acGrid .ac-wave").count()) === 94 && (await p.page.locator("#acGrid .ac-card").first().locator(".ac-wave-svg").first().locator("rect").count()) === 48 && (await p.page.locator("#acGrid .ac-card").first().locator(".ac-dur").innerText()) === (Math.round(PEAKS.whoosh.dur * 10) / 10).toFixed(1).replace(".", ",") + " с");
+  check("AC14 the length is not part of the name", (await acCards(p))[0] === "Вжух");
+  await p.page.evaluate(() => { const r = document.getElementById("acLen"); r.value = "200"; r.dispatchEvent(new Event("input", { bubbles: true })); });
+  check("AC14 'Length' 200% doubles the lengths on the cards right away", (await p.page.locator("#acGrid .ac-card").first().locator(".ac-dur").innerText()) === (Math.round(PEAKS.whoosh.dur * 20) / 10).toFixed(1).replace(".", ",") + " с", await p.page.locator("#acGrid .ac-card").first().locator(".ac-dur").innerText());
+  await p.page.locator("#acGrid .ac-play").first().click(); await p.page.waitForTimeout(300);
+  check("AC14 ▶ marks the card as playing: the played part lights up and a line runs over the wave", (await p.page.locator("#acGrid .ac-card.playing").count()) === 1 && (await p.page.locator("#acGrid .ac-card").first().evaluate((c) => c.classList.contains("playing") && /s$/.test(c.style.getPropertyValue("--play")))) && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
   // Favourites, search across sections, card size, nothing selected.
