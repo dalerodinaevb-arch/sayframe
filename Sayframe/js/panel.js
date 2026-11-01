@@ -1002,10 +1002,11 @@
         cutoutStage: el("cutoutStage"), cutoutCanvas: el("cutoutCanvas"), cutoutBusy: el("cutoutBusy"), cutoutNote: el("cutoutNote"),
         cutoutEdge: el("cutoutEdge"), cutoutUndo: el("cutoutUndo"), cutoutReset: el("cutoutReset"), cutoutDone: el("cutoutDone"),
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
-        shiftOptsToggle: el("shiftOptsToggle"), shiftPick: el("shiftPick"), timePick: el("timePick"), staggerPick: el("staggerPick"),
-        shiftWhat: el("shiftWhat"), shiftStep: el("shiftStep"), shiftBack: el("shiftBack"), shiftFwd: el("shiftFwd"),
-        timeAlign: el("timeAlign"), timeAlignBtn: el("timeAlignBtn"),
-        staggerWhat: el("staggerWhat"), staggerStep: el("staggerStep"), staggerOrder: el("staggerOrder"), staggerBtn: el("staggerBtn"),
+        shiftOptsToggle: el("shiftOptsToggle"), shiftPrevBox: el("shiftPrevBox"), shiftPrev: el("shiftPrev"), shiftPrevText: el("shiftPrevText"),
+        shiftWhat: el("shiftWhat"), shiftStep: el("shiftStep"), shiftBack: el("shiftBack"), shiftFwd: el("shiftFwd"), timeAlign: el("timeAlign"),
+        staggerOptsToggle: el("staggerOptsToggle"), staggerPrevBox: el("staggerPrevBox"), staggerPrev: el("staggerPrev"), staggerPrevText: el("staggerPrevText"),
+        staggerWhat: el("staggerWhat"), staggerStep: el("staggerStep"), staggerLess: el("staggerLess"), staggerMore: el("staggerMore"),
+        staggerOrder: el("staggerOrder"), staggerOrderName: el("staggerOrderName"), staggerBtn: el("staggerBtn"),
         frames: el("frames"), saveSettings: el("saveSettings"),
         modal: el("modal"), modalTitle: el("modalTitle"), modalText: el("modalText"), modalCode: el("modalCode"),
         modalButtons: el("modalButtons"),
@@ -3427,24 +3428,24 @@
     var GRID_VERSION = 2;         // 2 — мелкая сетка (шаг 22 px)
     // Так было до 1.40.0: блоки по порядку, без мест и булавок, всё развёрнуто.
     var MOTION_LEGACY = { curve: true, order: "ease,anchor,align,shift,paste,organize,easecopy,decompose,cache,nullp,unused,cutout", sizes: "", places: "", pins: "",
-        ecOpts: true, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, cutoutOpts: true, splitOpts: true, anchorOpts: true, alignOpts: true };
+        ecOpts: true, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, cutoutOpts: true, splitOpts: true, anchorOpts: true, alignOpts: true, staggerOpts: true };
 
     // Так «Инструменты» выглядят после новой установки: блоки-кнопки закреплены сверху, под линией — «Время»,
     // «Якорь», «Выровнять» и «Плавность»; подсказки и списки свёрнуты (их открывает плюс в углу блока).
     // У тех, кто уже настроил панель, сохранённое не меняется; новые блоки встают сверху, ближе к середине.
     var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: false, anchorKeys: "key", alignTo: "comp",
-        order: "paste,unused,easecopy,decompose,organize,cache,nullp,cutout,shift,anchor,align,ease",
-        sizes: "ease=14x0;shift=12x0;easecopy=17x0",
-        places: "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12",
+        order: "paste,unused,easecopy,decompose,organize,cache,nullp,cutout,shift,stagger,anchor,align,ease",
+        sizes: "ease=14x0;shift=12x0;stagger=12x0;easecopy=17x0",
+        places: "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;stagger=12,12;anchor=24,12;align=32,12;ease=40,12",
         pins: "paste,unused,easecopy,decompose,organize,cache,nullp,cutout", grid: GRID_VERSION,
         ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false, cutoutOpts: false, splitOpts: false,
         anchorOpts: false, alignOpts: false,
-        shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true };
+        shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true, staggerOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
     var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
     var STAGGER_ORDERS = ["asc", "desc", "selection", "random"];
     var MAX_STEP_FRAMES = 999;
-    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
+    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "stagger", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
     var SHAPE_TOOL_NAMES = ["split"];
     // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
     // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
@@ -3670,8 +3671,8 @@
             { key: "unusedOpts", button: ui.unusedOptsToggle, part: ui.unusedHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "cutoutOpts", button: ui.cutoutOptsToggle, part: ui.cutoutHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "splitOpts", button: ui.splitOptsToggle, part: ui.splitHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
-            { key: "shiftOpts", button: ui.shiftOptsToggle, part: ui.shiftPick, more: [ui.timePick, ui.staggerPick, ui.staggerOrder], hide: "Скрыть списки", show: "Показать списки",
-                selects: [ui.shiftWhat, ui.timeAlign, ui.staggerWhat, ui.staggerOrder] }
+            { key: "shiftOpts", button: ui.shiftOptsToggle, part: ui.shiftPrevBox, hide: "Скрыть схему", show: "Показать схему" },
+            { key: "staggerOpts", button: ui.staggerOptsToggle, part: ui.staggerPrevBox, hide: "Скрыть схему", show: "Показать схему" }
         ];
     }
 
@@ -3894,8 +3895,11 @@
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
         cells = ui.distGrid.querySelectorAll("button");
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
-        cells = [ui.shiftWhat, ui.shiftStep, ui.shiftBack, ui.shiftFwd, ui.timeAlign, ui.timeAlignBtn, ui.staggerWhat, ui.staggerStep, ui.staggerOrder, ui.staggerBtn];
+        cells = [ui.shiftStep, ui.shiftBack, ui.shiftFwd, ui.staggerStep, ui.staggerLess, ui.staggerMore, ui.staggerBtn];
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
+        [ui.shiftWhat, ui.timeAlign, ui.staggerWhat, ui.staggerOrder].forEach(function (g) {
+            Array.prototype.forEach.call(g.querySelectorAll("button"), function (b) { b.disabled = on; });
+        });
     }
 
     // ------------------------------------------------------------ раздел «Анимация»
@@ -8804,13 +8808,105 @@
 
     // ---- сдвиг во времени: появление, исчезновение или слой целиком
 
+    var ORDER_NAMES = { asc: "сверху вниз", desc: "снизу вверх", selection: "как выделяли", random: "случайно" };
+    var TIME_POINT_NAMES = { inStart: "Начало появления", inEnd: "Конец появления", outStart: "Начало исчезновения", outEnd: "Конец исчезновения" };
+    var shiftLook = { dir: 1, point: "" };   // что показывает схема «Сдвига»: стрелку (наведение) или указатель
+
+    function pressGroupV(group, v) {
+        Array.prototype.forEach.call(group.querySelectorAll("button[data-v]"), function (b) {
+            b.setAttribute("aria-pressed", b.getAttribute("data-v") === v ? "true" : "false");
+        });
+    }
+
+    // Полоска слоя на схеме: слева появление (фиолетовое), справа исчезновение (розовое).
+    // x0..x1 — края слоя, a — длина появления и исчезновения, hi — что выделено цветом.
+    function tlBar(x0, x1, y, h, a, hi, ghost) {
+        var r = Math.min(2.5, h / 2), out;
+        if (ghost) {
+            return "<rect class=\"tl-ghost\" x=\"" + x0 + "\" y=\"" + y + "\" width=\"" + (x1 - x0) + "\" height=\"" + h + "\" rx=\"" + r + "\"/>";
+        }
+        out = "<rect class=\"" + (hi === "layer" ? "tl-hi" : "tl-bar") + "\" x=\"" + x0 + "\" y=\"" + y + "\" width=\"" + (x1 - x0) + "\" height=\"" + h + "\" rx=\"" + r + "\"/>";
+        if (hi !== "layer") {
+            out += "<rect class=\"" + (hi === "in" ? "tl-hi" : "tl-part") + "\" x=\"" + x0 + "\" y=\"" + y + "\" width=\"" + a + "\" height=\"" + h + "\" rx=\"" + r + "\"/>";
+            out += "<rect class=\"" + (hi === "out" ? "tl-out" : "tl-part") + "\" x=\"" + (x1 - a) + "\" y=\"" + y + "\" width=\"" + a + "\" height=\"" + h + "\" rx=\"" + r + "\"/>";
+        }
+        return out;
+    }
+
+    function tlArrow(x1, x2, y) {
+        var d = x2 > x1 ? -3 : 3;
+        return "<path class=\"tl-arrow\" d=\"M" + x1 + " " + y + "H" + x2 + "\"/><path class=\"tl-arrow-head\" d=\"M" + x2 + " " + y + "l" + d + " -2.5v5z\"/>";
+    }
+
+    function tlPlayhead(x, h) {
+        return "<path class=\"tl-cti\" d=\"M" + x + " 3v" + (h - 4) + "\"/><path class=\"tl-cti-head\" d=\"M" + (x - 3) + " 1h6l-3 3.5z\"/>";
+    }
+
+    // Схема «Сдвига»: пунктир — слой как сейчас, цветом — каким станет.
+    function drawShiftPreview() {
+        var what = motion.shiftWhat, n = motion.shiftStep, d = 9 * shiftLook.dir, x0 = 14, x1 = 86, a = 18, y = 11, h = 9, svg = "", text, p, at;
+        if (shiftLook.point) {
+            // На указатель: нужная точка слоя встаёт на синюю линию в середине.
+            p = shiftLook.point;
+            at = { inStart: x0, inEnd: x0 + a, outStart: x1 - a, outEnd: x1 }[p];
+            d = 50 - at;
+            svg = tlBar(x0, x1, y, h, a, "", true) + tlBar(x0 + (p.indexOf("in") === 0 ? d : 0), x1 + (p.indexOf("out") === 0 ? d : 0), y, h, a, p.indexOf("in") === 0 ? "in" : "out") + tlPlayhead(50, 24);
+            text = TIME_POINT_NAMES[p] + " встанет на указатель времени.";
+        } else {
+            svg = tlBar(x0, x1, y, h, a, "", true);
+            if (what === "layer") { svg += tlBar(x0 + d, x1 + d, y, h, a, "layer") + tlArrow(50, 50 + d, 5); }
+            if (what === "in") { svg += tlBar(x0 + d, x1, y, h, a, "in") + tlArrow(x0 + a / 2, x0 + a / 2 + d, 5); }
+            if (what === "out") { svg += tlBar(x0, x1 + d, y, h, a, "out") + tlArrow(x1 - a / 2, x1 - a / 2 + d, 5); }
+            text = { "in": "Появление", out: "Исчезновение", layer: "Слой целиком" }[what] + " сдвинется" + " на " + plural(n, "кадр", "кадра", "кадров") + (shiftLook.dir > 0 ? " позже." : " раньше.");
+        }
+        ui.shiftPrev.innerHTML = svg;
+        ui.shiftPrevText.textContent = text;
+    }
+
+    // Схема «Лесенки»: три слоя, пунктир — как сейчас (все вместе), цветом — по ступенькам.
+    function drawStaggerPreview() {
+        var what = motion.staggerWhat, order = motion.staggerOrder, n = motion.staggerStep, step = 11, svg = "", i, k, y, x0 = 8, x1 = 58, a = 12;
+        var steps = { asc: [0, 1, 2], desc: [2, 1, 0], selection: [1, 0, 2], random: [2, 0, 1] }[order];
+        for (i = 0; i < 3; i++) {
+            k = steps[i] * step;
+            y = 3 + i * 9;
+            svg += tlBar(x0, x1, y, 6, a, "", true);
+            if (what === "layer") { svg += tlBar(x0 + k, x1 + k, y, 6, a, "layer"); }
+            if (what === "in") { svg += tlBar(x0 + k, x1, y, 6, a, "in"); }
+            if (what === "out") { svg += tlBar(x0, x1 + k, y, 6, a, "out"); }
+            svg += "<text class=\"tl-num\" x=\"" + (x1 + 2 * step + 5) + "\" y=\"" + (y + 5.5) + "\">" + (i + 1) + "</text>";
+        }
+        ui.staggerPrev.innerHTML = svg;
+        ui.staggerPrevText.textContent = "Каждый следующий " + (what === "layer" ? "слой" : what === "in" ? "слой появляется" : "слой исчезает") + " на " +
+            plural(n, "кадр", "кадра", "кадров") + " позже предыдущего, " + ORDER_NAMES[order] + ".";
+        ui.staggerOrderName.textContent = ORDER_NAMES[order].charAt(0).toUpperCase() + ORDER_NAMES[order].slice(1);
+    }
+
     function drawShift() {
-        ui.shiftWhat.value = motion.shiftWhat;
+        pressGroupV(ui.shiftWhat, motion.shiftWhat);
+        pressGroupV(ui.staggerWhat, motion.staggerWhat);
+        pressGroupV(ui.staggerOrder, motion.staggerOrder);
         ui.shiftStep.value = String(motion.shiftStep);
-        ui.timeAlign.value = motion.timeAlign;
-        ui.staggerWhat.value = motion.staggerWhat;
         ui.staggerStep.value = String(motion.staggerStep);
-        ui.staggerOrder.value = motion.staggerOrder;
+        drawShiftPreview();
+        drawStaggerPreview();
+    }
+
+    // Значки «К указателю»: полоска слоя и синяя линия указателя в нужной точке.
+    // Сегменты «что двигать» — та же полоска с выделенной частью и короткая подпись (полная — в подсказке).
+    function drawTimeIcons() {
+        [ui.shiftWhat, ui.staggerWhat].forEach(function (g) {
+            Array.prototype.forEach.call(g.querySelectorAll("button[data-v]"), function (b) {
+                var v = b.getAttribute("data-v"), full = b.getAttribute("aria-label") || b.textContent.replace(/^\s+|\s+$/g, "");
+                b.setAttribute("aria-label", full);
+                b.innerHTML = "<svg viewBox=\"0 0 60 12\" aria-hidden=\"true\">" + tlBar(4, 56, 3, 6, 15, v) + "</svg><span>" +
+                    ({ "in": "Появл.", out: "Исчезн.", layer: full }[v]) + "</span>";
+            });
+        });
+        Array.prototype.forEach.call(ui.timeAlign.querySelectorAll("button[data-v]"), function (b) {
+            var v = b.getAttribute("data-v"), x = { inStart: 6, inEnd: 19, outStart: 41, outEnd: 54 }[v];
+            b.innerHTML = "<svg viewBox=\"0 0 60 24\" aria-hidden=\"true\">" + tlBar(6, 54, 11, 6, 13, v.indexOf("in") === 0 ? "in" : "out") + tlPlayhead(x, 24) + "</svg>";
+        });
     }
 
     // Набранное число кадров; мусор возвращает прежнее значение.
@@ -8844,8 +8940,10 @@
         }).catch(toolFailed);
     }
 
-    function onTimeAlign() {
-        var point = motion.timeAlign;
+    function onTimeAlign(point) {
+        point = TIME_POINTS.indexOf(point) >= 0 ? point : motion.timeAlign;
+        motion.timeAlign = point;
+        storeMotion();
         if (busy) { return; }
         setBusy(true);
         setStatus("Ставлю на указатель…", "busy");
@@ -8870,20 +8968,35 @@
     function enableShiftTool() {
         var infos = ui.motionTools.querySelectorAll(".tool-info");
         var i;
-        function pick(select, key, allowed) {
-            select.addEventListener("change", function () {
-                motion[key] = allowed.indexOf(select.value) >= 0 ? select.value : MOTION_DEFAULTS[key];
-                storeMotion();
-                showFoldParts();
+        function pick(group, key, allowed) {
+            Array.prototype.forEach.call(group.querySelectorAll("button[data-v]"), function (btn) {
+                btn.addEventListener("click", function () {
+                    var v = btn.getAttribute("data-v");
+                    motion[key] = allowed.indexOf(v) >= 0 ? v : MOTION_DEFAULTS[key];
+                    storeMotion();
+                    drawShift();
+                });
             });
         }
+        function look(el, dir, point) {
+            el.addEventListener("mouseenter", function () { shiftLook = { dir: dir, point: point }; drawShiftPreview(); });
+            el.addEventListener("mouseleave", function () { shiftLook = { dir: 1, point: "" }; drawShiftPreview(); });
+        }
+        drawTimeIcons();
         drawShift();
         pick(ui.shiftWhat, "shiftWhat", SHIFT_TARGETS);
-        pick(ui.timeAlign, "timeAlign", TIME_POINTS);
         pick(ui.staggerWhat, "staggerWhat", SHIFT_TARGETS);
         pick(ui.staggerOrder, "staggerOrder", STAGGER_ORDERS);
-        ui.shiftStep.addEventListener("change", function () { onStepNumber(ui.shiftStep, "shiftStep"); });
-        ui.staggerStep.addEventListener("change", function () { onStepNumber(ui.staggerStep, "staggerStep"); });
+        look(ui.shiftBack, -1, "");
+        look(ui.shiftFwd, 1, "");
+        Array.prototype.forEach.call(ui.timeAlign.querySelectorAll("button[data-v]"), function (btn) {
+            look(btn, 1, btn.getAttribute("data-v"));
+            btn.addEventListener("click", function () { onTimeAlign(btn.getAttribute("data-v")); });
+        });
+        ui.shiftStep.addEventListener("change", function () { onStepNumber(ui.shiftStep, "shiftStep"); drawShift(); });
+        ui.staggerStep.addEventListener("change", function () { onStepNumber(ui.staggerStep, "staggerStep"); drawShift(); });
+        ui.staggerLess.addEventListener("click", function () { motion.staggerStep = clampStep(motion.staggerStep - 1); storeMotion(); drawShift(); });
+        ui.staggerMore.addEventListener("click", function () { motion.staggerStep = clampStep(motion.staggerStep + 1); storeMotion(); drawShift(); });
         [ui.shiftStep, ui.staggerStep].forEach(function (input) {
             input.addEventListener("keydown", function (e) {
                 if (e.key === "Enter") { input.blur(); }
@@ -8893,7 +9006,6 @@
         });
         ui.shiftBack.addEventListener("click", function () { onShift(-1); });
         ui.shiftFwd.addEventListener("click", function () { onShift(1); });
-        ui.timeAlignBtn.addEventListener("click", onTimeAlign);
         ui.staggerBtn.addEventListener("click", onStagger);
         // «i» рядом со списком: объяснение появляется в строке состояния (и во всплывающей подсказке).
         for (i = 0; i < infos.length; i++) {
