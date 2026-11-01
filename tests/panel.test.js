@@ -2525,6 +2525,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.evaluate(() => { const i = document.querySelector('.snd-edit input[aria-label="Громкость"]'); i.value = "-6"; i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); });
   await p.idle(); await p.page.waitForTimeout(50);
   check("AC13 +7 semitones → Stretch ≈ 66.7%, −6 dB → Audio Levels", Math.abs(SND.stretch - 100 / Math.pow(2, 7 / 12)) < 1e-6 && JSON.stringify(SND.levels) === "[-6,-6]", SND.stretch + " " + JSON.stringify(SND.levels));
+  await p.page.evaluate(() => { const r = document.getElementById("acPitch"); r.value = "5"; r.dispatchEvent(new Event("input", { bubbles: true })); r.dispatchEvent(new Event("change", { bubbles: true })); });
+  await p.idle(); await p.page.waitForTimeout(80);
+  check("AC13b the sound bar works on the selected sound layer too: pitch +5 goes into it, one undo step", Math.abs(SND.stretch - 100 / Math.pow(2, 5 / 12)) < 1e-6 && JSON.stringify(SND.levels) === "[-6,-6]" && /^Высота тона \+5 пт: слой «♪ Вжух»/.test(await p.status()), SND.stretch + " " + (await p.status()));
+  await p.page.evaluate(() => { const r = document.getElementById("acVol"); r.value = "3"; r.dispatchEvent(new Event("input", { bubbles: true })); r.dispatchEvent(new Event("change", { bubbles: true })); });
+  await p.idle(); await p.page.waitForTimeout(80);
+  check("AC13b … and so does the volume, the pitch stays", JSON.stringify(SND.levels) === "[3,3]" && Math.abs(SND.stretch - 100 / Math.pow(2, 5 / 12)) < 1e-6, JSON.stringify(SND.levels));
   await p.page.locator(".snd-edit button", { hasText: "Убрать" }).click(); await p.idle(); await p.page.waitForTimeout(50);
   check("AC13 'Remove' deletes the sound layer", p.ae.log.layersRemoved.join() === "♪ Вжух" && p.errors.length === 0, p.errors.join(" | "));
   await acSec(p, "Звуки");

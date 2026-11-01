@@ -1865,3 +1865,11 @@ html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:
 .tool-picker button[aria-pressed="true"] .tool-picker-mark { opacity: 1; background: var(--accent); border-color: var(--accent); }
 .tool-picker button[aria-pressed="true"] .tool-picker-mark::after { content: ""; position: absolute; left: 4.5px; top: 1.5px; width: 3.5px; height: 7px; border: solid var(--on-accent, #fff); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .tool-picker button[aria-pressed="false"] span:last-child { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.25); }
+
+/* «Анимация»: раздел занимает всю высоту панели, прокручиваются только карточки (и список видов слева),
+   а полоса внизу — высота тона, громкость, длительность, размер — видна всегда. */
+[data-tab="tools"] #app > #viewTools { flex: 1 1 auto; min-height: 340px; }
+[data-tab="tools"] #viewTools > .ac { flex: 1 1 auto; min-height: 0; }
+[data-tab="tools"] .ac-body { flex: 1 1 auto; min-height: 120px; grid-template-rows: minmax(0, 1fr); }
+[data-tab="tools"] .ac-body > .ac-grid, [data-tab="tools"] .ac-body > .ac-folders { min-height: 0; overflow-y: auto; }
+[data-tab="tools"] .ac-hint, [data-tab="tools"] .ac-foot, [data-tab="tools"] .ac-tabs, [data-tab="tools"] .ac-bar { flex: none; }

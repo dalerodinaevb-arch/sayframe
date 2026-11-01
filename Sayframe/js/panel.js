@@ -1093,6 +1093,7 @@
         }
         TABS[name].slot.appendChild(ui.statusBox);
         currentTab = name;
+        document.documentElement.setAttribute("data-tab", name);
         applyTheme(draft || settings);
         if (name === "motion" || name === "shape") { relayoutTools(); }
         try { window.localStorage.setItem(TAB_KEY, name); } catch (e) {}
@@ -5264,7 +5265,7 @@
         }
         if (sec === "sfx") {
             return "▶ — послушать с выбранной высотой тона. Щелчок по карточке кладёт звук в композицию у указателя времени. " +
-                "Высота тона — как в сэмплере: выше — звук короче, ниже — длиннее.";
+                "Высота тона — как в сэмплере: выше — звук короче, ниже — длиннее. Выделен звуковой слой в композиции — ползунки меняют и его.";
         }
         if (sec === "text") {
             return "Выделите текстовый слой и щёлкните по карточке (нет слоя — панель создаст новый); щелчок по отмеченной снимает пресет. " +
@@ -5782,6 +5783,19 @@
         ui.acVol = row.querySelector("#acVol"); ui.acVolVal = row.querySelector("#acVolVal");
         ui.acPitch.addEventListener("input", function () { acState.pitch = Number(ui.acPitch.value); ui.acPitchVal.textContent = pitchText(acState.pitch); storeAcState(); });
         ui.acVol.addEventListener("input", function () { acState.vol = Number(ui.acVol.value); ui.acVolVal.textContent = volText(acState.vol); storeAcState(); });
+        // Отпустили ползунок — то же значение уходит в выделенные звуковые слои (любой звук, не только из библиотеки).
+        ui.acPitch.addEventListener("change", function () { sndToSelected(acState.pitch, null); });
+        ui.acVol.addEventListener("change", function () { sndToSelected(null, acState.vol); });
+    }
+
+    function sndToSelected(pitch, vol) {
+        if (busy) { return; }
+        host("sndSetSelected", [pitch, vol]).then(function (res) {
+            if (!res || !res.count) { return; }
+            setStatus((pitch !== null ? "Высота тона " + pitchText(pitch) : "Громкость " + volText(vol)) + ": " +
+                (res.count === 1 ? "слой «" + res.name + "»" : plural(res.count, "звуковой слой", "звуковых слоя", "звуковых слоёв")) + ".\nОтменить: Cmd/Ctrl+Z.", "done");
+            if (acEdit && acEdit.sound) { loadAcEdit(); }
+        }).catch(function () {});
     }
 
     function hexToRgb01(hex) {

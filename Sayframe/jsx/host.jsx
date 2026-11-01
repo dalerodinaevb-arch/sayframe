@@ -4483,6 +4483,37 @@ var sayframeHost = (function () {
             });
         },
 
+        // The sound bar of the Animation tab on whatever is selected: every selected sound-only layer (a library
+        // sound or any audio file) gets the pitch (sampler-style, through Stretch) and the volume. Video layers are
+        // left alone, so their picture never speeds up. Null keeps that value as it is.
+        sndSetSelected: function (pitch, volume) {
+            return reply(function () {
+                var comp = app.project.activeItem, list = [], i, L, d, lv, v;
+                if (!(comp instanceof CompItem)) { return { count: 0 }; }
+                for (i = 0; i < comp.selectedLayers.length; i++) {
+                    L = comp.selectedLayers[i];
+                    try {
+                        if (L.locked || !L.hasAudio || !L.source || L.source.hasVideo !== false || !L.source.hasAudio) { continue; }
+                    } catch (e0) { continue; }
+                    list.push(L);
+                }
+                if (!list.length) { return { count: 0 }; }
+                app.beginUndoGroup("Sayframe: sound");
+                try {
+                    for (i = 0; i < list.length; i++) {
+                        L = list[i];
+                        v = 0;
+                        try { lv = L.property("ADBE Audio Group").property("ADBE Audio Levels").value; v = lv[0]; } catch (e1) {}
+                        d = Math.round(12 * Math.log(100 / (L.stretch || 100)) / Math.LN2 * 10) / 10;
+                        sndApply(L, pitch === null || pitch === undefined ? d : Number(pitch), volume === null || volume === undefined ? v : Number(volume));
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { count: list.length, name: String(list[0].name) };
+            });
+        },
+
         sndRemove: function () {
             return reply(function () {
                 var e = acEditLayer();
