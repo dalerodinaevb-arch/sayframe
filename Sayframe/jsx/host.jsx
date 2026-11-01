@@ -2594,6 +2594,13 @@ var sayframeHost = (function () {
         try { acP(l, ["ADBE Effect Parade", fx, param]).expression = code; return true; } catch (e) { return false; }
     }
 
+    function kitControl(l, matchName, name, value) {
+        var fx = acAdd(l, ["ADBE Effect Parade"], matchName);
+        try { acP(l, ["ADBE Effect Parade", fx]).name = name; } catch (e0) {}
+        kitSet(l, fx, matchName + "-0001", value);
+        return fx;
+    }
+
     function kitGlassShape(comp, name) {
         var l = comp.layers.addShape(), gi, w = Math.round(comp.width * 0.42), h = Math.round(comp.height * 0.3), ri;
         l.name = name;
@@ -2608,7 +2615,7 @@ var sayframeHost = (function () {
     }
 
     function kitLiquidGlass(comp, labels) {
-        var sel = comp.selectedLayers || [], shape = null, made = false, i, adj, edge, fx, ref, legacy;
+        var sel = comp.selectedLayers || [], shape = null, made = false, i, adj, edge, fx, ref, legacy, stroke = null;
         for (i = 0; i < sel.length; i++) {
             if (!(sel[i] instanceof CameraLayer) && !(sel[i] instanceof LightLayer) && !sel[i].adjustmentLayer) { shape = sel[i]; break; }
         }
@@ -2642,7 +2649,24 @@ var sayframeHost = (function () {
         kitSet(edge, fx, "ADBE Bevel Alpha-0001", 6);
         kitSet(edge, fx, "ADBE Bevel Alpha-0004", 0.8);
         try { if (BlendingMode.OVERLAY !== undefined) { edge.blendingMode = BlendingMode.OVERLAY; } } catch (e2) {}
-        // Order, top to bottom: edge, glass (matted to the shape), shape (hidden: it only gives the outline).
+        // The outline (shape layers only): a copy of the shape with its own paint off and one Stroke on top,
+        // driven by three controls in Effect Controls of that layer: width, colour, opacity.
+        if (shape instanceof ShapeLayer) {
+            stroke = shape.duplicate();
+            stroke.name = labels.stroke || "Glass Stroke";
+            stroke.enabled = true;
+            pfMutePaint(stroke.property("ADBE Root Vectors Group"));
+            kitControl(stroke, "ADBE Slider Control", labels.strokeWidth || "Stroke Width", 2);
+            kitControl(stroke, "ADBE Color Control", labels.strokeColor || "Stroke Color", [1, 1, 1, 1]);
+            kitControl(stroke, "ADBE Slider Control", labels.strokeOpacity || "Stroke Opacity", 70);
+            fx = acAdd(stroke, ["ADBE Root Vectors Group"], "ADBE Vector Graphic - Stroke");
+            try {
+                acP(stroke, ["ADBE Root Vectors Group", fx, "ADBE Vector Stroke Width"]).expression = "Math.max(0, effect(1)(1));";
+                acP(stroke, ["ADBE Root Vectors Group", fx, "ADBE Vector Stroke Color"]).expression = "effect(2)(1);";
+                acP(stroke, ["ADBE Root Vectors Group", fx, "ADBE Vector Stroke Opacity"]).expression = "Math.max(0, Math.min(100, effect(3)(1)));";
+            } catch (e4) {}
+        }
+        // Order, top to bottom: outline, edge, glass (matted to the shape), shape (hidden: it only gives the outline).
         legacy = typeof adj.setTrackMatte !== "function";
         if (legacy) {
             adj.moveAfter(shape);
@@ -2653,11 +2677,16 @@ var sayframeHost = (function () {
             edge.moveBefore(adj);
             adj.setTrackMatte(shape, TrackMatteType.ALPHA);
         }
+        if (stroke) {
+            stroke.moveBefore(edge);
+            try { stroke.parent = shape; } catch (e5) {}
+            stroke.selected = false;
+        }
         shape.enabled = false;
         try { edge.parent = shape; } catch (e3) {}
         edge.selected = false;
         shape.selected = true;
-        return { glass: { name: adj.name, shape: shape.name, edge: edge.name, created: made, legacy: legacy } };
+        return { glass: { name: adj.name, shape: shape.name, edge: edge.name, stroke: stroke ? stroke.name : "", created: made, legacy: legacy } };
     }
 
     // ---- Split / merge shapes (the Shape tab).

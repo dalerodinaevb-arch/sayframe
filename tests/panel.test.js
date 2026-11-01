@@ -4973,21 +4973,27 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.screenshot({ path: path.join(SHOTS, "77-kit-liquid-glass.png") });
     await p.page.click("#acGrid .ac-card"); await p.idle();
     const adj = Lx(p, "Жидкое стекло"), edge = Lx(p, "Стекло: блик"), pill = Lx(p, "Pill");
-    check("KG2 three layers, top to bottom: the edge light, the glass (matted to the shape), the shape (hidden)", names(p) === "Стекло: блик,Жидкое стекло,Pill,BG" && adj.adjustmentLayer === true && adj.matte === pill && adj.matteType === 5013 && pill.enabled === false && edge.enabled === true, names(p));
+    check("KG2 four layers, top to bottom: the outline, the edge light, the glass (matted to the shape), the shape (hidden)", names(p) === "Стекло: обводка,Стекло: блик,Жидкое стекло,Pill,BG" && adj.adjustmentLayer === true && adj.matte === pill && adj.matteType === 5013 && pill.enabled === false && edge.enabled === true, names(p));
     check("KG2 the glass bulges, blurs and brightens; the bulge follows the shape by expressions", fxOf(adj) === "ADBE Bulge,ADBE Gaussian Blur 2,ADBE Brightness & Contrast 2" && /thisComp\.layer\("Pill"\)/.test(acAt(adj, "ADBE Effect Parade", 1, "ADBE Bulge-0003").expression) && /sourceRectAtTime/.test(acAt(adj, "ADBE Effect Parade", 1, "ADBE Bulge-0001").expression) && acAt(adj, "ADBE Effect Parade", 2, "ADBE Gaussian Blur 2-0001").value === 12 && adj.inPoint === 1 && adj.outPoint === 7, fxOf(adj));
     check("KG2 the edge: a grey copy in Overlay with Bevel Alpha, hanging on the shape", fxOf(edge) === "ADBE Fill,ADBE Bevel Alpha" && edge.blendingMode === 5224 && edge.parent === pill && JSON.stringify(acAt(edge, "ADBE Effect Parade", 1, "ADBE Fill-0002").value) === "[0.5,0.5,0.5,1]");
+    t = Lx(p, "Стекло: обводка");
+    check("KG2 the outline: a copy of the shape, its own fill off, one Stroke driven by width, colour and opacity controls", !!t && t.enabled !== false && t.parent === pill &&
+      acAt(t, "ADBE Effect Parade").children.map((e) => e.name).join() === "Толщина обводки,Цвет обводки,Прозрачность обводки" && acAt(t, "ADBE Effect Parade", 1, "ADBE Slider Control-0001").value === 2 && acAt(t, "ADBE Effect Parade", 3, "ADBE Slider Control-0001").value === 70 &&
+      acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Graphic - Fill").enabled === false &&
+      /effect\(1\)\(1\)/.test(acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Width").expression) && /effect\(2\)\(1\)/.test(acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Color").expression) && /effect\(3\)\(1\)/.test(acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Opacity").expression) &&
+      /Обводка — слой «Стекло: обводка»/.test(await p.status()), t ? acAt(t, "ADBE Effect Parade").children.map((e) => e.name).join() : "none");
     check("KG2 one undo step; the shape is selected; the report", p.ae.log.undo.join() === "begin:Sayframe: liquid glass,end" && pill.selected && !edge.selected && /^Жидкое стекло готово: фигура — «Pill»/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
     await p.close();
 
     p = await open({ sm: [{ name: "BG" }] });
     await kitTab(p); await p.page.click("#acGrid .ac-card"); await p.idle();
     t = Lx(p, "Стекло");
-    check("KG3 nothing selected: a rounded rectangle «Стекло» in the middle becomes the glass", names(p) === "Стекло: блик,Жидкое стекло,Стекло,BG" && JSON.stringify(acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[806,324]" && /нарисовал фигуру «Стекло»/.test(await p.status()), names(p) + " " + (await p.status()));
+    check("KG3 nothing selected: a rounded rectangle «Стекло» in the middle becomes the glass", names(p) === "Стекло: обводка,Стекло: блик,Жидкое стекло,Стекло,BG" && JSON.stringify(acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[806,324]" && /нарисовал фигуру «Стекло»/.test(await p.status()), names(p) + " " + (await p.status()));
     await p.close();
 
     p = await open({ sm: [{ name: "Pill", selected: true, groups: [smGroup("Box", [smRect(200)])] }, { name: "BG" }], legacyMatte: true });
     await kitTab(p); await p.page.click("#acGrid .ac-card"); await p.idle();
-    check("KG4 an older After Effects (matte only from the layer above): the shape sits right above the glass", names(p) === "Стекло: блик,Pill,Жидкое стекло,BG" && Lx(p, "Жидкое стекло").trackMatteType === 5013 && p.errors.length === 0, names(p));
+    check("KG4 an older After Effects (matte only from the layer above): the shape sits right above the glass", names(p) === "Стекло: обводка,Стекло: блик,Pill,Жидкое стекло,BG" && Lx(p, "Жидкое стекло").trackMatteType === 5013 && p.errors.length === 0, names(p));
     await p.close();
   }
 
