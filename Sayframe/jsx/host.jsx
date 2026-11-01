@@ -2689,6 +2689,176 @@ var sayframeHost = (function () {
         return { glass: { name: adj.name, shape: shape.name, edge: edge.name, stroke: stroke ? stroke.name : "", created: made, legacy: legacy } };
     }
 
+    // ---- Carousel (the Animation tab, section 3D): N cards around a 3D controller null, like a gallery ring.
+    // Card shapes: rect (Rectangle with roundness), circle (Ellipse), tri / hex (a path: a regular polygon whose
+    // corners are rounded by "corners" percent; 100 turns it into its inscribed circle). The cards are 3D layers
+    // parented to the null, so turning the null turns the whole ring.
+    var ORBIT_LAYOUTS = { ring: 1, half: 1, spiral: 1, wave: 1 };
+    var ORBIT_SIDES = { rect: 4, circle: 0, tri: 3, hex: 6 };
+
+    function orbitNum(v, lo, hi, def) {
+        v = Number(v);
+        if (isNaN(v)) { v = def; }
+        return Math.max(lo, Math.min(hi, v));
+    }
+
+    // Where card i of n stands, relative to the null: x, y, z and its Y rotation (it faces out of the ring).
+    function orbitSpot(i, n, layout, radius, h) {
+        var a, y = 0, r;
+        if (layout === "half") { a = n > 1 ? -90 + 180 * i / (n - 1) : 0; }
+        else if (layout === "spiral") { a = i * 540 / n; y = (i - (n - 1) / 2) * h * 0.3; }
+        else {
+            a = i * 360 / n;
+            if (layout === "wave") { y = Math.sin(a * 2 * Math.PI / 180) * h * 0.25; }
+        }
+        r = a * Math.PI / 180;
+        return { x: radius * Math.sin(r), y: y, z: -radius * Math.cos(r), ry: a };
+    }
+
+    // The same colours as the preview in the panel: a purple-to-pink run.
+    function orbitColor(i) {
+        var hue = (250 + i * 22) % 360, s = 0.8, l = 0.62, c = (1 - Math.abs(2 * l - 1)) * s, hp = hue / 60;
+        var x = c * (1 - Math.abs(hp % 2 - 1)), m = l - c / 2, rgb;
+        if (hp < 1) { rgb = [c, x, 0]; } else if (hp < 2) { rgb = [x, c, 0]; } else if (hp < 3) { rgb = [0, c, x]; }
+        else if (hp < 4) { rgb = [0, x, c]; } else if (hp < 5) { rgb = [x, 0, c]; } else { rgb = [c, 0, x]; }
+        return [rgb[0] + m, rgb[1] + m, rgb[2] + m, 1];
+    }
+
+    // A regular polygon (pointy top) with rounded corners, stretched to w x h by its sharp outline.
+    function orbitPoly(sides, t, w, h) {
+        var V = [], i, a, inr, r, d, k, minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, sx, sy, cx, cy;
+        var verts = [], ins = [], outs = [], P, C, N, ua, ub, L, sP, eP;
+        for (i = 0; i < sides; i++) {
+            a = -Math.PI / 2 + i * 2 * Math.PI / sides;
+            V.push([Math.cos(a), Math.sin(a)]);
+            minX = Math.min(minX, V[i][0]); maxX = Math.max(maxX, V[i][0]);
+            minY = Math.min(minY, V[i][1]); maxY = Math.max(maxY, V[i][1]);
+        }
+        sx = w / (maxX - minX); sy = h / (maxY - minY); cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
+        inr = Math.cos(Math.PI / sides);
+        r = Math.max(0, Math.min(1, t)) * inr;
+        d = r * Math.tan(Math.PI / sides);
+        k = 4 / 3 * Math.tan(Math.PI / sides / 2) * r;
+        function pt(p) { return [(p[0] - cx) * sx, (p[1] - cy) * sy]; }
+        function vec(p) { return [p[0] * sx, p[1] * sy]; }
+        for (i = 0; i < sides; i++) {
+            P = V[(i + sides - 1) % sides]; C = V[i]; N = V[(i + 1) % sides];
+            L = Math.sqrt((P[0] - C[0]) * (P[0] - C[0]) + (P[1] - C[1]) * (P[1] - C[1]));
+            ua = [(P[0] - C[0]) / L, (P[1] - C[1]) / L];
+            ub = [(N[0] - C[0]) / L, (N[1] - C[1]) / L];
+            if (r <= 0) {
+                verts.push(pt(C)); ins.push([0, 0]); outs.push([0, 0]);
+                continue;
+            }
+            sP = [C[0] + ua[0] * d, C[1] + ua[1] * d];
+            eP = [C[0] + ub[0] * d, C[1] + ub[1] * d];
+            verts.push(pt(sP)); ins.push([0, 0]); outs.push(vec([-ua[0] * k, -ua[1] * k]));
+            verts.push(pt(eP)); ins.push(vec([-ub[0] * k, -ub[1] * k])); outs.push([0, 0]);
+        }
+        return { vertices: verts, inTangents: ins, outTangents: outs };
+    }
+
+    // One card's look inside a shape layer: a group with the shape and its fill, centred on the layer's origin.
+    function orbitCardShape(l, kind, t, w, h, color) {
+        var gi = acGroup(l), si, s, pl;
+        try { acP(l, ["ADBE Root Vectors Group", gi]).name = "Card"; } catch (e0) {}
+        if (kind === "rect") {
+            si = acIn(l, gi, "ADBE Vector Shape - Rect");
+            acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Rect Size"]).setValue([w, h]);
+            acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Rect Roundness"]).setValue(Math.round(t * Math.min(w, h) / 2 * 10) / 10);
+        } else if (kind === "circle") {
+            si = acIn(l, gi, "ADBE Vector Shape - Ellipse");
+            acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Ellipse Size"]).setValue([w, h]);
+        } else {
+            pl = orbitPoly(ORBIT_SIDES[kind], t, w, h);
+            si = acIn(l, gi, "ADBE Vector Shape - Group");
+            s = new Shape();
+            s.vertices = pl.vertices;
+            s.inTangents = pl.inTangents;
+            s.outTangents = pl.outTangents;
+            s.closed = true;
+            acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Shape"]).setValue(s);
+        }
+        acFill(l, gi, color);
+    }
+
+    function orbitNumber(comp, text, size) {
+        var l = comp.layers.addText(text), p, doc;
+        try {
+            p = acP(l, ["ADBE Text Properties", "ADBE Text Document"]);
+            doc = p.value;
+            doc.fontSize = size;
+            doc.fillColor = [1, 1, 1];
+            try { doc.justification = ParagraphJustification.CENTER_JUSTIFY; } catch (e1) {}
+            p.setValue(doc);
+        } catch (e0) {}
+        return l;
+    }
+
+    function orbitSet(l, name, v) {
+        acP(l, ["ADBE Transform Group", name]).setValue(v);
+    }
+
+    function orbitBuild(comp, o, labels) {
+        var n = Math.round(orbitNum(o.count, 2, 36, 8)), layout = ORBIT_LAYOUTS[o.layout] ? o.layout : "ring";
+        var kind = ORBIT_SIDES.hasOwnProperty(o.shape) ? o.shape : "rect", t = orbitNum(o.corners, 0, 100, 20) / 100;
+        var radius = orbitNum(o.radius, 0, 10000, 600), w = Math.round(orbitNum(o.w, 4, 8000, 400)), h = Math.round(orbitNum(o.h, 4, 8000, 560));
+        var pre = o.mode === "precomp", cx = comp.width / 2, cy = comp.height / 2, fs = Math.round(Math.min(w, h) * 0.32);
+        var ctrl, cam = "", had = false, cards = [], nums = [], i, j, sp, L, txt, cc, inner, folder = null, base;
+        base = labels.card || "Card ";
+        if (pre) {
+            try { folder = app.project.items.addFolder(labels.folder || "Carousel"); } catch (eF) { folder = null; }
+        }
+        for (i = n - 1; i >= 0; i--) {
+            sp = orbitSpot(i, n, layout, radius, h);
+            if (pre) {
+                cc = app.project.items.addComp(base + (i + 1), w, h, comp.pixelAspect || 1, comp.duration, comp.frameRate);
+                if (folder) { try { cc.parentFolder = folder; } catch (eP) {} }
+                inner = cc.layers.addShape();
+                inner.name = labels.shape || "Shape";
+                orbitCardShape(inner, kind, t, w, h, orbitColor(i));
+                orbitSet(inner, "ADBE Position", [w / 2, h / 2]);
+                if (o.numbers) {
+                    txt = orbitNumber(cc, String(i + 1), fs);
+                    orbitSet(txt, "ADBE Position", [w / 2, h / 2 + fs * 0.35]);
+                }
+                L = comp.layers.add(cc);
+            } else {
+                L = comp.layers.addShape();
+                orbitCardShape(L, kind, t, w, h, orbitColor(i));
+            }
+            L.name = base + (i + 1);
+            L.threeDLayer = true;
+            orbitSet(L, "ADBE Position", [cx + sp.x, cy + sp.y, sp.z]);
+            orbitSet(L, "ADBE Rotate Y", sp.ry);
+            cards.unshift(L);
+            if (o.numbers && !pre) {
+                txt = orbitNumber(comp, String(i + 1), fs);
+                txt.name = (labels.number || "Number ") + (i + 1);
+                txt.threeDLayer = true;
+                orbitSet(txt, "ADBE Position", [cx + sp.x, cy + sp.y + fs * 0.35, sp.z]);
+                orbitSet(txt, "ADBE Rotate Y", sp.ry);
+                nums.unshift(txt);
+            }
+        }
+        ctrl = comp.layers.addNull(comp.duration);
+        ctrl.name = labels.ctrl || "Carousel Control";
+        ctrl.threeDLayer = true;
+        orbitSet(ctrl, "ADBE Position", [cx, cy, 0]);
+        for (i = 0; i < cards.length; i++) {
+            if (nums[i]) { nums[i].parent = cards[i]; }
+            cards[i].parent = ctrl;
+        }
+        if (o.camera) {
+            for (j = 1; j <= comp.numLayers; j++) { if (comp.layer(j) instanceof CameraLayer) { had = true; break; } }
+            if (!had) { cam = comp.layers.addCamera(labels.camera || "Carousel Camera", [cx, cy]).name; }
+        }
+        for (i = 0; i < cards.length; i++) { try { cards[i].selected = false; } catch (eS) {} }
+        for (i = 0; i < nums.length; i++) { try { nums[i].selected = false; } catch (eT) {} }
+        ctrl.selected = true;
+        return { cards: n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
+    }
+
     // ---- Split / merge shapes (the Shape tab).
     // One shape layer: every group of its Contents becomes its own layer (a copy of the layer that keeps only
     // that group, so transform, effects, keys and expressions stay as they were). A layer with several masks
@@ -5470,6 +5640,22 @@ var sayframeHost = (function () {
                 app.beginUndoGroup(sel.length === 1 ? "Sayframe: split shape" : "Sayframe: merge shapes");
                 try {
                     res = sel.length === 1 ? smSplit(comp, sel[0]) : smMerge(comp, sel);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Carousel: o = { count, layout, shape, corners, mode: "shape"|"precomp", radius, w, h, numbers, camera }; labels - layer names.
+        orbitMake: function (o, labels) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (!o || typeof o !== "object") { throw new Error("BAD_ORBIT"); }
+                app.beginUndoGroup("Sayframe: carousel");
+                try {
+                    res = orbitBuild(comp, o, labels || {});
                 } finally {
                     app.endUndoGroup();
                 }

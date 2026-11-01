@@ -201,6 +201,63 @@
       <div id="acBody" class="ac-body">
         <div id="acGrid" class="ac-grid"></div>
       </div>
+      <!-- Раздел «3D»: карусель — N карточек по кругу вокруг 3D-Null, с живым превью -->
+      <div id="orbitPane" class="kr-card" hidden>
+        <div id="orbitStage" class="kr-stage" title="Потяните, чтобы покрутить превью">
+          <span class="kr-tag">3D-превью</span><div class="kr-floor"></div><div id="orbitRing" class="kr-ring"></div><div class="kr-null"></div>
+        </div>
+        <div id="orbitLayout" class="kr-grid4" role="group" aria-label="Раскладка">
+          <button type="button" class="kr-b" data-v="ring" title="Кольцо" aria-label="Кольцо"><svg viewBox="0 0 30 20" aria-hidden="true"><ellipse cx="15" cy="10" rx="12" ry="5"/></svg><span>Кольцо</span></button>
+          <button type="button" class="kr-b" data-v="half" title="Полукруг" aria-label="Полукруг"><svg viewBox="0 0 30 20" aria-hidden="true"><path d="M3 10a12 5 0 0 0 24 0"/></svg><span>Полукруг</span></button>
+          <button type="button" class="kr-b" data-v="spiral" title="Спираль" aria-label="Спираль"><svg viewBox="0 0 30 20" aria-hidden="true"><path d="M3 15c6 4 18 4 24-1M3 10c6 3 18 3 24-1M3 5c6 3 18 3 24-1"/></svg><span>Спираль</span></button>
+          <button type="button" class="kr-b" data-v="wave" title="Волна" aria-label="Волна"><svg viewBox="0 0 30 20" aria-hidden="true"><path d="M2 10c4-7 7-7 11 0s7 7 11 0 4-5 5-4"/></svg><span>Волна</span></button>
+        </div>
+        <span class="kr-lab">Карточки</span>
+        <div id="orbitShape" class="kr-grid4" role="group" aria-label="Форма карточек">
+          <button type="button" class="kr-b" data-v="rect" title="Квадрат / прямоугольник" aria-label="Квадрат / прямоугольник"><svg viewBox="0 0 30 20" aria-hidden="true"><rect x="7" y="3" width="16" height="14" rx="3"/></svg><span>Квадрат</span></button>
+          <button type="button" class="kr-b" data-v="circle" title="Круг" aria-label="Круг"><svg viewBox="0 0 30 20" aria-hidden="true"><circle cx="15" cy="10" r="7.5"/></svg><span>Круг</span></button>
+          <button type="button" class="kr-b" data-v="tri" title="Треугольник" aria-label="Треугольник"><svg viewBox="0 0 30 20" aria-hidden="true"><path d="M15 2.5l8 15H7z"/></svg><span>Треуг.</span></button>
+          <button type="button" class="kr-b" data-v="hex" title="Шестиугольник" aria-label="Шестиугольник"><svg viewBox="0 0 30 20" aria-hidden="true"><path d="M15 2l7.5 4v8L15 18l-7.5-4V6z"/></svg><span>Шестиуг.</span></button>
+        </div>
+        <div id="orbitCornerRow" class="kr-corner">
+          <span id="orbitCornerIco" class="kr-ci" aria-hidden="true"></span>
+          <label class="ac-row ac-slider kr-cs">Углы
+            <input id="orbitCorners" class="range" type="range" min="0" max="100" step="1" title="0% — острые углы, 100% — круг">
+            <output id="orbitCornersVal" for="orbitCorners"></output>
+          </label>
+          <span class="kr-ci" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></span>
+        </div>
+        <div id="orbitMode" class="kr-seg" role="group" aria-label="Из чего карточки">
+          <button type="button" class="kr-b" data-v="shape" title="Каждая карточка — шейп-слой"><span>Шейп</span></button>
+          <button type="button" class="kr-b" data-v="precomp" title="Каждая карточка — композиция: внутрь можно положить картинку или видео"><span>Шейп + прекомп</span></button>
+        </div>
+        <div class="kr-count"><span>Сколько карточек</span>
+          <div class="shift-row">
+            <button id="orbitLess" class="shift-arrow" aria-label="Меньше карточек" title="Меньше карточек"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg></button>
+            <span class="shift-count"><input id="orbitCount" class="shift-num" type="text" inputmode="numeric" maxlength="2" autocomplete="off" spellcheck="false" aria-label="Сколько карточек"><span class="shift-unit">шт.</span></span>
+            <button id="orbitMore" class="shift-arrow" aria-label="Больше карточек" title="Больше карточек"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/><path d="M12 6v12"/></svg></button>
+          </div>
+        </div>
+        <div class="kr-sliders">
+        <label class="ac-row ac-slider kr-sl">Радиус
+          <input id="orbitRadius" class="range" type="range" min="100" max="3000" step="10">
+          <output id="orbitRadiusVal" for="orbitRadius"></output>
+        </label>
+        <label class="ac-row ac-slider kr-sl">Ширина
+          <input id="orbitW" class="range" type="range" min="50" max="2000" step="10">
+          <output id="orbitWVal" for="orbitW"></output>
+        </label>
+        <label class="ac-row ac-slider kr-sl">Высота
+          <input id="orbitH" class="range" type="range" min="50" max="2000" step="10">
+          <output id="orbitHVal" for="orbitH"></output>
+        </label>
+        </div>
+        <div class="kr-sw">
+          <label class="switch"><input id="orbitNumbers" type="checkbox"><span class="track"></span><span class="text">Номера</span></label>
+          <label class="switch"><input id="orbitCamera" type="checkbox"><span class="track"></span><span class="text">Камера</span></label>
+        </div>
+        <button id="orbitBtn" class="shift-do shift-go">Создать карусель</button>
+      </div>
       <p id="acHint" class="ac-hint"></p>
       <!-- Полоса внизу: то, что меняет вставку (длительность, цвет, когда двигаться), и размер карточек -->
       <div id="acFoot" class="ac-foot">

@@ -1942,3 +1942,40 @@ html .pf-card .pf-row .align-btn svg { width: 28px !important; height: 28px !imp
 .pf-row .align-btn[aria-pressed="true"] { background: rgba(var(--accent-rgb), .22) !important; border-color: rgba(var(--accent-rgb), .75) !important; color: var(--accent-hi, var(--accent)) !important; }
 .pf-name { text-align: center; font-weight: 600; font-size: 12.5px; }
 .pf-sub { text-align: center; color: var(--muted); font-size: 11.5px; margin-top: -8px; }
+
+/* ---- Раздел «3D» в «Анимации»: карусель с живым превью */
+.kr-card { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 2px; }
+.kr-card[hidden] { display: none; }
+.kr-stage { position: relative; height: 190px; border-radius: 12px; overflow: hidden; perspective: 640px; cursor: grab; touch-action: none;
+  background: radial-gradient(120% 90% at 50% 100%, rgba(var(--accent-rgb), .22), transparent 60%), rgba(0, 0, 0, .28); border: 1px solid rgba(255, 255, 255, .06); }
+.kr-stage.dragging { cursor: grabbing; }
+.kr-ring { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-style: preserve-3d; }
+.kr-it { position: absolute; display: flex; align-items: center; justify-content: center; transform-style: preserve-3d; color: #fff;
+  font: 600 13px/1 system-ui, sans-serif; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .35)); }
+.kr-it svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.kr-it span { position: relative; }
+.kr-floor { position: absolute; left: 10%; right: 10%; bottom: 14px; height: 26px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .45), transparent); }
+.kr-null { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px; border: 1.5px solid #ff5aa8; border-radius: 3px; transform: rotate(45deg); opacity: .9; pointer-events: none; }
+.kr-tag { position: absolute; left: 10px; top: 8px; font-size: 10.5px; color: var(--muted); }
+.kr-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.kr-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.kr-b { appearance: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 7px 2px 6px; min-height: 30px; min-width: 0;
+  font: inherit; font-size: 11px; color: var(--text); background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .1); border-radius: 9px; cursor: pointer; }
+.kr-b span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.kr-b svg { width: 30px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.kr-b:hover { background: rgba(255, 255, 255, .08); }
+.kr-b[aria-pressed="true"] { background: rgba(var(--accent-rgb), .22); border-color: rgba(var(--accent-rgb), .75); color: var(--accent-hi, var(--accent)); }
+.kr-lab { display: block; font-size: 11px; color: var(--muted); margin: 2px 0 -4px; }
+.kr-corner { display: grid; grid-template-columns: 24px 1fr 24px; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px;
+  background: rgba(var(--accent-rgb), .08); border: 1px solid rgba(var(--accent-rgb), .25); }
+.kr-corner[hidden] { display: none; }
+.kr-ci svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; display: block; opacity: .8; }
+.kr-card .kr-cs { display: grid; grid-template-columns: auto 1fr 40px; align-items: center; gap: 8px; margin: 0; }
+.kr-count { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.kr-count .shift-row { margin: 0; }
+.kr-sliders { display: grid; gap: 2px; }
+.kr-card .kr-sl { display: grid; grid-template-columns: 74px 1fr 46px; align-items: center; gap: 8px; }
+.kr-card input.range { width: 100%; max-width: none; min-width: 0; }
+.kr-card output { text-align: right; }
+.kr-sw { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+html[data-design="ae"] .kr-b, html[data-design="ae"] .kr-stage, html[data-design="ae"] .kr-corner { border-radius: 4px; }

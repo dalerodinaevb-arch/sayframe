@@ -1002,6 +1002,12 @@
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
         fxBtn: el("fxBtn"), snapBtn: el("snapBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
+        orbitPane: el("orbitPane"), orbitStage: el("orbitStage"), orbitRing: el("orbitRing"), orbitLayout: el("orbitLayout"), orbitShape: el("orbitShape"),
+        orbitCornerRow: el("orbitCornerRow"), orbitCornerIco: el("orbitCornerIco"), orbitCorners: el("orbitCorners"), orbitCornersVal: el("orbitCornersVal"),
+        orbitMode: el("orbitMode"), orbitLess: el("orbitLess"), orbitMore: el("orbitMore"), orbitCount: el("orbitCount"),
+        orbitRadius: el("orbitRadius"), orbitRadiusVal: el("orbitRadiusVal"), orbitW: el("orbitW"), orbitWVal: el("orbitWVal"), orbitH: el("orbitH"), orbitHVal: el("orbitHVal"),
+        orbitNumbers: el("orbitNumbers"), orbitCamera: el("orbitCamera"), orbitBtn: el("orbitBtn"),
+        acBody: el("acBody"),
         acTabs: el("acTabs"), acSearch: el("acSearch"), acFavOnly: el("acFavOnly"), acModeRow: el("acModeRow"), acMode: el("acMode"),
         acDurRow: el("acDurRow"), acDur: el("acDur"), acDurVal: el("acDurVal"), acColorRow: el("acColorRow"), acColor: el("acColor"),
         acGrid: el("acGrid"), acHint: el("acHint"), acSize: el("acSize"), acFoot: el("acFoot"),
@@ -1315,6 +1321,7 @@
         ui.nullpBtn.disabled = on;
         ui.splitBtn.disabled = on;
         Array.prototype.forEach.call(ui.pfModes.querySelectorAll("button"), function (b) { b.disabled = on; });
+        if (ui.orbitBtn) { ui.orbitBtn.disabled = on; }
         ui.unusedBtn.disabled = on;
         ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
@@ -4033,7 +4040,8 @@
         { id: "anim", label: "Движения" },
         { id: "graphic", label: "Графика" },
         { id: "kit", label: "Заготовки" },
-        { id: "sfx", label: "Звуки" }
+        { id: "sfx", label: "Звуки" },
+        { id: "orbit", label: "3D" }
     ];
     var AC_PRESETS = {
         trans: [],
@@ -4041,7 +4049,8 @@
         anim: [],
         graphic: [],
         kit: [],
-        sfx: []
+        sfx: [],
+        orbit: []
     };
     // Переходы прошлых версий (ключами на самом слое, до 1.19): нужны только для «✎ Изменить».
     var AC_LEGACY_TRANS = [["zoom-blur", "Зум с размытием"], ["spin-zoom", "Вращение с зумом"], ["push-left", "Сдвиг влево"], ["push-right", "Сдвиг вправо"],
@@ -4444,6 +4453,7 @@
         var searching = !!ui.acSearch.value.replace(/\s/g, "") || acState.favOnly;
         var sec = acState.sec;
         var editing = sec === "edit" && !searching;
+        var orbitOn = sec === "orbit" && !searching;
         if (sec === "sfx" || searching) { loadSfxPeaks(); }
         if (acSeen) { acSeen.disconnect(); }
         grLive = [];
@@ -4458,8 +4468,15 @@
         // Цвет нужен только графике и переходам-шейпам (шторки, круг).
         ui.acColorRow.hidden = editing || !(searching || sec === "graphic" || (sec === "trans" && acState.tfolder === "shapes"));
         ui.acDurRow.hidden = editing || (!searching && (sec === "sfx" || sec === "graphic" || sec === "kit"));
-        ui.acFoot.hidden = editing;
-        ui.acHint.hidden = editing;
+        ui.acFoot.hidden = editing || orbitOn;
+        ui.acHint.hidden = editing || orbitOn;
+        if (ui.orbitPane) { ui.orbitPane.hidden = !orbitOn; ui.acBody.hidden = orbitOn; }
+        if (orbitOn) {
+            renderSfFolders("");
+            if (ui.acSndRow) { ui.acSndRow.hidden = true; }
+            drawOrbitPreview();
+            return;
+        }
         renderSfFolders(!searching && !editing && (sec === "anim" || sec === "trans" || sec === "text" || sec === "sfx" || sec === "graphic" || sec === "kit") ? sec : "");
         if (ui.acSndRow) {
             ui.acSndRow.hidden = editing || !(searching || sec === "sfx");
@@ -6131,6 +6148,185 @@
         var bin = atob(b64), out = new Uint8Array(bin.length), i;
         for (i = 0; i < bin.length; i++) { out[i] = bin.charCodeAt(i); }
         return out;
+    }
+
+    // ---- Раздел «3D»: карусель. Настройки хранятся отдельно; превью — те же карточки в CSS 3D, его можно крутить мышкой.
+    var ORBIT_KEY = "sayframe.orbit.v1";
+    var ORBIT_DEFAULTS = { layout: "ring", shape: "rect", corners: 20, mode: "shape", count: 8, radius: 600, w: 400, h: 560, numbers: true, camera: true };
+    var ORBIT_LAYOUT_NAMES = { ring: "кольцо", half: "полукруг", spiral: "спираль", wave: "волна" };
+    var ORBIT_SIDES = { rect: 4, circle: 0, tri: 3, hex: 6 };
+    var orbit = loadOrbit(), orbitSpin = -24, orbitDrag = null;
+
+    function loadOrbit() {
+        var s, out = {}, k;
+        try { s = JSON.parse(window.localStorage.getItem(ORBIT_KEY) || "{}"); } catch (e) { s = {}; }
+        if (!s || typeof s !== "object") { s = {}; }
+        for (k in ORBIT_DEFAULTS) {
+            if (ORBIT_DEFAULTS.hasOwnProperty(k)) { out[k] = typeof s[k] === typeof ORBIT_DEFAULTS[k] ? s[k] : ORBIT_DEFAULTS[k]; }
+        }
+        if (!ORBIT_LAYOUT_NAMES[out.layout]) { out.layout = "ring"; }
+        if (!ORBIT_SIDES.hasOwnProperty(out.shape)) { out.shape = "rect"; }
+        if (out.mode !== "precomp") { out.mode = "shape"; }
+        out.corners = Math.max(0, Math.min(100, Math.round(out.corners) || 0));
+        out.count = Math.max(2, Math.min(36, Math.round(out.count) || 8));
+        out.radius = Math.max(100, Math.min(3000, Math.round(out.radius) || 600));
+        out.w = Math.max(50, Math.min(2000, Math.round(out.w) || 400));
+        out.h = Math.max(50, Math.min(2000, Math.round(out.h) || 560));
+        return out;
+    }
+
+    function storeOrbit() { try { window.localStorage.setItem(ORBIT_KEY, JSON.stringify(orbit)); } catch (e) {} }
+
+    // Те же формулы, что в host.jsx (orbitSpot, orbitColor, orbitPoly): превью совпадает с тем, что появится в After Effects.
+    function orbitSpot(i, n, layout, radius, h) {
+        var a, y = 0, r;
+        if (layout === "half") { a = n > 1 ? -90 + 180 * i / (n - 1) : 0; }
+        else if (layout === "spiral") { a = i * 540 / n; y = (i - (n - 1) / 2) * h * 0.3; }
+        else {
+            a = i * 360 / n;
+            if (layout === "wave") { y = Math.sin(a * 2 * Math.PI / 180) * h * 0.25; }
+        }
+        r = a * Math.PI / 180;
+        return { x: radius * Math.sin(r), y: y, z: -radius * Math.cos(r), ry: a };
+    }
+
+    function orbitHue(i) { return (250 + i * 22) % 360; }
+
+    // Правильный многоугольник (вершиной вверх) со скруглёнными углами: t = 0 — острые, 1 — вписанный круг.
+    // Путь в рамке w x h (растянут по острому контуру), как в After Effects.
+    function orbitPolyPath(sides, t, w, h) {
+        var V = [], i, a, r, d, minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, sx, sy, cx, cy, out = "", P, C, N, L, ua, ub;
+        for (i = 0; i < sides; i++) {
+            a = -Math.PI / 2 + i * 2 * Math.PI / sides;
+            V.push([Math.cos(a), Math.sin(a)]);
+            minX = Math.min(minX, V[i][0]); maxX = Math.max(maxX, V[i][0]); minY = Math.min(minY, V[i][1]); maxY = Math.max(maxY, V[i][1]);
+        }
+        sx = w / (maxX - minX); sy = h / (maxY - minY); cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
+        r = Math.max(0, Math.min(1, t)) * Math.cos(Math.PI / sides);
+        d = r * Math.tan(Math.PI / sides);
+        function pt(p) { return ((p[0] - cx) * sx + w / 2).toFixed(2) + " " + ((p[1] - cy) * sy + h / 2).toFixed(2); }
+        for (i = 0; i < sides; i++) {
+            P = V[(i + sides - 1) % sides]; C = V[i]; N = V[(i + 1) % sides];
+            L = Math.sqrt((P[0] - C[0]) * (P[0] - C[0]) + (P[1] - C[1]) * (P[1] - C[1]));
+            ua = [(P[0] - C[0]) / L, (P[1] - C[1]) / L];
+            ub = [(N[0] - C[0]) / L, (N[1] - C[1]) / L];
+            if (r <= 0) { out += (i ? "L" : "M") + pt(C); continue; }
+            out += (i ? "L" : "M") + pt([C[0] + ua[0] * d, C[1] + ua[1] * d]) +
+                "A" + (r * sx).toFixed(2) + " " + (r * sy).toFixed(2) + " 0 0 1 " + pt([C[0] + ub[0] * d, C[1] + ub[1] * d]);
+        }
+        return out + "Z";
+    }
+
+    function orbitShapeSvg(kind, t, w, h, fill) {
+        var body;
+        if (kind === "circle") { body = "<ellipse cx=\"" + w / 2 + "\" cy=\"" + h / 2 + "\" rx=\"" + w / 2 + "\" ry=\"" + h / 2 + "\""; }
+        else if (kind === "rect") { body = "<rect x=\"0\" y=\"0\" width=\"" + w + "\" height=\"" + h + "\" rx=\"" + (t * Math.min(w, h) / 2).toFixed(2) + "\""; }
+        else { body = "<path d=\"" + orbitPolyPath(ORBIT_SIDES[kind], t, w, h) + "\""; }
+        return "<svg viewBox=\"0 0 " + w + " " + h + "\" aria-hidden=\"true\">" + body + " fill=\"" + fill + "\" stroke=\"rgba(255,255,255,.25)\" stroke-width=\"" + (Math.min(w, h) / 60).toFixed(2) + "\"/></svg>";
+    }
+
+    function drawOrbitPreview() {
+        var n = orbit.count, ring = ui.orbitRing, i, sp, d, k, w, h, t = orbit.corners / 100, html = "", front, ext;
+        if (!ring) { return; }
+        // Масштаб: вся карусель (радиус + половина карточки) помещается в превью.
+        ext = Math.max(orbit.radius + orbit.w / 2, orbit.h * (orbit.layout === "spiral" ? 1.4 + n * 0.15 : 1.2));
+        k = Math.min(0.3, 125 / ext);
+        w = Math.max(6, orbit.w * k); h = Math.max(6, orbit.h * k);
+        for (i = 0; i < n; i++) {
+            sp = orbitSpot(i, n, orbit.layout, orbit.radius * k, h);
+            front = Math.cos((sp.ry + orbitSpin) * Math.PI / 180) > 0.15;
+            html += "<div class=\"kr-it\" style=\"width:" + w.toFixed(1) + "px;height:" + h.toFixed(1) + "px;left:" + (-w / 2).toFixed(1) + "px;top:" + (-h / 2).toFixed(1) +
+                "px;transform:translate3d(" + sp.x.toFixed(1) + "px," + sp.y.toFixed(1) + "px," + (-sp.z).toFixed(1) + "px) rotateY(" + sp.ry + "deg)\">" +
+                orbitShapeSvg(orbit.shape, t, Math.round(orbit.w), Math.round(orbit.h), "hsl(" + orbitHue(i) + ",80%,62%)") +
+                (orbit.numbers && front && h > 18 ? "<span style=\"font-size:" + Math.max(9, Math.round(Math.min(w, h) * 0.32)) + "px\">" + (i + 1) + "</span>" : "") + "</div>";
+        }
+        d = ring;
+        d.innerHTML = html;
+        d.style.transform = "rotateX(-14deg) rotateY(" + orbitSpin + "deg)";
+    }
+
+    function drawOrbit() {
+        var corner = orbit.shape !== "circle";
+        pressGroupV(ui.orbitLayout, orbit.layout);
+        pressGroupV(ui.orbitShape, orbit.shape);
+        pressGroupV(ui.orbitMode, orbit.mode);
+        ui.orbitCornerRow.hidden = !corner;
+        if (corner) { ui.orbitCornerIco.innerHTML = ui.orbitShape.querySelector("button[data-v=\"" + orbit.shape + "\"] svg").outerHTML; }
+        ui.orbitCorners.value = String(orbit.corners);
+        ui.orbitCornersVal.textContent = orbit.corners + "%";
+        ui.orbitCount.value = String(orbit.count);
+        ui.orbitRadius.value = String(orbit.radius); ui.orbitRadiusVal.textContent = String(orbit.radius);
+        ui.orbitW.value = String(orbit.w); ui.orbitWVal.textContent = String(orbit.w);
+        ui.orbitH.value = String(orbit.h); ui.orbitHVal.textContent = String(orbit.h);
+        ui.orbitNumbers.checked = orbit.numbers;
+        ui.orbitCamera.checked = orbit.camera;
+        drawOrbitPreview();
+    }
+
+    function setOrbit(k, v) { orbit[k] = v; storeOrbit(); drawOrbit(); }
+
+    function setOrbitCount(v) {
+        v = Math.round(Number(v));
+        if (isNaN(v)) { v = orbit.count; }
+        setOrbit("count", Math.max(2, Math.min(36, v)));
+    }
+
+    async function onOrbit() {
+        var res;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Строю карусель…", "busy");
+        try {
+            res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: orbit.mode,
+                radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera },
+                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", folder: "Карусель", shape: "Форма" }]);
+            setBusy(false);
+            setStatus("Карусель готова: " + plural(res.cards, "карточка", "карточки", "карточек") + ", " + ORBIT_LAYOUT_NAMES[res.layout] + ". " +
+                "Крутите её слоем «" + res.ctrl + "» (Y Rotation)." +
+                (res.precomp ? " Каждая карточка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео." : "") +
+                (res.camera ? " Добавлена камера «" + res.camera + "»." : (res.hadCamera ? " Камера в композиции уже была." : "")) +
+                " Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function enableOrbit() {
+        if (!ui.orbitPane) { return; }
+        [["orbitLayout", "layout"], ["orbitShape", "shape"], ["orbitMode", "mode"]].forEach(function (g) {
+            Array.prototype.forEach.call(ui[g[0]].querySelectorAll("button[data-v]"), function (b) {
+                b.addEventListener("click", function () { setOrbit(g[1], b.getAttribute("data-v")); });
+            });
+        });
+        [["orbitCorners", "corners"], ["orbitRadius", "radius"], ["orbitW", "w"], ["orbitH", "h"]].forEach(function (s) {
+            ui[s[0]].addEventListener("input", function () { setOrbit(s[1], Math.round(Number(ui[s[0]].value))); });
+        });
+        ui.orbitLess.addEventListener("click", function () { setOrbitCount(orbit.count - 1); });
+        ui.orbitMore.addEventListener("click", function () { setOrbitCount(orbit.count + 1); });
+        ui.orbitCount.addEventListener("change", function () { setOrbitCount(ui.orbitCount.value); });
+        ui.orbitCount.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") { setOrbitCount(ui.orbitCount.value); }
+            if (e.key === "ArrowUp") { e.preventDefault(); setOrbitCount(orbit.count + 1); }
+            if (e.key === "ArrowDown") { e.preventDefault(); setOrbitCount(orbit.count - 1); }
+        });
+        ui.orbitNumbers.addEventListener("change", function () { setOrbit("numbers", ui.orbitNumbers.checked); });
+        ui.orbitCamera.addEventListener("change", function () { setOrbit("camera", ui.orbitCamera.checked); });
+        ui.orbitBtn.addEventListener("click", onOrbit);
+        // Крутить превью мышкой.
+        ui.orbitStage.addEventListener("pointerdown", function (e) {
+            orbitDrag = { x: e.clientX, spin: orbitSpin };
+            ui.orbitStage.classList.add("dragging");
+            try { ui.orbitStage.setPointerCapture(e.pointerId); } catch (e0) {}
+        });
+        ui.orbitStage.addEventListener("pointermove", function (e) {
+            if (!orbitDrag) { return; }
+            orbitSpin = orbitDrag.spin + (e.clientX - orbitDrag.x) * 0.6;
+            drawOrbitPreview();
+        });
+        ["pointerup", "pointercancel"].forEach(function (t) {
+            ui.orbitStage.addEventListener(t, function () { orbitDrag = null; ui.orbitStage.classList.remove("dragging"); });
+        });
+        drawOrbit();
     }
 
     function enableAc() {
@@ -10712,6 +10908,7 @@
     ui.setTabOther.addEventListener("click", function () { showSetPane("other"); });
     document.addEventListener("keydown", onHotkeyDown, true);
     enableAc();
+    enableOrbit();
     listenHostHotkeys();
     fitTabs();
     if (typeof window.ResizeObserver === "function") { new window.ResizeObserver(fitTabs).observe(ui.tabs); }

@@ -456,6 +456,22 @@ function mkBrComp(log, layers) {
   };
   return c;
 }
+// A comp for the carousel: layers on a list, as After Effects adds them (new ones on top).
+function mkOrbitComp(log, name, w, h, layers) {
+  const c = Object.assign(new CompItem(), { name, width: w, height: h, duration: 10, frameRate: 30, pixelAspect: 1, list: [] });
+  Object.defineProperty(c, "numLayers", { get: () => c.list.length });
+  c.layer = (i) => c.list[i - 1] || null;
+  const put = (l) => { c.list.unshift(l); l.containingComp = c; return l; };
+  (layers || []).forEach((l) => c.list.push(mkAcLayer(l.name, l.kind || "solid", log)));
+  c.layers = {
+    addShape() { return put(Object.setPrototypeOf(mkAcLayer("Shape Layer 1", "shape", log), ShapeLayer.prototype)); },
+    addText(t) { const l = mkAcLayer(String(t), "text", log); acInit(l.property("ADBE Text Properties").property("ADBE Text Document"), "ADBE Text Document", { text: t, fontSize: 40 }, log); return put(l); },
+    addNull(dur) { const l = mkAcLayer("Null 1", "null", log); l.nullLayer = true; l.outPoint = dur; return put(l); },
+    addCamera(nm, pt) { const l = mkAcLayer(nm, "camera", log); l.camPoint = pt; return put(l); },
+    add(item) { const l = mkAcLayer(item.name, "av", log); l.source = item; return put(l); }
+  };
+  return c;
+}
 function makeAE(opts, tmpDir) {
   const log = { undo: [], removed: [], opened: 0, imports: [], layerAdds: [], precomposes: [], bins: [], ran: [], refComps: [], nullsAdded: 0, nullsRemoved: 0, nullSourcesRemoved: 0, nulls: [], nullExpressions: [] };
   function File(p) { this.fsName = p; this.name = encodeURI(path.basename(p)); }
@@ -540,6 +556,7 @@ function makeAE(opts, tmpDir) {
       mainSource: Object.assign(new FileSource(), { file: new File(opts.co.path), isStill: opts.co.still !== false }) });
     dcMain = mkDcComp("Main", [{ name: "Фото", source: src, selected: opts.co.select !== false }, { name: "BG" }], log);
   }
+  if (opts.orbit) { dcMain = mkOrbitComp(log, "Main", 1920, 1080, opts.orbit.layers); log.orbitComps = []; }
   if (opts.br) { dcMain = mkBrComp(log, opts.br); dcMain.openInViewer = () => { project.activeItem = dcMain; }; }
   log.dcMain = dcMain;
   // opts.unused: [{ name, used }] — footage in the project, used in a comp or not.
@@ -558,6 +575,7 @@ function makeAE(opts, tmpDir) {
     items: { addFolder(name) { const f = new FolderItem(name); f.id = 900 + log.bins.length; projItems.push(f); log.bins.push(name);
         f.remove = () => { projItems.splice(projItems.indexOf(f), 1); log.bins.splice(log.bins.lastIndexOf(name), 1); log.undo.push("mark"); }; return f; },
       addComp(name, w, h, par, dur, fps) {
+        if (opts.orbit) { const oc = mkOrbitComp(log, name, w, h); Object.assign(oc, { duration: dur, frameRate: fps }); projItems.push(oc); log.orbitComps.push(oc); return oc; }
         const c = Object.assign(new CompItem(), { name, width: w, height: h, duration: dur, frameRate: fps, saved: [], scaleSet: null,
           openInViewer() { log.opened++; project.activeItem = c; },
           layers: { add(it) { c.added = it; c.addedLayer = { collapseTransformation: false, property() { return { property() { return { setValue(v) { c.scaleSet = v; } }; } }; } }; return c.addedLayer; },
@@ -4994,6 +5012,63 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ sm: [{ name: "Pill", selected: true, groups: [smGroup("Box", [smRect(200)])] }, { name: "BG" }], legacyMatte: true });
     await kitTab(p); await p.page.click("#acGrid .ac-card"); await p.idle();
     check("KG4 an older After Effects (matte only from the layer above): the shape sits right above the glass", names(p) === "Стекло: обводка,Стекло: блик,Pill,Жидкое стекло,BG" && Lx(p, "Жидкое стекло").trackMatteType === 5013 && p.errors.length === 0, names(p));
+    await p.close();
+  }
+
+  // «3D» on the Animation tab: the carousel — N cards around a 3D null, with a live preview.
+  {
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const tf = (l, n) => acAt(l, "ADBE Transform Group", n).value;
+    const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 0.01);
+    const orbitTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    const setRange = (p, sel, v) => p.page.evaluate(([s, x]) => { const r = document.querySelector(s); r.value = String(x); r.dispatchEvent(new Event("input", { bubbles: true })); }, [sel, v]);
+    p = await open({ orbit: { layers: [{ name: "BG" }] } });
+    await orbitTab(p);
+    check("OR1 a «3D» section last in «Анимация»: the carousel block instead of the preset cards, no footer", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#acTabs button"), (b) => b.textContent).join("|"))).indexOf("Звуки|3D") >= 0 &&
+      (await vis(p, "#orbitPane")) && !(await vis(p, "#acGrid")) && !(await vis(p, "#acFoot")) && !(await vis(p, "#acHint")) && (await vis(p, "#orbitBtn")));
+    check("OR1 defaults: ring, square cards, 8 of them, 20% corners, numbers and camera on; the preview shows 8 cards", (await p.page.getAttribute('#orbitLayout [data-v="ring"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#orbitShape [data-v="rect"]', "aria-pressed")) === "true" &&
+      (await p.page.inputValue("#orbitCount")) === "8" && (await p.page.locator("#orbitCornersVal").innerText()) === "20%" && (await p.page.isChecked("#orbitNumbers")) && (await p.page.isChecked("#orbitCamera")) && (await p.page.locator("#orbitRing .kr-it").count()) === 8 && (await overflow(p)) <= 0);
+    await p.page.click('#orbitShape [data-v="circle"]');
+    check("OR1 a circle has no corners slider; a triangle has it again, with a triangle icon", !(await vis(p, "#orbitCornerRow")));
+    await p.page.click('#orbitShape [data-v="tri"]');
+    check("OR1 the triangle: corners slider back, the preview draws rounded triangles", (await vis(p, "#orbitCornerRow")) && (await p.page.locator("#orbitCornerIco svg").count()) === 1 && (await p.page.locator("#orbitRing .kr-it path").count()) === 8);
+    await p.page.click("#orbitMore"); await p.page.click("#orbitMore"); await p.page.click("#orbitLess");
+    await setRange(p, "#orbitCorners", 100);
+    check("OR1 + and − change the count, the preview follows; the slider says 100%", (await p.page.inputValue("#orbitCount")) === "9" && (await p.page.locator("#orbitRing .kr-it").count()) === 9 && (await p.page.locator("#orbitCornersVal").innerText()) === "100%");
+    const before = await p.page.getAttribute("#orbitRing", "style");
+    const box = await p.page.locator("#orbitStage").boundingBox();
+    await p.page.mouse.move(box.x + 100, box.y + 100); await p.page.mouse.down(); await p.page.mouse.move(box.x + 200, box.y + 100); await p.page.mouse.up();
+    check("OR1 dragging the preview turns it", (await p.page.getAttribute("#orbitRing", "style")) !== before, before);
+    await p.restart(); await orbitTab(p);
+    check("OR1 the settings survive a restart", (await p.page.inputValue("#orbitCount")) === "9" && (await p.page.getAttribute('#orbitShape [data-v="tri"]', "aria-pressed")) === "true" && (await p.page.locator("#orbitCornersVal").innerText()) === "100%");
+    await p.close();
+
+    p = await open({ orbit: { layers: [{ name: "BG" }] } });
+    await orbitTab(p); await p.page.click("#orbitBtn"); await p.idle();
+    const ctrl = Lx(p, "Карусель: управление"), c1 = Lx(p, "Карточка 1"), c3 = Lx(p, "Карточка 3"), n1 = Lx(p, "Номер 1");
+    check("OR2 «Создать карусель»: a camera, the controller null, 8 cards with their numbers, one undo step", names(p) === "Карусель: камера,Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8].map((i) => "Номер " + i + ",Карточка " + i).join(",") + ",BG" &&
+      p.ae.log.undo.join() === "begin:Sayframe: carousel,end", names(p));
+    check("OR2 the cards are 3D, on a ring of 600 around the middle, turned to face out, hanging on the null", c1.threeDLayer && ctrl.threeDLayer && ctrl.nullLayer && c1.parent === ctrl && c3.parent === ctrl && near(tf(ctrl, "ADBE Position"), [960, 540, 0]) &&
+      near(tf(c1, "ADBE Position"), [960, 540, -600]) && tf(c1, "ADBE Rotate Y") === 0 && near(tf(c3, "ADBE Position"), [1560, 540, 0]) && tf(c3, "ADBE Rotate Y") === 90, JSON.stringify(tf(c3, "ADBE Position")));
+    check("OR2 a card: a 400×560 rectangle, corners 20% (40 px), its own colour; the number hangs on its card", JSON.stringify(acAt(c1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[400,560]" &&
+      acAt(c1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Roundness").value === 40 && !!acAt(c1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Graphic - Fill") &&
+      n1.parent === c1 && n1.threeDLayer && ctrl.selected && !c1.selected);
+    check("OR2 the report", /^Карусель готова: 8 карточек, кольцо\. Крутите её слоем «Карусель: управление»/.test(await p.status()) && /камера «Карусель: камера»/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+    await p.close();
+
+    p = await open({ orbit: { layers: [{ name: "Cam", kind: "camera" }, { name: "BG" }] } });
+    await orbitTab(p);
+    await p.page.click('#orbitShape [data-v="tri"]'); await setRange(p, "#orbitCorners", 50);
+    await p.page.click('#orbitMode [data-v="precomp"]'); await p.page.click('#orbitLayout [data-v="half"]');
+    await p.page.click(".kr-sw label:first-child .track");
+    for (let i = 0; i < 5; i++) await p.page.click("#orbitLess");
+    await p.page.click("#orbitBtn"); await p.idle();
+    const comps = p.ae.log.orbitComps || [];
+    t = Lx(p, "Карточка 1");
+    check("OR3 «Шейп + прекомп»: 3 card comps in a «Карусель» folder, each with the shape (a rounded triangle path) and no number", comps.map((c) => c.name).sort().join() === "Карточка 1,Карточка 2,Карточка 3" && p.ae.log.bins.indexOf("Карусель") >= 0 &&
+      comps.every((c) => c.list.length === 1 && c.list[0].name === "Форма" && acAt(c.list[0], "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length === 6), comps.map((c) => c.name + ":" + c.list.map((l) => l.name)).join(" "));
+    check("OR3 half ring: the first card at −90°, the last at 90°; a camera was there, no second one", !!t && t.source && tf(t, "ADBE Rotate Y") === -90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === 90 && names(p) === "Карусель: управление,Карточка 1,Карточка 2,Карточка 3,Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
     await p.close();
   }
 
