@@ -353,6 +353,54 @@ function mkDcLayer(comp, sp, log) {
   L.setParentWithJump = (p) => { parentRef = p; L.jumps++; };
   return L;
 }
+// --- Split / merge shapes: shape layers whose Contents is a tree of groups, rectangles and fills, with property types.
+function smNode(mn, type, name, kids, value) {
+  const n = acInit({}, mn, value === undefined ? null : value, null); n.name = name || mn; n.propertyType = type; n.enabled = true;
+  (kids || []).forEach((k) => { k.parentProperty = n; n.children.push(k); k.propertyIndex = n.children.length; });
+  return n;
+}
+const smLeaf = (mn, v) => smNode(mn, 6212, mn, [], v);
+const smRect = (w) => smNode("ADBE Vector Shape - Rect", 6214, "Rectangle Path 1", [smLeaf("ADBE Vector Rect Size", [w, w]), smLeaf("ADBE Vector Rect Position", [0, 0])]);
+const smFill = (c) => smNode("ADBE Vector Graphic - Fill", 6214, "Fill 1", [smLeaf("ADBE Vector Fill Color", c)]);
+const smGroup = (name, kids, pos) => smNode("ADBE Vector Group", 6214, name, [smNode("ADBE Vectors Group", 6213, "Contents", kids),
+  smNode("ADBE Vector Transform Group", 6214, "Transform", [smLeaf("ADBE Vector Anchor", [0, 0]), smLeaf("ADBE Vector Position", pos || [0, 0]), smLeaf("ADBE Vector Scale", [100, 100]), smLeaf("ADBE Vector Rotation", 0), smLeaf("ADBE Vector Group Opacity", 100)])]);
+function smClone(n) {
+  const c = smNode(n.matchName, n.propertyType, n.name, n.children.map(smClone), JSON.parse(JSON.stringify(n.value)));
+  c.keys = JSON.parse(JSON.stringify(n.keys)); c.expression = n.expression; c.maskMode = n.maskMode; c.enabled = n.enabled; return c;
+}
+function smLayer(c, sp, log) {
+  const L = acInit(sp.shape === false ? {} : new ShapeLayer(), sp.name, null, log);
+  Object.assign(L, { name: sp.name, comp: c, selected: !!sp.selected, locked: !!sp.locked, threeDLayer: false, inPoint: sp.inPoint || 0, outPoint: sp.outPoint === undefined ? 10 : sp.outPoint, parent: null, propertyDepth: 0 });
+  Object.defineProperty(L, "index", { get: () => c.list.indexOf(L) + 1 });
+  const attach = (k) => { k.parentProperty = L; L.children.push(k); k.propertyIndex = L.children.length; };
+  if (!sp.bare) {
+    if (sp.shape !== false) attach(smNode("ADBE Root Vectors Group", 6213, "Contents", sp.groups || []));
+    if (sp.masks) attach(smNode("ADBE Mask Parade", 6213, "Masks", sp.masks.map((m, i) => { const a = smNode("ADBE Mask Atom", 6214, "Mask " + (i + 1), [smLeaf("ADBE Mask Shape", null)]); a.maskMode = m; return a; })));
+    const tr = L.property("ADBE Transform Group");
+    tr.property("ADBE Anchor Point").value = sp.anchor || [0, 0, 0]; tr.property("ADBE Position").value = sp.position || [960, 540, 0];
+    tr.property("ADBE Scale").value = sp.scale || [100, 100, 100]; tr.property("ADBE Rotate Z").value = sp.rotation || 0; tr.property("ADBE Opacity").value = sp.opacity === undefined ? 100 : sp.opacity;
+    (sp.posKeys || []).forEach((k) => tr.property("ADBE Position").setValueAtTime(k[0], k[1]));
+  }
+  L.duplicate = () => { const n = smLayer(c, { name: L.name + " 2", shape: L instanceof ShapeLayer, bare: true }, log); L.children.forEach((k) => { const kc = smClone(k); kc.parentProperty = n; n.children.push(kc); kc.propertyIndex = n.children.length; });
+    n.selected = L.selected; n.parent = L.parent; c.list.splice(c.list.indexOf(L), 0, n); log.smDups = (log.smDups || 0) + 1; return n; };
+  L.remove = () => { if (L.locked) throw new Error("layer is locked"); c.list.splice(c.list.indexOf(L), 1); log.smRemoved = (log.smRemoved || []).concat([L.name]); };
+  L.moveBefore = (o) => { const l = c.list; l.splice(l.indexOf(L), 1); l.splice(l.indexOf(o), 0, L); };
+  L.moveAfter = (o) => { const l = c.list; l.splice(l.indexOf(L), 1); l.splice(l.indexOf(o) + 1, 0, L); };
+  L.enabled = true;
+  if (!c.legacyMatte) L.setTrackMatte = (m, type) => { L.matte = m; L.matteType = type; };
+  return L;
+}
+function mkSmComp(specs, log, legacyMatte) {
+  const c = Object.assign(new CompItem(), { name: "Main", width: 1920, height: 1080, duration: 10, list: [], legacyMatte: !!legacyMatte });
+  Object.defineProperty(c, "numLayers", { get: () => c.list.length });
+  Object.defineProperty(c, "selectedLayers", { get: () => c.list.filter((l) => l.selected) });
+  c.layer = (i) => c.list[i - 1] || null;
+  c.layers = { addShape() { const l = smLayer(c, { name: "Shape Layer 1" }, log); c.list.unshift(l); return l; },
+    addSolid(color, name, w, h) { const l = smLayer(c, { name, shape: false }, log); l.solidSize = [w, h]; c.list.unshift(l); return l; } };
+  specs.forEach((sp) => c.list.push(smLayer(c, sp, log)));
+  specs.forEach((sp, i) => { if (sp.parent) c.list[i].parent = c.list.find((x) => x.name === sp.parent); });
+  return c;
+}
 // --- Projects (brand books): a comp with a text, a shape, a solid and a plain layer, as the brand tools see them.
 function mkBrColor(v) { const p = { value: v, numKeys: 0, canSetExpression: true, expression: "", setValue(x) { p.value = x; }, setValueAtKey(k, x) { p.value = x; } }; return p; }
 function mkBrFx(log) {
@@ -485,6 +533,7 @@ function makeAE(opts, tmpDir) {
     log.dcInner = inner;
   }
   if (opts.np) { dcMain = mkDcComp("Main", opts.np, log); }
+  if (opts.sm) { dcMain = mkSmComp(opts.sm, log, opts.legacyMatte); }
   // opts.co: { path, still, w, h } — the open comp has a photo layer «Фото» (selected) and «BG».
   if (opts.co) {
     const src = Object.assign(new FootageItem(), { name: path.basename(opts.co.path), width: opts.co.w || CO_W, height: opts.co.h || CO_H,
@@ -576,7 +625,7 @@ function makeAE(opts, tmpDir) {
     purge: (t) => { log.purges = (log.purges || []).concat([t]); },
     fonts: opts.noFonts ? undefined : { allFonts: [[{ postScriptName: "Inter-Regular" }, { postScriptName: "Inter-Bold" }], [{ postScriptName: "Montserrat-Bold" }]],
       getFontsByPostScriptName: (n) => (/^(Inter|Montserrat|ArialMT)/.test(n) ? [{ postScriptName: n }] : []) } };
-  const ctx = vm.createContext({ app, PurgeTarget: opts.noPurge ? undefined : { ALL_CACHES: 1012, UNDO_CACHES: 1013, SNAPSHOT_CACHES: 1014, IMAGE_CACHES: 1015 }, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, Window, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {}, screens: [{ left: 0, top: 0, right: 1440, bottom: 900 }] },
+  const ctx = vm.createContext({ app, PurgeTarget: opts.noPurge ? undefined : { ALL_CACHES: 1012, UNDO_CACHES: 1013, SNAPSHOT_CACHES: 1014, IMAGE_CACHES: 1015 }, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212, OVERLAY: 5224 }, TrackMatteType: { ALPHA: 5013, NO_TRACK_MATTE: 5012 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, Window, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {}, screens: [{ left: 0, top: 0, right: 1440, bottom: 900 }] },
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   ctx.$.global = ctx;
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
@@ -723,8 +772,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       throw new Error("unknown platform call " + name);
     });
 
-    const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false }, opts.settings || {});
-    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch }) => {
+    const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false, design: "glass", designSet: 2 }, opts.settings || {});
+    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
       window.__SAYFRAME_TEST_UPDATE_KEY__ = updateKey;
       window.__SAYFRAME_TEST_RETRY_MS__ = [40, 40, 40];
@@ -751,7 +800,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         registerKeyEventsInterest(json) { window.__keyInterest.push(json); },
         addEventListener(type, fn) { window.__cepListeners[type] = fn; },
         getSystemPath() { return withSystemPath ? "file://" + hostPath : ""; },
-        getHostEnvironment() { return JSON.stringify({ appName: "AEFT", appVersion: "25.0.1" }); } };
+        getHostEnvironment() { const env = { appName: "AEFT", appVersion: "25.0.1" }; const k = window.__skin;
+          // opts.skin: the colours of After Effects' own panels, as CEP reports them ({ bg: [r, g, b], hi: [r, g, b] }).
+          if (k) env.appSkinInfo = { panelBackgroundColor: { antialiasLevel: 0, color: { red: k.bg[0], green: k.bg[1], blue: k.bg[2], alpha: 255 } },
+            systemHighlightColor: { red: k.hi[0], green: k.hi[1], blue: k.hi[2], alpha: 255 } };
+          return JSON.stringify(env); } };
+      window.__skin = skin;
       const call = (name) => function () { return window.__plat(name, Array.prototype.slice.call(arguments)); };
       window.__SAYFRAME_TEST_PLATFORM__ = {
         available: true,
@@ -775,7 +829,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           return { kill() { s.killed = true; } };
         };
       }
-    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch });
+    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null });
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
     // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
@@ -1863,7 +1917,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsClose");
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   t = await p.page.locator("#hotkeys .hotkey-row span").allInnerTexts();
-  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Разложить по папкам (Organize),Разобрать прекомпозицию (Decompose),Очистить кэш (Clear cache),Null / Parent,Удалить лишнее из проекта (Remove unused),Вырезать фон на фото (Cut out),Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—,—,—,—,—,—", t.join());
+  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Разложить по папкам (Organize),Разобрать прекомпозицию (Decompose),Очистить кэш (Clear cache),Null / Parent,Разделить / объединить шейпы,Удалить лишнее из проекта (Remove unused),Вырезать фон на фото (Cut out),Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—,—,—,—,—,—,—", t.join());
   await p.page.locator("#hotkeys").scrollIntoViewIfNeeded();
   await p.page.screenshot({ path: path.join(SHOTS, "25-hotkeys-settings.png") });
   await p.page.click('#hotkeys [data-action="console"]');
@@ -2098,6 +2152,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = p.sys.exec.filter((x) => /mouseLocation/.test(x.args.join(" ")));
   check("FC7 the watcher cannot see the keys: a press caught by After Effects opens the window at the mouse anyway", !!W && W.shown && W.location[0] === 770 && W.location[1] === 430 && t.length === 1 && t[0].file === "osascript" &&
     (await p.page.locator("#fxConsole").isHidden()) && p.errors.length === 0, JSON.stringify([W && W.location, t.length, p.errors]));
+  t = await p.page.evaluate(() => document.getElementById("fxWhereState").textContent);
+  check("FC7 settings show where the mouse was and where the window went", t === "Последний вызов: мышь 800, 450 (система), окно поставлено в 770, 430; экраны: 0,0,1440,900.", t);
   await p.close();
   p = await open({ keyWatch: true, selectedLayers: [mkFxLayer("Фон")], settings: { fxWhere: "cursor" } });
   await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
@@ -2110,6 +2166,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await forwardEvents(p);
   await p.page.waitForTimeout(300);
   check("FC8 if the system does not say where the mouse is, the search opens in the panel as before", (await p.page.locator("#fxConsole").isVisible()) && p.ae.log.windows.length === 0 && p.errors.length === 0, p.errors.join(" | "));
+  t = await p.page.evaluate(() => document.getElementById("fxWhereState").textContent);
+  check("FC8 settings say the system did not tell where the mouse is", /^Последний вызов: система не сказала, где мышь \(execution error\), поиск открыт в панели\.$/.test(t), t);
   await p.close();
 
   // No layer selected: the window still opens and says so; Enter adds nothing until a layer is selected.
@@ -2213,7 +2271,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   let AL = mkAcLayer("Логотип", "av"), ACam = mkAcLayer("Камера", "camera");
   p = await open({ selectedLayers: [AL, ACam] });
   await p.tab("tools");
-  check("AC1 the Animation tab: five sections, 'Transitions' open, search, timing and a card grid", (await p.page.locator('#acTabs button[aria-selected="true"]').innerText()) === "Переходы" && (await acCards(p)).length === 26 && (await p.page.locator("#acSearch").isVisible()) && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acDurVal").innerText()) === "0,8 с" && (await p.page.locator("#acColorRow").isVisible()) && (await p.page.locator("#acFolders button").allInnerTexts()).join() === "Все,Зум,Панорама,Поворот,Тряска,Глитч,Засветки,Размытие и затемнение,Шейпы");
+  check("AC1 the Animation tab: five sections, 'Transitions' open, search, timing and a card grid", (await p.page.locator('#acTabs button[aria-selected="true"]').innerText()) === "Переходы" && (await acCards(p)).length === 26 && (await p.page.locator("#acSearch").isVisible()) && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acDurVal").innerText()) === "0,8 с" && (await p.page.locator("#acColorRow").isHidden()) && (await p.page.locator("#acFolders button").allInnerTexts()).join() === "Все,Зум,Панорама,Поворот,Тряска,Глитч,Засветки,Размытие и затемнение,Шейпы");
+  t = await p.page.evaluate(() => { const side = document.getElementById("acFolders").getBoundingClientRect(), grid = document.getElementById("acGrid").getBoundingClientRect(), foot = document.getElementById("acFoot").getBoundingClientRect(), dur = document.getElementById("acDurRow").getBoundingClientRect(); return [side.right <= grid.left, Math.abs(side.top - grid.top) < 2, dur.top >= foot.top && dur.bottom <= foot.bottom, foot.top >= grid.bottom, document.querySelector("#acFolders .ac-side-h").textContent]; });
+  check("AC1 kinds are a list on the left of the cards, duration sits in the bar at the bottom", t.join() === "true,true,true,true,Виды", t.join());
+  await p.page.click('#acFolders button[data-folder="shapes"]');
+  check("AC1 the colour shows in Transitions only for shapes (wipes and the circle)", await p.page.locator("#acColorRow").isVisible());
+  await p.page.click('#acFolders button[data-folder="all"]');
   await p.page.locator("#acGrid .ac-card").first().hover();
   await p.page.waitForTimeout(400);
   await p.page.screenshot({ path: path.join(SHOTS, "28-animation-library.png") });
@@ -2684,7 +2747,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.fill("#bgHex", "#101014");
   await p.page.click("#settingsClose");
   t = await p.page.evaluate(() => [getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(), getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(), JSON.parse(localStorage.getItem("sayframe.settings.v1")).accent]);
-  check("G2 closing without saving reverts the preview", t[0] === "#62c8ff" && t[1] === "#0b0c12" && t[2] === "#62c8ff", t.join());
+  check("G2 closing without saving reverts the preview (a new install is in «Студия», its background stays)", t[0] === "#62c8ff" && t[1] === "#111215" && t[2] === "#62c8ff", t.join());
   await p.page.click("#settingsBtn");
   await p.page.fill("#apiKey", "bad");
   p.net.replies.push({ type: "error", error: { message: "invalid x-api-key" } });
@@ -2734,7 +2797,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#tabTools");
   check("W2 the Animation library uses the whole width, the status line stays in the column", (await box(p, "#viewTools .ac")).split(",")[0] === "14" && Number((await box(p, "#viewTools .ac")).split(",")[2]) > 900 && (await overflow(p)) <= 0, await box(p, "#viewTools .ac"));
   await p.page.click("#tabMotion");
-  t = await p.page.evaluate(() => { const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; }; return { tabs: r("#tabs"), top: r(".top"), status: r("#statusBox"), tools: r("#motionTools"), cards: Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width)]; }) }; });
+  t = await p.page.evaluate(() => { const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; }; return { tabs: r("#tabs"), top: r(".top"), status: r("#statusBox"), tools: r("#motionTools"), cards: Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => { const b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width)]; }) }; });
   check("W2 Animation tab in a wide panel: tabs and blocks get the whole width, the status line stays in the column", t.tabs.join() === "14,986" && t.top.join() === "14,986" && t.status[1] <= 366 && t.tools.join() === "14,986" && (await overflow(p)) <= 0, JSON.stringify(t));
   check("W2 the blocks are not stretched: 4 cells (168px) each, five side by side in one row, the sixth below", t.cards.map((c) => c[2]).join() === "168,168,168,168,168,168" && t.cards.map((c) => c[0]).join() === "14,190,366,542,718,718" && t.cards.slice(0, 5).every((c) => c[1] === t.cards[0][1]) && t.cards[5][1] > t.cards[4][1] && (await box(p, "#easeIn")).split(",")[2] === (await box(p, "#easeOut")).split(",")[2], JSON.stringify(t.cards));
   await p.page.click("#tabClaude");
@@ -2803,10 +2866,26 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("FW3 a narrow panel keeps one column: «Выражения» under the request", t[1][0] === 14 && t[1][1] > t[0][1] + t[0][3] && t[0][2] === 352, JSON.stringify(t));
   await p.close();
 
-  // Design: «Стекло» (default) or «After Effects» — same layout, AE-like look.
+  // «Студия» is the main design: a new install gets it, and an update switches everyone to it once; after that the choice is theirs.
+  {
+    const des = (p) => p.page.evaluate(() => [document.documentElement.getAttribute("data-design"), (JSON.parse(localStorage.getItem("sayframe.settings.v1") || "{}")).designSet].join());
+    p = await open({ settings: null });
+    check("DS0 a new install opens in «Студия»", (await des(p)).split(",")[0] === "studio", await des(p));
+    await p.close();
+    p = await open({ settings: { design: "glass", designSet: undefined } });
+    check("DS0 an update moves a glass panel to «Студия» and remembers that it did", (await des(p)) === "studio,2", await des(p));
+    await p.restart();
+    check("DS0 …once: it stays «Студия» after a restart", (await des(p)) === "studio,2", await des(p));
+    await p.close();
+    p = await open({ settings: { design: "ae", designSet: 2 } });
+    check("DS0 a design picked after the switch is kept", (await des(p)) === "ae,2" && p.errors.length === 0, await des(p));
+    await p.close();
+  }
+
+  // Design: «Стекло», «After Effects» or «Студия» — same layout, another look. (Here a panel that chose glass.)
   p = await open({ width: 380 });
   t = () => p.page.evaluate(() => [document.documentElement.getAttribute("data-design"), getComputedStyle(document.body).backgroundColor, getComputedStyle(document.querySelector(".glow")).display]);
-  check("DS1 by default the panel keeps its glass look", JSON.stringify(await t()) === JSON.stringify(["glass", "rgb(11, 12, 18)", "block"]), JSON.stringify(await t()));
+  check("DS1 a panel that chose glass keeps its glass look", JSON.stringify(await t()) === JSON.stringify(["glass", "rgb(11, 12, 18)", "block"]), JSON.stringify(await t()));
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("DS1 settings offer «Стекло», «After Effects» and «Студия», glass chosen", (await p.page.locator("#designPick button").allInnerTexts()).join() === "Стекло,After Effects,Студия" && (await p.page.getAttribute('#designPick [data-value="glass"]', "aria-pressed")) === "true");
   await p.page.click('#designPick [data-value="ae"]');
@@ -2819,6 +2898,16 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#tabMotion");
   check("DS3 the Tools tab works the same in the new look", (await p.page.locator('#motionTools .tool-card[data-tool="paste"] #pasteBtn').isVisible()) && (await overflow(p)) <= 0);
   await p.page.screenshot({ path: path.join(SHOTS, "09e-design-ae.png") });
+  await p.close();
+
+  // «After Effects» takes its colours from After Effects itself: the panel background (the Brightness slider) and the highlight colour.
+  p = await open({ width: 380, settings: { design: "ae" }, skin: { bg: [50, 50, 50], hi: [230, 120, 20] } });
+  t = () => p.page.evaluate(() => [getComputedStyle(document.body).backgroundColor, getComputedStyle(document.querySelector(".card")).backgroundColor, getComputedStyle(document.querySelector("#runBtn")).backgroundColor, getComputedStyle(document.body).color]);
+  check("DS7 «After Effects» uses After Effects' own panel colour and highlight colour", JSON.stringify(await t()) === JSON.stringify(["rgb(50, 50, 50)", "rgb(55, 55, 55)", "rgb(230, 120, 20)", "rgb(214, 214, 214)"]), JSON.stringify(await t()));
+  await p.page.evaluate(() => { window.__skin = { bg: [184, 184, 184], hi: [45, 140, 235] }; window.__cepListeners["com.adobe.csxs.events.ThemeColorChanged"]({}); });
+  check("DS7 After Effects made lighter: the panel follows at once, with dark text", JSON.stringify(await t()) === JSON.stringify(["rgb(184, 184, 184)", "rgb(179, 179, 179)", "rgb(45, 140, 235)", "rgb(30, 30, 30)"]), JSON.stringify(await t()));
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="glass"]');
+  check("DS7 the other designs keep their own colours", (await p.page.evaluate(() => getComputedStyle(document.body).backgroundColor)) === "rgb(11, 12, 18)" && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
   // «Студия»: same layout, dark with a dot grid, icons in tinted squares.
@@ -2849,7 +2938,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T2 Tools tab shows only the tools", (await vis(p, "#viewTools #acGrid")) && !(await vis(p, "#prompt")) && !(await vis(p, "#runBtn")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#newBtn")) && !(await vis(p, "#fixBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "false");
   check("T2 status line moved to the Tools tab", (await p.page.locator("#viewTools #statusBox").count()) === 1 && (await p.page.locator("#statusBox").count()) === 1 && (await vis(p, "#status")));
   await p.page.screenshot({ path: path.join(SHOTS, "17-tab-tools.png") });
-  check("T2 the Animation tab holds the preset library with five sections; the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Звуки,✎ Изменить");
+  check("T2 the Animation tab holds the preset library with six sections; the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Заготовки,Звуки,✎ Изменить");
   await p.paste(); await p.idle(); await p.modalClick("Оставить как есть");
   check("T3 the paste block reports its result on its tab", /^Картинка вставлена/.test(await p.status()) && (await vis(p, "#status")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1 && p.ae.log.imports.length === 1, await p.status());
   t = await p.status();
@@ -3020,7 +3109,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("M1 no horizontal overflow at 380px", t <= 0, t);
   await p.page.screenshot({ path: path.join(SHOTS, "21-tab-motion.png") });
   check("M2 sliders start linked at 60", (await p.page.inputValue("#easeIn")) === "60" && (await p.page.inputValue("#easeOut")) === "60" && (await p.page.isChecked("#easeLink")) && (await p.page.inputValue("#easeInVal")) === "60" && (await p.page.inputValue("#easeOutVal")) === "60");
-  check("M2 the easing block: a title, the apply button, the curve toggle and the keyboard handle, no slider labels", (await p.page.locator("#viewMotion .ease-card button").count()) === 4 && (await p.page.locator("#viewMotion .ease-card .tool-pin").count()) === 1 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link)").count()) === 0 && (await p.page.locator(".ease-card .tool-head b").innerText()) === "Плавность" && (await p.page.locator("#showCurve").count()) === 0);
+  check("M2 the easing block: a title, the apply button, the curve toggle, the keyboard handle and the graph switch, no slider labels", (await p.page.locator("#viewMotion .ease-card button:not(#easeView button)").count()) === 4 && (await p.page.locator("#easeView button").count()) === 2 && (await p.page.locator("#viewMotion .ease-card .tool-pin").count()) === 1 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link)").count()) === 0 && (await p.page.locator(".ease-card .tool-head b").innerText()) === "Плавность" && (await p.page.locator("#showCurve").count()) === 0);
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); const a = r("easeIn"), b = r("easeBothBtn"), c = r("easeOut"), n1 = r("easeInVal"), l = document.querySelector(".ease-link").getBoundingClientRect(), n2 = r("easeOutVal"); return { row: a.right <= b.left && b.right <= c.left && Math.abs((a.top + a.bottom) - (c.top + c.bottom)) < 2, equal: Math.abs(a.width - c.width) < 2, nums: n1.right <= l.left && l.right <= n2.left && n1.top >= b.bottom - 1, centered: Math.abs((l.left + l.right) / 2 - (b.left + b.right) / 2) < 2, rtl: getComputedStyle(document.getElementById("easeIn")).direction }; });
   check("M2 layout: slider, button, slider in one row; numbers and link centred under the button", t.row && t.equal && t.nums && t.centered, JSON.stringify(t));
   check("M2 the left slider grows away from the button", t.rtl === "rtl" && (await fillOf(p, "easeIn")) === "0.6" && (await fillOf(p, "easeOut")) === "0.6", t.rtl);
@@ -3094,10 +3183,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
   // ---------------------------------------------------------------- animation: two blocks side by side, swappable
-  const toolOrder = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => c.getAttribute("data-tool")).join());
+  const toolOrder = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => c.getAttribute("data-tool")).join());
   // The layout checks below were written for the six original blocks; "Копия плавности" stands last and has its own checks.
-  const savedTools = (p) => p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").order; return o ? o.split(",").filter((x) => x !== "easecopy" && x !== "decompose" && x !== "cache" && x !== "nullp" && x !== "unused" && x !== "cutout").join(",") : null; });
-  const toolRects = (p) => p.page.evaluate(() => { const o = {}; Array.prototype.forEach.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const r = c.getBoundingClientRect(); o[c.getAttribute("data-tool")] = { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width) }; }); return o; });
+  const savedTools = (p) => p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").order; return o ? o.split(",").filter((x) => x !== "easecopy" && x !== "decompose" && x !== "cache" && x !== "nullp" && x !== "unused" && x !== "cutout" && x !== "stagger").join(",") : null; });
+  const toolRects = (p) => p.page.evaluate(() => { const o = {}; Array.prototype.forEach.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => { const r = c.getBoundingClientRect(); o[c.getAttribute("data-tool")] = { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width) }; }); return o; });
   const grip = (tool) => '#motionTools [data-tool="' + tool + '"] .tool-grip';
   async function dragFrom(p, from, to) {
     await p.page.mouse.move(from.x, from.y); await p.page.mouse.down();
@@ -3109,7 +3198,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const by = (pt, dx, dy) => ({ x: pt.x + dx, y: pt.y + (dy || 0) });
   const topOf = (r) => ({ x: (r.l + r.r) / 2, y: r.t + 20 });   // a point near the top: tall blocks may end below the window
   // Where each block sits on the grid: "name:column,row,width,height" in cells.
-  const cellsNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const a = /^(\d+) \/ span (\d+)$/.exec(c.style.gridColumn), b = /^(\d+) \/ span (\d+)$/.exec(c.style.gridRow); return c.getAttribute("data-tool") + ":" + (a[1] - 1) + "," + (b[1] - 1) + "," + a[2] + "," + b[2]; }).join(" "));
+  const cellsNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => { const a = /^(\d+) \/ span (\d+)$/.exec(c.style.gridColumn), b = /^(\d+) \/ span (\d+)$/.exec(c.style.gridRow); return c.getAttribute("data-tool") + ":" + (a[1] - 1) + "," + (b[1] - 1) + "," + a[2] + "," + b[2]; }).join(" "));
   const savedPlaces = (p) => p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").places || "");
   const resizeTo = async (p, w) => { await p.page.setViewportSize({ width: w, height: 760 }); await p.page.waitForTimeout(80); };
 
@@ -3119,9 +3208,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R1 at 380px easing and anchor stand side by side, align goes to the row below at the same size", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && t.ease.w === 168 && t.anchor.w === 168 && t.align.w === 168 && t.ease.l === 14 && t.anchor.r === 358 && t.align.t >= t.ease.b && t.align.l === 14, JSON.stringify(t));
   t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.display, cs.gridAutoRows, cs.rowGap, cs.columnGap, g.style.gridTemplateColumns].join("|"); });
   check("R1 the blocks stand on a fine grid: 14px cells with 8px gaps (a 22px step), 16 cells across at 380px", t === "grid|14px|8px|8px|repeat(16, 14px)", t);
-  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const r = c.getBoundingClientRect(), g = document.getElementById("motionTools").getBoundingClientRect(); return (r.left - g.left) % 22 === 0 && (r.top - g.top) % 22 === 0 && (r.width + 8) % 22 === 0 && (r.height + 8) % 22 === 0; }));
+  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => { const r = c.getBoundingClientRect(), g = document.getElementById("motionTools").getBoundingClientRect(); return (r.left - g.left) % 22 === 0 && (r.top - g.top) % 22 === 0 && (r.width + 8) % 22 === 0 && (r.height + 8) % 22 === 0; }));
   check("R1 every block starts on a cell and is a whole number of cells wide and tall", t);
-  t = await p.page.evaluate(() => { const inside = (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button, select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5); }); }; return Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), inside).join(); });
+  t = await p.page.evaluate(() => { const inside = (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button, select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5); }); }; return Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), inside).join(); });
   check("R1 nothing sticks out of any block", t === "true,true,true,true,true,true" && (await overflow(p)) <= 0, t);
   t = await p.page.evaluate(() => [document.getElementById("easeIn").getBoundingClientRect().width, document.getElementById("easeOut").getBoundingClientRect().width, document.getElementById("anchorGrid").getBoundingClientRect().width].map(Math.round));
   check("R1 sliders stay usable and the arrow grid keeps its size", t[0] === t[1] && t[0] >= 40 && t[2] >= 118, t.join());
@@ -3235,7 +3324,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     ['"anchor,ease"', "anchor,ease,align,shift,paste,organize"] /* an order saved before the Align block existed */, ['"align,ghost,ease"', "align,ease,anchor,shift,paste,organize"]]) {
     p = await open({});
     await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", '{"order":' + v + "}"), bad); await p.restart(); await motionTab(p);
-    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])").count()) === 6 && p.errors.length === 0, await toolOrder(p));
+    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])").count()) === 6 && p.errors.length === 0, await toolOrder(p));
     await p.close();
   }
   p = await open({});
@@ -3474,16 +3563,16 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // ---------------------------------------------------------------- animation: a free panel, fixed blocks
   // Stretching the After Effects panel never resizes a block; it only changes how many stand in a row.
   console.log("\n=== animation: blocks reflow, sizes stay ===");
-  const allInside = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button:not(.tool-grip), select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5); }); }));
-  const sizesNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const b = c.getBoundingClientRect(); return Math.round(b.width) + "x" + Math.round(b.height); }).sort().join());
+  const allInside = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button:not(.tool-grip), select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5 && r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5); }); }));
+  const sizesNow = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => { const b = c.getBoundingClientRect(); return Math.round(b.width) + "x" + Math.round(b.height); }).sort().join());
   // How many blocks stand in the first row, and is everything stacked in one column?
-  const firstRow = (p) => p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => /^1 \//.test(c.style.gridRow)).length);
-  const oneColumn = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => /^1 \//.test(c.style.gridColumn)));
+  const firstRow = (p) => p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => /^1 \//.test(c.style.gridRow)).length);
+  const oneColumn = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => /^1 \//.test(c.style.gridColumn)));
   p = await open({ width: 380 });
   await motionTab(p);
   c = await sizesNow(p);
-  check("E1 at 380px (8 cells): two blocks in the first row, the rest below", (await firstRow(p)) === 2 && (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 shift:8,13,8,21 paste:0,23,8,7 organize:0,30,8,11", await cellsNow(p));
-  check("E1 (scene) block sizes", c === "168x146,168x234,168x234,168x256,168x278,168x454", c);
+  check("E1 at 380px (8 cells): two blocks in the first row, the rest below", (await firstRow(p)) === 2 && (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 shift:8,13,8,15 paste:0,23,8,7 organize:8,28,8,11", await cellsNow(p));
+  check("E1 (scene) block sizes", c === "168x146,168x234,168x234,168x256,168x278,168x322", c);
   await resizeTo(p, 600);
   check("E1 stretched to 600px: three in the first row, every block exactly the same size as before", (await firstRow(p)) === 3 && (await sizesNow(p)) === c, (await firstRow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 800);
@@ -3494,7 +3583,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await resizeTo(p, 300);
   check("E1 squeezed to 300px: one under another, same sizes again", (await oneColumn(p)) && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await cellsNow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 380);
-  check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 shift:8,13,8,21 paste:0,23,8,7 organize:0,30,8,11" && (await sizesNow(p)) === c);
+  check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 shift:8,13,8,15 paste:0,23,8,7 organize:8,28,8,11" && (await sizesNow(p)) === c);
   await p.page.click("#settingsBtn"); await setWidth(p, 640); await p.page.click("#saveSettings");
   check("E2 the width setting is for fields and buttons: it changes neither the blocks nor the tab bar", (await box(p, "#tabs")).split(",")[2] === "352" && (await sizesNow(p)) === c && (await firstRow(p)) === 2);
   await resizeTo(p, 1000);
@@ -3519,7 +3608,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 700, height: 1100, settings: { panelWidth: 640 } });   // blocks area: 672px = 15 cells
   await motionTab(p);
   t = await toolRects(p);
-  check("S1 every block has three handles: right edge (width), bottom edge (height), corner (both)", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const r = c.getBoundingClientRect(); const x = c.querySelector(".tool-resize").getBoundingClientRect(), y = c.querySelector(".tool-resize-y").getBoundingClientRect(), xy = c.querySelector(".tool-resize-xy").getBoundingClientRect(); return x.left < r.right && x.right > r.right && x.height > 30 && getComputedStyle(c.querySelector(".tool-resize")).cursor === "ew-resize" && y.top < r.bottom && y.bottom > r.bottom && y.width > 30 && getComputedStyle(c.querySelector(".tool-resize-y")).cursor === "ns-resize" && xy.right > r.right && xy.bottom > r.bottom && getComputedStyle(c.querySelector(".tool-resize-xy")).cursor === "nwse-resize"; }))));
+  check("S1 every block has three handles: right edge (width), bottom edge (height), corner (both)", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => { const r = c.getBoundingClientRect(); const x = c.querySelector(".tool-resize").getBoundingClientRect(), y = c.querySelector(".tool-resize-y").getBoundingClientRect(), xy = c.querySelector(".tool-resize-xy").getBoundingClientRect(); return x.left < r.right && x.right > r.right && x.height > 30 && getComputedStyle(c.querySelector(".tool-resize")).cursor === "ew-resize" && y.top < r.bottom && y.bottom > r.bottom && y.width > 30 && getComputedStyle(c.querySelector(".tool-resize-y")).cursor === "ns-resize" && xy.right > r.right && xy.bottom > r.bottom && getComputedStyle(c.querySelector(".tool-resize-xy")).cursor === "nwse-resize"; }))));
   check("S1 (scene) three blocks in one row, lists under the buttons", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await shape(p, "anchor")) === "vertical" && (await shape(p, "align")) === "vertical", JSON.stringify(t));
   await p.page.mouse.move((await center(p, edge("anchor"))).x, (await center(p, edge("anchor"))).y); await p.page.mouse.down();
   c = await center(p, edge("anchor"));
@@ -3637,8 +3726,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("G2 widened again, they go back to their cells", /shift:0,0,8,/.test(await cellsNow(p)) && /ease:24,0/.test(await cellsNow(p)), await cellsNow(p));
   await p.page.click("#arrangeReset");
   t = await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1")));
-  check("G3 'Reset' returns the layout of a new install: places, sizes and pins", t.places === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12".split(";").sort((a, b) => a.localeCompare(b)).join(";") || t.places.split(";").sort().join(";") === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12".split(";").sort().join(";"), t.places);
-  check("G3 … with the sizes and the pinned blocks on top", t.sizes.split(";").sort().join(";") === "ease=14x0;easecopy=17x0;shift=12x0" && t.pins === "paste,unused,easecopy,decompose,organize,cache,nullp,cutout", t.sizes + " | " + t.pins);
+  check("G3 'Reset' returns the layout of a new install: places, sizes and pins", t.places === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;stagger=12,12;anchor=24,12;align=32,12;ease=40,12".split(";").sort((a, b) => a.localeCompare(b)).join(";") || t.places.split(";").sort().join(";") === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;stagger=12,12;anchor=24,12;align=32,12;ease=40,12".split(";").sort().join(";"), t.places);
+  check("G3 … with the sizes and the pinned blocks on top", t.sizes.split(";").sort().join(";") === "ease=14x0;easecopy=17x0;shift=12x0;stagger=12x0" && t.pins === "paste,unused,easecopy,decompose,organize,cache,nullp,cutout", t.sizes + " | " + t.pins);
   check("G3 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
@@ -3647,7 +3736,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const pinOf = (p, name) => p.page.locator('.tool-card[data-tool="' + name + '"] .tool-pin');
   p = await open({});
   await motionTab(p);
-  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const pin = c.querySelector(".tool-pin"), tg = c.querySelector(".tool-toggle"); if (!pin || !tg) return false; const a = pin.getBoundingClientRect(), b = tg.getBoundingClientRect(), r = c.getBoundingClientRect(); return Math.abs(a.top - b.top) < 2 && a.right <= b.left + 1 && a.left > r.left && pin.getAttribute("aria-pressed") === "false"; }));
+  t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => { const pin = c.querySelector(".tool-pin"), tg = c.querySelector(".tool-toggle"); if (!pin || !tg) return false; const a = pin.getBoundingClientRect(), b = tg.getBoundingClientRect(), r = c.getBoundingClientRect(); return Math.abs(a.top - b.top) < 2 && a.right <= b.left + 1 && a.left > r.left && pin.getAttribute("aria-pressed") === "false"; }));
   check("PN1 the pin does not cut the titles short", await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-head b"), (b) => b.scrollWidth <= b.clientWidth + 1)), await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-head b"), (b) => b.textContent + ":" + b.scrollWidth + "/" + b.clientWidth).join(" ")));
   check("PN1 every block has a pin right next to its minus; nothing is pinned at first, no line", t && (await pinLine(p)) === null && (await pinOf(p, "ease").getAttribute("title")) === "Закрепить наверху");
   c = await cellsNow(p);
@@ -3754,11 +3843,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const savedMotion = (p, k) => p.page.evaluate((k) => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}")[k], k);
   const titlesAttr = (p) => p.page.evaluate(() => document.documentElement.getAttribute("data-titles"));
   // Does the corner button overlap anything else in its block?
-  const togglesClear = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]) .tool-toggle"), (b) => { const r = b.querySelector("svg").getBoundingClientRect(); return Array.prototype.every.call(b.parentNode.querySelectorAll(".tool-head b, .anchor-grid button, .ease-bar > *, .ease-curve, select, .anchor-side label, .align-btn, .align-to label, .align-label, .shift-pick label, .tool-info, .shift-arrow, .shift-do"), (el) => { const q = el.getBoundingClientRect(); if (q.width === 0) return true; const tw = el.nodeName === "B" ? (() => { const g = document.createRange(); g.selectNodeContents(el); const t = g.getBoundingClientRect(); return { left: Math.max(t.left, q.left), right: Math.min(t.right, q.right), top: t.top, bottom: t.bottom }; })() : q; return tw.right <= r.left || tw.left >= r.right || tw.bottom <= r.top || tw.top >= r.bottom; }); }));
+  const togglesClear = (p) => p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger]) .tool-toggle"), (b) => { const r = b.querySelector("svg").getBoundingClientRect(); return Array.prototype.every.call(b.parentNode.querySelectorAll(".tool-head b, .anchor-grid button, .ease-bar > *, .ease-curve, select, .anchor-side label, .align-btn, .align-to label, .align-label, .shift-pick label, .tool-info, .shift-arrow, .shift-do"), (el) => { const q = el.getBoundingClientRect(); if (q.width === 0) return true; const tw = el.nodeName === "B" ? (() => { const g = document.createRange(); g.selectNodeContents(el); const t = g.getBoundingClientRect(); return { left: Math.max(t.left, q.left), right: Math.min(t.right, q.right), top: t.top, bottom: t.bottom }; })() : q; return tw.right <= r.left || tw.left >= r.right || tw.bottom <= r.top || tw.top >= r.bottom; }); }));
 
   p = await open({});
   await motionTab(p);
-  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]) .tool-toggle").count()) === 6 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "organizeOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout])"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
+  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger]) .tool-toggle").count()) === 6 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "organizeOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "shiftOptsToggle")) === "true|Скрыть схему|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
   check("F1 the corner buttons do not cover titles or controls", await togglesClear(p));
   c = await cardH(p, "anchor");
   await p.page.click("#anchorOptsToggle");
@@ -3791,7 +3880,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("F5 titles are shown unless switched off, one short word each", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность,Якорь,Выровнять,Время,Копия");
+  check("F5 titles are shown unless switched off, one short word each", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность,Якорь,Выровнять,Сдвиг,Копия,Лесенка", await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join()));
   c = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("F5 settings have the switch, on", await p.page.isChecked("#toolTitles"));
@@ -4082,6 +4171,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const fr = (sec) => Math.round(sec / F * 1000) / 1000;
   const opt = (p, id) => p.page.locator("#" + id + " option").evaluateAll((l) => l.map((o) => o.value).join());
   const press = async (p, id) => { await p.page.click("#" + id); await p.idle(); };
+  const pickSeg = async (p, g, v) => { await p.page.click("#" + g + ' button[data-v="' + v + '"]'); };
+  const val = (p, g) => (g === "timeAlign" ? p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").timeAlign || "inStart") : p.page.getAttribute("#" + g + ' button[aria-pressed="true"]', "data-v"));   // «К указателю» помнит только последнюю точку
+  const alignTo = async (p, v) => { await p.page.click('#timeAlign button[data-v="' + v + '"]'); await p.idle(); };
   const setStep = async (p, id, text, key) => { await p.page.click("#" + id); await p.page.keyboard.type(text); await p.page.keyboard.press(key || "Enter"); };
   // A layer living from 1 s to 5 s (frames 30..150, middle at 90): it comes in over the first half second and leaves over the last.
   const actor = (o) => {
@@ -4096,27 +4188,31 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("T1 a fourth block, 'Shift in time', with three parts", (await p.page.locator('#motionTools [data-tool="shift"] .tool-head b').innerText()) === "Время" && (await p.page.locator(".shift-card .shift-part").count()) === 3 && (await p.page.locator(".shift-card .align-sep").count()) === 2 && (await p.page.locator(".shift-card .shift-pick label").allInnerTexts()).join() === "Сдвинуть:,Подвести:,Расставить:");
-  check("T1 the lists", (await opt(p, "shiftWhat")) === "in,out,layer" && (await opt(p, "timeAlign")) === "inStart,inEnd,outStart,outEnd" && (await opt(p, "staggerWhat")) === "layer,in,out" && (await opt(p, "staggerOrder")) === "asc,desc,selection,random");
-  check("T1 defaults: in-animation, one frame, start of the in-animation, layers, top to bottom", [await p.page.inputValue("#shiftWhat"), await p.page.inputValue("#shiftStep"), await p.page.inputValue("#timeAlign"), await p.page.inputValue("#staggerWhat"), await p.page.inputValue("#staggerStep"), await p.page.inputValue("#staggerOrder")].join() === "in,1,inStart,layer,1,asc");
-  check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".shift-card button:not(.tool-grip), .shift-card select, .shift-card input"), (el) => { const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
+  check("T1 two blocks, «Сдвиг» and «Лесенка», each with a before/after diagram on top", (await p.page.locator('#motionTools [data-tool="shift"] .tool-head b').innerText()) === "Сдвиг" && (await p.page.locator('#motionTools [data-tool="stagger"] .tool-head b').innerText()) === "Лесенка" && (await vis(p, "#shiftPrev")) && (await vis(p, "#staggerPrev")) && (await p.page.locator(".shift-card select, .stagger-card select").count()) === 0);
+  check("T1 the choices are buttons with a picture of the layer, not lists", (await p.page.locator("#shiftWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "in,out,layer" && (await p.page.locator("#timeAlign button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "inStart,inEnd,outStart,outEnd" && (await p.page.locator("#staggerWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "layer,in,out" && (await p.page.locator("#staggerOrder button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "asc,desc,selection,random" && (await p.page.locator("#shiftWhat button svg rect, #timeAlign button svg rect").count()) >= 15);
+  check("T1 defaults: in-animation, one frame, start of the in-animation, layers, top to bottom", [await val(p, "shiftWhat"), await p.page.inputValue("#shiftStep"), await val(p, "timeAlign"), await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "in,1,inStart,layer,1,asc" && (await p.page.locator("#shiftPrevText").innerText()) === "Появление сдвинется на 1 кадр позже." && (await p.page.locator("#staggerPrevText").innerText()) === "Каждый следующий слой на 1 кадр позже предыдущего, сверху вниз.");
+  check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".shift-card button:not(.tool-grip), .shift-card input, .stagger-card button:not(.tool-grip), .stagger-card input"), (el) => { const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
+  await p.page.hover("#shiftBack"); t = await p.page.locator("#shiftPrevText").innerText(); await p.page.hover('#timeAlign button[data-v="outEnd"]');
+  check("T1 the diagram follows the mouse: the left arrow shows «earlier», an align button shows the playhead", t === "Появление сдвинется на 1 кадр раньше." && (await p.page.locator("#shiftPrevText").innerText()) === "Конец исчезновения встанет на указатель времени." && (await p.page.locator("#shiftPrev .tl-cti").count()) === 1, t);
+  await pickSeg(p, "staggerOrder", "desc"); await pickSeg(p, "staggerWhat", "in"); await p.page.click("#staggerMore"); await p.page.click("#staggerMore");
+  check("T1 the staircase diagram and its text change with the choices; + and - change the step", (await p.page.locator("#staggerPrevText").innerText()) === "Каждый следующий слой появляется на 3 кадра позже предыдущего, снизу вверх." && (await p.page.locator("#staggerOrderName").innerText()) === "Снизу вверх" && (await p.page.inputValue("#staggerStep")) === "3", await p.page.locator("#staggerPrevText").innerText());
+  await p.page.click("#staggerLess"); await p.page.click("#staggerLess"); await p.page.click("#staggerLess"); await pickSeg(p, "staggerOrder", "asc"); await pickSeg(p, "staggerWhat", "layer");
+  check("T1 the step does not go below one frame", (await p.page.inputValue("#staggerStep")) === "1");
   await press(p, "shiftFwd");
   check("T1 nothing selected -> a hint, not an error", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && (await p.statusKind()) === "" && p.ae.log.undo.length === 0);
-  await press(p, "timeAlignBtn"); t = await p.status(); await press(p, "staggerBtn");
+  await alignTo(p, "inStart"); t = await p.status(); await press(p, "staggerBtn");
   check("T1 the same for the other two buttons", t === "Выделите слой в композиции и нажмите ещё раз." && (await p.status()) === t);
-  await p.page.locator(".shift-card .tool-info").nth(0).click();
-  check("T1 the 'i' explains the part in the status line", /^Появление — все ключи и маркеры в первой половине слоя/.test(await p.status()) && (await p.statusKind()) === "" && (await p.page.locator(".shift-card .tool-info").count()) === 3 && (await p.page.locator(".shift-card .tool-info").evaluateAll((l) => l.every((b) => b.title === b.getAttribute("data-info") && b.title.length > 40))));
-  await p.page.selectOption("#shiftWhat", "out"); await p.page.selectOption("#timeAlign", "outEnd"); await p.page.selectOption("#staggerWhat", "in"); await p.page.selectOption("#staggerOrder", "random");
+  await pickSeg(p, "shiftWhat", "out"); await pickSeg(p, "staggerWhat", "in"); await pickSeg(p, "staggerOrder", "random");
   await setStep(p, "shiftStep", "12"); await setStep(p, "staggerStep", "5");
   await setStep(p, "shiftStep", "abc"); t = await p.page.inputValue("#shiftStep");
   await setStep(p, "shiftStep", "0"); t += "," + await p.page.inputValue("#shiftStep");
   await setStep(p, "shiftStep", "77", "Escape"); t += "," + await p.page.inputValue("#shiftStep");
   check("T1 a step that is not a whole number from 1 is thrown away, Escape cancels typing", t === "12,12,12", t);
   await p.restart();
-  check("T1 every choice survives a restart", [await p.page.inputValue("#shiftWhat"), await p.page.inputValue("#shiftStep"), await p.page.inputValue("#timeAlign"), await p.page.inputValue("#staggerWhat"), await p.page.inputValue("#staggerStep"), await p.page.inputValue("#staggerOrder")].join() === "out,12,outEnd,in,5,random" && (await vis(p, "#shiftFwd")));
+  check("T1 every choice survives a restart", [await val(p, "shiftWhat"), await p.page.inputValue("#shiftStep"), await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "out,12,in,5,random" && (await vis(p, "#shiftFwd")));
   await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ shiftWhat: "x", shiftStep: -4, timeAlign: 5, staggerWhat: null, staggerStep: 100000, staggerOrder: "up" })));
   await p.restart(); await motionTab(p);
-  check("T1 broken saved values fall back safely", [await p.page.inputValue("#shiftWhat"), await p.page.inputValue("#shiftStep"), await p.page.inputValue("#timeAlign"), await p.page.inputValue("#staggerWhat"), await p.page.inputValue("#staggerStep"), await p.page.inputValue("#staggerOrder")].join() === "in,1,inStart,layer,999,asc" && p.errors.length === 0);
+  check("T1 broken saved values fall back safely", [await val(p, "shiftWhat"), await p.page.inputValue("#shiftStep"), await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "in,1,layer,999,asc" && p.errors.length === 0);
   await p.close();
   p = await open({ noActiveComp: true });
   await motionTab(p); await press(p, "shiftBack");
@@ -4152,12 +4248,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // the out-animation
   L = actor({});
   p = await open({ selectedLayers: [L] });
-  await motionTab(p); await p.page.selectOption("#shiftWhat", "out"); await setStep(p, "shiftStep", "3");
+  await motionTab(p); await pickSeg(p, "shiftWhat", "out"); await setStep(p, "shiftStep", "3");
   await press(p, "shiftFwd");
   check("T3 out-animation three frames later: keys and marker of the second half, the layer's end with them", times(R(L)) === "30,45,138,152" && times(MK(L)) === "36,141" && times(SC(L)) === "30,45" && times(SL(L)) === "60" && close2(fr(L.outPoint), 153) && close2(fr(L.inPoint), 30), times(R(L)) + " " + fr(L.outPoint) + " " + fr(L.inPoint));
   await press(p, "shiftBack"); await press(p, "shiftBack");
   check("T3 and earlier", times(R(L)) === "30,45,132,146" && close2(fr(L.outPoint), 147), times(R(L)) + " " + fr(L.outPoint));
-  await p.page.selectOption("#shiftWhat", "layer"); await press(p, "shiftFwd");
+  await pickSeg(p, "shiftWhat", "layer"); await press(p, "shiftFwd");
   check("T3 'whole layer' moves everything: both edges, every key, every marker", times(R(L)) === "33,48,135,149" && times(MK(L)) === "39,138" && times(SL(L)) === "63" && close2(fr(L.inPoint), 33) && close2(fr(L.outPoint), 150) && close2(fr(L.startTime), 3), times(R(L)) + " " + fr(L.startTime));
   await p.close();
 
@@ -4184,17 +4280,17 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   L = actor({});
   L2 = actor({ name: "late", inPoint: 2, outPoint: 6 }); R(L2).keys.forEach((k) => { k.time += 1; }); SC(L2).keys.forEach((k) => { k.time += 1; }); SL(L2).keys = []; MK(L2).keys = [];
   p = await open({ selectedLayers: [L, L2], compTime: 3 * F + 1 });   // frame 33
-  await motionTab(p); await press(p, "timeAlignBtn");
+  await motionTab(p); await alignTo(p, "inStart");
   check("T5 start of the in-animation to the playhead: both layers begin at frame 33 now", times(R(L)) === "33,48,135,149" && times(R(L2)) === "33,48,165,179" && times(SC(L2)) === "33,48" && close2(fr(L.inPoint), 33) && close2(fr(L2.inPoint), 33) && close2(fr(L2.outPoint), 180), times(R(L)) + " | " + times(R(L2)) + " " + fr(L2.inPoint));
   check("T5 result reported, one undo step", (await p.status()) === "Поставлено на указатель времени: 2 слоя.\nОтменить: Cmd/Ctrl+Z." && p.ae.log.undo.join() === "begin:Sayframe: align to current time,end", await p.status());
-  await press(p, "timeAlignBtn");
+  await alignTo(p, "inStart");
   check("T5 already there -> says so", (await p.status()) === "Уже на месте: 2 слоя." && (await p.statusKind()) === "" && times(R(L)) === "33,48,135,149");
-  await p.page.selectOption("#timeAlign", "inEnd"); await press(p, "timeAlignBtn");
+  await alignTo(p, "inEnd");
   check("T5 end of the in-animation to the playhead: the last key of the first half (here the effect's key at frame 63) lands there", times(R(L)) === "3,18,135,149" && times(SL(L)) === "33" && times(R(L2)) === "18,33,165,179" && close2(fr(L.inPoint), 3) && close2(fr(L2.inPoint), 18), times(R(L)) + " " + times(SL(L)));
   p.ae.comp.time = 140 * F;
-  await p.page.selectOption("#timeAlign", "outStart"); await press(p, "timeAlignBtn");
+  await alignTo(p, "outStart");
   check("T5 start of the out-animation", times(R(L)) === "3,18,140,154" && times(MK(L)).split(",")[1] === "143" && times(R(L2)) === "18,33,140,154" && close2(fr(L.outPoint), 155) && close2(fr(L2.outPoint), 155), times(R(L)) + " " + times(MK(L)) + " " + fr(L.outPoint));
-  await p.page.selectOption("#timeAlign", "outEnd"); await press(p, "timeAlignBtn");
+  await alignTo(p, "outEnd");
   check("T5 end of the out-animation", times(R(L)) === "3,18,126,140" && times(R(L2)) === "18,33,126,140" && close2(fr(L.outPoint), 141), times(R(L)) + " " + fr(L.outPoint));
   await p.close();
 
@@ -4209,21 +4305,21 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T6 result reported, one undo step", (await p.status()) === "Лесенка: 3 слоя, шаг 2 кадра.\nОтменить: Cmd/Ctrl+Z." && (await p.statusKind()) === "done" && p.ae.log.undo.join() === "begin:Sayframe: stagger,end", await p.status());
   await press(p, "staggerBtn");
   check("T6 pressing again makes the steps bigger", starts(bx) === "0,4,8");
-  await p.page.selectOption("#staggerOrder", "desc"); await press(p, "staggerBtn");
+  await pickSeg(p, "staggerOrder", "desc"); await press(p, "staggerBtn");
   check("T6 bottom to top: the bottom layer stays (0,4,8 -> 4,6,8)", starts(bx) === "4,6,8", starts(bx));
-  await p.page.selectOption("#staggerOrder", "selection"); await press(p, "staggerBtn");
+  await pickSeg(p, "staggerOrder", "selection"); await press(p, "staggerBtn");
   check("T6 in the order they were picked (3, 1, 2)", starts(bx) === "6,10,8", starts(bx));
   bx.forEach((l) => { l.startTime = 0; });
-  await p.page.selectOption("#staggerOrder", "random"); await setStep(p, "staggerStep", "10"); await press(p, "staggerBtn");
+  await pickSeg(p, "staggerOrder", "random"); await setStep(p, "staggerStep", "10"); await press(p, "staggerBtn");
   check("T6 random: the same steps in some order", starts(bx).split(",").map(Number).sort((a, b) => a - b).join() === "0,10,20", starts(bx));
   await p.close();
   bx = trio();
   L2 = mkLayer(clock, { name: "plain", index: 2, inPoint: 1, outPoint: 5 });   // no keys: sits between the first and the second
   p = await open({ selectedLayers: [bx[0], L2, bx[1], bx[2]] });
-  await motionTab(p); await p.page.selectOption("#staggerWhat", "in"); await setStep(p, "staggerStep", "4"); await press(p, "staggerBtn");
+  await motionTab(p); await pickSeg(p, "staggerWhat", "in"); await setStep(p, "staggerStep", "4"); await press(p, "staggerBtn");
   check("T7 staircase of in-animations: only their keys move, a layer without keys takes no step", bx.map((l) => times(R(l))).join(" | ") === "30,45,135,149 | 34,49,135,149 | 38,53,135,149" && starts(bx) === "0,0,0" && close2(fr(bx[2].inPoint), 38) && close2(fr(bx[2].outPoint), 150) && L2.inPoint === 1, bx.map((l) => times(R(l))).join(" | "));
   check("T7 the skipped layer is named in the report", (await p.status()) === "Лесенка: 3 слоя, шаг 4 кадра. Пропущено: 1 слой (нет ключей в первой половине слоя).\nОтменить: Cmd/Ctrl+Z.", await p.status());
-  await p.page.selectOption("#staggerWhat", "out"); await press(p, "staggerBtn");
+  await pickSeg(p, "staggerWhat", "out"); await press(p, "staggerBtn");
   check("T7 staircase of out-animations", bx.map((l) => times(R(l))).join(" | ") === "30,45,135,149 | 34,49,139,153 | 38,53,143,157" && close2(fr(bx[2].outPoint), 158), bx.map((l) => times(R(l))).join(" | "));
   p.ae.comp.selectedLayers = [bx[0]];
   await press(p, "staggerBtn");
@@ -4240,18 +4336,18 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 780 });
   await motionTab(p);
   c = await cardH(p, "shift");
-  await p.page.selectOption("#shiftWhat", "out");
+  await pickSeg(p, "shiftWhat", "out");
   await p.page.click("#shiftOptsToggle");
-  check("T8 the minus hides the lists and leaves the buttons; the plus says what is chosen", !(await vis(p, "#shiftPick")) && !(await vis(p, "#timePick")) && !(await vis(p, "#staggerPick")) && !(await vis(p, "#staggerOrder")) && (await vis(p, "#shiftFwd")) && (await vis(p, "#shiftStep")) && (await vis(p, "#timeAlignBtn")) && (await vis(p, "#staggerBtn")) && (await vis(p, "#staggerStep")) && (await fold(p, "shiftOptsToggle")) === "false|Показать списки (сейчас: Исчезновение; Начало появления; Слои; Сверху вниз)|+" && (await cardH(p, "shift")) < c - 100 && (await savedMotion(p, "shiftOpts")) === false, (await fold(p, "shiftOptsToggle")) + " " + (await cardH(p, "shift")) + "/" + c);
+  check("T8 the minus hides the diagram and leaves every button", !(await vis(p, "#shiftPrevBox")) && (await vis(p, "#shiftWhat")) && (await vis(p, "#shiftFwd")) && (await vis(p, "#shiftStep")) && (await vis(p, "#timeAlign")) && (await fold(p, "shiftOptsToggle")) === "false|Показать схему|+" && (await cardH(p, "shift")) < c - 40 && (await savedMotion(p, "shiftOpts")) === false, (await fold(p, "shiftOptsToggle")) + " " + c + " " + (await cardH(p, "shift")));
   await p.restart();
-  check("T8 folded stays folded after a restart, the hidden choice still applies", !(await vis(p, "#shiftPick")) && (await p.page.inputValue("#shiftWhat")) === "out" && (await togglesClear(p)));
+  check("T8 folded stays folded after a restart, the choice still applies", !(await vis(p, "#shiftPrevBox")) && (await val(p, "shiftWhat")) === "out" && (await togglesClear(p)));
   await p.page.click("#shiftOptsToggle");
-  check("T8 the plus brings the lists back", (await vis(p, "#shiftPick")) && (await vis(p, "#staggerOrder")) && (await fold(p, "shiftOptsToggle")) === "true|Скрыть списки|-");
+  check("T8 the plus brings the diagram back; «Лесенка» folds the same way", (await vis(p, "#shiftPrevBox")) && (await fold(p, "shiftOptsToggle")) === "true|Скрыть схему|-" && ((await p.page.click("#staggerOptsToggle")), !(await vis(p, "#staggerPrevBox"))) && (await vis(p, "#staggerBtn")) && (await fold(p, "staggerOptsToggle")) === "false|Показать схему|+");
   t = await toolRects(p);
   check("T8 at 780px all four blocks share a row", t.ease.t === t.shift.t && t.align.r < t.shift.l && t.shift.w === 168 && (await overflow(p)) <= 0, JSON.stringify(t.shift));
   await dragEdge(p, "shift", 150);
   t = await toolRects(p);
-  check("T8 the block can be widened; then caption, list and 'i' stand in one line", t.shift.w === 322 && (await p.page.evaluate(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); const a = r("#shiftPick label"), b = r("#shiftWhat"), i = r("#shiftPick .tool-info"); return a.right <= i.left && i.right <= b.left && Math.abs((a.top + a.bottom) - (b.top + b.bottom)) < 6; })), JSON.stringify(t.shift));
+  check("T8 the block can be widened; the diagram grows with it", t.shift.w === 322 && (await p.page.evaluate(() => document.getElementById("shiftPrev").getBoundingClientRect().width)) > 250, JSON.stringify(t.shift));
   await arrange(p, '#motionTools [data-tool="shift"] .tool-head b');
   t = await toolRects(p);
   await dragFrom(p, middle(t.shift), { x: t.ease.l + 20, y: middle(t.ease).y });
@@ -4607,7 +4703,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     sel(SRC, [1, 2]); sel(DST, []);
     p = await open({ selectedProperties: [SRC] });
     await p.page.click("#tabMotion");
-    check("EC1 the 'Копия плавности' block is in Tools, on the grid with the other blocks, with its pin; the Shape tab only has a note for now", (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin").count()) === 1 && (await p.page.locator("#viewShape .tool-card").count()) === 0 && (await p.page.locator("#viewShape .shape-empty").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
+    check("EC1 the 'Копия плавности' block is in Tools, on the grid with the other blocks, with its pin; the Shape tab has only its own block", (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin").count()) === 1 && (await p.page.locator("#viewShape .tool-card").count()) === 1 && (await p.page.locator("#viewShape .tool-card[data-tool='split']").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
     const ecInside = () => p.page.evaluate(() => { const card = document.querySelector("#motionTools .tool-card[data-tool='easecopy']"), c = card.getBoundingClientRect();
       return Array.prototype.every.call(card.querySelectorAll("button:not(.tool-pin):not(.tool-toggle):not(.tool-grip), label, small, b"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 1 && r.right <= c.right + 1 && r.top >= c.top - 1 && r.bottom <= c.bottom + 1); }); });
     check("EC1 nothing sticks out of the block (large blocks)", await ecInside());
@@ -4744,6 +4840,120 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.locator("label.switch", { has: p.page.locator("#infoTipsOn") }).click(); await p.page.click("#saveSettings");
     await p.page.mouse.move(b3.x + 20, b3.y + 10); await p.page.waitForTimeout(1300);
     check("IT5 switched off: no window", (await tip()) === "" && p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
+  }
+
+  // The ease graph: speed (as in AE's Speed Graph) or value; it reads the easing of the selected keys.
+  {
+    const clockG = { time: 0 };
+    const POS = new Prop([0, 0], clockG, { name: "Position" }).addKey(0, [0, 0], { selected: true }).addKey(1, [500, 0], { selected: true });
+    POS.keys[0].outEase = POS._ease(0, 15); POS.keys[1].inEase = POS._ease(0, 85);
+    p = await open({ selectedProperties: [POS] });
+    await p.page.click("#tabMotion");
+    await p.page.waitForFunction(() => /Выделено/.test(document.getElementById("easeState").textContent), null, { timeout: 4000 }).catch(() => {});
+    check("EG1 the graph shows speed by default, with the switch «Скорость / Значение»", (await vis(p, "#easeSpeed")) && !(await vis(p, ".ease-value")) && (await p.page.getAttribute('#easeView button[aria-pressed="true"]', "data-v")) === "speed");
+    check("EG1 selected keys: the sliders and the graph take their easing, the line under the graph says so", (await p.page.inputValue("#easeOutVal")) === "15" && (await p.page.inputValue("#easeInVal")) === "85" && (await p.page.locator("#easeState").innerText()) === "Выделено 2 ключа, «Position»: выход 15%, вход 85%." && !(await p.page.isChecked("#easeLink")), await p.page.locator("#easeState").innerText());
+    t = await p.page.getAttribute("#easeSpeedPeak", "d");
+    check("EG1 fast start, long braking: the top of the speed curve is in the first third", Number(/^M([\d.]+)/.exec(t)[1]) < 12 + 176 / 3, t);
+    await p.page.screenshot({ path: path.join(SHOTS, "79-ease-speed.png") });
+    await p.page.click('#easeView button[data-v="value"]');
+    check("EG2 «Значение» shows the old value curve; the choice is remembered", (await vis(p, ".ease-value")) && !(await vis(p, "#easeSpeed")) && (await savedMotion(p, "easeView")) === "value");
+    POS.keys.forEach((k) => { k.selected = false; });
+    await p.page.waitForFunction(() => document.getElementById("easeState").textContent === "", null, { timeout: 4000 }).catch(() => {});
+    check("EG3 nothing selected: the line goes away, the graph shows the sliders", (await p.page.locator("#easeState").innerText()) === "" && /Ключи не выделены/.test(await p.page.getAttribute("#easeCurve", "title")) && (await p.page.inputValue("#easeOutVal")) === "15" && p.errors.length === 0, await p.page.locator("#easeState").innerText());
+    await p.close();
+  }
+
+  // «Заготовки» on the Animation tab: liquid glass from the selected layer (or a new rounded rectangle).
+  {
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const fxOf = (l) => acAt(l, "ADBE Effect Parade").children.map((e) => e.matchName).join(",");
+    const kitTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="kit"]'); };
+    p = await open({ sm: [{ name: "Pill", selected: true, groups: [smGroup("Box", [smRect(200), smFill([1, 1, 1, 1])])], inPoint: 1, outPoint: 7 }, { name: "BG" }] });
+    await kitTab(p);
+    check("KG1 a «Заготовки» section between «Графика» and «Звуки», with its kinds on the left and the liquid glass card", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#acTabs button"), (b) => b.textContent).join("|"))).indexOf("Графика|Заготовки|Звуки") >= 0 &&
+      (await p.page.locator("#acGrid .ac-card").count()) === 1 && (await p.page.locator("#acGrid .ac-card .ac-name").innerText()) === "Жидкое стекло" && (await p.page.locator("#acFolders .ac-folder").allInnerTexts()).join() === "Все,Эффекты", (await p.page.locator("#acFolders .ac-folder").allInnerTexts()).join());
+    check("KG1 no duration and no colour for kits; the hint says how the glass works", (await p.page.locator("#acDurRow").isHidden()) && (await p.page.locator("#acColorRow").isHidden()) && /Жидкое стекло: выделите слой-фигуру/.test(await p.page.locator("#acHint").innerText()));
+    check("KG1 the preview: glass over a moving picture, playing while visible", (await p.page.locator("#acGrid .ac-card.kit-play .kit-glass .kit-lens").count()) === 1 && (await p.page.evaluate(() => getComputedStyle(document.querySelector(".kit-bg b")).animationName)) === "kit-slide");
+    await p.page.screenshot({ path: path.join(SHOTS, "77-kit-liquid-glass.png") });
+    await p.page.click("#acGrid .ac-card"); await p.idle();
+    const adj = Lx(p, "Жидкое стекло"), edge = Lx(p, "Стекло: блик"), pill = Lx(p, "Pill");
+    check("KG2 three layers, top to bottom: the edge light, the glass (matted to the shape), the shape (hidden)", names(p) === "Стекло: блик,Жидкое стекло,Pill,BG" && adj.adjustmentLayer === true && adj.matte === pill && adj.matteType === 5013 && pill.enabled === false && edge.enabled === true, names(p));
+    check("KG2 the glass bulges, blurs and brightens; the bulge follows the shape by expressions", fxOf(adj) === "ADBE Bulge,ADBE Gaussian Blur 2,ADBE Brightness & Contrast 2" && /thisComp\.layer\("Pill"\)/.test(acAt(adj, "ADBE Effect Parade", 1, "ADBE Bulge-0003").expression) && /sourceRectAtTime/.test(acAt(adj, "ADBE Effect Parade", 1, "ADBE Bulge-0001").expression) && acAt(adj, "ADBE Effect Parade", 2, "ADBE Gaussian Blur 2-0001").value === 12 && adj.inPoint === 1 && adj.outPoint === 7, fxOf(adj));
+    check("KG2 the edge: a grey copy in Overlay with Bevel Alpha, hanging on the shape", fxOf(edge) === "ADBE Fill,ADBE Bevel Alpha" && edge.blendingMode === 5224 && edge.parent === pill && JSON.stringify(acAt(edge, "ADBE Effect Parade", 1, "ADBE Fill-0002").value) === "[0.5,0.5,0.5,1]");
+    check("KG2 one undo step; the shape is selected; the report", p.ae.log.undo.join() === "begin:Sayframe: liquid glass,end" && pill.selected && !edge.selected && /^Жидкое стекло готово: фигура — «Pill»/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+    await p.close();
+
+    p = await open({ sm: [{ name: "BG" }] });
+    await kitTab(p); await p.page.click("#acGrid .ac-card"); await p.idle();
+    t = Lx(p, "Стекло");
+    check("KG3 nothing selected: a rounded rectangle «Стекло» in the middle becomes the glass", names(p) === "Стекло: блик,Жидкое стекло,Стекло,BG" && JSON.stringify(acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[806,324]" && /нарисовал фигуру «Стекло»/.test(await p.status()), names(p) + " " + (await p.status()));
+    await p.close();
+
+    p = await open({ sm: [{ name: "Pill", selected: true, groups: [smGroup("Box", [smRect(200)])] }, { name: "BG" }], legacyMatte: true });
+    await kitTab(p); await p.page.click("#acGrid .ac-card"); await p.idle();
+    check("KG4 an older After Effects (matte only from the layer above): the shape sits right above the glass", names(p) === "Стекло: блик,Pill,Жидкое стекло,BG" && Lx(p, "Жидкое стекло").trackMatteType === 5013 && p.errors.length === 0, names(p));
+    await p.close();
+  }
+
+  // Split / merge on the Shape tab: one shape layer splits into its groups (or a layer into its masks), several merge into one.
+  {
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const groupsOf = (l) => acAt(l, "ADBE Root Vectors Group").children.map((g) => g.name).join(",");
+    const shapeTab = async (p) => { await p.page.click("#tabShape"); };
+    const three = () => [{ name: "Icons", selected: true, groups: [smGroup("Star", [smRect(10), smFill([1, 0, 0, 1])]), smGroup("Moon", [smRect(20)]), smFill([0, 0, 1, 1]), smGroup("Sun", [smRect(30)])] }, { name: "BG" }];
+    p = await open({ sm: three() });
+    await shapeTab(p);
+    check("SM1 a «Разделить» block on the Shape tab with one button and a short hint", (await p.page.locator('#viewShape .tool-card[data-tool="split"] #splitBtn').isVisible()) && (await p.page.locator("#splitBtn").innerText()).trim() === "Разделить / собрать" && (await p.page.locator('[data-tool="split"] .tool-head b').innerText()) === "Разделить");
+    await p.page.screenshot({ path: path.join(SHOTS, "78-shape-split.png") });
+    await p.page.click("#splitBtn"); await p.idle();
+    check("SM2 one shape with three groups: three layers in the same place, top to bottom as the groups; the original is gone", names(p) === "Star,Moon,Sun,BG" && p.ae.log.smRemoved.join() === "Icons", names(p));
+    check("SM2 each piece keeps only its group, and the fill outside the groups (it paints every piece)", groupsOf(Lx(p, "Star")) === "Star,Fill 1" && groupsOf(Lx(p, "Moon")) === "Moon,Fill 1" && groupsOf(Lx(p, "Sun")) === "Fill 1,Sun", ["Star", "Moon", "Sun"].map((n) => groupsOf(Lx(p, n))).join(" | "));
+    check("SM2 one undo step; the pieces are selected; the report names them", p.ae.log.undo.join() === "begin:Sayframe: split shape,end" && ["Star", "Moon", "Sun"].every((n) => Lx(p, n).selected) && (await p.status()) === "Разделено: «Icons» → 3 слоя: Star, Moon, Sun. Отменить — Cmd/Ctrl+Z.", await p.status());
+    await p.close();
+
+    p = await open({ sm: [{ name: "Logo", selected: true, groups: [smGroup("Group 1", [smGroup("L", [smRect(5)]), smGroup("O", [smRect(6)]), smFill([1, 1, 1, 1])])] }] });
+    await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
+    t = (n) => acAt(Lx(p, n), "ADBE Root Vectors Group", 1, "ADBE Vectors Group").children.map((g) => g.name).join(",");
+    check("SM3 one group holding several: those inner groups are the pieces, the outer group stays around each", names(p) === "L,O" && t("L") === "L,Fill 1" && t("O") === "O,Fill 1", names(p) + " " + (Lx(p, "L") ? t("L") : ""));
+    await p.close();
+
+    p = await open({ sm: [{ name: "Box", selected: true, groups: [smGroup("Group 1", [smRect(5), smFill([1, 1, 1, 1])])] }] });
+    await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
+    check("SM4 one piece only: a hint, nothing changes", names(p) === "Box" && /одна фигура/.test(await p.status()) && (await p.page.getAttribute("#statusBox", "class")) === "status", await p.status());
+    await p.close();
+
+    p = await open({ sm: [{ name: "Solid", shape: false, selected: true, masks: [6812, 6813, 6812] }] });
+    p.ae.ctx.MaskMode = { NONE: 6812 - 1, ADD: 6812, SUBTRACT: 6813 };
+    await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
+    t = (n) => acAt(Lx(p, n), "ADBE Mask Parade").children.map((m) => m.name + ":" + m.maskMode).join(",");
+    check("SM5 a layer with three masks splits by masks; a Subtract mask alone becomes Add", names(p) === "Solid - Mask 1,Solid - Mask 2,Solid - Mask 3" && t("Solid - Mask 1") === "Mask 1:6812" && t("Solid - Mask 2") === "Mask 2:6812" && /по маскам/.test(await p.status()), names(p) + " " + (await p.status()));
+    await p.close();
+
+    p = await open({ sm: [{ name: "Text" }, { name: "Top", selected: true, position: [300, 200, 0], anchor: [10, 10, 0], scale: [50, 50, 100], rotation: 30, opacity: 80, groups: [smGroup("Box", [smRect(40), smFill([1, 0, 0, 1])], [5, 6])], inPoint: 1, outPoint: 6 },
+      { name: "Kid", parent: "Bottom" }, { name: "Bottom", selected: true, posKeys: [[0, [100, 100, 0]], [2, [900, 500, 0]]], groups: [smGroup("Dot", [smRect(8)])], inPoint: 0, outPoint: 9 }, { name: "Note", shape: false, selected: true }] });
+    await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
+    const M = Lx(p, "Top + 1");
+    t = (i, mn) => acAt(M, "ADBE Root Vectors Group", i, "ADBE Vector Transform Group", mn);
+    check("SM6 several shapes: one new layer where the top one was; the merged layers are gone", names(p) === "Text,Top + 1,Kid,Note" && p.ae.log.smRemoved.join() === "Bottom,Top" && p.ae.log.undo.join() === "begin:Sayframe: merge shapes,end", names(p));
+    check("SM6 each layer is a group with the layer's transform, so nothing moves", acAt(M, "ADBE Root Vectors Group").children.map((g) => g.name).join() === "Top,Bottom" && JSON.stringify(t(1, "ADBE Vector Position").value) === "[300,200]" && JSON.stringify(t(1, "ADBE Vector Anchor").value) === "[10,10]" && JSON.stringify(t(1, "ADBE Vector Scale").value) === "[50,50]" && t(1, "ADBE Vector Rotation").value === 30 && t(1, "ADBE Vector Group Opacity").value === 80,
+      JSON.stringify([t(1, "ADBE Vector Position").value, t(1, "ADBE Vector Scale").value]));
+    check("SM6 position keys come along; the new layer's space is the comp's (anchor and position in the middle)", JSON.stringify(t(2, "ADBE Vector Position").keys.map((k) => [k.t, k.v])) === "[[0,[100,100]],[2,[900,500]]]" && JSON.stringify(acAt(M, "ADBE Transform Group", "ADBE Anchor Point").value) === "[960,540]" && JSON.stringify(acAt(M, "ADBE Transform Group", "ADBE Position").value) === "[960,540]");
+    const box = acAt(M, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", 1);
+    check("SM6 the contents are copied: group, rectangle size, fill colour and the group's own transform", box && box.name === "Box" && JSON.stringify(acAt(box, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[40,40]" && JSON.stringify(acAt(box, "ADBE Vectors Group", "ADBE Vector Graphic - Fill", "ADBE Vector Fill Color").value) === "[1,0,0,1]" && JSON.stringify(acAt(box, "ADBE Vector Transform Group", "ADBE Vector Position").value) === "[5,6]");
+    check("SM6 a layer that hung on a merged one hangs on the new layer; times cover both; the new layer is selected", Lx(p, "Kid").parent === M && M.inPoint === 0 && M.outPoint === 9 && M.selected && !Lx(p, "Text").selected);
+    check("SM6 the report: merged, and what was not a shape", /^Собрано в один шейп: «Top \+ 1» из 2 слоёв/.test(await p.status()) && /Не шейпы, пропущены: Note\./.test(await p.status()), await p.status());
+    await p.close();
+
+    p = await open({ sm: [{ name: "Top", selected: true, groups: [smGroup("A", [])] }, { name: "Note", shape: false, selected: true }] });
+    await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
+    check("SM7 one shape and a text: merging needs two shapes — a hint", names(p) === "Top,Note" && (await p.status()) === "Чтобы собрать в один, выделите хотя бы два шейп-слоя." && p.errors.length === 0, await p.status());
+    await p.close();
+    p = await open({ sm: [{ name: "Top", groups: [smGroup("A", [])] }] });
+    await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
+    check("SM7 nothing selected: the usual hint", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз.", await p.status());
     await p.close();
   }
 
@@ -5177,7 +5387,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("FI1 a new install: tabs Инструменты, Анимация, Шейп, AI, Проекты; Tools is open", t === "Инструменты*,Анимация,Шейп,AI,Проекты", t);
     t = await cards();
     check("FI1 the button blocks are pinned on top as in the author's panel", ["paste:0,0,8", "unused:8,0,8", "easecopy:17,0,17", "decompose:34,0,8", "organize:0,5,8", "nullp:17,5,8"].every((x) => t[x.split(":")[0]] === x.split(":")[1]) && /^8,[56],8$/.test(t.cache), JSON.stringify(t));
-    check("FI1 under the line: Время, Якорь, Выровнять, Плавность in one row", ["shift:0,", "anchor:12,", "align:20,", "ease:28,"].every((x) => t[x.split(":")[0]].indexOf(x.split(":")[1]) === 0) && new Set(["shift", "anchor", "align", "ease"].map((n) => t[n].split(",")[1])).size === 1 && Number(t.shift.split(",")[1]) >= 12, JSON.stringify(t));
+    check("FI1 under the line: Сдвиг, Лесенка, Якорь, Выровнять in one row, Плавность below them", ["shift:0,", "stagger:12,", "anchor:24,", "align:32,"].every((x) => t[x.split(":")[0]].indexOf(x.split(":")[1]) === 0) && new Set(["shift", "stagger", "anchor", "align"].map((n) => t[n].split(",")[1])).size === 1 && Number(t.ease.split(",")[1]) > Number(t.shift.split(",")[1]) && Number(t.shift.split(",")[1]) >= 12, JSON.stringify(t));
     check("FI1 hints and lists are folded, Время is open", !(await vis(p, "#pasteHint")) && !(await vis(p, "#anchorKeys")) && !(await vis(p, "#easeCurve")) && (await vis(p, "#shiftWhat")) && p.errors.length === 0, p.errors.join(" | "));
     await p.page.screenshot({ path: path.join(SHOTS, "51-new-install.png") });
     await p.close();
@@ -5190,8 +5400,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.restart(); await motionTab(p);
     t = await p.page.evaluate(() => { const o = {}; document.querySelectorAll("#motionTools .tool-card").forEach((c) => { const r = c.getBoundingClientRect(); o[c.getAttribute("data-tool")] = Math.round(r.width) + "@" + Math.round(r.top); }); return o; });
     check("NB1 a panel in use keeps its blocks where they were", /^168@/.test(t.ease) && t.ease.split("@")[1] === t.anchor.split("@")[1], JSON.stringify(t));
-    t = await p.page.evaluate(() => { const g = document.getElementById("motionTools").getBoundingClientRect(); const o = {}; ["decompose", "cache", "nullp", "unused"].forEach((n) => { const r = document.querySelector('#motionTools [data-tool="' + n + '"]').getBoundingClientRect(); o[n] = { w: Math.round(r.width), x: Math.round(r.left - g.left), y: Math.round(r.top - g.top), mid: Math.abs((r.left + r.right) / 2 - (g.left + g.right) / 2) }; }); return o; });
-    check("NB1 blocks new to it appear at the usual size, in the free room on top (here on the right of the first row)", Object.keys(t).every((n) => t[n].w === 168) && t.decompose.y === 0 && t.decompose.x > 500, JSON.stringify(t));
+    t = await p.page.evaluate(() => { const g = document.getElementById("motionTools").getBoundingClientRect(); const o = {}; ["stagger", "decompose", "cache", "nullp", "unused"].forEach((n) => { const r = document.querySelector('#motionTools [data-tool="' + n + '"]').getBoundingClientRect(); o[n] = { w: Math.round(r.width), x: Math.round(r.left - g.left), y: Math.round(r.top - g.top), mid: Math.abs((r.left + r.right) / 2 - (g.left + g.right) / 2) }; }); return o; });
+    check("NB1 blocks new to it appear at the usual size, in the free room on top (here on the right of the first row)", Object.keys(t).every((n) => t[n].w === 168) && t.stagger.y === 0 && t.stagger.x > 500, JSON.stringify(t));
     await p.page.screenshot({ path: path.join(SHOTS, "52-new-blocks-in-use.png") });
     await p.close();
   }

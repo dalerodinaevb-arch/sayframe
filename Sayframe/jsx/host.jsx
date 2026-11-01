@@ -2306,7 +2306,11 @@ var sayframeHost = (function () {
         w.show();
         try { place(); } catch (e4) {}
         try { w.active = true; q.active = true; } catch (e3) {}
-        return { shown: true, count: items.length };
+        // For the panel's settings: where the window was asked to go and where it actually is.
+        var real = null, scrList = [];
+        try { real = [Math.round(w.location[0]), Math.round(w.location[1])]; } catch (e5) {}
+        try { for (i = 0; i < (($.screens || []).length); i++) { scrList.push([$.screens[i].left, $.screens[i].top, $.screens[i].right, $.screens[i].bottom]); } } catch (e6) {}
+        return { shown: true, count: items.length, asked: [left, top], at: real, screens: scrList };
     }
 
     function fxCatalogData() {
@@ -2516,6 +2520,280 @@ var sayframeHost = (function () {
         var tr = L.property("ADBE Transform Group");
         var p = tr ? tr.property("ADBE Position") : null;
         return p ? p.value : null;
+    }
+
+    // ---- Kit (the Animation tab): ready-made set-ups for editors, built from AE's own effects.
+    // Liquid glass: the selected layer is the glass shape (none - a rounded rectangle is made). Under it an
+    // adjustment layer matted to the shape bulges, blurs and brightens what is below; above it a copy of the
+    // shape in Overlay with Bevel Alpha draws the light on the edges. Both follow the shape (expressions, parent).
+    function kitSet(l, fx, param, v) {
+        try { acP(l, ["ADBE Effect Parade", fx, param]).setValue(v); return true; } catch (e) { return false; }
+    }
+
+    function kitExpr(l, fx, param, code) {
+        try { acP(l, ["ADBE Effect Parade", fx, param]).expression = code; return true; } catch (e) { return false; }
+    }
+
+    function kitGlassShape(comp, name) {
+        var l = comp.layers.addShape(), gi, w = Math.round(comp.width * 0.42), h = Math.round(comp.height * 0.3), ri;
+        l.name = name;
+        gi = acGroup(l);
+        ri = acIn(l, gi, "ADBE Vector Shape - Rect");
+        acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Size"]).setValue([w, h]);
+        acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Roundness"]).setValue(Math.round(Math.min(w, h) * 0.22));
+        ri = acIn(l, gi, "ADBE Vector Graphic - Fill");
+        acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Fill Color"]).setValue([1, 1, 1, 1]);
+        acP(l, ["ADBE Transform Group", "ADBE Position"]).setValue([comp.width / 2, comp.height / 2]);
+        return l;
+    }
+
+    function kitLiquidGlass(comp, labels) {
+        var sel = comp.selectedLayers || [], shape = null, made = false, i, adj, edge, fx, ref, legacy;
+        for (i = 0; i < sel.length; i++) {
+            if (!(sel[i] instanceof CameraLayer) && !(sel[i] instanceof LightLayer) && !sel[i].adjustmentLayer) { shape = sel[i]; break; }
+        }
+        if (shape && shape.locked) { throw new Error("SM_LOCKED"); }
+        for (i = 0; i < sel.length; i++) { try { sel[i].selected = false; } catch (e0) {} }
+        if (!shape) { shape = kitGlassShape(comp, labels.shape || "Glass"); made = true; }
+        // The expressions find the shape by name; After Effects keeps them right when it is renamed.
+        ref = "thisComp.layer(\"" + String(shape.name).replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\")";
+        adj = comp.layers.addSolid([1, 1, 1], labels.glass || "Liquid Glass", comp.width, comp.height, comp.pixelAspect || 1, comp.duration);
+        adj.adjustmentLayer = true;
+        adj.name = labels.glass || "Liquid Glass";
+        try { adj.inPoint = shape.inPoint; adj.outPoint = shape.outPoint; } catch (e1) {}
+        // Bulge: a lens the size of the shape, in its middle.
+        fx = acAdd(adj, ["ADBE Effect Parade"], "ADBE Bulge");
+        kitExpr(adj, fx, "ADBE Bulge-0001", "var L = " + ref + ", r = L.sourceRectAtTime(time, false);\nr.width * Math.abs(L.transform.scale[0]) / 200;");
+        kitExpr(adj, fx, "ADBE Bulge-0002", "var L = " + ref + ", r = L.sourceRectAtTime(time, false);\nr.height * Math.abs(L.transform.scale[1]) / 200;");
+        kitExpr(adj, fx, "ADBE Bulge-0003", "var L = " + ref + ", r = L.sourceRectAtTime(time, false);\nL.toComp([r.left + r.width / 2, r.top + r.height / 2]);");
+        kitSet(adj, fx, "ADBE Bulge-0004", 0.7);
+        fx = acAdd(adj, ["ADBE Effect Parade"], "ADBE Gaussian Blur 2");
+        kitSet(adj, fx, "ADBE Gaussian Blur 2-0001", 12);
+        kitSet(adj, fx, "ADBE Gaussian Blur 2-0003", 1);
+        fx = acAdd(adj, ["ADBE Effect Parade"], "ADBE Brightness & Contrast 2");
+        kitSet(adj, fx, "ADBE Brightness & Contrast 2-0001", 10);
+        // The edge light: a copy of the shape, grey in Overlay (the grey itself disappears), beveled.
+        edge = shape.duplicate();
+        edge.name = labels.edge || "Glass Edge";
+        edge.enabled = true;
+        fx = acAdd(edge, ["ADBE Effect Parade"], "ADBE Fill");
+        kitSet(edge, fx, "ADBE Fill-0002", [0.5, 0.5, 0.5, 1]);
+        fx = acAdd(edge, ["ADBE Effect Parade"], "ADBE Bevel Alpha");
+        kitSet(edge, fx, "ADBE Bevel Alpha-0001", 6);
+        kitSet(edge, fx, "ADBE Bevel Alpha-0004", 0.8);
+        try { if (BlendingMode.OVERLAY !== undefined) { edge.blendingMode = BlendingMode.OVERLAY; } } catch (e2) {}
+        // Order, top to bottom: edge, glass (matted to the shape), shape (hidden: it only gives the outline).
+        legacy = typeof adj.setTrackMatte !== "function";
+        if (legacy) {
+            adj.moveAfter(shape);
+            edge.moveBefore(shape);
+            adj.trackMatteType = TrackMatteType.ALPHA;
+        } else {
+            adj.moveBefore(shape);
+            edge.moveBefore(adj);
+            adj.setTrackMatte(shape, TrackMatteType.ALPHA);
+        }
+        shape.enabled = false;
+        try { edge.parent = shape; } catch (e3) {}
+        edge.selected = false;
+        shape.selected = true;
+        return { glass: { name: adj.name, shape: shape.name, edge: edge.name, created: made, legacy: legacy } };
+    }
+
+    // ---- Split / merge shapes (the Shape tab).
+    // One shape layer: every group of its Contents becomes its own layer (a copy of the layer that keeps only
+    // that group, so transform, effects, keys and expressions stay as they were). A layer with several masks
+    // splits by masks the same way. Several shape layers: their contents go into one new shape layer, each
+    // layer as a group whose transform is the layer's transform, so nothing moves.
+    var SM_PATHS = { "ADBE Vector Shape - Group": 1, "ADBE Vector Shape - Rect": 1, "ADBE Vector Shape - Ellipse": 1, "ADBE Vector Shape - Star": 1 };
+    var SM_TR = [["ADBE Anchor Point", "ADBE Vector Anchor"], ["ADBE Position", "ADBE Vector Position"], ["ADBE Scale", "ADBE Vector Scale"],
+        ["ADBE Rotate Z", "ADBE Vector Rotation"], ["ADBE Opacity", "ADBE Vector Group Opacity"]];
+
+    function smGroupsIn(level) {
+        var out = [], i;
+        if (!level) { return out; }
+        for (i = 1; i <= level.numProperties; i++) { if (level.property(i).matchName === "ADBE Vector Group") { out.push(i); } }
+        return out;
+    }
+
+    // Where the pieces are: the top of Contents, or inside its only group when that group holds several.
+    function smPieces(layer) {
+        var root = layer.property("ADBE Root Vectors Group"), top = smGroupsIn(root), inner;
+        if (top.length === 1) {
+            inner = smGroupsIn(root.property(top[0]).property("ADBE Vectors Group"));
+            if (inner.length >= 2) { return { outer: top[0], groups: inner }; }
+        }
+        return { outer: 0, groups: top };
+    }
+
+    function smLevel(layer, pc) {
+        var root = layer.property("ADBE Root Vectors Group");
+        return pc.outer ? root.property(pc.outer).property("ADBE Vectors Group") : root;
+    }
+
+    function smSplitGroups(L, pc) {
+        var made = [], names = [], level = smLevel(L, pc), k, j, copy, lv, it, keep;
+        for (k = 0; k < pc.groups.length; k++) { names.push(level.property(pc.groups[k]).name); }
+        for (k = 0; k < pc.groups.length; k++) {
+            copy = L.duplicate();
+            lv = smLevel(copy, pc);
+            for (j = lv.numProperties; j >= 1; j--) {
+                it = lv.property(j);
+                // Fills, strokes and modifiers outside the groups apply to every piece; loose paths go to the first one.
+                keep = j === pc.groups[k] || (it.matchName !== "ADBE Vector Group" && !(SM_PATHS[it.matchName] && k > 0));
+                if (!keep) { it.remove(); }
+            }
+            copy.name = names[k];
+            made.push(copy);
+        }
+        return { made: made, names: names };
+    }
+
+    function smSplitMasks(L) {
+        var masks = L.property("ADBE Mask Parade"), n = masks.numProperties, made = [], names = [], k, j, copy, mp, m;
+        for (k = 1; k <= n; k++) { names.push(masks.property(k).name); }
+        for (k = 1; k <= n; k++) {
+            copy = L.duplicate();
+            mp = copy.property("ADBE Mask Parade");
+            for (j = n; j >= 1; j--) { if (j !== k) { mp.property(j).remove(); } }
+            // Alone, a Subtract or Intersect mask would show the wrong part: it becomes Add.
+            m = mp.property(1);
+            try {
+                if (typeof MaskMode !== "undefined" && m.maskMode !== MaskMode.ADD && m.maskMode !== MaskMode.NONE) { m.maskMode = MaskMode.ADD; }
+            } catch (e) {}
+            copy.name = L.name + " - " + names[k - 1];
+            made.push(copy);
+        }
+        return { made: made, names: names };
+    }
+
+    function smSplit(comp, L) {
+        var pc = null, r, kind, i, masks, nm;
+        if (L.locked) { throw new Error("SM_LOCKED"); }
+        if (L instanceof ShapeLayer) {
+            pc = smPieces(L);
+            if (pc.groups.length < 2) { pc = null; }
+        }
+        masks = L.property("ADBE Mask Parade");
+        if (pc) { kind = "groups"; r = smSplitGroups(L, pc); }
+        else if (masks && masks.numProperties >= 2) { kind = "masks"; r = smSplitMasks(L); }
+        else { throw new Error(L instanceof ShapeLayer ? "SM_ONE_PIECE" : "SM_NOT_SHAPE"); }
+        nm = L.name;
+        L.remove();
+        for (i = 0; i < r.made.length; i++) { r.made[i].selected = true; }
+        return { split: { kind: kind, name: nm, count: r.made.length, names: r.names } };
+    }
+
+    function smResolve(layer, path) {
+        var p = layer.property("ADBE Root Vectors Group"), i;
+        for (i = 0; i < path.length; i++) { p = p.property(path[i]); }
+        return p;
+    }
+
+    function smSetEase(d, k, a, b) {
+        var n;
+        for (n = a.length; n >= 1; n--) {
+            try { d.setTemporalEaseAtKey(k, a.slice(0, n), b.slice(0, n)); return; } catch (e) {}
+        }
+    }
+
+    // Value, keys (with their interpolation and ease) and expression of one property.
+    function smCopyValue(s, d, fix) {
+        var k, n;
+        if (!d) { return; }
+        if (!fix) { fix = function (v) { return v; }; }
+        if (typeof PropertyValueType !== "undefined" && (s.propertyValueType === PropertyValueType.NO_VALUE || s.propertyValueType === PropertyValueType.CUSTOM_VALUE)) { return; }
+        try {
+            n = s.numKeys || 0;
+            if (n > 0) {
+                for (k = 1; k <= n; k++) { d.setValueAtTime(s.keyTime(k), fix(s.keyValue(k))); }
+                for (k = 1; k <= n; k++) {
+                    try { d.setInterpolationTypeAtKey(k, s.keyInInterpolationType(k), s.keyOutInterpolationType(k)); } catch (e1) {}
+                    try { smSetEase(d, k, s.keyInTemporalEase(k), s.keyOutTemporalEase(k)); } catch (e2) {}
+                    try { if (s.isSpatial && d.isSpatial) { d.setSpatialTangentsAtKey(k, fix(s.keyInSpatialTangent(k)), fix(s.keyOutSpatialTangent(k))); } } catch (e3) {}
+                }
+            } else {
+                d.setValue(fix(s.value));
+            }
+        } catch (e) {}
+        try { if (s.expression) { d.expression = s.expression; d.expressionEnabled = s.expressionEnabled !== false; } } catch (e4) {}
+    }
+
+    // Copies a group's children into the group at path inside layer N. The target is found again by its path
+    // after every change, because After Effects drops older references when properties are added.
+    function smCopyInto(src, N, path) {
+        var indexed = src.propertyType === PropertyType.INDEXED_GROUP, i, s, dst, d;
+        for (i = 1; i <= src.numProperties; i++) {
+            s = src.property(i);
+            dst = smResolve(N, path);
+            d = null;
+            try {
+                if (indexed) {
+                    if (!dst.canAddProperty || dst.canAddProperty(s.matchName)) { d = dst.addProperty(s.matchName); }
+                } else {
+                    d = dst.property(s.matchName);
+                }
+            } catch (e) { d = null; }
+            if (!d) { continue; }
+            if (s.propertyType === PropertyType.PROPERTY) { smCopyValue(s, d); continue; }
+            if (indexed) { try { d.name = s.name; } catch (e2) {} }
+            try { if (s.enabled === false) { d.enabled = false; } } catch (e3) {}
+            smCopyInto(s, N, path.concat([d.propertyIndex]));
+        }
+    }
+
+    function smXY(v) { return v && typeof v === "object" && typeof v.length === "number" ? [v[0], v[1]] : v; }
+
+    function smMerge(comp, sel) {
+        var shapes = [], skipped = [], notes = [], i, j, L, N, w, wi, ci, tr, gt, s, c, minIn = null, maxOut = null, cx, cy, isIn;
+        for (i = 0; i < sel.length; i++) { if (sel[i] instanceof ShapeLayer) { shapes.push(sel[i]); } else { skipped.push(sel[i].name); } }
+        if (shapes.length < 2) { throw new Error("SM_NEED_SHAPES"); }
+        for (i = 0; i < shapes.length; i++) { if (shapes[i].locked) { throw new Error("SM_LOCKED"); } }
+        shapes.sort(function (a, b) { return a.index - b.index; });
+        N = comp.layers.addShape();
+        N.name = shapes[0].name + " + " + (shapes.length - 1);
+        // The new layer's space is the comp's space: anchor and position both in the middle.
+        cx = comp.width / 2; cy = comp.height / 2;
+        tr = N.property("ADBE Transform Group");
+        tr.property("ADBE Anchor Point").setValue([cx, cy]);
+        tr.property("ADBE Position").setValue([cx, cy]);
+        for (i = 0; i < shapes.length; i++) {
+            L = shapes[i];
+            // A parent is let go first (After Effects keeps the layer where it is), so its transform is all there is.
+            if (L.parent) { L.parent = null; }
+            if (L.threeDLayer) { notes.push("3d"); }
+            try { if (L.property("ADBE Effect Parade").numProperties) { notes.push("effects"); } } catch (e1) {}
+            try { if (L.property("ADBE Mask Parade").numProperties) { notes.push("masks"); } } catch (e2) {}
+            w = smResolve(N, []).addProperty("ADBE Vector Group");
+            w.name = L.name;
+            wi = w.propertyIndex;
+            gt = L.property("ADBE Transform Group");
+            for (j = 0; j < SM_TR.length; j++) {
+                s = gt.property(SM_TR[j][0]);
+                if (!s) { continue; }
+                if (s.dimensionsSeparated) { notes.push("separated"); }
+                smCopyValue(s, smResolve(N, [wi]).property("ADBE Vector Transform Group").property(SM_TR[j][1]), smXY);
+            }
+            ci = smResolve(N, [wi]).property("ADBE Vectors Group").propertyIndex;
+            smCopyInto(L.property("ADBE Root Vectors Group"), N, [wi, ci]);
+            if (minIn === null || L.inPoint < minIn) { minIn = L.inPoint; }
+            if (maxOut === null || L.outPoint > maxOut) { maxOut = L.outPoint; }
+        }
+        // Layers that hung on the merged ones now hang on the new layer.
+        for (j = 1; j <= comp.numLayers; j++) {
+            c = comp.layer(j);
+            if (c === N || !c.parent) { continue; }
+            isIn = false;
+            for (i = 0; i < shapes.length; i++) { if (c.parent.index === shapes[i].index) { isIn = true; } }
+            if (isIn && !c.locked) { c.parent = N; }
+        }
+        N.moveBefore(shapes[0]);
+        N.inPoint = minIn;
+        N.outPoint = maxOut;
+        for (i = shapes.length - 1; i >= 0; i--) { shapes[i].remove(); }
+        for (j = 1; j <= comp.numLayers; j++) { comp.layer(j).selected = false; }
+        N.selected = true;
+        return { merged: { name: N.name, count: shapes.length, skipped: skipped, notes: notes } };
     }
 
     function npCreate(comp, sel) {
@@ -4916,6 +5194,39 @@ var sayframeHost = (function () {
             });
         },
 
+        // Kit: ready-made set-ups (liquid glass for now). labels: layer names in the panel's language.
+        kitApply: function (id, labels) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (id !== "liquid-glass") { throw new Error("UNKNOWN_PRESET"); }
+                app.beginUndoGroup("Sayframe: liquid glass");
+                try {
+                    res = kitLiquidGlass(comp, labels || {});
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Split / merge: one layer selected - it splits into its groups (or masks); several shape layers - one layer.
+        shapeSplitMerge: function () {
+            return reply(function () {
+                var comp = activeComp();
+                var sel = comp.selectedLayers;
+                var res;
+                if (!sel.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                app.beginUndoGroup(sel.length === 1 ? "Sayframe: split shape" : "Sayframe: merge shapes");
+                try {
+                    res = sel.length === 1 ? smSplit(comp, sel[0]) : smMerge(comp, sel);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
         // Clear cache: everything After Effects keeps in memory (RAM preview frames, image cache,
         // snapshots, undo history) is dropped at once, like Edit > Purge > All Memory.
         clearCache: function () {
@@ -5081,6 +5392,30 @@ var sayframeHost = (function () {
                 } finally {
                     app.endUndoGroup();
                 }
+                return out;
+            });
+        },
+
+        // What easing the selected keys have, for the graph in the panel: the out influence of the first selected
+        // key and the in influence of the next one (first property that has two). mixed: other pairs differ.
+        easeRead: function () {
+            return reply(function () {
+                var item = app.project.activeItem, groups, g, k, p, a, b, pair = null, out = { keys: 0 };
+                if (!item || !(item instanceof CompItem)) { return out; }
+                groups = ecGroups(item);
+                for (g = 0; g < groups.length; g++) {
+                    p = groups[g].prop;
+                    out.keys += groups[g].keys.length;
+                    for (k = 0; k + 1 < groups[g].keys.length; k++) {
+                        try {
+                            a = Math.round(p.keyOutTemporalEase(groups[g].keys[k])[0].influence);
+                            b = Math.round(p.keyInTemporalEase(groups[g].keys[k + 1])[0].influence);
+                        } catch (e) { continue; }
+                        if (!pair) { pair = { name: String(p.name), out: a, "in": b }; }
+                        else if (pair.out !== a || pair["in"] !== b) { pair.mixed = true; }
+                    }
+                }
+                if (pair) { out.name = pair.name; out.out = pair.out; out["in"] = pair["in"]; out.mixed = !!pair.mixed; }
                 return out;
             });
         },

@@ -197,23 +197,27 @@
         <input id="acSearch" class="field ac-search" type="search" placeholder="Поиск по всем разделам…" autocomplete="off" spellcheck="false" aria-label="Поиск пресетов">
         <button id="acFavOnly" class="icon-btn ac-fav" aria-pressed="false" title="Только избранное" aria-label="Только избранное">★</button>
       </div>
-      <div class="ac-opts">
-        <div id="acModeRow" class="ac-row">
-          <div id="acMode" class="frames ac-mode" role="group" aria-label="Когда двигаться">
-            <button data-value="in">Появление</button>
-            <button data-value="out">Исчезновение</button>
-            <button data-value="both">Оба</button>
-          </div>
-        </div>
-        <label id="acDurRow" class="ac-row ac-slider">Длительность
-          <input id="acDur" class="range" type="range" min="0.2" max="3" step="0.1">
-          <output id="acDurVal" for="acDur"></output>
-        </label>
-        <label id="acColorRow" class="ac-row ac-color">Цвет графики <input id="acColor" type="color" value="#ffffff"></label>
+      <!-- Слева — виды выбранного раздела (как папки в Animation Composer), справа — карточки -->
+      <div id="acBody" class="ac-body">
+        <div id="acGrid" class="ac-grid"></div>
       </div>
-      <div id="acGrid" class="ac-grid"></div>
+      <p id="acHint" class="ac-hint"></p>
+      <!-- Полоса внизу: то, что меняет вставку (длительность, цвет, когда двигаться), и размер карточек -->
       <div id="acFoot" class="ac-foot">
-        <p id="acHint" class="ac-hint"></p>
+        <div class="ac-opts">
+          <div id="acModeRow" class="ac-row">
+            <div id="acMode" class="frames ac-mode" role="group" aria-label="Когда двигаться">
+              <button data-value="in">Появление</button>
+              <button data-value="out">Исчезновение</button>
+              <button data-value="both">Оба</button>
+            </div>
+          </div>
+          <label id="acDurRow" class="ac-row ac-slider">Длительность
+            <input id="acDur" class="range" type="range" min="0.2" max="3" step="0.1">
+            <output id="acDurVal" for="acDur"></output>
+          </label>
+          <label id="acColorRow" class="ac-row ac-color">Цвет графики <input id="acColor" type="color" value="#ffffff"></label>
+        </div>
         <label class="ac-size" title="Размер карточек"><span aria-hidden="true">▫</span><input id="acSize" class="range" type="range" min="80" max="200" step="10" aria-label="Размер карточек"><span aria-hidden="true">◻</span></label>
       </div>
     </section>
@@ -237,11 +241,28 @@
       <button id="easeCurveToggle" class="tool-toggle" aria-expanded="true" aria-controls="easeCurve" aria-label="Скрыть кривую" title="Скрыть кривую">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
       </button>
-      <svg id="easeCurve" class="ease-curve" viewBox="0 0 200 84" preserveAspectRatio="none" aria-hidden="true">
+      <div id="easeCurve" class="ease-graph">
+        <div id="easeView" class="seg ease-view" role="group" aria-label="Какой график показать">
+          <button type="button" data-v="speed" title="Скорость: как быстро движется объект в каждый момент (как Speed Graph в After Effects)">Скорость</button>
+          <button type="button" data-v="value" title="Значение: где объект в каждый момент (как Value Graph в After Effects)">Значение</button>
+        </div>
+        <svg id="easeSpeed" class="ease-curve ease-speed" viewBox="0 0 200 84" preserveAspectRatio="none" aria-hidden="true">
+          <path class="ease-grid" d="M70.7 0V84M129.3 0V84M0 43H200"/>
+          <path class="ease-base" d="M0 76H200"/>
+          <path id="easeSpeedFill" class="ease-speed-fill" d=""/>
+          <path id="easeSpeedPath" class="ease-line" d=""/>
+          <path id="easeSpeedHandles" class="ease-infl" d=""/>
+          <path id="easeSpeedEnds" class="ease-infl-end" d=""/>
+          <path id="easeSpeedKeys" class="ease-keys" d="M12 76h0M188 76h0"/>
+          <path id="easeSpeedPeak" class="ease-peak" d=""/>
+        </svg>
+        <svg class="ease-curve ease-value" viewBox="0 0 200 84" preserveAspectRatio="none" aria-hidden="true">
         <path class="ease-guide" d="M12 72H188M12 12H188"/>
         <path id="easeHandles" class="ease-handles" d=""/>
         <path id="easeCurvePath" class="ease-line" d=""/>
       </svg>
+        <small id="easeState" class="ease-state" aria-live="polite"></small>
+      </div>
       <!-- Как у ключа в редакторе графиков: слева входящая сторона, справа исходящая, длина ползунка — влияние -->
       <div class="ease-bar">
         <input id="easeIn" class="ease-slider ease-slider-in" type="range" min="0" max="100" step="1" value="60" aria-label="Влияние на входе в ключ, процентов" title="Вход в ключ: как плавно движение останавливается">
@@ -339,68 +360,75 @@
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Выравнивание»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
 
-    <section class="card tool-card shift-card" data-tool="shift" data-info="Сдвиг во времени|Стрелки сдвигают выбранное — появление, исчезновение или слой целиком — на N кадров. «К указателю» подводит начало или конец к указателю времени. «Лесенкой» расставляет слои один за другим с шагом N кадров: по порядку, обратно, по выделению или случайно." aria-label="Сдвиг во времени" title="Двойной щелчок по свободному месту — поменять блоки местами">
-      <button class="tool-grip" aria-label="Переместить блок «Сдвиг во времени»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
-      <button id="shiftOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="shiftPick timePick staggerPick" aria-label="Скрыть списки" title="Скрыть списки">
+    <section class="card tool-card shift-card" data-tool="shift" data-info="Сдвиг|Двигает во времени анимацию выделенных слоёв. «Появление» — все ключи и маркеры в первой половине слоя, «Исчезновение» — во второй, «Слой» — слой целиком. Стрелки сдвигают выбранное на N кадров раньше или позже; если анимация стоит у самого края слоя, край сдвигается вместе с ней. «К указателю» ставит начало или конец появления (исчезновения) на указатель времени. Схема сверху показывает, что получится: пунктир — как было, цвет — как станет." aria-label="Сдвиг" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Сдвиг»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="shiftOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="shiftPrevBox" aria-label="Скрыть схему" title="Скрыть схему">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
       </button>
       <div class="tool-head" title="Двигает во времени появление и исчезновение выделенных слоёв или сами слои">
-        <b>Время</b>
+        <b>Сдвиг</b>
       </div>
       <div class="shift-body">
-        <div class="shift-part">
-          <div id="shiftPick" class="shift-pick">
-            <span class="shift-cap"><label for="shiftWhat">Сдвинуть:</label><button class="tool-info" type="button" data-info="Появление — все ключи и маркеры в первой половине слоя, исчезновение — во второй. Стрелки сдвигают их на указанное число кадров. Если анимация стоит у самого края слоя, край сдвигается вместе с ней. «Слой целиком» двигает слой со всем содержимым." aria-label="Как это работает" title="Появление — все ключи и маркеры в первой половине слоя, исчезновение — во второй. Стрелки сдвигают их на указанное число кадров. Если анимация стоит у самого края слоя, край сдвигается вместе с ней. «Слой целиком» двигает слой со всем содержимым.">i</button></span>
-            <select id="shiftWhat" class="field select">
-              <option value="in">Появление</option>
-              <option value="out">Исчезновение</option>
-              <option value="layer">Слой целиком</option>
-            </select>
-          </div>
-          <div class="shift-row shift-row-step">
-            <button id="shiftBack" class="shift-arrow" aria-label="Сдвинуть раньше" title="Сдвинуть раньше"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M11 6l-6 6 6 6"/></svg></button>
-            <span class="shift-count"><input id="shiftStep" class="shift-num" type="text" inputmode="numeric" maxlength="3" autocomplete="off" spellcheck="false" aria-label="На сколько кадров сдвигать" title="На сколько кадров сдвигать за одно нажатие"><span class="shift-unit">кадр.</span></span>
-            <button id="shiftFwd" class="shift-arrow" aria-label="Сдвинуть позже" title="Сдвинуть позже"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></button>
-          </div>
+        <div id="shiftPrevBox" class="tl-prev">
+          <svg id="shiftPrev" viewBox="0 0 100 24" aria-hidden="true"></svg>
+          <small id="shiftPrevText" class="tl-cap" aria-live="polite"></small>
+        </div>
+        <div id="shiftWhat" class="seg" role="group" aria-label="Что сдвигать">
+          <button type="button" data-v="in" title="Ключи и маркеры в первой половине слоя">Появление</button>
+          <button type="button" data-v="out" title="Ключи и маркеры во второй половине слоя">Исчезновение</button>
+          <button type="button" data-v="layer" title="Слой целиком, со всеми ключами и маркерами">Слой</button>
+        </div>
+        <div class="shift-row shift-row-step">
+          <button id="shiftBack" class="shift-arrow" aria-label="Сдвинуть раньше" title="Сдвинуть раньше"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M11 6l-6 6 6 6"/></svg></button>
+          <span class="shift-count"><input id="shiftStep" class="shift-num" type="text" inputmode="numeric" maxlength="3" autocomplete="off" spellcheck="false" aria-label="На сколько кадров сдвигать" title="На сколько кадров сдвигать за одно нажатие"><span class="shift-unit">кадр.</span></span>
+          <button id="shiftFwd" class="shift-arrow" aria-label="Сдвинуть позже" title="Сдвинуть позже"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></button>
         </div>
         <div class="align-sep" role="presentation"></div>
-        <div class="shift-part">
-          <div id="timePick" class="shift-pick">
-            <span class="shift-cap"><label for="timeAlign">Подвести:</label><button class="tool-info" type="button" data-info="Ставит начало или конец появления (исчезновения) каждого выделенного слоя на указатель текущего времени." aria-label="Как это работает" title="Ставит начало или конец появления (исчезновения) каждого выделенного слоя на указатель текущего времени.">i</button></span>
-            <select id="timeAlign" class="field select">
-              <option value="inStart">Начало появления</option>
-              <option value="inEnd">Конец появления</option>
-              <option value="outStart">Начало исчезновения</option>
-              <option value="outEnd">Конец исчезновения</option>
-            </select>
-          </div>
-          <div class="shift-row">
-            <button id="timeAlignBtn" class="shift-do" title="Подвести к указателю текущего времени">К указателю</button>
-          </div>
-        </div>
-        <div class="align-sep" role="presentation"></div>
-        <div class="shift-part">
-          <div id="staggerPick" class="shift-pick">
-            <span class="shift-cap"><label for="staggerWhat">Расставить:</label><button class="tool-info" type="button" data-info="Лесенка: каждый следующий слой начинается на указанное число кадров позже предыдущего. «Слои» сдвигает слои целиком, «Появление» и «Исчезновение» — только их ключи. Повторное нажатие увеличивает ступеньки." aria-label="Как это работает" title="Лесенка: каждый следующий слой начинается на указанное число кадров позже предыдущего. «Слои» сдвигает слои целиком, «Появление» и «Исчезновение» — только их ключи. Повторное нажатие увеличивает ступеньки.">i</button></span>
-            <select id="staggerWhat" class="field select">
-              <option value="layer">Слои</option>
-              <option value="in">Появление</option>
-              <option value="out">Исчезновение</option>
-            </select>
-          </div>
-          <div class="shift-row">
-            <span class="shift-count"><input id="staggerStep" class="shift-num" type="text" inputmode="numeric" maxlength="3" autocomplete="off" spellcheck="false" aria-label="Шаг лесенки в кадрах" title="На сколько кадров каждый следующий слой позже предыдущего"><span class="shift-unit">кадр.</span></span>
-            <select id="staggerOrder" class="field select" aria-label="В каком порядке идут слои" title="В каком порядке идут слои">
-              <option value="asc">Сверху вниз</option>
-              <option value="desc">Снизу вверх</option>
-              <option value="selection">Как выделяли</option>
-              <option value="random">Случайно</option>
-            </select>
-            <button id="staggerBtn" class="shift-do" title="Каждый следующий слой — на столько кадров позже предыдущего">Лесенкой</button>
-          </div>
+        <span class="tl-label">К указателю времени</span>
+        <div id="timeAlign" class="tl-icons" role="group" aria-label="Поставить на указатель времени">
+          <button type="button" data-v="inStart" title="Начало появления — на указатель времени" aria-label="Начало появления — на указатель времени"></button>
+          <button type="button" data-v="inEnd" title="Конец появления — на указатель времени" aria-label="Конец появления — на указатель времени"></button>
+          <button type="button" data-v="outStart" title="Начало исчезновения — на указатель времени" aria-label="Начало исчезновения — на указатель времени"></button>
+          <button type="button" data-v="outEnd" title="Конец исчезновения — на указатель времени" aria-label="Конец исчезновения — на указатель времени"></button>
         </div>
       </div>
-      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Сдвиг во времени»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Сдвиг»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
+    </section>
+    <section class="card tool-card stagger-card" data-tool="stagger" data-info="Лесенка|Расставляет выделенные слои один за другим: каждый следующий начинается на N кадров позже предыдущего. «Слои» сдвигает слои целиком, «Появление» и «Исчезновение» — только их анимацию. Порядок: сверху вниз, снизу вверх, как выделяли или случайно. Нажмите ещё раз — шаг станет больше. Схема сверху показывает, что получится." aria-label="Лесенка" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Лесенка»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="staggerOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="staggerPrevBox" aria-label="Скрыть схему" title="Скрыть схему">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
+      </button>
+      <div class="tool-head" title="Расставляет слои лесенкой: каждый следующий позже предыдущего">
+        <b>Лесенка</b>
+      </div>
+      <div class="shift-body">
+        <div id="staggerPrevBox" class="tl-prev">
+          <svg id="staggerPrev" viewBox="0 0 90 30" aria-hidden="true"></svg>
+          <small id="staggerPrevText" class="tl-cap" aria-live="polite"></small>
+        </div>
+        <div id="staggerWhat" class="seg" role="group" aria-label="Что расставлять">
+          <button type="button" data-v="layer" title="Слои целиком">Слои</button>
+          <button type="button" data-v="in" title="Только появление: ключи в первой половине слоя">Появление</button>
+          <button type="button" data-v="out" title="Только исчезновение: ключи во второй половине слоя">Исчезновение</button>
+        </div>
+        <div class="shift-row shift-row-step">
+          <button id="staggerLess" class="shift-arrow" aria-label="Шаг меньше на кадр" title="Шаг меньше на кадр"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg></button>
+          <span class="shift-count"><input id="staggerStep" class="shift-num" type="text" inputmode="numeric" maxlength="3" autocomplete="off" spellcheck="false" aria-label="Шаг лесенки в кадрах" title="На сколько кадров каждый следующий слой позже предыдущего"><span class="shift-unit">кадр.</span></span>
+          <button id="staggerMore" class="shift-arrow" aria-label="Шаг больше на кадр" title="Шаг больше на кадр"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/><path d="M12 6v12"/></svg></button>
+        </div>
+        <div class="order-row">
+          <div id="staggerOrder" class="tl-icons tl-order" role="group" aria-label="В каком порядке идут слои">
+            <button type="button" data-v="asc" title="Сверху вниз" aria-label="Сверху вниз"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v15"/><path d="M6 13l6 6 6-6"/></svg></button>
+            <button type="button" data-v="desc" title="Снизу вверх" aria-label="Снизу вверх"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20V5"/><path d="M6 11l6-6 6 6"/></svg></button>
+            <button type="button" data-v="selection" title="Как выделяли" aria-label="Как выделяли"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
+            <button type="button" data-v="random" title="Случайно" aria-label="Случайно"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4.5" y="4.5" width="15" height="15" rx="3.5"/><circle cx="9" cy="9" r="1.3" fill="currentColor"/><circle cx="15" cy="15" r="1.3" fill="currentColor"/><circle cx="15" cy="9" r="1.3" fill="currentColor"/><circle cx="9" cy="15" r="1.3" fill="currentColor"/></svg></button>
+          </div>
+          <span id="staggerOrderName" class="tl-label"></span>
+        </div>
+        <button id="staggerBtn" class="shift-do shift-go" title="Каждый следующий слой — на столько кадров позже предыдущего">Расставить</button>
+      </div>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Лесенка»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
     <section class="card tool-card paste-card solo" data-tool="paste" data-info="Картинка из буфера|Кладёт картинку из буфера обмена — скриншот или копию из браузера — в проект и в отдельную композицию. То же самое делает Cmd/Ctrl+V, когда курсор в панели." aria-label="Картинка из буфера" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Картинка из буфера»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
@@ -585,7 +613,26 @@
     <div id="shapeTools" class="motion-tools">
     <div id="shapeGridCells" class="grid-cells" aria-hidden="true"></div>
     <div id="shapePinLine" class="pin-line" aria-hidden="true" hidden></div>
-    <p class="shape-empty">Здесь будут инструменты для шейп-слоёв: создать фигуру, заливка и обводка, Trim Paths, модификаторы. «Копия плавности» — в «Инструментах».</p>
+    <section class="card tool-card split-card solo" data-tool="split" data-info="Разделить / объединить|Одна кнопка, действие зависит от выделения. Выделен один шейп-слой — каждая группа из его Contents становится отдельным слоем: на том же месте, с теми же эффектами, ключами и выражениями. Если в шейпе одна группа, а в ней несколько, делятся они. Слой с несколькими масками делится по маскам. Выделено несколько шейп-слоёв — они собираются в один шейп-слой: каждый слой становится группой с тем же положением, размером, поворотом и прозрачностью. Отменить — Cmd/Ctrl+Z." aria-label="Разделить / объединить" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Разделить / объединить»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="splitOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="splitHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
+      </button>
+      <div class="tool-head" title="Один шейп — разделить на части; несколько шейпов — собрать в один">
+        <b>Разделить</b>
+      </div>
+      <button id="splitBtn" class="paste-do" title="Один шейп-слой — каждая его группа станет отдельным слоем; несколько шейп-слоёв — соберу их в один">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/>
+          <circle cx="17" cy="7" r="3.5"/>
+          <path d="M7 14.5l-3 6h6z"/>
+          <rect x="13.5" y="13.5" width="7" height="7" rx="1.6" stroke-dasharray="2 2"/>
+        </svg>
+        <span>Разделить / собрать</span>
+      </button>
+      <small id="splitHint" class="paste-hint">Один шейп — каждая группа станет отдельным слоем (слой с масками — по маскам). Несколько шейпов — соберу в один. Отменить — Cmd/Ctrl+Z</small>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Разделить / объединить»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
+    </section>
     </div>
     <div id="statusSlotShape" class="status-slot"></div>
     </div>
@@ -927,6 +974,7 @@
             <button data-value="cursor">У курсора</button>
           </div>
           <p class="hint">«У курсора» — маленькое окно поиска прямо там, где мышь, как в FX Console. Если сочетание нажато в самой панели, поиск откроется в ней.</p>
+          <p id="fxWhereState" class="hint" hidden></p>
           <button id="hotkeysReset" class="ghost">Вернуть стандартные</button>
           <p class="hint">Нажмите на сочетание, чтобы изменить его: нажмите новое на клавиатуре или выберите клавиши мышью. Сохраняется сразу. Сочетания работают во всём After Effects — чуть подержите их, как в FX Console. Панель Sayframe должна быть открыта и видна на экране.</p>
         </div>
