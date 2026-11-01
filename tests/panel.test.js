@@ -461,8 +461,14 @@ function mkOrbitComp(log, name, w, h, layers) {
   const c = Object.assign(new CompItem(), { name, width: w, height: h, duration: 10, frameRate: 30, frameDuration: 1 / 30, time: 0, pixelAspect: 1, list: [] });
   Object.defineProperty(c, "numLayers", { get: () => c.list.length });
   c.layer = (i) => c.list[i - 1] || null;
-  const put = (l) => { c.list.unshift(l); l.containingComp = c; return l; };
-  (layers || []).forEach((l) => c.list.push(mkAcLayer(l.name, l.kind || "solid", log)));
+  Object.defineProperty(c, "selectedLayers", { get: () => c.list.filter((l) => l.selected) });
+  const put = (l) => { c.list.unshift(l); l.containingComp = c; return moveAfter(l); };
+  const moveAfter = (l) => { l.moveAfter = (o) => { const a = c.list.indexOf(l), b = c.list.indexOf(o); if (a < 0 || b < 0) return; c.list.splice(a, 1); c.list.splice(c.list.indexOf(o) + 1, 0, l); }; return l; };
+  (layers || []).forEach((l) => {
+    const L = moveAfter(mkAcLayer(l.name, l.kind || "solid", log));
+    if (l.kind === "text") acInit(L.property("ADBE Text Properties").property("ADBE Text Document"), "ADBE Text Document", { text: l.text || l.name, fontSize: 40 }, log);
+    L.selected = l.selected !== false; c.list.push(L);
+  });
   c.layers = {
     addShape() { return put(Object.setPrototypeOf(mkAcLayer("Shape Layer 1", "shape", log), ShapeLayer.prototype)); },
     addText(t) { const l = mkAcLayer(String(t), "text", log); acInit(l.property("ADBE Text Properties").property("ADBE Text Document"), "ADBE Text Document", { text: t, fontSize: 40 }, log); return put(l); },
@@ -4872,7 +4878,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     sel(SRC, [1, 2]); sel(DST, []);
     p = await open({ selectedProperties: [SRC] });
     await p.page.click("#tabMotion");
-    check("EC1 the 'Копия плавности' block is in Tools, on the grid with the other blocks, with its pin; the Shape tab has only its own block", (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin").count()) === 1 && (await p.page.locator("#viewShape .tool-card").count()) === 2 && (await p.page.locator("#viewShape .tool-card[data-tool='split']").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
+    check("EC1 the 'Копия плавности' block is in Tools, on the grid with the other blocks, with its pin; the Shape tab has only its own block", (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin").count()) === 1 && (await p.page.locator("#viewShape .tool-card").count()) === 3 && (await p.page.locator("#viewShape .tool-card[data-tool='split']").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
     const ecInside = () => p.page.evaluate(() => { const card = document.querySelector("#motionTools .tool-card[data-tool='easecopy']"), c = card.getBoundingClientRect();
       return Array.prototype.every.call(card.querySelectorAll("button:not(.tool-pin):not(.tool-toggle):not(.tool-grip), label, small, b"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 1 && r.right <= c.right + 1 && r.top >= c.top - 1 && r.bottom <= c.bottom + 1); }); });
     check("EC1 nothing sticks out of the block (large blocks)", await ecInside());
@@ -5283,6 +5289,60 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("PF5 one shape only: a hint, nothing changes", names(p) === "Top,Note" && (await p.status()) === "Для Pathfinder выделите хотя бы два шейп-слоя." && (await p.statusKind()) === "", await p.status());
     t = JSON.parse(await p.page.evaluate(() => new Promise((done) => window.__adobe_cep__.evalScript('sayframeHost.pathfinder("divide", false)', done))));
     check("PF5 the host refuses an unknown mode", t.ok === false && /BAD_PF_MODE/.test(JSON.stringify(t)) && p.errors.length === 0, JSON.stringify(t));
+    await p.close();
+  }
+
+  // Text box: a box under a text layer that follows the text (sourceRectAtTime), its settings in Effect Controls.
+  {
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const tbTab = async (p) => { await p.page.click("#tabShape"); };
+    const setRange = (p, sel, v) => p.page.evaluate(([s, x]) => { const r = document.querySelector(s); r.value = String(x); r.dispatchEvent(new Event("input", { bubbles: true })); }, [sel, v]);
+    const fxNames = (l) => acAt(l, "ADBE Effect Parade").children.map((e) => e.name).join(",");
+    const fxVal = (l, n) => acAt(l, "ADBE Effect Parade").children.find((e) => e.name === n).children[0].value;
+    const grp = (l, i) => acAt(l, "ADBE Root Vectors Group", i);
+    const rectP = (l, i, mn) => acAt(grp(l, i), "ADBE Vectors Group", "ADBE Vector Shape - Rect", mn);
+    // The text: two lines; each line 200/120 wide, 40 high, 48 apart (auto leading at 40 px).
+    const txt = (s) => Object.assign(new String(s), { style: { autoLeading: true, fontSize: 40 } });
+    const rectOf = (w) => () => ({ left: -w / 2, top: -32, width: w, height: 40 });
+    const parentOf = (s) => ({ sourceRectAtTime: () => ({ left: -100, top: -32, width: 200, height: 88 }), text: { sourceText: txt(s) } });
+    p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hello\rworld" }, { name: "BG", selected: false }] } });
+    await tbTab(p);
+    check("TB1 a «Плашка под текстом» block on the Shape tab: preview, ready styles, «Добавить плашку»", (await vis(p, '#viewShape .tool-card[data-tool="textbox"]')) && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
+    check("TB1 defaults: each line, fill, dark purple, no stroke row", (await p.page.getAttribute('#tbPer [data-v="line"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbLook [data-v="fill"]', "aria-pressed")) === "true" && !(await vis(p, "#tbStrokeRow")) && (await p.page.inputValue("#tbColor")) === "#3a0f63");
+    await p.page.click('#tbLook [data-v="both"]');
+    await setRange(p, "#tbRound", 30);
+    check("TB2 the preview follows the settings: stroke row appears, roundness on the preview", (await vis(p, "#tbStrokeRow")) && (await p.page.locator("#tbRoundVal").innerText()) === "30" && (await p.page.evaluate(() => document.getElementById("tbText").style.getPropertyValue("--r"))) === "30px");
+    await p.page.click('#tbPresets [data-v="pill"]');
+    check("TB2 a ready style sets everything at once («Таблетка»: one box, round)", (await p.page.getAttribute('#tbPer [data-v="all"]', "aria-pressed")) === "true" && (await p.page.locator("#tbRoundVal").innerText()) === "100" && (await p.page.evaluate(() => document.getElementById("tbText").classList.contains("tb-all"))));
+    await p.page.click('#tbPresets [data-v="sport"]');
+    await p.page.click("#tbBtn"); await p.idle();
+    let B = L(p, "Плашка: Title"), T = L(p, "Title");
+    check("TB3 «Добавить плашку» (each line): the box under the text, 4 hidden line helpers (2 lines + 2 spare), one undo step", names(p) === "Title,Плашка: Title,Плашка: строка Title 4,Плашка: строка Title 3,Плашка: строка Title 2,Плашка: строка Title 1,BG" && p.ae.log.undo.join() === "begin:Sayframe: text box,end" && /Плашка готова/.test(await p.status()), names(p) + " | " + p.ae.log.undo.join() + " | " + await p.status());
+    check("TB3 the box and the helpers hang on the text; helpers invisible and shy; each helper shows its own line", B.parent === T && [1, 2, 3, 4].every((i) => { const H = L(p, "Плашка: строка Title " + i); return H.parent === T && acAt(H, "ADBE Transform Group", "ADBE Opacity").value === 0 && H.shy === true; }) &&
+      sfEval(L(p, "Плашка: строка Title 2"), acAt(L(p, "Плашка: строка Title 2"), "ADBE Text Properties", "ADBE Text Document"), 0, { parent: parentOf("Hello\rworld") }) === "world" && sfEval(L(p, "Плашка: строка Title 4"), acAt(L(p, "Плашка: строка Title 4"), "ADBE Text Properties", "ADBE Text Document"), 0, { parent: parentOf("Hello\rworld") }) === "");
+    check("TB3 its settings live in Effect Controls", fxNames(B) === "По бокам,Сверху/снизу,Скругление,Цвет,Заливка,Обводка,Толщина обводки,Цвет обводки,Наклон" && fxVal(B, "По бокам") === 22 && fxVal(B, "Наклон") === 14 && fxVal(B, "Заливка") === 1 && fxVal(B, "Обводка") === 0, fxNames(B));
+    const lay = (n, w) => ({ layer: (x) => (x === n ? { sourceRectAtTime: rectOf(w) } : null), frameDuration: 1 / 30 });
+    const ex = (i, mn, w) => sfEval(B, rectP(B, i, mn), 0, { parent: parentOf("Hello\rworld"), thisComp: lay("Плашка: строка Title " + i, w) });
+    check("TB4 each box takes its line's size plus the margins, and sits on its line (2nd one 48 px lower)", JSON.stringify(ex(1, "ADBE Vector Rect Size", 200)) === "[244,52]" && JSON.stringify(ex(1, "ADBE Vector Rect Position", 200)) === "[0,-12]" && JSON.stringify(ex(2, "ADBE Vector Rect Position", 120)) === "[0,36]" && JSON.stringify(ex(3, "ADBE Vector Rect Size", 0)) === "[0,0]", JSON.stringify([ex(1, "ADBE Vector Rect Size", 200), ex(1, "ADBE Vector Rect Position", 200), ex(2, "ADBE Vector Rect Position", 120)]));
+    check("TB4 «Наклон» leans the boxes; «Появление по строкам» staggers the keys", /-effect\("Наклон"\)\(1\)/.test(acAt(grp(B, 1), "ADBE Vector Transform Group", "ADBE Vector Skew").expression) && acAt(grp(B, 2), "ADBE Vector Transform Group", "ADBE Vector Scale").keys[0].t > acAt(grp(B, 1), "ADBE Vector Transform Group", "ADBE Vector Scale").keys[0].t);
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hi" }] } });
+    await tbTab(p);
+    await p.page.click('#tbPer [data-v="all"]'); await p.page.click('#tbLook [data-v="stroke"]'); await p.page.click('label.switch:has(#tbShadow)');
+    await p.page.click("#tbBtn"); await p.idle();
+    B = L(p, "Плашка: Title");
+    check("TB5 one box for the whole text: no helpers, follows the text's own size; stroke only; a shadow", names(p) === "Title,Плашка: Title" && acAt(B, "ADBE Root Vectors Group").children.length === 1 &&
+      JSON.stringify(sfEval(B, rectP(B, 1, "ADBE Vector Rect Size"), 0, { parent: parentOf("Hi") })) === "[236,100]" && fxVal(B, "Заливка") === 0 && fxVal(B, "Обводка") === 1 && /ADBE Drop Shadow/.test(fxNames(B)), names(p) + " | " + JSON.stringify(sfEval(B, rectP(B, 1, "ADBE Vector Rect Size"), 0, { parent: parentOf("Hi") })) + " " + acAt(B, "ADBE Root Vectors Group").children.length);
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG" }] } });
+    await tbTab(p); await p.page.click("#tbBtn"); await p.idle();
+    check("TB6 no text layer selected: a hint, nothing changes", names(p) === "BG" && /текстов/.test(await p.status()) && p.ae.log.undo.length === 0, await p.status());
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "Title", kind: "text" }] } });
+    await tbTab(p); await p.page.click('#tbPresets [data-v="marker"]');
+    await p.restart(); await tbTab(p);
+    check("TB6 the settings survive a restart", (await p.page.getAttribute('#tbStyle [data-v="marker"]', "aria-pressed")) === "true" && (await p.page.inputValue("#tbColor")) === "#ffcc33" && (await p.page.evaluate(() => document.getElementById("tbText").classList.contains("tb-marker"))));
     await p.close();
   }
 
@@ -6050,7 +6110,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({});
     await p.page.click("#settingsBtn"); await p.page.click("#setTabTools");
     t = await p.page.locator("#toolPicker button").evaluateAll((l) => l.map((b) => b.getAttribute("data-tool") + ":" + b.getAttribute("aria-pressed")));
-    check("TP1 settings list every tool of both tabs, all shown", t.length === 14 && t.every((x) => /:true$/.test(x)) && t.indexOf("split:true") >= 0 && (await p.page.locator(".tool-picker-head").evaluateAll((l) => l.map((x) => x.textContent))).join() === "Инструменты,Шейп", t.join());
+    check("TP1 settings list every tool of both tabs, all shown", t.length === 15 && t.every((x) => /:true$/.test(x)) && t.indexOf("split:true") >= 0 && (await p.page.locator(".tool-picker-head").evaluateAll((l) => l.map((x) => x.textContent))).join() === "Инструменты,Шейп", t.join());
     const before = await shown(p);
     await p.page.click('#toolPicker button[data-tool="cache"]'); await p.page.click('#toolPicker button[data-tool="split"]');
     await p.page.waitForTimeout(100);

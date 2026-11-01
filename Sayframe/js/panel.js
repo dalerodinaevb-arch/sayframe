@@ -811,6 +811,7 @@
         if (m === "SM_NOT_SHAPE") { return "Разделить можно шейп-слой с несколькими группами или слой с несколькими масками. Чтобы собрать, выделите несколько шейп-слоёв."; }
         if (m === "SM_NEED_SHAPES") { return "Чтобы собрать в один, выделите хотя бы два шейп-слоя."; }
         if (m === "PF_NEED_SHAPES") { return "Для Pathfinder выделите хотя бы два шейп-слоя."; }
+        if (m === "NO_TEXT_LAYER") { return "Выделите текстовый слой — плашка встанет под ним."; }
         if (m === "GRID_TOO_TIGHT") { return "Отступы больше самой сетки: уменьшите отступ или число строк и столбцов."; }
         if (m === "SM_LOCKED") { return "Слой заблокирован (замок на таймлайне). Снимите замок и нажмите ещё раз."; }
         if (m === "DC_NO_PRECOMP") { return "Выделите слой-прекомпозицию (слой, внутри которого другая композиция) и нажмите ещё раз."; }
@@ -1052,6 +1053,11 @@
         cacheBtn: el("cacheBtn"), cacheOptsToggle: el("cacheOptsToggle"), cacheHint: el("cacheHint"),
         nullpBtn: el("nullpBtn"), nullpOptsToggle: el("nullpOptsToggle"), nullpHint: el("nullpHint"),
         splitBtn: el("splitBtn"), splitOptsToggle: el("splitOptsToggle"), splitHint: el("splitHint"),
+        tbText: el("tbText"), tbPresets: el("tbPresets"), tbPer: el("tbPer"), tbLook: el("tbLook"), tbStyle: el("tbStyle"), tbAppear: el("tbAppear"),
+        tbSwatches: el("tbSwatches"), tbColor: el("tbColor"), tbStrokeColor: el("tbStrokeColor"), tbStrokeRow: el("tbStrokeRow"), tbStrokeWRow: el("tbStrokeWRow"),
+        tbPx: el("tbPx"), tbPxVal: el("tbPxVal"), tbPy: el("tbPy"), tbPyVal: el("tbPyVal"), tbRound: el("tbRound"), tbRoundVal: el("tbRoundVal"),
+        tbStroke: el("tbStroke"), tbStrokeVal: el("tbStrokeVal"), tbSkew: el("tbSkew"), tbSkewVal: el("tbSkewVal"), tbOpacity: el("tbOpacity"), tbOpacityVal: el("tbOpacityVal"),
+        tbShadow: el("tbShadow"), tbBtn: el("tbBtn"),
         pfModes: el("pfModes"), pfName: el("pfName"), pfSub: el("pfSub"), pfKeep: el("pfKeep"), pfOptsToggle: el("pfOptsToggle"), pfHint: el("pfHint"),
         unusedBtn: el("unusedBtn"), unusedOptsToggle: el("unusedOptsToggle"), unusedHint: el("unusedHint"),
         cutoutBtn: el("cutoutBtn"), cutoutOptsToggle: el("cutoutOptsToggle"), cutoutHint: el("cutoutHint"),
@@ -1356,6 +1362,7 @@
         Array.prototype.forEach.call(ui.pfModes.querySelectorAll("button"), function (b) { b.disabled = on; });
         if (ui.orbitBtn) { ui.orbitBtn.disabled = on; }
         if (ui.gridBtn) { ui.gridBtn.disabled = on; }
+        if (ui.tbBtn) { ui.tbBtn.disabled = on; }
         ui.unusedBtn.disabled = on;
         ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
@@ -3570,7 +3577,7 @@
     var STAGGER_TARGETS = ["layer", "keys"];
     var MAX_STEP_FRAMES = 999;
     var TOOL_NAMES = ["ease", "anchor", "align", "stagger", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
-    var SHAPE_TOOL_NAMES = ["pathfinder", "split"];
+    var SHAPE_TOOL_NAMES = ["pathfinder", "split", "textbox"];
     // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
     // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
     var G = { names: TOOL_NAMES };
@@ -3659,8 +3666,8 @@
         return out.join(";");
     }
 
-    // Блоки, которым обычная ширина мала: пять кнопок Pathfinder в ряд.
-    var TOOL_WIDE = { pathfinder: 14 };
+    // Блоки, которым обычная ширина мала: пять кнопок Pathfinder в ряд, превью и ползунки плашки.
+    var TOOL_WIDE = { pathfinder: 14, textbox: 14 };
 
     function sizeOf(name) {
         return parseSizes(G.st.sizes)[name] || { w: TOOL_WIDE[name] || TOOL_DEFAULT_COLS, h: 0 };
@@ -7777,6 +7784,129 @@
         }
     }
 
+    // ---- «Плашка под текстом» (вкладка «Шейп»): шейп-слой под текстом, который подстраивается под текст.
+    // Превью в блоке рисуется CSS и меняется сразу; в After Effects то же самое делают выражения (host textBox).
+    var TB_KEY = "sayframe.textbox.v1";
+    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, appear: "left", shadow: false };
+    var TB_PRESETS = {
+        news: { per: "line", look: "fill", style: "box", color: "#111111", px: 16, py: 4, round: 0, skew: 0, shadow: false, appear: "left" },
+        sport: { per: "line", look: "fill", style: "box", color: "#ff4f6d", px: 22, py: 6, round: 0, skew: 14, shadow: false, appear: "lines" },
+        sticker: { per: "all", look: "fill", style: "box", color: "#ffffff", px: 26, py: 12, round: 18, skew: 0, shadow: true, appear: "center" },
+        pill: { per: "all", look: "fill", style: "box", color: "#3a0f63", px: 34, py: 12, round: 100, skew: 0, shadow: false, appear: "center" },
+        frame: { per: "all", look: "stroke", style: "box", strokeColor: "#ffffff", stroke: 4, px: 28, py: 14, round: 40, skew: 0, shadow: false, appear: "center" },
+        marker: { per: "line", look: "fill", style: "marker", color: "#ffcc33", px: 6, py: 0, round: 0, skew: 0, shadow: false, appear: "left" }
+    };
+    var TB_RANGES = { px: [0, 120], py: [0, 80], round: [0, 100], stroke: [1, 30], skew: [-40, 40], opacity: [0, 100] };
+    var TB_CHOICES = { per: ["all", "line"], look: ["fill", "stroke", "both"], style: ["box", "marker"], appear: ["none", "left", "center", "lines"] };
+
+    function tbClean(src) {
+        var o = {}, k;
+        for (k in TB_DEFAULTS) { if (TB_DEFAULTS.hasOwnProperty(k)) { o[k] = TB_DEFAULTS[k]; } }
+        if (src && typeof src === "object") {
+            for (k in TB_DEFAULTS) {
+                if (TB_DEFAULTS.hasOwnProperty(k) && typeof src[k] === typeof TB_DEFAULTS[k]) { o[k] = src[k]; }
+            }
+        }
+        for (k in TB_RANGES) { if (TB_RANGES.hasOwnProperty(k)) { o[k] = Math.max(TB_RANGES[k][0], Math.min(TB_RANGES[k][1], Math.round(Number(o[k]) || 0))); } }
+        for (k in TB_CHOICES) { if (TB_CHOICES.hasOwnProperty(k) && TB_CHOICES[k].indexOf(o[k]) < 0) { o[k] = TB_DEFAULTS[k]; } }
+        if (!parseHex(o.color)) { o.color = TB_DEFAULTS.color; }
+        if (!parseHex(o.strokeColor)) { o.strokeColor = TB_DEFAULTS.strokeColor; }
+        o.color = parseHex(o.color).hex; o.strokeColor = parseHex(o.strokeColor).hex;
+        return o;
+    }
+
+    var tb = (function () { try { return tbClean(JSON.parse(window.localStorage.getItem(TB_KEY) || "null")); } catch (e) { return tbClean(null); } })();
+
+    function storeTb() { try { window.localStorage.setItem(TB_KEY, JSON.stringify(tb)); } catch (e) {} }
+
+    function drawTb() {
+        var t = ui.tbText, s = t.style, fill = tb.look !== "stroke", line = tb.look !== "fill", k;
+        if (!t) { return; }
+        t.classList.toggle("tb-all", tb.per === "all");
+        t.classList.toggle("tb-marker", tb.style === "marker");
+        s.setProperty("--px", tb.px + "px");
+        s.setProperty("--py", tb.py + "px");
+        s.setProperty("--r", tb.round + "px");
+        s.setProperty("--fill", fill ? tb.color : "transparent");
+        s.setProperty("--stroke", tb.strokeColor);
+        s.setProperty("--sw", line ? Math.max(1, Math.round(tb.stroke / 2)) + "px" : "0px");
+        s.setProperty("--skew", String(tb.skew));
+        s.setProperty("--op", String(tb.opacity / 100));
+        s.setProperty("--shadow", tb.shadow ? "6px 6px 0 rgba(0,0,0,.45)" : "none");
+        // Светлая плашка — тёмный текст, чтобы его было видно.
+        k = parseHex(tb.color);
+        t.style.color = fill && tb.style === "box" && k && (0.299 * k.r + 0.587 * k.g + 0.114 * k.b) / 255 > 0.6 ? "#3a0f63" : "#fff";
+        ["per", "look", "style", "appear"].forEach(function (key) { pressGroupV(ui["tb" + key.charAt(0).toUpperCase() + key.slice(1)], tb[key]); });
+        Array.prototype.forEach.call(ui.tbSwatches.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === tb.color ? "true" : "false"); });
+        ui.tbColor.value = tb.color;
+        ui.tbStrokeColor.value = tb.strokeColor;
+        ui.tbStrokeRow.hidden = ui.tbStrokeWRow.hidden = !line;
+        [["Px", "px", ""], ["Py", "py", ""], ["Round", "round", ""], ["Stroke", "stroke", ""], ["Skew", "skew", "°"], ["Opacity", "opacity", "%"]].forEach(function (d) {
+            ui["tb" + d[0]].value = String(tb[d[1]]);
+            ui["tb" + d[0] + "Val"].textContent = tb[d[1]] + d[2];
+        });
+        ui.tbShadow.checked = tb.shadow;
+    }
+
+    function setTb(changes) {
+        var k;
+        for (k in changes) { if (changes.hasOwnProperty(k)) { tb[k] = changes[k]; } }
+        tb = tbClean(tb);
+        storeTb();
+        drawTb();
+    }
+
+    function tbRgb(hex) { var c = parseHex(hex); return [c.r / 255, c.g / 255, c.b / 255]; }
+
+    async function onTextBox() {
+        var res, r, n;
+        if (busy) { return; }
+        setBusy(true);
+        try {
+            res = await host("textBox", [{ per: tb.per, look: tb.look, style: tb.style, color: tbRgb(tb.color), strokeColor: tbRgb(tb.strokeColor),
+                px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, appear: tb.appear, shadow: tb.shadow },
+                { box: "Плашка", helper: "Плашка: строка", part: "Плашка", side: "По бокам", vert: "Сверху/снизу", round: "Скругление", color: "Цвет",
+                    fillOn: "Заливка", strokeOn: "Обводка", strokeW: "Толщина обводки", strokeColor: "Цвет обводки", skew: "Наклон" }]);
+            setBusy(false);
+            r = res.textBox.boxes;
+            n = r.length;
+            setStatus("Плашка готова: " + (n === 1 ? "«" + r[0].box + "»" : plural(n, "слой", "слоя", "слоёв")) + ". Она подстраивается под текст сама; " +
+                "цвет, отступы, скругление, обводка и наклон — в Effect Controls плашки." + (r[0].lines ? " Под каждую строку своя плашка (и запас на две новые строки)." : "") +
+                " Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function enableTextBox() {
+        if (!ui.tbText) { return; }
+        ["per", "look", "style", "appear"].forEach(function (key) {
+            var box = ui["tb" + key.charAt(0).toUpperCase() + key.slice(1)];
+            box.addEventListener("click", function (e) {
+                var b = e.target.closest ? e.target.closest("button[data-v]") : null, ch = {};
+                if (!b) { return; }
+                ch[key] = b.getAttribute("data-v");
+                setTb(ch);
+            });
+        });
+        ui.tbPresets.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("button[data-v]") : null;
+            if (b && TB_PRESETS[b.getAttribute("data-v")]) { setTb(TB_PRESETS[b.getAttribute("data-v")]); }
+        });
+        ui.tbSwatches.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("button[data-v]") : null;
+            if (b) { setTb({ color: b.getAttribute("data-v"), look: tb.look === "stroke" ? "fill" : tb.look }); }
+        });
+        ui.tbColor.addEventListener("input", function () { setTb({ color: ui.tbColor.value }); });
+        ui.tbStrokeColor.addEventListener("input", function () { setTb({ strokeColor: ui.tbStrokeColor.value }); });
+        [["Px", "px"], ["Py", "py"], ["Round", "round"], ["Stroke", "stroke"], ["Skew", "skew"], ["Opacity", "opacity"]].forEach(function (d) {
+            ui["tb" + d[0]].addEventListener("input", function () { var ch = {}; ch[d[1]] = Number(ui["tb" + d[0]].value); setTb(ch); });
+        });
+        ui.tbShadow.addEventListener("change", function () { setTb({ shadow: ui.tbShadow.checked }); });
+        ui.tbBtn.addEventListener("click", onTextBox);
+        drawTb();
+    }
+
     // ---- Pathfinder (вкладка «Шейп»): как Shape Modes в Illustrator, через Merge Paths.
     var PF_MODES = { unite: ["Объединить", "Все фигуры сливаются в одну"], front: ["Вычесть верхнюю", "Верхние фигуры вырезаются из нижней"],
         intersect: ["Пересечение", "Остаётся только общая часть"], exclude: ["Исключить", "Общая часть вырезается, остальное остаётся"],
@@ -9603,7 +9733,7 @@
 
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT" || m === "NO_TEXT_LAYER";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -10136,11 +10266,12 @@
         stagger: '<path d="M4 6h8M8 12h8M12 18h8"/>',
         anchor: '<circle cx="12" cy="12" r="6"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',
         align: '<path d="M5 4v16M9 8h10M9 16h6"/>',
-        pathfinder: '<rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/>'
+        pathfinder: '<rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/>',
+        textbox: '<rect x="3" y="6" width="18" height="12" rx="3"/><path d="M8 10h8M12 10v5"/>'
     };
 
     var FLOW_ORDER = ["paste", "organize", "unused", "cache", "nullp", "decompose", "cutout", "ease", "easecopy", "stagger", "anchor", "align"];
-    var FLOW_SHAPE_ORDER = ["split", "pathfinder"];
+    var FLOW_SHAPE_ORDER = ["split", "pathfinder", "textbox"];
 
     function flowOn() { return document.documentElement.getAttribute("data-design") === "studio"; }
 
@@ -10737,6 +10868,7 @@
         watchToolGrid(sg);
         if (!PF_MODES[shape.pfLast]) { shape.pfLast = "unite"; }
         enablePathfinder();
+        enableTextBox();
         ui.ecOptsToggle.addEventListener("click", function () {
             motion.ecOpts = motion.ecOpts === false;
             showEcFold();

@@ -5945,7 +5945,7 @@ var sayframeHost = (function () {
                 } finally {
                     app.endUndoGroup();
                 }
-                return { boxes: res };
+                return { textBox: { boxes: res } };
             });
         },
 
