@@ -4506,7 +4506,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("FL6 hidden tools are hidden here too", t.tiles === "paste,organize,unused,nullp,decompose,cutout" && t.cols === "ease,easecopy,stagger,align", JSON.stringify(t));
   await p.page.click("#tabShape");
   t = await p.page.evaluate(() => { const g = document.getElementById("shapeTools"); const n = (sel) => Array.prototype.map.call(g.querySelectorAll(sel + " > .tool-card"), (c) => c.getAttribute("data-tool")).join(); return [g.classList.contains("tool-flow"), n(".flow-tiles"), n(".flow-cols"), document.getElementById("splitBtn").getAttribute("data-short")].join("|"); });
-  check("FL7 the Shape tab too: «Разделить» is a tile, «Pathfinder» a block below, open", t === "true|split|pathfinder|Разделить" && (await vis(p, "#pfModes")) && (await overflow(p)) <= 0, t);
+  check("FL7 the Shape tab too: «Разделить» is a tile, «Pathfinder» and «Плашка» blocks below, open", t === "true|split|pathfinder,textbox|Разделить" && (await vis(p, "#pfModes")) && (await overflow(p)) <= 0, t);
   await p.close();
   // Tiles and blocks can be dragged to another place (a block by its title); the order is kept.
   p = await open({ width: 420, height: 1200, settings: { design: "studio" } });
