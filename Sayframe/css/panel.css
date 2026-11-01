@@ -1259,6 +1259,12 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .ac-mode button { min-width: 0; padding: 0 9px; font-size: 12px; }
 .ac-slider .range { width: 110px; }
 .ac-slider output { min-width: 38px; color: var(--text); }
+/* Звуки: три ползунка ровными колонками — название сверху, ползунок и значение под ним */
+.ac-row.ac-snd { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 14px; flex: 1 1 100%; }
+.ac-snd .ac-slider { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 6px; min-width: 0; }
+.ac-snd .ac-slider > span { grid-column: 1 / -1; }
+.ac-snd .ac-slider .range { width: 100%; min-width: 0; }
+.ac-snd .ac-slider output { min-width: 0; white-space: nowrap; }
 .ac-color input { width: 34px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; }
 .ac-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--ac-size, 112px), 1fr)); gap: 10px; }
 .ac-grid.busy { opacity: 0.55; pointer-events: none; }

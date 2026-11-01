@@ -1379,6 +1379,15 @@ var sayframeHost = (function () {
             String(layer.source.mainSource.file.fsName).indexOf("Sayframe SFX") >= 0); } catch (e0) { return false; }
     }
 
+    function sndSetLayer(layer, len, volume) {
+        var lv;
+        layer.stretch = Math.max(10, Math.min(1000, len));
+        try {
+            lv = layer.property("ADBE Audio Group").property("ADBE Audio Levels");
+            lv.setValue([volume, volume]);
+        } catch (e0) {}
+    }
+
     function sndApply(layer, pitch, volume) {
         var lv;
         pitch = Math.max(-24, Math.min(24, pitch));
@@ -1389,11 +1398,62 @@ var sayframeHost = (function () {
         } catch (e0) {}
     }
 
+    // What the sound bar did to a layer: the original file, the pitch (semitones) and the length (percent), in the
+    // layer's comment, on a line of its own. The audio itself may be a file the panel rendered (pitch without the length).
+    var SND_MARK = "[Sayframe sound] ";
+
+    function sndLoad(layer) {
+        var c = "", at, end, o = null;
+        try { c = String(layer.comment || ""); } catch (e0) {}
+        at = c.indexOf(SND_MARK);
+        if (at < 0) { return null; }
+        end = c.indexOf("\n", at);
+        try { o = eval("(" + c.substring(at + SND_MARK.length, end < 0 ? c.length : end) + ")"); } catch (e1) { o = null; }
+        return o && typeof o === "object" ? o : null;
+    }
+
+    function sndSave(layer, o) {
+        var c = "", lines, out = [], i;
+        try { c = String(layer.comment || ""); } catch (e0) {}
+        lines = c ? c.split("\n") : [];
+        for (i = 0; i < lines.length; i++) { if (lines[i].indexOf(SND_MARK) !== 0) { out.push(lines[i]); } }
+        out.push(SND_MARK + toJSON(o));
+        try { layer.comment = out.join("\n"); } catch (e1) {}
+    }
+
+    function sndFilePath(layer) {
+        try { return String(layer.source.mainSource.file.fsName); } catch (e0) { return ""; }
+    }
+
+    // A sound-only layer the bar can work on: not locked, audio and no picture.
+    function sndTarget(layer) {
+        try { return !layer.locked && layer.hasAudio && layer.source && layer.source.hasVideo === false && layer.source.hasAudio && !!sndFilePath(layer); } catch (e0) { return false; }
+    }
+
+    // The original file, the pitch you hear and the length, as the bar shows them. A layer the bar never touched:
+    // its own file, and the Stretch it has (After Effects plays a stretched layer lower, so that is its pitch).
+    function sndState(layer) {
+        var m = sndLoad(layer), v = 0, lv, len = layer.stretch || 100;
+        try { lv = layer.property("ADBE Audio Group").property("ADBE Audio Levels").value; v = lv[0]; } catch (e0) {}
+        if (m && m.src) { return { src: String(m.src), pitch: Number(m.p) || 0, len: Number(m.l) || len, volume: Math.round(v * 10) / 10 }; }
+        return { src: sndFilePath(layer), pitch: Math.round(12 * Math.log(100 / len) / Math.LN2 * 10) / 10, len: Math.round(len * 10) / 10, volume: Math.round(v * 10) / 10 };
+    }
+
+    function sndFindItem(file) {
+        var proj = app.project, i, it;
+        for (i = 1; i <= proj.numItems; i++) {
+            it = proj.item(i);
+            try { if (it.mainSource && it.mainSource.file && it.mainSource.file.fsName === file.fsName) { return it; } } catch (e0) {}
+        }
+        return null;
+    }
+
     function sndDescribe(layer) {
         var v = 0, lv;
         if (!sndIs(layer)) { return null; }
         try { lv = layer.property("ADBE Audio Group").property("ADBE Audio Levels").value; v = lv[0]; } catch (e0) {}
-        return { name: String(layer.name), pitch: Math.round(12 * Math.log(100 / (layer.stretch || 100)) / Math.LN2 * 10) / 10, volume: Math.round(v * 10) / 10 };
+        var st = sndState(layer);
+        return { name: String(layer.name), pitch: st.pitch, len: st.len, volume: st.volume };
     }
 
     // ---- Graphics, the way Animation Composer's graphic components work: a new layer at the time indicator
@@ -4484,33 +4544,51 @@ var sayframeHost = (function () {
         },
 
         // The sound bar of the Animation tab on whatever is selected: every selected sound-only layer (a library
-        // sound or any audio file) gets the pitch (sampler-style, through Stretch) and the volume. Video layers are
-        // left alone, so their picture never speeds up. Null keeps that value as it is.
-        sndSetSelected: function (pitch, volume) {
+        // sound or any audio file). Video layers are left alone, so their picture never speeds up.
+        sndTargets: function () {
             return reply(function () {
-                var comp = app.project.activeItem, list = [], i, L, d, lv, v;
-                if (!(comp instanceof CompItem)) { return { count: 0 }; }
+                var comp = app.project.activeItem, out = [], i, L, st;
+                if (!(comp instanceof CompItem)) { return { list: [] }; }
                 for (i = 0; i < comp.selectedLayers.length; i++) {
                     L = comp.selectedLayers[i];
-                    try {
-                        if (L.locked || !L.hasAudio || !L.source || L.source.hasVideo !== false || !L.source.hasAudio) { continue; }
-                    } catch (e0) { continue; }
-                    list.push(L);
+                    if (!sndTarget(L)) { continue; }
+                    st = sndState(L);
+                    out.push({ index: L.index, name: String(L.name), src: st.src, pitch: st.pitch, len: st.len, volume: st.volume });
                 }
-                if (!list.length) { return { count: 0 }; }
+                return { list: out };
+            });
+        },
+
+        // list: [{index, file, len, volume, src, pitch}] - the file to play (the original or one the panel rendered),
+        // the Stretch, the volume; src and pitch go into the comment so the next change starts from the original.
+        sndApplyFiles: function (list) {
+            return reply(function () {
+                var comp = activeComp(), done = 0, i, o, L, file, item;
                 app.beginUndoGroup("Sayframe: sound");
                 try {
                     for (i = 0; i < list.length; i++) {
-                        L = list[i];
-                        v = 0;
-                        try { lv = L.property("ADBE Audio Group").property("ADBE Audio Levels").value; v = lv[0]; } catch (e1) {}
-                        d = Math.round(12 * Math.log(100 / (L.stretch || 100)) / Math.LN2 * 10) / 10;
-                        sndApply(L, pitch === null || pitch === undefined ? d : Number(pitch), volume === null || volume === undefined ? v : Number(volume));
+                        o = list[i];
+                        L = comp.layer(o.index);
+                        if (!L || !sndTarget(L)) { continue; }
+                        file = new File(o.file);
+                        if (!file.exists) { throw new Error("SOUND_NOT_FOUND"); }
+                        if (sndFilePath(L) !== file.fsName) {
+                            item = sndFindItem(file);
+                            if (!item) {
+                                item = app.project.importFile(new ImportOptions(file));
+                                try { item.parentFolder = projectBin("Sayframe SFX"); } catch (e1) {}
+                            }
+                            L.replaceSource(item, false);
+                            restoreActive(comp);
+                        }
+                        sndSetLayer(L, Number(o.len) || 100, Number(o.volume) || 0);
+                        sndSave(L, { src: String(o.src), p: Number(o.pitch) || 0, l: Number(o.len) || 100 });
+                        done++;
                     }
                 } finally {
                     app.endUndoGroup();
                 }
-                return { count: list.length, name: String(list[0].name) };
+                return { count: done, name: list.length ? String(comp.layer(list[0].index).name) : "" };
             });
         },
 
@@ -4688,7 +4766,8 @@ var sayframeHost = (function () {
         },
 
         // Imports a sound once (reused if it is already in the project) and puts it at the time indicator.
-        acSound: function (path, binName, pitch, volume, title) {
+        // path: the file to play (maybe rendered with the pitch); len: the layer's Stretch; meta: {src, p, l} for the comment.
+        acSound: function (path, binName, len, volume, title, meta) {
             return reply(function () {
                 var comp = activeComp();
                 var proj = app.project;
@@ -4711,11 +4790,12 @@ var sayframeHost = (function () {
                     l = comp.layers.add(item);
                     l.startTime = comp.time;
                     if (title) { try { l.name = String(title); } catch (e2) {} }
-                    sndApply(l, Number(pitch) || 0, Number(volume) || 0);
+                    sndSetLayer(l, Number(len) || 100, Number(volume) || 0);
+                    if (meta) { sndSave(l, meta); }
                 } finally {
                     app.endUndoGroup();
                 }
-                return { name: String(item.name), reused: reused, pitch: Number(pitch) || 0 };
+                return { name: String(item.name), reused: reused };
             });
         },
 

@@ -4310,9 +4310,8 @@
     });
 
     var AC_GLYPH = { arrow: "➜", star: "★", counter: "42%", timer: "00:10" };
-    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false, folder: "all", tfolder: "all", tdur: 0.8, xfolder: "all", xunit: "all", sfolder: "all", pitch: 0, vol: 0, gfolder: "all", kfolder: "all" };
+    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false, folder: "all", tfolder: "all", tdur: 0.8, xfolder: "all", xunit: "all", sfolder: "all", pitch: 0, len: 100, vol: 0, gfolder: "all", kfolder: "all" };
     var acState = loadAcState();
-    var acAudio = null;
 
     function loadAcState() {
         var s, out = {}, k;
@@ -4334,6 +4333,7 @@
         if (!GR_FOLDERS.some(function (f) { return f.id === out.gfolder; })) { out.gfolder = "all"; }
         if (!KIT_FOLDERS.some(function (f) { return f.id === out.kfolder; })) { out.kfolder = "all"; }
         out.pitch = Math.max(-12, Math.min(12, Math.round(Number(out.pitch)) || 0));
+        out.len = Math.max(50, Math.min(200, Math.round((Number(out.len) || 100) / 5) * 5));
         out.vol = Math.max(-24, Math.min(6, Math.round(Number(out.vol)) || 0));
         out.tdur = Math.min(3, Math.max(0.2, Math.round(Number(out.tdur) * 10) / 10 || 0.8));
         out.fav = Array.isArray(s.fav) ? s.fav.filter(function (x) { return typeof x === "string"; }) : [];
@@ -4455,6 +4455,8 @@
             ui.acSndRow.hidden = editing || !(searching || sec === "sfx");
             ui.acPitch.value = String(acState.pitch);
             ui.acPitchVal.textContent = pitchText(acState.pitch);
+            ui.acLen.value = String(acState.len);
+            ui.acLenVal.textContent = lenText(acState.len);
             ui.acVol.value = String(acState.vol);
             ui.acVolVal.textContent = volText(acState.vol);
         }
@@ -5264,8 +5266,8 @@
                 "Длительность — длина слоя; цвет, размер и толщина — в Effect Controls.";
         }
         if (sec === "sfx") {
-            return "▶ — послушать с выбранной высотой тона. Щелчок по карточке кладёт звук в композицию у указателя времени. " +
-                "Высота тона — как в сэмплере: выше — звук короче, ниже — длиннее. Выделен звуковой слой в композиции — ползунки меняют и его.";
+            return "▶ — послушать с выбранными тоном и длиной. Щелчок по карточке кладёт звук в композицию у указателя времени. " +
+                "Высота тона меняет только тон, «Длина» — только длину (растягивание клипа, как в Audition). Выделен звуковой слой в композиции — ползунки меняют и его.";
         }
         if (sec === "text") {
             return "Выделите текстовый слой и щёлкните по карточке (нет слоя — панель создаст новый); щелчок по отмеченной снимает пресет. " +
@@ -5651,12 +5653,9 @@
         head.appendChild(name);
         head.appendChild(remove);
         box.appendChild(head);
-        box.appendChild(acSlider("Высота тона", -12, 12, 1, Math.round(snd.pitch), pitchText, function (v) {
-            sfEditCall("sndSet", [v, null], "Высота тона изменена.");
-        }));
-        box.appendChild(acSlider("Громкость", -24, 6, 1, Math.round(snd.volume), volText, function (v) {
-            sfEditCall("sndSet", [null, v], "Громкость изменена.");
-        }));
+        box.appendChild(acSlider("Высота тона", -12, 12, 1, Math.round(snd.pitch), pitchText, function (v) { sndToSelected({ pitch: v }); }));
+        box.appendChild(acSlider("Длина", 50, 200, 5, Math.round(snd.len || 100), lenText, function (v) { sndToSelected({ len: v }); }));
+        box.appendChild(acSlider("Громкость", -24, 6, 1, Math.round(snd.volume), volText, function (v) { sndToSelected({ volume: v }); }));
         return box;
     }
 
@@ -5754,20 +5753,160 @@
 
     function acSoundPath(id) { return platform.join(extensionDir(), "sfx", id + ".wav"); }
 
-    // Превью звучит так же, как слой в After Effects: быстрее — выше, медленнее — ниже (без сохранения высоты).
-    function acPreviewSound(p) {
+    // ---- звук: высота тона без изменения длины и длина без изменения тона.
+    // After Effects умеет только Stretch (быстрее — выше и короче). Поэтому длина — это Stretch слоя, а тон панель
+    // пересчитывает сама: растягивает звук по времени кусочками (WSOLA) и проигрывает быстрее — длина та же, тон выше.
+    // Сдвиг тона файла = тон + 12·log2(длина/100): Stretch потом понизит его ровно на столько.
+
+    function sndFileShift(pitch, len) { return Math.round((pitch + 12 * Math.log(len / 100) / Math.LN2) * 100) / 100; }
+
+    // WAV (PCM 16/24/32 бит или float) → { rate, ch: [Float32Array…] }.
+    function wavDecode(bytes) {
+        var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), pos = 12, fmt = null, id, size, n, chs, i, c, bps, off, out, frames;
+        if (bytes.length < 44 || dv.getUint32(0, false) !== 0x52494646 || dv.getUint32(8, false) !== 0x57415645) { return null; }
+        while (pos + 8 <= bytes.length) {
+            id = dv.getUint32(pos, false); size = dv.getUint32(pos + 4, true);
+            if (id === 0x666d7420) { fmt = { tag: dv.getUint16(pos + 8, true), n: dv.getUint16(pos + 10, true), rate: dv.getUint32(pos + 12, true), bits: dv.getUint16(pos + 22, true) }; }
+            if (id === 0x64617461 && fmt) {
+                n = fmt.n; bps = fmt.bits / 8; frames = Math.floor(Math.min(size, bytes.length - pos - 8) / (bps * n));
+                chs = []; for (c = 0; c < n; c++) { chs.push(new Float32Array(frames)); }
+                for (i = 0; i < frames; i++) {
+                    for (c = 0; c < n; c++) {
+                        off = pos + 8 + (i * n + c) * bps;
+                        if (fmt.tag === 3 && bps === 4) { out = dv.getFloat32(off, true); }
+                        else if (bps === 2) { out = dv.getInt16(off, true) / 32768; }
+                        else if (bps === 3) { out = ((dv.getUint8(off) | (dv.getUint8(off + 1) << 8) | (dv.getInt8(off + 2) << 16))) / 8388608; }
+                        else if (bps === 4) { out = dv.getInt32(off, true) / 2147483648; }
+                        else { out = (dv.getUint8(off) - 128) / 128; }
+                        chs[c][i] = out;
+                    }
+                }
+                return { rate: fmt.rate, ch: chs };
+            }
+            pos += 8 + size + (size & 1);
+        }
+        return null;
+    }
+
+    function wavEncode(snd) {
+        var n = snd.ch.length, frames = snd.ch[0].length, len = 44 + frames * n * 2, buf = new ArrayBuffer(len), dv = new DataView(buf), i, c, v, o = 44;
+        function str(at, t) { for (var k = 0; k < t.length; k++) { dv.setUint8(at + k, t.charCodeAt(k)); } }
+        str(0, "RIFF"); dv.setUint32(4, len - 8, true); str(8, "WAVE"); str(12, "fmt "); dv.setUint32(16, 16, true);
+        dv.setUint16(20, 1, true); dv.setUint16(22, n, true); dv.setUint32(24, snd.rate, true); dv.setUint32(28, snd.rate * n * 2, true);
+        dv.setUint16(32, n * 2, true); dv.setUint16(34, 16, true); str(36, "data"); dv.setUint32(40, frames * n * 2, true);
+        for (i = 0; i < frames; i++) {
+            for (c = 0; c < n; c++) { v = Math.max(-1, Math.min(1, snd.ch[c][i])); dv.setInt16(o, v < 0 ? v * 32768 : v * 32767, true); o += 2; }
+        }
+        return new Uint8Array(buf);
+    }
+
+    // Растягивает звук по времени в r раз, не меняя тон: кусочки по ~23 мс, каждый следующий берётся там,
+    // где он лучше всего продолжает предыдущий (WSOLA). Смещения ищутся по смеси каналов — каналы не расходятся.
+    function sndStretchTime(ch, rate, r) {
+        var N = rate >= 88000 ? 2048 : 1024, Hs = N / 2, tol = N / 8, L = N / 4, len = ch[0].length;
+        var outLen = Math.max(1, Math.round(len * r)), mono = new Float32Array(len), win = new Float32Array(N);
+        var out = ch.map(function () { return new Float32Array(outLen + N); }), norm = new Float32Array(outLen + N);
+        var i, k, c, at, best, bestScore, cand, sc, j, prev = 0, nat;
+        for (i = 0; i < len; i++) { for (c = 0; c < ch.length; c++) { mono[i] += ch[c][i]; } }
+        for (i = 0; i < N; i++) { win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N); }
+        for (k = 0; k * Hs < outLen; k++) {
+            at = Math.round(k * Hs / r);
+            best = at;
+            if (k > 0) {
+                nat = prev + Hs;
+                bestScore = -Infinity;
+                for (cand = Math.max(0, at - tol); cand <= Math.min(len - L - 1, at + tol); cand++) {
+                    sc = 0;
+                    for (j = 0; j < L; j += 4) { if (nat + j < len) { sc += mono[cand + j] * mono[nat + j]; } }
+                    if (sc > bestScore) { bestScore = sc; best = cand; }
+                }
+            }
+            best = Math.max(0, Math.min(len - 1, best));
+            for (i = 0; i < N; i++) {
+                if (best + i >= len) { break; }
+                for (c = 0; c < ch.length; c++) { out[c][k * Hs + i] += ch[c][best + i] * win[i]; }
+                norm[k * Hs + i] += win[i];
+            }
+            prev = best;
+        }
+        return out.map(function (o) {
+            var res = new Float32Array(outLen);
+            for (i = 0; i < outLen; i++) { res[i] = norm[i] > 1e-3 ? o[i] / norm[i] : 0; }
+            return res;
+        });
+    }
+
+    // Тон на semis полутонов выше (ниже), длина та же: растянуть в r раз и проиграть в r раз быстрее.
+    function sndPitchShift(snd, semis) {
+        var r = Math.pow(2, semis / 12), long, len = snd.ch[0].length;
+        if (Math.abs(semis) < 0.01) { return snd; }
+        long = sndStretchTime(snd.ch, snd.rate, r);
+        return { rate: snd.rate, ch: long.map(function (x) {
+            var o = new Float32Array(len), i, t, a, f;
+            for (i = 0; i < len; i++) {
+                t = i * r; a = Math.floor(t); f = t - a;
+                o[i] = a + 1 < x.length ? x[a] * (1 - f) + x[a + 1] * f : (a < x.length ? x[a] : 0);
+            }
+            return o;
+        }) };
+    }
+
+    // Любой звук (не WAV — через декодер браузера) → { rate, ch }.
+    async function sndRead(file) {
+        var bytes = base64ToBytes(await platform.readBase64(file)), snd = wavDecode(bytes), Ctx, ctx, buf, i;
+        if (snd) { return snd; }
+        Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        if (!Ctx) { throw new Error("Не получилось прочитать звук: этот формат панель не открывает. Сохраните его как WAV."); }
+        ctx = new Ctx(1, 1, 44100);
+        buf = await ctx.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+        snd = { rate: buf.sampleRate, ch: [] };
+        for (i = 0; i < buf.numberOfChannels; i++) { snd.ch.push(buf.getChannelData(i)); }
+        return snd;
+    }
+
+    // Файл со сдвинутым тоном рядом с прочими звуками: «имя.tone+3.40.wav». Готовый не пересчитывается.
+    async function sndVariant(src, shift, folder) {
+        var name, dest;
+        if (Math.abs(shift) < 0.01) { return src; }
+        name = platform.basename(src).replace(/(\.tone[+-]\d+\.\d\d)?\.[^.]*$/i, "") + ".tone" + (shift > 0 ? "+" : "-") + Math.abs(shift).toFixed(2) + ".wav";
+        dest = platform.join(folder, name);
+        if (await platform.exists(dest)) { return dest; }
+        await platform.writeBytes(dest, wavEncode(sndPitchShift(await sndRead(src), shift)));
+        return dest;
+    }
+
+    async function sndFolder() {
+        var info = await host("info", []), folder;
+        if (!info.fileAccess) { throw new Error(FILE_ACCESS_HINT); }
+        folder = info.projectPath ? platform.join(platform.dirname(info.projectPath), "Sayframe SFX") : platform.join(platform.homedir(), "Documents", "Sayframe SFX");
+        await platform.mkdirp(folder);
+        return folder;
+    }
+
+    // Превью звучит так же, как будет в After Effects: тон — пересчётом, длина — скоростью (как Stretch).
+    var acCtx = null, acSrc = null;
+    async function acPreviewSound(p) {
+        var snd, Ctx, buf, gain, c;
         try {
-            if (acAudio) { acAudio.pause(); }
-            acAudio = new Audio("file://" + encodeURI(acSoundPath(p.id)));
-            acAudio.preservesPitch = false;
-            acAudio.webkitPreservesPitch = false;
-            acAudio.playbackRate = Math.pow(2, acState.pitch / 12);
-            acAudio.volume = Math.min(1, Math.pow(10, acState.vol / 20));
-            acAudio.play();
+            if (acSrc) { try { acSrc.stop(); } catch (e0) {} acSrc = null; }
+            Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) { return; }
+            if (!acCtx) { acCtx = new Ctx(); }
+            snd = sndPitchShift(await sndRead(acSoundPath(p.id)), sndFileShift(acState.pitch, acState.len));
+            buf = acCtx.createBuffer(snd.ch.length, snd.ch[0].length, snd.rate);
+            for (c = 0; c < snd.ch.length; c++) { buf.getChannelData(c).set(snd.ch[c]); }
+            acSrc = acCtx.createBufferSource();
+            acSrc.buffer = buf;
+            acSrc.playbackRate.value = 100 / acState.len;
+            gain = acCtx.createGain();
+            gain.gain.value = Math.pow(10, acState.vol / 20);
+            acSrc.connect(gain); gain.connect(acCtx.destination);
+            acSrc.start();
         } catch (e) {}
     }
 
     function pitchText(v) { v = Math.round(v * 10) / 10; return (v > 0 ? "+" : "") + String(v).replace(".", ",") + " пт"; }
+    function lenText(v) { return Math.round(v) + "%"; }
     function volText(v) { v = Math.round(v * 10) / 10; return (v > 0 ? "+" : "") + String(v).replace(".", ",") + " дБ"; }
 
     // Ряд «Высота тона / Громкость» для звуков: значения запоминаются и идут в слой при вставке.
@@ -5775,27 +5914,48 @@
         var row = document.createElement("div");
         row.id = "acSndRow";
         row.className = "ac-row ac-snd";
-        row.innerHTML = '<label class="ac-slider">Высота тона <input id="acPitch" class="range" type="range" min="-12" max="12" step="1" aria-label="Высота тона"><output id="acPitchVal"></output></label>' +
-            '<label class="ac-slider">Громкость <input id="acVol" class="range" type="range" min="-24" max="6" step="1" aria-label="Громкость"><output id="acVolVal"></output></label>';
+        row.innerHTML = '<label class="ac-slider"><span>Высота тона</span><input id="acPitch" class="range" type="range" min="-12" max="12" step="1" aria-label="Высота тона"><output id="acPitchVal"></output></label>' +
+            '<label class="ac-slider" title="Растягивание клипа: длиннее или короче, тон тот же"><span>Длина</span><input id="acLen" class="range" type="range" min="50" max="200" step="5" aria-label="Длина"><output id="acLenVal"></output></label>' +
+            '<label class="ac-slider"><span>Громкость</span><input id="acVol" class="range" type="range" min="-24" max="6" step="1" aria-label="Громкость"><output id="acVolVal"></output></label>';
         ui.acFoot.querySelector(".ac-opts").appendChild(row);
         ui.acSndRow = row;
         ui.acPitch = row.querySelector("#acPitch"); ui.acPitchVal = row.querySelector("#acPitchVal");
         ui.acVol = row.querySelector("#acVol"); ui.acVolVal = row.querySelector("#acVolVal");
+        ui.acLen = row.querySelector("#acLen"); ui.acLenVal = row.querySelector("#acLenVal");
+        ui.acLen.addEventListener("input", function () { acState.len = Number(ui.acLen.value); ui.acLenVal.textContent = lenText(acState.len); storeAcState(); });
+        ui.acLen.addEventListener("change", function () { sndToSelected({ len: acState.len }); });
         ui.acPitch.addEventListener("input", function () { acState.pitch = Number(ui.acPitch.value); ui.acPitchVal.textContent = pitchText(acState.pitch); storeAcState(); });
         ui.acVol.addEventListener("input", function () { acState.vol = Number(ui.acVol.value); ui.acVolVal.textContent = volText(acState.vol); storeAcState(); });
         // Отпустили ползунок — то же значение уходит в выделенные звуковые слои (любой звук, не только из библиотеки).
-        ui.acPitch.addEventListener("change", function () { sndToSelected(acState.pitch, null); });
-        ui.acVol.addEventListener("change", function () { sndToSelected(null, acState.vol); });
+        ui.acPitch.addEventListener("change", function () { sndToSelected({ pitch: acState.pitch }); });
+        ui.acVol.addEventListener("change", function () { sndToSelected({ volume: acState.vol }); });
     }
 
-    function sndToSelected(pitch, vol) {
+    // Меняет у выделенных звуковых слоёв то, что задано в change ({pitch} / {len} / {volume}), остальное у каждого своё.
+    async function sndToSelected(change, quietIfNone) {
+        var res, folder, list = [], i, t, pitch, len, file, what;
         if (busy) { return; }
-        host("sndSetSelected", [pitch, vol]).then(function (res) {
-            if (!res || !res.count) { return; }
-            setStatus((pitch !== null ? "Высота тона " + pitchText(pitch) : "Громкость " + volText(vol)) + ": " +
-                (res.count === 1 ? "слой «" + res.name + "»" : plural(res.count, "звуковой слой", "звуковых слоя", "звуковых слоёв")) + ".\nОтменить: Cmd/Ctrl+Z.", "done");
+        try { res = await host("sndTargets", []); } catch (e0) { return; }
+        if (!res || !res.list || !res.list.length) { return; }
+        setBusy(true);
+        setStatus("Пересчитываю звук…", "busy");
+        try {
+            folder = await sndFolder();
+            for (i = 0; i < res.list.length; i++) {
+                t = res.list[i];
+                pitch = change.pitch !== undefined ? change.pitch : t.pitch;
+                len = change.len !== undefined ? change.len : t.len;
+                file = await sndVariant(t.src, sndFileShift(pitch, len), folder);
+                list.push({ index: t.index, file: file, len: len, volume: change.volume !== undefined ? change.volume : t.volume, src: t.src, pitch: pitch });
+            }
+            res = await host("sndApplyFiles", [list]);
+            setBusy(false);
+            what = change.pitch !== undefined ? "Высота тона " + pitchText(change.pitch) : change.len !== undefined ? "Длина " + lenText(change.len) : "Громкость " + volText(change.volume);
+            setStatus(what + ": " + (res.count === 1 ? "слой «" + res.name + "»" : plural(res.count, "звуковой слой", "звуковых слоя", "звуковых слоёв")) + ".\nОтменить: Cmd/Ctrl+Z.", "done");
             if (acEdit && acEdit.sound) { loadAcEdit(); }
-        }).catch(function () {});
+        } catch (e) {
+            toolFailed(e);
+        }
     }
 
     function hexToRgb01(hex) {
@@ -5841,19 +6001,16 @@
                     (res.text ? " Текст — отдельным слоем «" + res.text + "», он привязан к графике." : "") +
                     " Растяните слой, чтобы изменить длительность; цвет, размер и толщина — в Effect Controls и во «✎ Изменить». Отменить — Cmd/Ctrl+Z.", "done");
             } else {
-                info = await host("info", []);
-                if (!info.fileAccess) { throw new Error(FILE_ACCESS_HINT); }
-                folder = info.projectPath ? platform.join(platform.dirname(info.projectPath), "Sayframe SFX") :
-                    platform.join(platform.homedir(), "Documents", "Sayframe SFX");
-                await platform.mkdirp(folder);
+                folder = await sndFolder();
                 dest = platform.join(folder, p.id + ".wav");
                 if (!(await platform.exists(dest))) {
                     await platform.writeBytes(dest, base64ToBytes(await platform.readBase64(acSoundPath(p.id))));
                 }
-                res = await host("acSound", [dest, "Sayframe SFX", acState.pitch, acState.vol, "♪ " + p.name]);
+                res = await host("acSound", [await sndVariant(dest, sndFileShift(acState.pitch, acState.len), folder), "Sayframe SFX", acState.len, acState.vol, "♪ " + p.name,
+                    { src: dest, p: acState.pitch, l: acState.len }]);
                 setBusy(false);
-                setStatus("Звук «" + p.name + "» добавлен у указателя времени" + (acState.pitch ? ", высота тона " + pitchText(acState.pitch) : "") + "." +
-                    (res.reused ? "" : " Файл лежит в папке «Sayframe SFX» рядом с проектом.") + " Высоту тона и громкость можно поменять во «✎ Изменить».", "done");
+                setStatus("Звук «" + p.name + "» добавлен у указателя времени" + (acState.pitch ? ", высота тона " + pitchText(acState.pitch) : "") + (acState.len !== 100 ? ", длина " + lenText(acState.len) : "") + "." +
+                    (res.reused ? "" : " Файл лежит в папке «Sayframe SFX» рядом с проектом.") + " Выделите слой и двигайте ползунки внизу — он поменяется.", "done");
             }
         } catch (e) {
             toolFailed(e);
