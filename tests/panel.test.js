@@ -4480,6 +4480,29 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = await p.page.evaluate(() => { const g = document.getElementById("shapeTools"); const n = (sel) => Array.prototype.map.call(g.querySelectorAll(sel + " > .tool-card"), (c) => c.getAttribute("data-tool")).join(); return [g.classList.contains("tool-flow"), n(".flow-tiles"), n(".flow-cols"), document.getElementById("splitBtn").getAttribute("data-short")].join("|"); });
   check("FL7 the Shape tab too: «Разделить» is a tile, «Pathfinder» a block below, open", t === "true|split|pathfinder|Разделить" && (await vis(p, "#pfModes")) && (await overflow(p)) <= 0, t);
   await p.close();
+  // Tiles and blocks can be dragged to another place (a block by its title); the order is kept.
+  p = await open({ width: 420, height: 1200, settings: { design: "studio" } });
+  await motionTab(p);
+  const dragTo = async (from, to, dx) => {
+    const a = await p.page.locator(from).boundingBox(), b = await p.page.locator(to).boundingBox();
+    await p.page.mouse.move(a.x + a.width / 2, a.y + Math.min(14, a.height / 2));
+    await p.page.mouse.down();
+    await p.page.mouse.move(a.x + a.width / 2 + 10, a.y + 10, { steps: 3 });
+    await p.page.mouse.move(b.x + (dx || 4), b.y + 6, { steps: 8 });
+    await p.page.mouse.up();
+    await p.page.waitForTimeout(80);
+  };
+  before = p.ae.log.undo.length;
+  await dragTo('.flow-tiles [data-tool="cache"]', '.flow-tiles [data-tool="paste"]');
+  t = await flowState(p);
+  check("FL8 a tile dragged onto the first one takes its place; letting go does not run it", t.tiles === "cache,paste,organize,unused,nullp,decompose,cutout" && p.ae.log.undo.length === before && (await savedMotion(p, "flowSort")).indexOf("cache,paste,") === 0, JSON.stringify(t) + " " + (await savedMotion(p, "flowSort")));
+  await dragTo('.flow-cols [data-tool="align"] .tool-head', '.flow-cols [data-tool="ease"] .tool-head');
+  t = await flowState(p);
+  check("FL8 a block dragged by its title goes above «Плавность» and stays folded", t.cols === "align,ease,easecopy,stagger,anchor" && t.folded.split(",").sort().join() === "align,anchor,easecopy", JSON.stringify(t));
+  await p.restart(); await motionTab(p);
+  t = await flowState(p);
+  check("FL8 the new order survives a restart", t.tiles.indexOf("cache,paste") === 0 && t.cols.indexOf("align,ease") === 0 && p.errors.length === 0, JSON.stringify(t) + p.errors.join(" | "));
+  await p.close();
 
   console.log("\n=== updates ===");
   const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");

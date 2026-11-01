@@ -1946,9 +1946,9 @@ html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:
 .motion-tools.tool-flow { display: block !important; }
 .tool-flow > .grid-cells, .tool-flow > .pin-line { display: none !important; }
 .tool-flow > .flow-cap:not([hidden]) { display: block; margin: 2px 2px 8px; font: 600 10.5px/1.2 var(--plain); text-transform: uppercase; letter-spacing: .12em; color: #6c6e79; }
-.tool-flow > .flow-tiles:not([hidden]) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 14px; }
+.tool-flow > .flow-tiles:not([hidden]) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
 .tool-flow > .flow-tiles[data-wide="true"] { grid-template-columns: repeat(7, minmax(0, 1fr)); }
-.tool-flow > .flow-cols:not([hidden]) { display: block; column-gap: 8px; }
+.tool-flow > .flow-cols:not([hidden]) { display: block; column-gap: 12px; }
 .tool-flow > .flow-cols[data-cols="2"] { -webkit-columns: 2; columns: 2; }
 .tool-flow > .flow-cols[data-cols="3"] { -webkit-columns: 3; columns: 3; }
 .tool-flow .tool-card { grid-column: auto !important; grid-row: auto !important; align-self: auto !important; position: relative; }
@@ -1963,7 +1963,7 @@ html[data-design="studio"] .tool-flow .flow-tiles .paste-do::after { content: at
 html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover { border-color: rgba(var(--accent-rgb), .5) !important; }
 html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover .paste-do svg { background: rgba(var(--accent-rgb), .26); }
 /* блоки с настройками */
-.tool-flow .flow-cols .tool-card { width: 100%; box-sizing: border-box; margin: 0 0 8px; -webkit-column-break-inside: avoid; break-inside: avoid; }
+.tool-flow .flow-cols .tool-card { width: 100%; box-sizing: border-box; margin: 0 0 12px; -webkit-column-break-inside: avoid; break-inside: avoid; }
 .tool-flow .flow-cols .tool-head { cursor: pointer; padding-right: 30px; }
 .tool-flow .flow-cols .flow-fold { display: flex; align-items: center; justify-content: center; position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
 .tool-flow .flow-cols .flow-fold:hover { background: rgba(255, 255, 255, .06); color: var(--text); }
@@ -1977,6 +1977,10 @@ html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover .paste-do svg
 .tool-flow .flow-cols .flow-folded .flow-ico svg { width: 15px; height: 15px; }
 html[data-design="studio"] .tool-flow .flow-cols .flow-folded .tool-head b { font: 500 12.5px/1.2 var(--plain) !important; text-transform: none; letter-spacing: 0; color: var(--text) !important; }
 .tool-flow .flow-cols .tool-head::before { display: none; }
+/* Перетаскивание в «Студии»: блок под пальцем полупрозрачный, остальные расступаются. */
+.tool-flow .flow-tiles .tool-card, .tool-flow .flow-cols .tool-head { touch-action: none; }
+.tool-flow.flow-sorting, .tool-flow.flow-sorting * { cursor: grabbing !important; user-select: none; }
+.tool-flow .tool-card.flow-drag { opacity: .55; pointer-events: none; outline: 1.5px dashed rgba(var(--accent-rgb), .8); outline-offset: 2px; }
 
 /* Pathfinder (вкладка «Шейп»): пять кнопок с картинкой результата, под ними — что делает наведённая */
 .pf-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }

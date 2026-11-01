@@ -3527,7 +3527,7 @@
         ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false, cutoutOpts: false, splitOpts: false, pfOpts: false,
         anchorOpts: false, alignOpts: false,
         staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", staggerOpts: true,
-        flowFold: "easecopy,anchor,align" };
+        flowFold: "easecopy,anchor,align", flowSort: "" };
     var STAGGER_ORDERS = ["asc", "random", "desc", "align"];
     var STAGGER_TARGETS = ["layer", "keys"];
     var MAX_STEP_FRAMES = 999;
@@ -10079,7 +10079,8 @@
 
     // ---- «Студия»: раздел «Инструменты» без сетки. Сверху кнопки «в один клик» по четыре в ряд,
     // ниже блоки с настройками друг под другом (в широкой панели — в две или три колонки).
-    // Блок сворачивается в одну строку щелчком по заголовку. Перестановки и растягивания здесь нет.
+    // Блок сворачивается в одну строку щелчком по заголовку. Плитки и блоки можно перетащить на другое место
+    // (блок — за заголовок); порядок запоминается. Растягивания здесь нет.
     var FLOW_TILES = { paste: "Картинка", organize: "По папкам", unused: "Лишнее", cache: "Кэш", nullp: "Null", decompose: "Декомпоз", cutout: "Вырезка", split: "Разделить" };
     var FLOW_ICONS = {
         ease: '<path d="M4 19C11 19 13 5 20 5"/><circle cx="4" cy="19" r="1.5"/><circle cx="20" cy="5" r="1.5"/>',
@@ -10105,6 +10106,68 @@
         g.st.flowFold = list.join(",");
         g.store();
         relayoutTools();
+    }
+
+    // Порядок блоков: сохранённый, а блоки, которых в нём нет (новые), — в конце, как по умолчанию.
+    function flowSorted(g) {
+        var saved = String(g.st.flowSort || "").split(",").filter(function (n, i, a) { return g.flowOrder.indexOf(n) >= 0 && a.indexOf(n) === i; });
+        return saved.concat(g.flowOrder.filter(function (n) { return saved.indexOf(n) < 0; }));
+    }
+
+    // Перетаскивание: плитку — за любое место, блок — за заголовок. Двигаются только среди своих
+    // (плитки среди плиток, блоки среди блоков). Короткий щелчок работает как раньше.
+    function enableFlowDrag(g) {
+        var drag = null;
+        function cardName(card) { return card.getAttribute("data-tool"); }
+        function onMove(e) {
+            var over, rect, before, box;
+            if (!drag) { return; }
+            if (!drag.on) {
+                if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 6) { return; }
+                drag.on = true;
+                drag.card.classList.add("flow-drag");
+                g.el.classList.add("flow-sorting");
+            }
+            e.preventDefault();
+            box = drag.card.parentNode;
+            over = document.elementFromPoint(e.clientX, e.clientY);
+            over = over && over.closest ? over.closest(".tool-card") : null;
+            if (!over || over === drag.card || over.parentNode !== box) { return; }
+            rect = over.getBoundingClientRect();
+            before = drag.tile ? (e.clientY < rect.top || (e.clientY <= rect.bottom && e.clientX < rect.left + rect.width / 2))
+                : e.clientY < rect.top + rect.height / 2;
+            box.insertBefore(drag.card, before ? over : over.nextSibling);
+        }
+        function onUp() {
+            var d = drag, names;
+            drag = null;
+            document.removeEventListener("pointermove", onMove, true);
+            document.removeEventListener("pointerup", onUp, true);
+            document.removeEventListener("pointercancel", onUp, true);
+            if (!d || !d.on) { return; }
+            d.card.classList.remove("flow-drag");
+            g.el.classList.remove("flow-sorting");
+            names = Array.prototype.map.call(g.flowBox.tiles.querySelectorAll(".tool-card"), cardName)
+                .concat(Array.prototype.map.call(g.flowBox.cols.querySelectorAll(".tool-card"), cardName));
+            g.st.flowSort = names.join(",");
+            g.store();
+            // Отпустили — это не щелчок: плитка не срабатывает, блок не сворачивается.
+            function eat(e) { e.stopPropagation(); e.preventDefault(); }
+            document.addEventListener("click", eat, true);
+            setTimeout(function () { document.removeEventListener("click", eat, true); }, 0);
+        }
+        g.el.addEventListener("pointerdown", function (e) {
+            var card, tile;
+            if (!g.flow || e.button !== 0 || !e.target.closest) { return; }
+            card = e.target.closest(".tool-card");
+            if (!card || !g.flowBox || (card.parentNode !== g.flowBox.tiles && card.parentNode !== g.flowBox.cols)) { return; }
+            tile = card.parentNode === g.flowBox.tiles;
+            if (!tile && (!e.target.closest(".tool-head") || e.target.closest(".flow-fold"))) { return; }
+            drag = { card: card, tile: tile, x: e.clientX, y: e.clientY, on: false };
+            document.addEventListener("pointermove", onMove, true);
+            document.addEventListener("pointerup", onUp, true);
+            document.addEventListener("pointercancel", onUp, true);
+        });
     }
 
     function buildFlow(g) {
@@ -10138,6 +10201,7 @@
             card.appendChild(b);
         });
         g.flowBox = box;
+        enableFlowDrag(g);
     }
 
     function layoutFlow(g) {
@@ -10155,7 +10219,7 @@
         g.el.style.gridAutoRows = "";
         g.el.style.gap = "";
         g.line.hidden = true;
-        g.flowOrder.forEach(function (name) {
+        flowSorted(g).forEach(function (name) {
             var card = cardByName(name), off, isTile, f;
             if (!card) { return; }
             off = toolsHidden.indexOf(name) >= 0;
@@ -10518,7 +10582,7 @@
 
     var SHAPE_KEY = "sayframe.shape.v1";
     var EC_KEY = "sayframe.easecopy.v1";
-    var SHAPE_DEFAULTS = { order: "", sizes: "", places: "", pins: "", grid: GRID_VERSION, flowFold: "", pfKeep: false, pfLast: "unite" };
+    var SHAPE_DEFAULTS = { order: "", sizes: "", places: "", pins: "", grid: GRID_VERSION, flowFold: "", flowSort: "", pfKeep: false, pfLast: "unite" };
 
     function loadShape() {
         var m = {}, saved, k, keep = G;
