@@ -676,7 +676,12 @@ textarea:focus, .field:focus {
 .align-trio { flex: 1 1 0; min-width: 66px; max-width: 132px; display: flex; }
 html[data-design="studio"] .align-row { gap: 8px 16px; }
 html[data-design="studio"] #acHint { display: none; }
-html[data-design="studio"] .align-trio { min-width: 80px; max-width: 156px; gap: 6px; }
+/* «Студия»: три кнопки — одна группа в общей рамке, между ними тонкие линии; значок без своего квадратика. */
+html[data-design="studio"] .align-trio { min-width: 80px; max-width: 156px; gap: 0; background: var(--st-btn); border: 1px solid #2a2b31; border-radius: 10px; overflow: hidden; }
+html[data-design="studio"] .align-trio .align-btn { background: transparent !important; border: 0 !important; border-radius: 0 !important; height: 34px; }
+html[data-design="studio"] .align-trio .align-btn + .align-btn { border-left: 1px solid #2a2b31 !important; }
+html[data-design="studio"] .align-trio .align-btn:hover:not(:disabled) { background: rgba(var(--accent-rgb), .18) !important; }
+html[data-design="studio"] .align-trio .align-btn svg { padding: 0 !important; background: none !important; width: 19px !important; height: 19px !important; opacity: .9; }
 .align-btn {
   flex: 1 1 0;
   min-width: 0;
