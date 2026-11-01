@@ -573,6 +573,33 @@
     <div id="shapeTools" class="motion-tools">
     <div id="shapeGridCells" class="grid-cells" aria-hidden="true"></div>
     <div id="shapePinLine" class="pin-line" aria-hidden="true" hidden></div>
+    <section class="card tool-card pf-card" data-tool="pathfinder" data-info="Pathfinder|Как в Illustrator: выделите два и больше шейп-слоя и нажмите кнопку — они соберутся в один шейп-слой с Merge Paths. «Объединить» сливает фигуры, «Вычесть верхнюю» вырезает верхние из нижней, «Пересечение» оставляет общую часть, «Исключить» вырезает общую часть, «Вычесть нижнюю» вырезает нижние из верхней. Фигуры остаются живыми: группы можно двигать и анимировать. Отменить — Cmd/Ctrl+Z." aria-label="Pathfinder" title="Двойной щелчок по свободному месту — поменять блоки местами">
+      <button class="tool-grip" aria-label="Переместить блок «Pathfinder»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
+      <button id="pfOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="pfHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
+      </button>
+      <div class="tool-head" title="Склеить или вырезать шейп-слои друг из друга, как Pathfinder в Illustrator">
+        <b>Pathfinder</b>
+      </div>
+      <div id="pfModes" class="pf-row" role="group" aria-label="Что сделать с фигурами">
+        <button type="button" class="align-btn" data-v="unite" aria-label="Объединить" title="Объединить"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="pf-ghost"><rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/></g><path class="pf-fill" d="M3 3h12v6h6v12H9v-6H3z" fill-rule="evenodd"/></svg></button>
+        <button type="button" class="align-btn" data-v="front" aria-label="Вычесть верхнюю" title="Вычесть верхнюю"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="pf-ghost"><rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/></g><path class="pf-fill" d="M3 3h12v6H9v6H3z" fill-rule="evenodd"/></svg></button>
+        <button type="button" class="align-btn" data-v="intersect" aria-label="Пересечение" title="Пересечение"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="pf-ghost"><rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/></g><path class="pf-fill" d="M9 9h6v6H9z" fill-rule="evenodd"/></svg></button>
+        <button type="button" class="align-btn" data-v="exclude" aria-label="Исключить" title="Исключить"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="pf-ghost"><rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/></g><path class="pf-fill" d="M3 3h12v6h6v12H9v-6H3zM9 9v6h6V9z" fill-rule="evenodd"/></svg></button>
+        <button type="button" class="align-btn" data-v="back" aria-label="Вычесть нижнюю" title="Вычесть нижнюю"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="pf-ghost"><rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/></g><path class="pf-fill" d="M15 9h6v12H9v-6h6z" fill-rule="evenodd"/></svg></button>
+      </div>
+      <div id="pfName" class="pf-name"></div>
+      <div id="pfSub" class="pf-sub"></div>
+      <label class="switch pf-keep">
+        <input id="pfKeep" type="checkbox">
+        <span class="track"></span>
+        <span class="text">Оставить исходные слои
+          <small>Спрятать их, а не удалять, чтобы можно было вернуться.</small>
+        </span>
+      </label>
+      <small id="pfHint" class="paste-hint">Выделите 2 и больше шейп-слоя и нажмите кнопку. Фигуры останутся «живыми»: их можно двигать и анимировать. Отменить — Cmd/Ctrl+Z</small>
+      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Pathfinder»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
+    </section>
     <section class="card tool-card split-card solo" data-tool="split" data-info="Разделить / объединить|Одна кнопка, действие зависит от выделения. Выделен один шейп-слой — каждая группа из его Contents становится отдельным слоем: на том же месте, с теми же эффектами, ключами и выражениями. Если в шейпе одна группа, а в ней несколько, делятся они. Слой с несколькими масками делится по маскам. Выделено несколько шейп-слоёв — они собираются в один шейп-слой: каждый слой становится группой с тем же положением, размером, поворотом и прозрачностью. Отменить — Cmd/Ctrl+Z." aria-label="Разделить / объединить" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Разделить / объединить»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="splitOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="splitHint" aria-label="Скрыть подсказку" title="Скрыть подсказку">

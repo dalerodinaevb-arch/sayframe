@@ -4431,9 +4431,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.setViewportSize({ width: 760, height: 1000 }); await p.page.waitForTimeout(150);
   t = await flowState(p);
   check("FL4 a wider panel: two columns", t.n === "2" && (await overflow(p)) <= 0, JSON.stringify(t));
-  await p.page.setViewportSize({ width: 1100, height: 1000 }); await p.page.waitForTimeout(150);
+  await p.page.setViewportSize({ width: 1100, height: 1000 }); await p.page.waitForTimeout(500);
   t = await flowState(p);
-  check("FL4 a very wide panel: three columns, all tiles in one row", t.n === "3" && (await p.page.evaluate(() => new Set(Array.prototype.map.call(document.querySelectorAll(".flow-tiles .tool-card"), (c) => Math.round(c.getBoundingClientRect().top))).size)) === 1 && (await overflow(p)) <= 0, JSON.stringify(t));
+  check("FL4 a very wide panel: three columns, all tiles in one row", t.n === "3" && (await p.page.evaluate(() => new Set(Array.prototype.map.call(document.querySelectorAll("#motionTools .flow-tiles .tool-card"), (c) => Math.round(c.getBoundingClientRect().top))).size)) === 1 && (await overflow(p)) <= 0, JSON.stringify(t) + " " + (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll(".flow-tiles .tool-card"), (c) => Math.round(c.getBoundingClientRect().top)).join())));
   await p.page.setViewportSize({ width: 420, height: 1200 }); await p.page.waitForTimeout(150);
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="glass"]'); await p.page.click("#settingsClose");
   await motionTab(p);
@@ -4446,6 +4446,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await motionTab(p);
   t = await flowState(p);
   check("FL6 hidden tools are hidden here too", t.tiles === "paste,organize,unused,nullp,decompose,cutout" && t.cols === "ease,easecopy,stagger,align", JSON.stringify(t));
+  await p.page.click("#tabShape");
+  t = await p.page.evaluate(() => { const g = document.getElementById("shapeTools"); const n = (sel) => Array.prototype.map.call(g.querySelectorAll(sel + " > .tool-card"), (c) => c.getAttribute("data-tool")).join(); return [g.classList.contains("tool-flow"), n(".flow-tiles"), n(".flow-cols"), document.getElementById("splitBtn").getAttribute("data-short")].join("|"); });
+  check("FL7 the Shape tab too: «Разделить» is a tile, «Pathfinder» a block below, open", t === "true|split|pathfinder|Разделить" && (await vis(p, "#pfModes")) && (await overflow(p)) <= 0, t);
   await p.close();
 
   console.log("\n=== updates ===");
@@ -4794,7 +4797,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     sel(SRC, [1, 2]); sel(DST, []);
     p = await open({ selectedProperties: [SRC] });
     await p.page.click("#tabMotion");
-    check("EC1 the 'Копия плавности' block is in Tools, on the grid with the other blocks, with its pin; the Shape tab has only its own block", (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin").count()) === 1 && (await p.page.locator("#viewShape .tool-card").count()) === 1 && (await p.page.locator("#viewShape .tool-card[data-tool='split']").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
+    check("EC1 the 'Копия плавности' block is in Tools, on the grid with the other blocks, with its pin; the Shape tab has only its own block", (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin").count()) === 1 && (await p.page.locator("#viewShape .tool-card").count()) === 2 && (await p.page.locator("#viewShape .tool-card[data-tool='split']").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
     const ecInside = () => p.page.evaluate(() => { const card = document.querySelector("#motionTools .tool-card[data-tool='easecopy']"), c = card.getBoundingClientRect();
       return Array.prototype.every.call(card.querySelectorAll("button:not(.tool-pin):not(.tool-toggle):not(.tool-grip), label, small, b"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 1 && r.right <= c.right + 1 && r.top >= c.top - 1 && r.bottom <= c.bottom + 1); }); });
     check("EC1 nothing sticks out of the block (large blocks)", await ecInside());
@@ -5045,6 +5048,50 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ sm: [{ name: "Top", groups: [smGroup("A", [])] }] });
     await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
     check("SM7 nothing selected: the usual hint", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз.", await p.status());
+    await p.close();
+  }
+
+  // Pathfinder on the Shape tab: the selected shape layers become one layer with Merge Paths.
+  {
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const two = (extra) => [{ name: "Top", selected: true, groups: [smGroup("A", [smRect(40), smFill([1, 0, 0, 1])])] }, { name: "Kid", parent: "Bottom" }, { name: "Bottom", selected: true, groups: [smGroup("B", [smRect(60), smFill([0, 0, 1, 1])])] }].concat(extra || []);
+    const root = (L) => acAt(L, "ADBE Root Vectors Group");
+    const pf = async (p, v) => { await p.page.click('#pfModes [data-v="' + v + '"]'); await p.idle(); };
+    p = await open({ sm: two() });
+    await p.page.click("#tabShape");
+    check("PF1 a «Pathfinder» block on the Shape tab: five buttons, the first one named under them", (await p.page.locator("#pfModes button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "unite,front,intersect,exclude,back" && (await p.page.locator("#pfName").innerText()) === "Объединить" && (await p.page.locator('#viewShape .tool-card[data-tool="pathfinder"]').isVisible()) && !(await p.page.isChecked("#pfKeep")));
+    await p.page.hover('#pfModes [data-v="exclude"]');
+    check("PF1 the mouse over a button says what it does", (await p.page.locator("#pfName").innerText()) === "Исключить" && /Общая часть вырезается/.test(await p.page.locator("#pfSub").innerText()));
+    await pf(p, "unite");
+    const M = Lx(p, "Top - Unite");
+    check("PF2 «Объединить»: one new layer with both shapes as groups, Merge Paths «Add» and one fill in the top layer's colour", names(p) === "Top - Unite,Kid" && root(M).children.map((g) => g.name).join() === "Top,Bottom,ADBE Vector Filter - Merge,ADBE Vector Graphic - Fill" && acAt(M, "ADBE Root Vectors Group", "ADBE Vector Filter - Merge", "ADBE Vector Merge Type").value === 2 && JSON.stringify(acAt(M, "ADBE Root Vectors Group", "ADBE Vector Graphic - Fill", "ADBE Vector Fill Color").value) === "[1,0,0,1]", names(p) + " " + root(M).children.map((g) => g.name).join());
+    check("PF2 the old fills inside the groups are switched off; one undo step; the report", acAt(M, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Graphic - Fill").enabled === false && p.ae.log.undo.join() === "begin:Sayframe: pathfinder,end" && /^Pathfinder «Объединить»: 2 слоя → «Top - Unite»\. Исходные слои убраны\./.test(await p.status()) && Lx(p, "Kid").parent === M, await p.status());
+    await p.close();
+    p = await open({ sm: two() });
+    await p.page.click("#tabShape"); await pf(p, "front");
+    t = Lx(p, "Top - Minus Front");
+    check("PF3 «Вычесть верхнюю»: the bottom layer goes first (Merge Paths subtracts the next ones from it), its colour stays", root(t).children.map((g) => g.name).slice(0, 2).join() === "Bottom,Top" && acAt(t, "ADBE Root Vectors Group", "ADBE Vector Filter - Merge", "ADBE Vector Merge Type").value === 3 && JSON.stringify(acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Fill", "ADBE Vector Fill Color").value) === "[0,0,1,1]", root(t).children.map((g) => g.name).join());
+    await p.close();
+    for (const [v, n, mode, first] of [["intersect", "Intersect", 4, "Top"], ["exclude", "Exclude", 5, "Top"], ["back", "Minus Back", 3, "Top"]]) {
+      p = await open({ sm: two() });
+      await p.page.click("#tabShape"); await pf(p, v);
+      t = Lx(p, "Top - " + n);
+      check("PF3 «" + v + "»: Merge Paths mode " + mode + ", the top layer first", !!t && acAt(t, "ADBE Root Vectors Group", "ADBE Vector Filter - Merge", "ADBE Vector Merge Type").value === mode && root(t).children[0].name === first, names(p));
+      await p.close();
+    }
+    p = await open({ sm: two() });
+    await p.page.click("#tabShape"); await p.page.click(".pf-keep .track");
+    await pf(p, "intersect");
+    check("PF4 «Оставить исходные слои»: the old layers stay, switched off; children keep their parent", names(p) === "Top - Intersect,Top,Kid,Bottom" && !Lx(p, "Top").enabled && !Lx(p, "Bottom").enabled && Lx(p, "Kid").parent === Lx(p, "Bottom") && /Исходные слои спрятаны/.test(await p.status()), names(p));
+    await p.restart(); await p.page.click("#tabShape");
+    check("PF4 the switch and the last mode survive a restart", (await p.page.isChecked("#pfKeep")) && (await p.page.getAttribute('#pfModes [data-v="intersect"]', "aria-pressed")) === "true" && (await p.page.locator("#pfName").innerText()) === "Пересечение");
+    await p.close();
+    p = await open({ sm: [{ name: "Top", selected: true, groups: [smGroup("A", [])] }, { name: "Note", shape: false, selected: true }] });
+    await p.page.click("#tabShape"); await pf(p, "unite");
+    check("PF5 one shape only: a hint, nothing changes", names(p) === "Top,Note" && (await p.status()) === "Для Pathfinder выделите хотя бы два шейп-слоя." && (await p.statusKind()) === "", await p.status());
+    t = JSON.parse(await p.page.evaluate(() => new Promise((done) => window.__adobe_cep__.evalScript('sayframeHost.pathfinder("divide", false)', done))));
+    check("PF5 the host refuses an unknown mode", t.ok === false && /BAD_PF_MODE/.test(JSON.stringify(t)) && p.errors.length === 0, JSON.stringify(t));
     await p.close();
   }
 
@@ -5812,7 +5859,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({});
     await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
     t = await p.page.locator("#toolPicker button").evaluateAll((l) => l.map((b) => b.getAttribute("data-tool") + ":" + b.getAttribute("aria-pressed")));
-    check("TP1 settings list every tool of both tabs, all shown", t.length === 13 && t.every((x) => /:true$/.test(x)) && t.indexOf("split:true") >= 0 && (await p.page.locator(".tool-picker-head").evaluateAll((l) => l.map((x) => x.textContent))).join() === "Инструменты,Шейп", t.join());
+    check("TP1 settings list every tool of both tabs, all shown", t.length === 14 && t.every((x) => /:true$/.test(x)) && t.indexOf("split:true") >= 0 && (await p.page.locator(".tool-picker-head").evaluateAll((l) => l.map((x) => x.textContent))).join() === "Инструменты,Шейп", t.join());
     const before = await shown(p);
     await p.page.click('#toolPicker button[data-tool="cache"]'); await p.page.click('#toolPicker button[data-tool="split"]');
     await p.page.waitForTimeout(100);

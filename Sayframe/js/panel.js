@@ -809,6 +809,7 @@
         if (m === "SM_ONE_PIECE") { return "В этом шейпе одна фигура — делить нечего. Чтобы собрать шейпы в один, выделите несколько шейп-слоёв."; }
         if (m === "SM_NOT_SHAPE") { return "Разделить можно шейп-слой с несколькими группами или слой с несколькими масками. Чтобы собрать, выделите несколько шейп-слоёв."; }
         if (m === "SM_NEED_SHAPES") { return "Чтобы собрать в один, выделите хотя бы два шейп-слоя."; }
+        if (m === "PF_NEED_SHAPES") { return "Для Pathfinder выделите хотя бы два шейп-слоя."; }
         if (m === "SM_LOCKED") { return "Слой заблокирован (замок на таймлайне). Снимите замок и нажмите ещё раз."; }
         if (m === "DC_NO_PRECOMP") { return "Выделите слой-прекомпозицию (слой, внутри которого другая композиция) и нажмите ещё раз."; }
         if (m === "CO_NOT_PHOTO") { return "Cut out работает с фото: выделите слой, у которого источник — файл-картинка (JPG, PNG, PSD…), и нажмите ещё раз."; }
@@ -1012,6 +1013,7 @@
         cacheBtn: el("cacheBtn"), cacheOptsToggle: el("cacheOptsToggle"), cacheHint: el("cacheHint"),
         nullpBtn: el("nullpBtn"), nullpOptsToggle: el("nullpOptsToggle"), nullpHint: el("nullpHint"),
         splitBtn: el("splitBtn"), splitOptsToggle: el("splitOptsToggle"), splitHint: el("splitHint"),
+        pfModes: el("pfModes"), pfName: el("pfName"), pfSub: el("pfSub"), pfKeep: el("pfKeep"), pfOptsToggle: el("pfOptsToggle"), pfHint: el("pfHint"),
         unusedBtn: el("unusedBtn"), unusedOptsToggle: el("unusedOptsToggle"), unusedHint: el("unusedHint"),
         cutoutBtn: el("cutoutBtn"), cutoutOptsToggle: el("cutoutOptsToggle"), cutoutHint: el("cutoutHint"),
         cutoutView: el("cutoutView"), cutoutName: el("cutoutName"), cutoutClose: el("cutoutClose"), cutoutBrush: el("cutoutBrush"),
@@ -1312,6 +1314,7 @@
         ui.cacheBtn.disabled = on;
         ui.nullpBtn.disabled = on;
         ui.splitBtn.disabled = on;
+        Array.prototype.forEach.call(ui.pfModes.querySelectorAll("button"), function (b) { b.disabled = on; });
         ui.unusedBtn.disabled = on;
         ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
@@ -3475,7 +3478,7 @@
     var GRID_VERSION = 2;         // 2 — мелкая сетка (шаг 22 px)
     // Так было до 1.40.0: блоки по порядку, без мест и булавок, всё развёрнуто.
     var MOTION_LEGACY = { curve: true, order: "ease,anchor,align,paste,organize,easecopy,decompose,cache,nullp,unused,cutout", sizes: "", places: "", pins: "",
-        ecOpts: true, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, cutoutOpts: true, splitOpts: true, anchorOpts: true, alignOpts: true, staggerOpts: true };
+        ecOpts: true, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, cutoutOpts: true, splitOpts: true, pfOpts: true, anchorOpts: true, alignOpts: true, staggerOpts: true };
 
     // Так «Инструменты» выглядят после новой установки: блоки-кнопки закреплены сверху, под линией — «Лесенка»,
     // «Якорь», «Выровнять» и «Плавность»; подсказки и списки свёрнуты (их открывает плюс в углу блока).
@@ -3485,7 +3488,7 @@
         sizes: "ease=14x0;stagger=12x0;easecopy=17x0",
         places: "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;stagger=0,12;anchor=12,12;align=20,12;ease=28,12",
         pins: "paste,unused,easecopy,decompose,organize,cache,nullp,cutout", grid: GRID_VERSION,
-        ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false, cutoutOpts: false, splitOpts: false,
+        ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false, cutoutOpts: false, splitOpts: false, pfOpts: false,
         anchorOpts: false, alignOpts: false,
         staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", staggerOpts: true,
         flowFold: "easecopy,anchor,align" };
@@ -3493,7 +3496,7 @@
     var STAGGER_TARGETS = ["layer", "keys"];
     var MAX_STEP_FRAMES = 999;
     var TOOL_NAMES = ["ease", "anchor", "align", "stagger", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
-    var SHAPE_TOOL_NAMES = ["split"];
+    var SHAPE_TOOL_NAMES = ["pathfinder", "split"];
     // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
     // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
     var G = { names: TOOL_NAMES };
@@ -3582,8 +3585,11 @@
         return out.join(";");
     }
 
+    // Блоки, которым обычная ширина мала: пять кнопок Pathfinder в ряд.
+    var TOOL_WIDE = { pathfinder: 14 };
+
     function sizeOf(name) {
-        return parseSizes(G.st.sizes)[name] || { w: TOOL_DEFAULT_COLS, h: 0 };
+        return parseSizes(G.st.sizes)[name] || { w: TOOL_WIDE[name] || TOOL_DEFAULT_COLS, h: 0 };
     }
 
     // Места блоков: "ease=0,0;anchor=4,0" — колонка и ряд левого верхнего угла. Пусто — блоки идут
@@ -3716,6 +3722,7 @@
             { key: "unusedOpts", button: ui.unusedOptsToggle, part: ui.unusedHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "cutoutOpts", button: ui.cutoutOptsToggle, part: ui.cutoutHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "splitOpts", button: ui.splitOptsToggle, part: ui.splitHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
+            { key: "pfOpts", button: ui.pfOptsToggle, part: ui.pfHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "staggerOpts", button: ui.staggerOptsToggle, part: ui.staggerPrevText, hide: "Скрыть подсказку", show: "Показать подсказку" }
         ];
     }
@@ -3726,7 +3733,7 @@
         var i, j, f, open, label, opt;
         for (i = 0; i < parts.length; i++) {
             f = parts[i];
-            open = motion[f.key] !== false || (ui.motionTools.classList.contains("tool-flow") && ui.motionTools.contains(f.part));
+            open = motion[f.key] !== false || !!(f.part.closest && f.part.closest(".tool-flow"));
             label = open ? f.hide : f.show;
             if (!open && f.select) {
                 opt = f.select.options[f.select.selectedIndex];
@@ -7316,6 +7323,53 @@
         }
     }
 
+    // ---- Pathfinder (вкладка «Шейп»): как Shape Modes в Illustrator, через Merge Paths.
+    var PF_MODES = { unite: ["Объединить", "Все фигуры сливаются в одну"], front: ["Вычесть верхнюю", "Верхние фигуры вырезаются из нижней"],
+        intersect: ["Пересечение", "Остаётся только общая часть"], exclude: ["Исключить", "Общая часть вырезается, остальное остаётся"],
+        back: ["Вычесть нижнюю", "Нижние фигуры вырезаются из верхней"] };
+
+    function showPfMode(v) {
+        var mode = PF_MODES[v] ? v : shape.pfLast;
+        ui.pfName.textContent = PF_MODES[mode][0];
+        ui.pfSub.textContent = PF_MODES[mode][1];
+        Array.prototype.forEach.call(ui.pfModes.querySelectorAll("button[data-v]"), function (b) {
+            b.setAttribute("aria-pressed", b.getAttribute("data-v") === shape.pfLast ? "true" : "false");
+        });
+    }
+
+    async function onPathfinder(mode) {
+        var res, r;
+        if (busy || !PF_MODES[mode]) { return; }
+        shape.pfLast = mode;
+        storeShape();
+        showPfMode(mode);
+        setBusy(true);
+        try {
+            res = await host("pathfinder", [mode, !!shape.pfKeep]);
+            setBusy(false);
+            r = res.pathfinder;
+            setStatus("Pathfinder «" + PF_MODES[mode][0] + "»: " + plural(r.count, "слой", "слоя", "слоёв") + " → «" + r.name + "». " +
+                (r.kept ? "Исходные слои спрятаны (выключен глаз)." : "Исходные слои убраны.") +
+                (r.skipped.length ? " Не шейпы, пропущены: " + r.skipped.join(", ") + "." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function enablePathfinder() {
+        Array.prototype.forEach.call(ui.pfModes.querySelectorAll("button[data-v]"), function (b) {
+            var v = b.getAttribute("data-v");
+            b.addEventListener("click", function () { onPathfinder(v); });
+            b.addEventListener("mouseenter", function () { showPfMode(v); });
+            b.addEventListener("focus", function () { showPfMode(v); });
+            b.addEventListener("mouseleave", function () { showPfMode(null); });
+            b.addEventListener("blur", function () { showPfMode(null); });
+        });
+        ui.pfKeep.checked = !!shape.pfKeep;
+        ui.pfKeep.addEventListener("change", function () { shape.pfKeep = ui.pfKeep.checked; storeShape(); });
+        showPfMode(null);
+    }
+
     async function onRemoveUnused() {
         var r, list;
         if (busy) { return; }
@@ -9095,7 +9149,7 @@
 
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m);
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -9609,7 +9663,7 @@
         if (!toolGridReady) { return; }
         GRIDS.forEach(function (g) {
             G = g;
-            if (g.name === "motion" && flowOn()) { layoutFlow(g); return; }
+            if (g.flowOrder && flowOn()) { layoutFlow(g); return; }
             unflow(g);
             layoutTools(placesNow(), null);
         });
@@ -9619,28 +9673,30 @@
     // ---- «Студия»: раздел «Инструменты» без сетки. Сверху кнопки «в один клик» по четыре в ряд,
     // ниже блоки с настройками друг под другом (в широкой панели — в две или три колонки).
     // Блок сворачивается в одну строку щелчком по заголовку. Перестановки и растягивания здесь нет.
-    var FLOW_TILES = { paste: "Картинка", organize: "По папкам", unused: "Лишнее", cache: "Кэш", nullp: "Null", decompose: "Декомпоз", cutout: "Вырезка" };
+    var FLOW_TILES = { paste: "Картинка", organize: "По папкам", unused: "Лишнее", cache: "Кэш", nullp: "Null", decompose: "Декомпоз", cutout: "Вырезка", split: "Разделить" };
     var FLOW_ICONS = {
         ease: '<path d="M4 19C11 19 13 5 20 5"/><circle cx="4" cy="19" r="1.5"/><circle cx="20" cy="5" r="1.5"/>',
         easecopy: '<rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V6a1 1 0 0 1 1-1h9"/>',
         stagger: '<path d="M4 6h8M8 12h8M12 18h8"/>',
         anchor: '<circle cx="12" cy="12" r="6"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',
-        align: '<path d="M5 4v16M9 8h10M9 16h6"/>'
+        align: '<path d="M5 4v16M9 8h10M9 16h6"/>',
+        pathfinder: '<rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/>'
     };
 
     var FLOW_ORDER = ["paste", "organize", "unused", "cache", "nullp", "decompose", "cutout", "ease", "easecopy", "stagger", "anchor", "align"];
+    var FLOW_SHAPE_ORDER = ["split", "pathfinder"];
 
     function flowOn() { return document.documentElement.getAttribute("data-design") === "studio"; }
 
-    function flowFolded() {
-        return String(motion.flowFold).split(",").filter(function (n) { return !!FLOW_ICONS[n]; });
+    function flowFolded(g) {
+        return String(g.st.flowFold || "").split(",").filter(function (n) { return !!FLOW_ICONS[n]; });
     }
 
-    function setFlowFold(name, folded) {
-        var list = flowFolded().filter(function (n) { return n !== name; });
+    function setFlowFold(g, name, folded) {
+        var list = flowFolded(g).filter(function (n) { return n !== name; });
         if (folded) { list.push(name); }
-        motion.flowFold = list.join(",");
-        storeMotion();
+        g.st.flowFold = list.join(",");
+        g.store();
         relayoutTools();
     }
 
@@ -9653,7 +9709,7 @@
             g.el.appendChild(el);
             box[d[0]] = el;
         });
-        Object.keys(FLOW_TILES).forEach(function (name) {
+        g.flowOrder.filter(function (n) { return !!FLOW_TILES[n]; }).forEach(function (name) {
             var card = cardByName(name), btn = card && card.querySelector(".paste-do");
             if (!btn) { return; }
             btn.setAttribute("data-short", FLOW_TILES[name]);
@@ -9662,7 +9718,7 @@
                 if (g.flow && !btn.contains(e.target) && !btn.disabled) { btn.click(); }
             });
         });
-        Object.keys(FLOW_ICONS).forEach(function (name) {
+        g.flowOrder.filter(function (n) { return !!FLOW_ICONS[n]; }).forEach(function (name) {
             var card = cardByName(name), head = card && card.querySelector(".tool-head"), b;
             if (!head) { return; }
             head.insertAdjacentHTML("afterbegin", '<span class="flow-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + FLOW_ICONS[name] + "</svg></span>");
@@ -9670,15 +9726,15 @@
             b.type = "button";
             b.className = "flow-fold";
             b.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg>';
-            b.addEventListener("click", function (e) { e.stopPropagation(); setFlowFold(name, !card.classList.contains("flow-folded")); });
-            head.addEventListener("click", function () { if (g.flow) { setFlowFold(name, !card.classList.contains("flow-folded")); } });
+            b.addEventListener("click", function (e) { e.stopPropagation(); setFlowFold(g, name, !card.classList.contains("flow-folded")); });
+            head.addEventListener("click", function () { if (g.flow) { setFlowFold(g, name, !card.classList.contains("flow-folded")); } });
             card.appendChild(b);
         });
         g.flowBox = box;
     }
 
     function layoutFlow(g) {
-        var folded = flowFolded();
+        var folded = flowFolded(g);
         var k = Number(document.documentElement.getAttribute("data-tools")) / 100;
         var w = g.el.clientWidth, tiles = 0, sets = 0;
         if (!g.flowBox) { buildFlow(g); }
@@ -9692,7 +9748,7 @@
         g.el.style.gridAutoRows = "";
         g.el.style.gap = "";
         g.line.hidden = true;
-        FLOW_ORDER.forEach(function (name) {
+        g.flowOrder.forEach(function (name) {
             var card = cardByName(name), off, isTile, f;
             if (!card) { return; }
             off = toolsHidden.indexOf(name) >= 0;
@@ -10055,7 +10111,7 @@
 
     var SHAPE_KEY = "sayframe.shape.v1";
     var EC_KEY = "sayframe.easecopy.v1";
-    var SHAPE_DEFAULTS = { order: "", sizes: "", places: "", pins: "", grid: GRID_VERSION };
+    var SHAPE_DEFAULTS = { order: "", sizes: "", places: "", pins: "", grid: GRID_VERSION, flowFold: "", pfKeep: false, pfLast: "unite" };
 
     function loadShape() {
         var m = {}, saved, k, keep = G;
@@ -10154,12 +10210,14 @@
     }
 
     function enableShape() {
-        var sg = { name: "shape", el: ui.shapeTools, cells: ui.shapeGridCells, line: ui.shapePinLine, names: SHAPE_TOOL_NAMES, st: shape, store: storeShape, defOrder: SHAPE_DEFAULTS.order, last: null };
+        var sg = { name: "shape", flowOrder: FLOW_SHAPE_ORDER, el: ui.shapeTools, cells: ui.shapeGridCells, line: ui.shapePinLine, names: SHAPE_TOOL_NAMES, st: shape, store: storeShape, defOrder: SHAPE_DEFAULTS.order, last: null };
         GRIDS.push(sg);
         enableToolReordering(sg);
         enableToolResizing(sg);
         enablePins(sg);
         watchToolGrid(sg);
+        if (!PF_MODES[shape.pfLast]) { shape.pfLast = "unite"; }
+        enablePathfinder();
         ui.ecOptsToggle.addEventListener("click", function () {
             motion.ecOpts = motion.ecOpts === false;
             showEcFold();
@@ -10176,7 +10234,7 @@
     }
 
     function enableMotion() {
-        var mg = { name: "motion", el: ui.motionTools, cells: ui.gridCells, line: ui.pinLine, names: TOOL_NAMES, st: motion, store: storeMotion, defOrder: MOTION_DEFAULTS.order,
+        var mg = { name: "motion", flowOrder: FLOW_ORDER, el: ui.motionTools, cells: ui.gridCells, line: ui.pinLine, names: TOOL_NAMES, st: motion, store: storeMotion, defOrder: MOTION_DEFAULTS.order,
             defPlaces: MOTION_DEFAULTS.places, defSizes: MOTION_DEFAULTS.sizes, defPins: MOTION_DEFAULTS.pins, last: null };
         GRIDS.push(mg);
         G = mg;

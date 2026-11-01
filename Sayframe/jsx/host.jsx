@@ -2804,8 +2804,11 @@ var sayframeHost = (function () {
 
     function smXY(v) { return v && typeof v === "object" && typeof v.length === "number" ? [v[0], v[1]] : v; }
 
-    function smMerge(comp, sel) {
-        var shapes = [], skipped = [], notes = [], i, j, L, N, w, wi, ci, tr, gt, s, c, minIn = null, maxOut = null, cx, cy, isIn;
+    // opt.reverse - the bottom layer becomes the first group (for "minus front"); opt.keep - the merged
+    // layers are switched off instead of removed (and keep their children).
+    function smMerge(comp, sel, opt) {
+        var shapes = [], skipped = [], notes = [], i, j, L, N, w, wi, ci, tr, gt, s, c, minIn = null, maxOut = null, cx, cy, isIn, order;
+        opt = opt || {};
         for (i = 0; i < sel.length; i++) { if (sel[i] instanceof ShapeLayer) { shapes.push(sel[i]); } else { skipped.push(sel[i].name); } }
         if (shapes.length < 2) { throw new Error("SM_NEED_SHAPES"); }
         for (i = 0; i < shapes.length; i++) { if (shapes[i].locked) { throw new Error("SM_LOCKED"); } }
@@ -2817,8 +2820,10 @@ var sayframeHost = (function () {
         tr = N.property("ADBE Transform Group");
         tr.property("ADBE Anchor Point").setValue([cx, cy]);
         tr.property("ADBE Position").setValue([cx, cy]);
-        for (i = 0; i < shapes.length; i++) {
-            L = shapes[i];
+        order = shapes.slice();
+        if (opt.reverse) { order.reverse(); }
+        for (i = 0; i < order.length; i++) {
+            L = order[i];
             // A parent is let go first (After Effects keeps the layer where it is), so its transform is all there is.
             if (L.parent) { L.parent = null; }
             if (L.threeDLayer) { notes.push("3d"); }
@@ -2840,7 +2845,7 @@ var sayframeHost = (function () {
             if (maxOut === null || L.outPoint > maxOut) { maxOut = L.outPoint; }
         }
         // Layers that hung on the merged ones now hang on the new layer.
-        for (j = 1; j <= comp.numLayers; j++) {
+        for (j = 1; !opt.keep && j <= comp.numLayers; j++) {
             c = comp.layer(j);
             if (c === N || !c.parent) { continue; }
             isIn = false;
@@ -2850,10 +2855,67 @@ var sayframeHost = (function () {
         N.moveBefore(shapes[0]);
         N.inPoint = minIn;
         N.outPoint = maxOut;
-        for (i = shapes.length - 1; i >= 0; i--) { shapes[i].remove(); }
+        for (i = shapes.length - 1; i >= 0; i--) {
+            if (opt.keep) { shapes[i].enabled = false; } else { shapes[i].remove(); }
+        }
         for (j = 1; j <= comp.numLayers; j++) { comp.layer(j).selected = false; }
         N.selected = true;
+        opt.layer = N;
         return { merged: { name: N.name, count: shapes.length, skipped: skipped, notes: notes } };
+    }
+
+    // ---- Pathfinder (the Shape tab): the selected shape layers become one shape layer with Merge Paths,
+    // like Illustrator's Shape Modes. The shapes stay live: groups can still be moved and animated.
+    // Merge Paths "Subtract" keeps the first path and cuts the next ones out of it, so for "minus front"
+    // the bottom layer goes first. The colour comes from the layer Illustrator would keep.
+    var PF_MODES = { unite: 2, front: 3, intersect: 4, exclude: 5, back: 3 };
+    var PF_NAMES = { unite: "Unite", front: "Minus Front", intersect: "Intersect", exclude: "Exclude", back: "Minus Back" };
+    var PF_PAINT = { "ADBE Vector Graphic - Fill": 1, "ADBE Vector Graphic - Stroke": 1, "ADBE Vector Graphic - G-Fill": 1, "ADBE Vector Graphic - G-Stroke": 1 };
+
+    function pfFirstFill(prop) {
+        var i, it, r;
+        if (!prop) { return null; }
+        for (i = 1; i <= prop.numProperties; i++) {
+            it = prop.property(i);
+            if (it.matchName === "ADBE Vector Graphic - Fill") {
+                try { return it.property("ADBE Vector Fill Color").value; } catch (e) { return null; }
+            }
+            if (it.numProperties && it.matchName !== "ADBE Vector Transform Group") {
+                r = pfFirstFill(it);
+                if (r) { return r; }
+            }
+        }
+        return null;
+    }
+
+    // The fills and strokes inside the merged groups would paint the old shapes: they are switched off.
+    function pfMutePaint(prop) {
+        var i, it;
+        for (i = 1; i <= prop.numProperties; i++) {
+            it = prop.property(i);
+            if (PF_PAINT[it.matchName]) { try { it.enabled = false; } catch (e) {} }
+            else if (it.numProperties && it.matchName !== "ADBE Vector Transform Group") { pfMutePaint(it); }
+        }
+    }
+
+    function pfApply(comp, sel, mode, keep) {
+        var shapes = [], i, colour, res, root, merge, fill, n, opt;
+        if (!PF_MODES[mode]) { throw new Error("BAD_PF_MODE"); }
+        for (i = 0; i < sel.length; i++) { if (sel[i] instanceof ShapeLayer) { shapes.push(sel[i]); } }
+        if (shapes.length < 2) { throw new Error("PF_NEED_SHAPES"); }
+        shapes.sort(function (a, b) { return a.index - b.index; });
+        colour = pfFirstFill((mode === "front" ? shapes[shapes.length - 1] : shapes[0]).property("ADBE Root Vectors Group"));
+        opt = { reverse: mode === "front", keep: keep };
+        res = smMerge(comp, sel, opt);
+        root = opt.layer.property("ADBE Root Vectors Group");
+        n = root.numProperties;
+        for (i = 1; i <= n; i++) { pfMutePaint(root.property(i)); }
+        merge = root.addProperty("ADBE Vector Filter - Merge");
+        merge.property("ADBE Vector Merge Type").setValue(PF_MODES[mode]);
+        fill = root.addProperty("ADBE Vector Graphic - Fill");
+        if (colour) { fill.property("ADBE Vector Fill Color").setValue(colour); }
+        opt.layer.name = shapes[0].name + " - " + PF_NAMES[mode];
+        return { pathfinder: { mode: mode, name: opt.layer.name, count: res.merged.count, skipped: res.merged.skipped, kept: !!keep, notes: res.merged.notes } };
     }
 
     function npCreate(comp, sel) {
@@ -5379,6 +5441,24 @@ var sayframeHost = (function () {
                 app.beginUndoGroup(sel.length === 1 ? "Sayframe: split shape" : "Sayframe: merge shapes");
                 try {
                     res = sel.length === 1 ? smSplit(comp, sel[0]) : smMerge(comp, sel);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Pathfinder: mode "unite" | "front" | "intersect" | "exclude" | "back"; keep - hide the source layers instead of removing them.
+        pathfinder: function (mode, keep) {
+            return reply(function () {
+                var comp = activeComp();
+                var sel = comp.selectedLayers;
+                var res;
+                if (!PF_MODES[mode]) { throw new Error("BAD_PF_MODE"); }
+                if (!sel.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                app.beginUndoGroup("Sayframe: pathfinder");
+                try {
+                    res = pfApply(comp, sel, mode, !!keep);
                 } finally {
                     app.endUndoGroup();
                 }
