@@ -2537,7 +2537,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await slide('.snd-edit input[aria-label="Длина"]', 150);
   check("AC13 'Length' 150% → Stretch 150%, the file is pitched up so the tone stays +7", SND.stretch === 150 && SND.source.mainSource.file.fsName === TONE("+14.02") && FRAMES(TONE("+14.02")) === ORIG, SND.stretch + " " + SND.source.mainSource.file.fsName);
   await acSec(p, "Звуки");
-  await slide("#acPitch", 5);
+  await p.page.evaluate(() => { window.__plays = []; const st = AudioBufferSourceNode.prototype.start; AudioBufferSourceNode.prototype.start = function () { window.__plays.push(this.buffer.duration); return st.apply(this, arguments); }; });
+  await slide("#acPitch", 5); await p.page.waitForTimeout(300);
+  check("AC13b letting go of the slider plays the selected layer's sound right away, with the new settings (length 150%)", (await p.page.evaluate(() => window.__plays.length)) === 1 && (await p.page.locator("#acGrid .ac-card.playing").count()) === 0, JSON.stringify(await p.page.evaluate(() => window.__plays)));
   check("AC13b the sound bar works on the selected sound layer too: pitch +5 goes into it, the length stays 150%", SND.stretch === 150 && SND.source.mainSource.file.fsName === TONE("+12.02") && JSON.stringify(SND.levels) === "[-6,-6]" && /^Высота тона \+5 пт: слой «♪ Вжух»/.test(await p.status()), SND.stretch + " " + SND.source.mainSource.file.fsName + " " + (await p.status()));
   await slide("#acVol", 3);
   check("AC13b … and so does the volume, the pitch and length stay", JSON.stringify(SND.levels) === "[3,3]" && SND.stretch === 150 && SND.source.mainSource.file.fsName === TONE("+12.02"), JSON.stringify(SND.levels));
@@ -2566,6 +2568,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("AC14 'Length' 200% doubles the lengths on the cards right away", (await p.page.locator("#acGrid .ac-card").first().locator(".ac-dur").innerText()) === (Math.round(PEAKS.whoosh.dur * 20) / 10).toFixed(1).replace(".", ",") + " с", await p.page.locator("#acGrid .ac-card").first().locator(".ac-dur").innerText());
   await p.page.locator("#acGrid .ac-play").first().click(); await p.page.waitForTimeout(300);
   check("AC14 ▶ marks the card as playing: the played part lights up and a line runs over the wave", (await p.page.locator("#acGrid .ac-card.playing").count()) === 1 && (await p.page.locator("#acGrid .ac-card").first().evaluate((c) => c.classList.contains("playing") && /s$/.test(c.style.getPropertyValue("--play")))) && p.errors.length === 0, p.errors.join(" | "));
+  p.ae.comp.selectedLayers = [];
+  await p.page.evaluate(() => { document.querySelectorAll("#acGrid .ac-card.playing").forEach((c) => c.classList.remove("playing")); window.__plays = []; });
+  await p.page.evaluate(() => { const r = document.getElementById("acVol"); r.value = "-3"; r.dispatchEvent(new Event("input", { bubbles: true })); r.dispatchEvent(new Event("change", { bubbles: true })); });
+  await p.idle(); await p.page.waitForTimeout(300);
+  check("AC14 no sound layer selected: letting go of a slider plays the last sound you listened to, with the new settings", (await p.page.evaluate(() => window.__plays.length)) === 1 && (await p.page.locator("#acGrid .ac-card").first().evaluate((c) => c.classList.contains("playing"))), JSON.stringify(await p.page.evaluate(() => window.__plays)));
   await p.close();
 
   // Favourites, search across sections, card size, nothing selected.
