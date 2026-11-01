@@ -3969,6 +3969,15 @@ var sayframeHost = (function () {
         return out;
     }
 
+    // Where a layer starts for "align": the layer's in point, or its first keyframe.
+    function alignPoint(layer, what) {
+        var a, b;
+        if (what === "layer") { return layer.inPoint; }
+        a = findTransition(layer, "in");
+        b = findTransition(layer, "out");
+        return a.count ? a.first : b.first;
+    }
+
     // Each next layer is moved `frames` frames further than the one before it.
     // what: "layer", "keys" (all keyframes), "in" or "out"; order: "asc" (from the top layer down), "desc" (from the bottom up), "selection" or "random".
     function staggerSelected(comp, what, frames, order) {
@@ -3981,6 +3990,13 @@ var sayframeHost = (function () {
             // A layer with nothing to move does not take a step of the staircase.
             if (!hasKeysFor(layers[i], what)) { out.skipped++; continue; }
             list.push(layers[i]);
+        }
+        // "align": every layer (or its first key) to the time indicator, no staircase.
+        if (order === "align") {
+            if (!list.length) { throw new Error("STAGGER_NO_KEYS"); }
+            for (i = 0; i < list.length; i++) { shiftOne(list[i], what, comp.time - alignPoint(list[i], what), frame, out); }
+            out.aligned = true;
+            return out;
         }
         if (list.length < 2) { throw new Error(layers.length < 2 ? "STAGGER_NEEDS_TWO" : "STAGGER_NO_KEYS"); }
         if (order === "asc" || order === "desc") {
@@ -5664,8 +5680,8 @@ var sayframeHost = (function () {
                 var res;
                 frames = Math.round(Number(frames));
                 if (what !== "in" && what !== "out" && what !== "layer" && what !== "keys") { throw new Error("BAD_SHIFT_TARGET"); }
-                if (order !== "asc" && order !== "desc" && order !== "selection" && order !== "random") { throw new Error("BAD_STAGGER_ORDER"); }
-                if (isNaN(frames) || frames === 0 || Math.abs(frames) > 100000) { throw new Error("BAD_SHIFT_FRAMES"); }
+                if (order !== "asc" && order !== "desc" && order !== "selection" && order !== "random" && order !== "align") { throw new Error("BAD_STAGGER_ORDER"); }
+                if (order !== "align" && (isNaN(frames) || frames === 0 || Math.abs(frames) > 100000)) { throw new Error("BAD_SHIFT_FRAMES"); }
                 if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }
                 app.beginUndoGroup("Sayframe: stagger");
                 try {

@@ -790,7 +790,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       if (firstOpen && !fresh) {
         localStorage.setItem("sayframe.tabOrder.v1", JSON.stringify(["claude", "tools", "motion", "shape", "brand"]));
         localStorage.setItem("sayframe.tab.v1", "claude");
-        localStorage.setItem("sayframe.motion.v1", JSON.stringify({ order: "ease,anchor,align,shift,paste,organize,easecopy,decompose,cache,nullp,unused", sizes: "", places: "", pins: "", grid: 2, curve: true,
+        localStorage.setItem("sayframe.motion.v1", JSON.stringify({ order: "ease,anchor,align,paste,organize,easecopy,decompose,cache,nullp,unused", sizes: "", places: "", pins: "", grid: 2, curve: true,
           anchorOpts: true, alignOpts: true, shiftOpts: true, pasteOpts: true, organizeOpts: true, ecOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true }));
       }
       if (updateState && firstOpen) localStorage.setItem("sayframe.update.v1", JSON.stringify(updateState));
@@ -2843,7 +2843,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#tabMotion");
   t = await p.page.evaluate(() => { const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; }; return { tabs: r("#tabs"), top: r(".top"), status: r("#statusBox"), tools: r("#motionTools"), cards: Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => { const b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width)]; }) }; });
   check("W2 Animation tab in a wide panel: tabs and blocks get the whole width, the status line stays in the column", t.tabs.join() === "14,986" && t.top.join() === "14,986" && t.status[1] <= 366 && t.tools.join() === "14,986" && (await overflow(p)) <= 0, JSON.stringify(t));
-  check("W2 the blocks are not stretched: 4 cells (168px) each, five side by side in one row, the sixth below", t.cards.map((c) => c[2]).join() === "168,168,168,168,168,168" && t.cards.map((c) => c[0]).join() === "14,190,366,542,718,718" && t.cards.slice(0, 5).every((c) => c[1] === t.cards[0][1]) && t.cards[5][1] > t.cards[4][1] && (await box(p, "#easeIn")).split(",")[2] === (await box(p, "#easeOut")).split(",")[2], JSON.stringify(t.cards));
+  check("W2 the blocks are not stretched: 4 cells (168px) each, all five side by side in one row", t.cards.map((c) => c[2]).join() === "168,168,168,168,168" && t.cards.map((c) => c[0]).join() === "14,190,366,542,718" && t.cards.every((c) => c[1] === t.cards[0][1]) && (await box(p, "#easeIn")).split(",")[2] === (await box(p, "#easeOut")).split(",")[2], JSON.stringify(t.cards));
   await p.page.click("#tabClaude");
   await p.page.fill("#prompt", "сделай слой"); await p.page.click("#runBtn");
   await p.page.waitForSelector("#modal:not([hidden])");
@@ -3249,13 +3249,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({});
   await motionTab(p);
   t = await toolRects(p);
-  check("R1 at 380px easing and anchor stand side by side, align goes to the row below at the same size", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && t.ease.w === 168 && t.anchor.w === 168 && t.align.w === 168 && t.ease.l === 14 && t.anchor.r === 358 && t.align.t >= t.ease.b && t.align.l === 14, JSON.stringify(t));
+  check("R1 at 380px easing and anchor stand side by side, align goes to the row below at the same size", (await toolOrder(p)) === "ease,anchor,align,paste,organize" && t.ease.t === t.anchor.t && t.ease.r < t.anchor.l && t.ease.w === 168 && t.anchor.w === 168 && t.align.w === 168 && t.ease.l === 14 && t.anchor.r === 358 && t.align.t >= t.ease.b && t.align.l === 14, JSON.stringify(t));
   t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.display, cs.gridAutoRows, cs.rowGap, cs.columnGap, g.style.gridTemplateColumns].join("|"); });
   check("R1 the blocks stand on a fine grid: 14px cells with 8px gaps (a 22px step), 16 cells across at 380px", t === "grid|14px|8px|8px|repeat(16, 14px)", t);
   t = await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => { const r = c.getBoundingClientRect(), g = document.getElementById("motionTools").getBoundingClientRect(); return (r.left - g.left) % 22 === 0 && (r.top - g.top) % 22 === 0 && (r.width + 8) % 22 === 0 && (r.height + 8) % 22 === 0; }));
   check("R1 every block starts on a cell and is a whole number of cells wide and tall", t);
   t = await p.page.evaluate(() => { const inside = (card) => { const c = card.getBoundingClientRect(); return Array.prototype.every.call(card.querySelectorAll("input, button, select, svg, b, label"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 0.5 && r.right <= c.right + 0.5); }); }; return Array.prototype.map.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), inside).join(); });
-  check("R1 nothing sticks out of any block", t === "true,true,true,true,true,true" && (await overflow(p)) <= 0, t);
+  check("R1 nothing sticks out of any block", t === "true,true,true,true,true" && (await overflow(p)) <= 0, t);
   t = await p.page.evaluate(() => [document.getElementById("easeIn").getBoundingClientRect().width, document.getElementById("easeOut").getBoundingClientRect().width, document.getElementById("anchorGrid").getBoundingClientRect().width].map(Math.round));
   check("R1 sliders stay usable and the arrow grid keeps its size", t[0] === t[1] && t[0] >= 40 && t[2] >= 118, t.join());
   await p.page.screenshot({ path: path.join(SHOTS, "21d-tools-side-by-side.png") });
@@ -3263,10 +3263,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // Without the double click nothing can be dragged.
   t = await toolRects(p);
   await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: t.ease.l + 6 + 4 * CELL, y: t.ease.b - 5 });
-  check("R2 without a double click a block cannot be dragged", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && (await savedTools(p)) !== "anchor,ease,align,shift,paste,organize" && (await p.page.locator("#motionTools .dragging").count()) === 0);
+  check("R2 without a double click a block cannot be dragged", (await toolOrder(p)) === "ease,anchor,align,paste,organize" && (await savedTools(p)) !== "anchor,ease,align,paste,organize" && (await p.page.locator("#motionTools .dragging").count()) === 0);
   c = await center(p, "#easeOut");
   await dragFrom(p, c, { x: middle(t.anchor).x + 20, y: c.y });
-  check("R2 the sliders work as usual", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && (await p.page.inputValue("#easeOut")) === "100", await p.page.inputValue("#easeOut"));
+  check("R2 the sliders work as usual", (await toolOrder(p)) === "ease,anchor,align,paste,organize" && (await p.page.inputValue("#easeOut")) === "100", await p.page.inputValue("#easeOut"));
   await setSlider(p, "easeOut", 60);
   await p.page.dblclick("#easeInVal");
   check("R2 a double click on a number does not start rearranging", !(await arrangingNow(p)));
@@ -3316,7 +3316,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await arrange(p);
   t = await toolRects(p);
   await dragFrom(p, { x: t.ease.l + 6, y: t.ease.b - 5 }, { x: t.ease.l + 6 - 4 * CELL, y: t.ease.b - 5 });
-  check("R3 dragging back restores the order", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && (await savedTools(p)) === "ease,anchor,align,shift,paste,organize", await toolOrder(p));
+  check("R3 dragging back restores the order", (await toolOrder(p)) === "ease,anchor,align,paste,organize" && (await savedTools(p)) === "ease,anchor,align,paste,organize", await toolOrder(p));
   await p.page.waitForTimeout(350);
   await dragTab(p, "#tabMotion", "#tabClaude");
   check("R3 the same mode moves the tabs", (await order(p)) === "motion,claude,tools,shape");
@@ -3325,17 +3325,17 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("R3 Esc ends it", !(await arrangingNow(p)));
 
   await p.page.focus(grip("anchor")); await p.page.keyboard.press("ArrowLeft");
-  check("R4 keyboard: arrow on the block's handle moves it and keeps focus (no double click needed)", !(await arrangingNow(p)) && (await toolOrder(p)) === "anchor,ease,align,shift,paste,organize" && (await p.page.evaluate(() => document.activeElement.className)) === "tool-grip" && (await savedTools(p)) === "anchor,ease,align,shift,paste,organize");
+  check("R4 keyboard: arrow on the block's handle moves it and keeps focus (no double click needed)", !(await arrangingNow(p)) && (await toolOrder(p)) === "anchor,ease,align,paste,organize" && (await p.page.evaluate(() => document.activeElement.className)) === "tool-grip" && (await savedTools(p)) === "anchor,ease,align,paste,organize");
   await p.page.keyboard.press("ArrowLeft");
-  check("R4 at the edge nothing happens", (await toolOrder(p)) === "anchor,ease,align,shift,paste,organize");
+  check("R4 at the edge nothing happens", (await toolOrder(p)) === "anchor,ease,align,paste,organize");
   await p.page.keyboard.press("ArrowRight");
-  check("R4 and back", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && p.errors.length === 0, p.errors.join(" | "));
+  check("R4 and back", (await toolOrder(p)) === "ease,anchor,align,paste,organize" && p.errors.length === 0, p.errors.join(" | "));
   await p.page.focus(grip("ease")); await p.page.keyboard.press("ArrowDown");
   check("R4 down moves it a cell down", /ease:0,1,/.test(await cellsNow(p)), await cellsNow(p));
   await p.page.keyboard.press("ArrowUp");
-  check("R4 up brings it back", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize" && /ease:0,0/.test(await cellsNow(p)), await cellsNow(p));
+  check("R4 up brings it back", (await toolOrder(p)) === "ease,anchor,align,paste,organize" && /ease:0,0/.test(await cellsNow(p)), await cellsNow(p));
   // back to the blocks in a row, as a panel that was in use before 1.40.0
-  await p.page.evaluate(() => { const m = JSON.parse(localStorage.getItem("sayframe.motion.v1")); m.places = ""; m.sizes = ""; m.order = "ease,anchor,align,shift,paste,organize,easecopy,decompose,cache,nullp,unused"; localStorage.setItem("sayframe.motion.v1", JSON.stringify(m)); });
+  await p.page.evaluate(() => { const m = JSON.parse(localStorage.getItem("sayframe.motion.v1")); m.places = ""; m.sizes = ""; m.order = "ease,anchor,align,paste,organize,easecopy,decompose,cache,nullp,unused"; localStorage.setItem("sayframe.motion.v1", JSON.stringify(m)); });
   await p.restart(); await motionTab(p);
   await p.page.focus(grip("ease")); await p.page.keyboard.press("ArrowDown");
   check("R4 with a block right underneath, down swaps them", (await toolOrder(p)).split(",").slice(0, 2).join() === "align,anchor" && /ease:0,11,/.test(await cellsNow(p)) && /align:0,0,/.test(await cellsNow(p)), await cellsNow(p));
@@ -3354,33 +3354,33 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   c = middle(t.anchor);
   await dragFrom(p, c, { x: c.x + 3, y: c.y - (t.anchor.t - t.ease.t) });
   t = await toolRects(p);
-  check("R5 stacked blocks swap by dragging up or down", (await toolOrder(p)) === "anchor,ease,align,shift,paste,organize" && t.anchor.b <= t.ease.t, await toolOrder(p));
+  check("R5 stacked blocks swap by dragging up or down", (await toolOrder(p)) === "anchor,ease,align,paste,organize" && t.anchor.b <= t.ease.t, await toolOrder(p));
   await p.page.screenshot({ path: path.join(SHOTS, "21f-tools-stacked.png") });
   await p.close();
 
   p = await open({ width: 900 });
   await motionTab(p);
   t = await toolRects(p);
-  check("R6 in a wide panel all four blocks fit one row, still 168px each", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.align.t === t.shift.t && t.ease.l === 14 && t.anchor.l === 190 && t.align.l === 366 && t.shift.l === 542 && [t.ease, t.anchor, t.align, t.shift].every((x) => x.w === 168), JSON.stringify(t));
+  check("R6 in a wide panel all five blocks fit one row, still 168px each", ["anchor", "align", "paste", "organize"].every((k) => t[k].t === t.ease.t) && [t.ease.l, t.anchor.l, t.align.l, t.paste.l, t.organize.l].join() === "14,190,366,542,718" && [t.ease, t.anchor, t.align, t.paste, t.organize].every((x) => x.w === 168), JSON.stringify(t));
   await p.page.screenshot({ path: path.join(SHOTS, "21g-tools-wide.png") });
   await p.close();
-  for (const [bad, want] of [['"anchor"', "anchor,ease,align,shift,paste,organize"], ['"ease,ease"', "ease,anchor,align,shift,paste,organize"], ["7", "ease,anchor,align,shift,paste,organize"], ["null", "ease,anchor,align,shift,paste,organize"], ['["anchor","ease"]', "ease,anchor,align,shift,paste,organize"],
-    ['"anchor,ease"', "anchor,ease,align,shift,paste,organize"] /* an order saved before the Align block existed */, ['"align,ghost,ease"', "align,ease,anchor,shift,paste,organize"]]) {
+  for (const [bad, want] of [['"anchor"', "anchor,ease,align,paste,organize"], ['"ease,ease"', "ease,anchor,align,paste,organize"], ["7", "ease,anchor,align,paste,organize"], ["null", "ease,anchor,align,paste,organize"], ['["anchor","ease"]', "ease,anchor,align,paste,organize"],
+    ['"anchor,ease"', "anchor,ease,align,paste,organize"] /* an order saved before the Align block existed */, ['"align,ghost,ease"', "align,ease,anchor,paste,organize"]]) {
     p = await open({});
     await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", '{"order":' + v + "}"), bad); await p.restart(); await motionTab(p);
-    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])").count()) === 6 && p.errors.length === 0, await toolOrder(p));
+    check("R7 saved order " + bad + " -> " + want, (await toolOrder(p)) === want && (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])").count()) === 5 && p.errors.length === 0, await toolOrder(p));
     await p.close();
   }
   p = await open({});
   await motionTab(p); await arrange(p);
   t = await toolRects(p);
   await dragFrom(p, middle(t.align), by(middle(t.align), 0, t.ease.t - t.align.t));
-  check("R8 the block from the second row can be dragged up into the corner; the easing block takes its place", (await toolOrder(p)) === "align,anchor,ease,shift,paste,organize" && (await savedTools(p)) === "align,anchor,ease,shift,paste,organize" && /align:0,0/.test(await cellsNow(p)), await toolOrder(p) + " " + await cellsNow(p));
+  check("R8 the block from the second row can be dragged up into the corner; the easing block takes its place", (await toolOrder(p)) === "align,anchor,ease,paste,organize" && (await savedTools(p)) === "align,anchor,ease,paste,organize" && /align:0,0/.test(await cellsNow(p)), await toolOrder(p) + " " + await cellsNow(p));
   await p.page.waitForTimeout(350);
   t = await toolRects(p);
   check("R8 then align and anchor share the first row", t.align.t === t.anchor.t && t.align.r < t.anchor.l && t.ease.t >= t.align.b, JSON.stringify(t));
   await dragFrom(p, middle(t.align), by(middle(t.align), 0, t.ease.t - t.align.t));
-  check("R8 and down again", (await toolOrder(p)) === "ease,anchor,align,shift,paste,organize", await toolOrder(p));
+  check("R8 and down again", (await toolOrder(p)) === "ease,anchor,align,paste,organize", await toolOrder(p));
   await p.close();
 
   function easeScene() {
@@ -3615,26 +3615,26 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 380 });
   await motionTab(p);
   c = await sizesNow(p);
-  check("E1 at 380px (8 cells): two blocks in the first row, the rest below", (await firstRow(p)) === 2 && (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 shift:8,13,8,15 paste:0,23,8,7 organize:8,28,8,11", await cellsNow(p));
-  check("E1 (scene) block sizes", c === "168x146,168x234,168x234,168x256,168x278,168x322", c);
+  check("E1 at 380px (8 cells): two blocks in the first row, the rest below", (await firstRow(p)) === 2 && (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 paste:8,13,8,7 organize:8,20,8,11", await cellsNow(p));
+  check("E1 (scene) block sizes", c === "168x146,168x234,168x234,168x256,168x278", c);
   await resizeTo(p, 600);
   check("E1 stretched to 600px: three in the first row, every block exactly the same size as before", (await firstRow(p)) === 3 && (await sizesNow(p)) === c, (await firstRow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 800);
   check("E1 stretched to 800px: four in a row, same sizes", (await firstRow(p)) === 4 && (await sizesNow(p)) === c, (await firstRow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 1400);
   t = await toolRects(p);
-  check("E1 stretched to 1400px: all six in a row, still the same sizes, the blocks stay on the left", (await firstRow(p)) === 6 && (await sizesNow(p)) === c && t.ease.l === 14 && t.paste.r === 886 && (await overflow(p)) <= 0, JSON.stringify(t));
+  check("E1 stretched to 1400px: all five in a row, still the same sizes, the blocks stay on the left", (await firstRow(p)) === 5 && (await sizesNow(p)) === c && t.ease.l === 14 && t.organize.r === 886 && (await overflow(p)) <= 0, JSON.stringify(t));
   await resizeTo(p, 300);
   check("E1 squeezed to 300px: one under another, same sizes again", (await oneColumn(p)) && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await cellsNow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 380);
-  check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 shift:8,13,8,15 paste:0,23,8,7 organize:8,28,8,11" && (await sizesNow(p)) === c);
+  check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 paste:8,13,8,7 organize:8,20,8,11" && (await sizesNow(p)) === c);
   await p.page.click("#settingsBtn"); await setWidth(p, 640); await p.page.click("#settingsClose");
   check("E2 the width setting is for fields and buttons: it changes neither the blocks nor the tab bar", (await box(p, "#tabs")).split(",")[2] === "352" && (await sizesNow(p)) === c && (await firstRow(p)) === 2);
   await resizeTo(p, 1000);
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   c = await sizesNow(p);
   t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.gridAutoRows, cs.columnGap].join("|"); });
-  check("E3 at 60%: a finer grid (9px cells, 5px gaps), blocks 8 cells = 107px wide, all in a row", t === "9px|5px" && (await firstRow(p)) === 6 && c.split(",").every((x) => x.indexOf("107x") === 0), t + " " + c);
+  check("E3 at 60%: a finer grid (9px cells, 5px gaps), blocks 8 cells = 107px wide, all in a row", t === "9px|5px" && (await firstRow(p)) === 5 && c.split(",").every((x) => x.indexOf("107x") === 0), t + " " + c);
   await resizeTo(p, 270);
   check("E3 and wrap without changing size when the panel is narrow", (await firstRow(p)) === 2 && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await cellsNow(p)) + " " + (await sizesNow(p)));
   check("E3 no page errors", p.errors.length === 0, p.errors.join(" | "));
@@ -3695,7 +3695,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await dragEdge(p, "align", 2 * CELL, CELL, "xy");
   t = await toolRects(p);
   check("S5 the corner changes both at once", t.align.w === 256 && onCells(t.align.w, t.align.b - t.align.t) && /align=12x1\d/.test(await savedSizes(p)), JSON.stringify(t.align) + " " + await savedSizes(p));
-  check("S5 the others keep their size", t.anchor.w === 168 && t.shift.w === 168 && t.ease.w === 652);
+  check("S5 the others keep their size", t.anchor.w === 168 && t.paste.w === 168 && t.ease.w === 652);
   await p.restart();
   t = await toolRects(p);
   check("S6 sizes survive a restart", t.ease.w === 652 && t.align.w === 256 && /align=12x1\d/.test(await savedSizes(p)), JSON.stringify(t));
@@ -3742,7 +3742,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("S10 saved sizes " + bad + " -> " + JSON.stringify(want), (await savedSizes(p)) === want && Object.keys(t).every((k) => t[k].r <= 358 && t[k].l >= 14) && (await overflow(p)) <= 0 && p.errors.length === 0, (await savedSizes(p)) + " " + JSON.stringify(t));
     await p.close();
   }
-  for (const [bad, want] of [['"ease=0,0;anchor=4,0;align=0,6;shift=4,7"', "ease=0,0;anchor=8,0;align=0,12;shift=8,14"] /* saved on the old large grid */, ['"ease=0,0"', "ease=0,0"] /* blocks without a place go to the first free cells */, ['"ease=a,b;anchor=1"', ""], ["5", ""]]) {
+  for (const [bad, want] of [['"ease=0,0;anchor=4,0;align=0,6;shift=4,7"', "ease=0,0;anchor=8,0;align=0,12"] /* saved on the old large grid */, ['"ease=0,0"', "ease=0,0"] /* blocks without a place go to the first free cells */, ['"ease=a,b;anchor=1"', ""], ["5", ""]]) {
     p = await open({});
     await p.page.evaluate((v) => localStorage.setItem("sayframe.motion.v1", '{"places":' + v + "}"), bad); await p.restart(); await motionTab(p);
     await setSlider(p, "easeIn", 61);
@@ -3754,24 +3754,22 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 900 });   // 872px = 20 cells
   await motionTab(p); await arrange(p);
   t = await toolRects(p);
-  c = topOf(t.shift);
-  await dragFrom(p, c, by(c, 2 * CELL + 4, 0));
-  check("G1 a block dropped on empty cells stays there, leaving a gap", /shift:28,0,8,/.test(await cellsNow(p)) && /shift=28,0/.test(await savedPlaces(p)), await cellsNow(p));
-  await dragFrom(p, topOf((await toolRects(p)).shift), by(topOf((await toolRects(p)).shift), -14 * CELL, 8 * CELL));
-  check("G1 dropped low in another column, it stays on that cell, empty cells above it", /shift:0,16,8,/.test(await cellsNow(p)) && /shift=0,16/.test(await savedPlaces(p)), await cellsNow(p));
-  await dragFrom(p, topOf((await toolRects(p)).shift), by(topOf((await toolRects(p)).shift), 12 * CELL, -8 * CELL));
-  check("G1 dropped onto another block, the two swap places", /shift:24,0,8,/.test(await cellsNow(p)) && /align:16,0/.test(await cellsNow(p)) && /ease:0,0/.test(await cellsNow(p)) && /anchor:8,0/.test(await cellsNow(p)), await cellsNow(p));
+  c = topOf(t.organize);
+  await dragFrom(p, c, by(c, -16 * CELL, 8 * CELL));
+  check("G1 a block dropped low on empty cells in another column stays there, leaving empty cells above it", /organize:0,16,8,/.test(await cellsNow(p)) && /organize=0,16/.test(await savedPlaces(p)), await cellsNow(p));
+  await dragFrom(p, topOf((await toolRects(p)).organize), by(topOf((await toolRects(p)).organize), 12 * CELL, -8 * CELL));
+  check("G1 dropped onto another block, the two swap places", /organize:24,0,8,/.test(await cellsNow(p)) && /paste:0,16/.test(await cellsNow(p)) && /align:16,0/.test(await cellsNow(p)) && /ease:0,0/.test(await cellsNow(p)) && /anchor:8,0/.test(await cellsNow(p)), await cellsNow(p));
   await dragFrom(p, topOf((await toolRects(p)).ease), by(topOf((await toolRects(p)).ease), 12 * CELL, 0));
-  check("G1 the block that was dropped on takes the other's old place", /ease:24,0/.test(await cellsNow(p)) && /shift:0,0/.test(await cellsNow(p)), await cellsNow(p));
+  check("G1 the block that was dropped on takes the other's old place", /ease:24,0/.test(await cellsNow(p)) && /organize:0,0/.test(await cellsNow(p)), await cellsNow(p));
   await resizeTo(p, 380);
   t = await toolRects(p);
   check("G2 in a narrow panel blocks placed further right than it reaches move in and stack", Object.keys(t).every((k) => t[k].r <= 358) && (await overflow(p)) <= 0 && (await allInside(p)), await cellsNow(p));
   await resizeTo(p, 900);
-  check("G2 widened again, they go back to their cells", /shift:0,0,8,/.test(await cellsNow(p)) && /ease:24,0/.test(await cellsNow(p)), await cellsNow(p));
+  check("G2 widened again, they go back to their cells", /organize:0,0,8,/.test(await cellsNow(p)) && /ease:24,0/.test(await cellsNow(p)), await cellsNow(p));
   await p.page.click("#arrangeReset");
   t = await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1")));
-  check("G3 'Reset' returns the layout of a new install: places, sizes and pins", t.places === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;stagger=12,12;anchor=24,12;align=32,12;ease=40,12".split(";").sort((a, b) => a.localeCompare(b)).join(";") || t.places.split(";").sort().join(";") === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;stagger=12,12;anchor=24,12;align=32,12;ease=40,12".split(";").sort().join(";"), t.places);
-  check("G3 … with the sizes and the pinned blocks on top", t.sizes.split(";").sort().join(";") === "ease=14x0;easecopy=17x0;shift=12x0;stagger=12x0" && t.pins === "paste,unused,easecopy,decompose,organize,cache,nullp,cutout", t.sizes + " | " + t.pins);
+  check("G3 'Reset' returns the layout of a new install: places, sizes and pins", t.places === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;stagger=0,12;anchor=12,12;align=20,12;ease=28,12".split(";").sort((a, b) => a.localeCompare(b)).join(";") || t.places.split(";").sort().join(";") === "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;stagger=0,12;anchor=12,12;align=20,12;ease=28,12".split(";").sort().join(";"), t.places);
+  check("G3 … with the sizes and the pinned blocks on top", t.sizes.split(";").sort().join(";") === "ease=14x0;easecopy=17x0;stagger=12x0" && t.pins === "paste,unused,easecopy,decompose,organize,cache,nullp,cutout", t.sizes + " | " + t.pins);
   check("G3 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
@@ -3788,22 +3786,22 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = await toolRects(p);
   check("PN2 a pinned block goes to the very top", (await toolOrder(p)).split(",")[0] === "paste" && /paste:0,0,/.test(await cellsNow(p)) && (await pinOf(p, "paste").getAttribute("aria-pressed")) === "true" && (await pinOf(p, "paste").getAttribute("title")) === "Открепить", await cellsNow(p));
   const lineY = await pinLine(p);
-  check("PN2 a thin line separates it from the other blocks below, with room on both sides", lineY !== null && lineY - t.paste.b >= 14 && ["ease", "anchor", "align", "shift", "organize"].every((k) => t[k].t - lineY >= 14), lineY + " " + JSON.stringify(t));
+  check("PN2 a thin line separates it from the other blocks below, with room on both sides", lineY !== null && lineY - t.paste.b >= 14 && ["ease", "anchor", "align", "organize"].every((k) => t[k].t - lineY >= 14), lineY + " " + JSON.stringify(t));
   await p.page.screenshot({ path: path.join(SHOTS, "27-pinned-block.png") });
   await pinOf(p, "organize").click();
   t = await toolRects(p);
-  check("PN3 a second pinned block joins the top row, the line moves under both", (await toolOrder(p)).split(",").slice(0, 2).join() === "paste,organize" && t.paste.t === t.organize.t && (await pinLine(p)) > Math.max(t.paste.b, t.organize.b) && ["ease", "anchor", "align", "shift"].every((k) => t[k].t > (t.paste.b)), await cellsNow(p));
+  check("PN3 a second pinned block joins the top row, the line moves under both", (await toolOrder(p)).split(",").slice(0, 2).join() === "paste,organize" && t.paste.t === t.organize.t && (await pinLine(p)) > Math.max(t.paste.b, t.organize.b) && ["ease", "anchor", "align"].every((k) => t[k].t > (t.paste.b)), await cellsNow(p));
   await p.restart(); await motionTab(p);
   check("PN4 pins survive a restart", (await toolOrder(p)).split(",").slice(0, 2).join() === "paste,organize" && (await pinLine(p)) !== null && (await pinOf(p, "organize").getAttribute("aria-pressed")) === "true");
   await pinOf(p, "paste").click();
   check("PN5 unpinned, the block goes back among the others", (await toolOrder(p)).split(",")[0] === "organize" && (await pinOf(p, "paste").getAttribute("aria-pressed")) === "false" && !/paste:\d+,0,/.test(await cellsNow(p)), await cellsNow(p));
   await pinOf(p, "organize").click();
   check("PN6 nothing pinned: no line, the usual layout is back", (await pinLine(p)) === null && (await cellsNow(p)) === c, await cellsNow(p));
-  await pinOf(p, "shift").click();
+  await pinOf(p, "align").click();
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   await motionTab(p);
-  t = await p.page.evaluate(() => { const c = document.querySelector('.tool-card[data-tool="shift"]'), a = c.querySelector(".tool-pin").getBoundingClientRect(), r = c.getBoundingClientRect(); return a.left > r.left && a.right < r.right && a.top >= r.top; });
-  check("PN7 small blocks: the pin fits too, the pinned block stays on top", t && (await toolOrder(p)).split(",")[0] === "shift" && (await pinLine(p)) !== null && p.errors.length === 0, p.errors.join(" | "));
+  t = await p.page.evaluate(() => { const c = document.querySelector('.tool-card[data-tool="align"]'), a = c.querySelector(".tool-pin").getBoundingClientRect(), r = c.getBoundingClientRect(); return a.left > r.left && a.right < r.right && a.top >= r.top; });
+  check("PN7 small blocks: the pin fits too, the pinned block stays on top", t && (await toolOrder(p)).split(",")[0] === "align" && (await pinLine(p)) !== null && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
   // ---------------------------------------------------------------- animation: large or small blocks
@@ -3891,7 +3889,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger]) .tool-toggle").count()) === 6 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "organizeOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "shiftOptsToggle")) === "true|Скрыть схему|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
+  check("F1 each block has a minus in its top right corner", (await p.page.locator("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger]) .tool-toggle").count()) === 5 && (await fold(p, "pasteOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "organizeOptsToggle")) === "true|Скрыть подсказку|-" && (await fold(p, "anchorOptsToggle")) === "true|Скрыть настройку|-" && (await fold(p, "alignOptsToggle")) === "true|Скрыть подписи|-" && (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll("#motionTools .tool-card:not([data-tool=easecopy]):not([data-tool=decompose]):not([data-tool=cache]):not([data-tool=nullp]):not([data-tool=unused]):not([data-tool=cutout]):not([data-tool=stagger])"), (c) => { const b = c.querySelector(".tool-toggle").getBoundingClientRect(), r = c.getBoundingClientRect(); return b.top >= r.top && b.top - r.top < 8 && r.right - b.right < 16 && b.right <= r.right; }))));
   check("F1 the corner buttons do not cover titles or controls", await togglesClear(p));
   c = await cardH(p, "anchor");
   await p.page.click("#anchorOptsToggle");
@@ -3924,7 +3922,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("F5 titles are shown unless switched off, one short word each", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность,Якорь,Выровнять,Сдвиг,Копия,Лесенка", await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join()));
+  check("F5 titles are shown unless switched off, one short word each", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность,Якорь,Выровнять,Копия,Лесенка", await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join()));
   c = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("F5 settings have the switch, on", await p.page.isChecked("#toolTitles"));
@@ -4215,8 +4213,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const opt = (p, id) => p.page.locator("#" + id + " option").evaluateAll((l) => l.map((o) => o.value).join());
   const press = async (p, id) => { await p.page.click("#" + id); await p.idle(); };
   const pickSeg = async (p, g, v) => { await p.page.click("#" + g + ' button[data-v="' + v + '"]'); };
-  const val = (p, g) => (g === "timeAlign" ? p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.motion.v1") || "{}").timeAlign || "inStart") : p.page.getAttribute("#" + g + ' button[aria-pressed="true"]', "data-v"));   // «К указателю» помнит только последнюю точку
-  const alignTo = async (p, v) => { await p.page.click('#timeAlign button[data-v="' + v + '"]'); await p.idle(); };
+  const val = (p, g) => p.page.getAttribute("#" + g + ' button[aria-pressed="true"]', "data-v");
   const setStep = async (p, id, text, key) => { await p.page.click("#" + id); await p.page.keyboard.type(text); await p.page.keyboard.press(key || "Enter"); };
   // A layer living from 1 s to 5 s (frames 30..150, middle at 90): it comes in over the first half second and leaves over the last.
   const actor = (o) => {
@@ -4231,75 +4228,85 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("T1 two blocks, «Сдвиг» (with a before/after diagram) and «Лесенка»", (await p.page.locator('#motionTools [data-tool="shift"] .tool-head b').innerText()) === "Сдвиг" && (await p.page.locator('#motionTools [data-tool="stagger"] .tool-head b').innerText()) === "Лесенка" && (await vis(p, "#shiftPrev")) && (await vis(p, "#staggerWhat")) && (await p.page.locator(".shift-card select, .stagger-card select").count()) === 0);
-  check("T1 the choices are buttons with a picture of the layer, not lists", (await p.page.locator("#shiftWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "in,out,layer" && (await p.page.locator("#timeAlign button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "inStart,inEnd,outStart,outEnd" && (await p.page.locator("#staggerWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "layer,keys" && (await p.page.locator("#staggerOrder button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "asc,random,desc" && (await p.page.locator("#staggerWhat button span").allInnerTexts()).join() === "Слои,Ключи" && (await p.page.locator("#shiftWhat button svg rect, #timeAlign button svg rect").count()) >= 15);
-  check("T1 defaults: in-animation, one frame, start of the in-animation, layers, top to bottom", [await val(p, "shiftWhat"), await p.page.inputValue("#shiftStep"), await val(p, "timeAlign"), await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "in,1,inStart,layer,1,asc" && (await p.page.locator("#shiftPrevText").innerText()) === "Появление сдвинется на 1 кадр позже." && (await p.page.locator("#staggerPrevText").innerText()) === "Каждый следующий слой — на 1 кадр позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 9);
-  check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".shift-card button:not(.tool-grip), .shift-card input, .stagger-card button:not(.tool-grip), .stagger-card input"), (el) => { const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
-  await p.page.hover("#shiftBack"); t = await p.page.locator("#shiftPrevText").innerText(); await p.page.hover('#timeAlign button[data-v="outEnd"]');
-  check("T1 the diagram follows the mouse: the left arrow shows «earlier», an align button shows the playhead", t === "Появление сдвинется на 1 кадр раньше." && (await p.page.locator("#shiftPrevText").innerText()) === "Конец исчезновения встанет на указатель времени." && (await p.page.locator("#shiftPrev .tl-cti").count()) === 1, t);
+  const orderIds = (p) => p.page.locator("#staggerOrder button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join());
+  check("T1 one block «Лесенка»; the old «Сдвиг» block is gone", (await p.page.locator('#motionTools [data-tool="shift"], #shiftWhat, #timeAlign').count()) === 0 && (await p.page.locator('#motionTools [data-tool="stagger"] .tool-head b').innerText()) === "Лесенка" && (await vis(p, "#staggerWhat")) && (await p.page.locator(".stagger-card select").count()) === 0);
+  check("T1 the choices are buttons: what to move, and four orders (the last one: to the time indicator)", (await p.page.locator("#staggerWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "layer,keys" && (await orderIds(p)) === "asc,random,desc,align" && (await p.page.locator("#staggerWhat button span").allInnerTexts()).join() === "Слои,Ключи" && (await p.page.getAttribute('#staggerOrder button[data-v="align"]', "aria-label")) === "К указателю времени");
+  check("T1 the four order buttons sit in one row", await p.page.evaluate(() => new Set(Array.prototype.map.call(document.querySelectorAll("#staggerOrder button"), (b) => Math.round(b.getBoundingClientRect().top))).size === 1));
+  check("T1 defaults: layers, one frame, top to bottom", [await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "layer,1,asc" && (await p.page.locator("#staggerPrevText").innerText()) === "Каждый следующий слой — на 1 кадр позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 12 && (await p.page.locator('#staggerOrder button[data-v="align"] svg .st-playhead').count()) === 1 && (await p.page.locator("#staggerBtn").innerText()) === "Расставить");
+  check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".stagger-card button:not(.tool-grip), .stagger-card input"), (el) => { const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
   await pickSeg(p, "staggerOrder", "desc"); await pickSeg(p, "staggerWhat", "keys"); await p.page.click("#staggerMore"); await p.page.click("#staggerMore");
-  check("T1 «Ключи»: the order icons turn into keyframes, the text says so; + and - change the step", (await p.page.locator("#staggerPrevText").innerText()) === "Ключи каждого следующего слоя — на 3 кадра позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 0 && (await p.page.locator("#staggerOrder button svg path").count()) === 27 && (await p.page.locator("#staggerOrderName").innerText()) === "Снизу вверх" && (await p.page.inputValue("#staggerStep")) === "3", await p.page.locator("#staggerPrevText").innerText());
-  await p.page.click("#staggerLess"); await p.page.click("#staggerLess"); await p.page.click("#staggerLess"); await pickSeg(p, "staggerOrder", "asc"); await pickSeg(p, "staggerWhat", "layer");
+  check("T1 «Ключи»: the order icons turn into keyframes, the text says so; + and - change the step", (await p.page.locator("#staggerPrevText").innerText()) === "Ключи каждого следующего слоя — на 3 кадра позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 0 && (await p.page.locator("#staggerOrder button svg path").count()) === 37 && (await p.page.locator("#staggerOrderName").innerText()) === "Снизу вверх" && (await p.page.inputValue("#staggerStep")) === "3", await p.page.locator("#staggerPrevText").innerText());
+  await pickSeg(p, "staggerOrder", "align");
+  check("T1 «К указателю времени» with keys: no step row, the button says «Выровнять», the text explains", !(await vis(p, ".stagger-card .shift-row-step")) && (await p.page.locator("#staggerBtn").innerText()) === "Выровнять" && (await p.page.locator("#staggerPrevText").innerText()) === "Первый ключ каждого слоя встанет на указатель времени, остальные ключи сдвинутся вместе с ним." && (await p.page.locator("#staggerOrderName").innerText()) === "К указателю времени");
+  await pickSeg(p, "staggerWhat", "layer");
+  check("T1 … and with layers", (await p.page.locator("#staggerPrevText").innerText()) === "Все выделенные слои начнутся там, где стоит указатель времени." && !(await vis(p, "#staggerStep")) && (await vis(p, "#staggerBtn")));
+  await pickSeg(p, "staggerOrder", "random");
+  check("T1 another order brings the step back", (await vis(p, ".stagger-card .shift-row-step")) && (await p.page.locator("#staggerBtn").innerText()) === "Расставить");
+  await p.page.click("#staggerLess"); await p.page.click("#staggerLess"); await p.page.click("#staggerLess"); await pickSeg(p, "staggerOrder", "asc");
   check("T1 the step does not go below one frame", (await p.page.inputValue("#staggerStep")) === "1");
-  await press(p, "shiftFwd");
+  await press(p, "staggerBtn");
   check("T1 nothing selected -> a hint, not an error", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && (await p.statusKind()) === "" && p.ae.log.undo.length === 0);
-  await alignTo(p, "inStart"); t = await p.status(); await press(p, "staggerBtn");
-  check("T1 the same for the other two buttons", t === "Выделите слой в композиции и нажмите ещё раз." && (await p.status()) === t);
-  await pickSeg(p, "shiftWhat", "out"); await pickSeg(p, "staggerWhat", "keys"); await pickSeg(p, "staggerOrder", "random");
-  await setStep(p, "shiftStep", "12"); await setStep(p, "staggerStep", "5");
-  await setStep(p, "shiftStep", "abc"); t = await p.page.inputValue("#shiftStep");
-  await setStep(p, "shiftStep", "0"); t += "," + await p.page.inputValue("#shiftStep");
-  await setStep(p, "shiftStep", "77", "Escape"); t += "," + await p.page.inputValue("#shiftStep");
-  check("T1 a step that is not a whole number from 1 is thrown away, Escape cancels typing", t === "12,12,12", t);
+  await pickSeg(p, "staggerOrder", "align"); await press(p, "staggerBtn");
+  check("T1 the same for «Выровнять»", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && p.ae.log.undo.length === 0);
+  await pickSeg(p, "staggerWhat", "keys"); await pickSeg(p, "staggerOrder", "random");
+  await setStep(p, "staggerStep", "5");
+  await setStep(p, "staggerStep", "abc"); t = await p.page.inputValue("#staggerStep");
+  await setStep(p, "staggerStep", "0"); t += "," + await p.page.inputValue("#staggerStep");
+  await setStep(p, "staggerStep", "77", "Escape"); t += "," + await p.page.inputValue("#staggerStep");
+  check("T1 a step that is not a whole number from 1 is thrown away, Escape cancels typing", t === "5,5,5", t);
   await p.restart();
-  check("T1 every choice survives a restart", [await val(p, "shiftWhat"), await p.page.inputValue("#shiftStep"), await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "out,12,keys,5,random" && (await vis(p, "#shiftFwd")));
+  check("T1 every choice survives a restart", [await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "keys,5,random");
+  await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ staggerOrder: "align" })));
+  await p.restart(); await motionTab(p);
+  check("T1 «К указателю времени» is remembered too, the step row stays hidden", (await val(p, "staggerOrder")) === "align" && !(await vis(p, ".stagger-card .shift-row-step")) && (await p.page.locator("#staggerBtn").innerText()) === "Выровнять");
   await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ shiftWhat: "x", shiftStep: -4, timeAlign: 5, staggerWhat: null, staggerStep: 100000, staggerOrder: "up" })));
   await p.restart(); await motionTab(p);
-  check("T1 broken saved values fall back safely", [await val(p, "shiftWhat"), await p.page.inputValue("#shiftStep"), await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "in,1,layer,999,asc" && p.errors.length === 0);
+  check("T1 broken saved values (and the old «Сдвиг» settings) fall back safely", [await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "layer,999,asc" && p.errors.length === 0);
   await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ staggerWhat: "out", staggerOrder: "selection" })));
   await p.restart(); await motionTab(p);
   check("T1 an older saved choice («Исчезновение», «Как выделяли») becomes «Ключи», top to bottom", [await val(p, "staggerWhat"), await val(p, "staggerOrder")].join() === "keys,asc");
   await p.close();
   p = await open({ noActiveComp: true });
-  await motionTab(p); await press(p, "shiftBack");
+  await motionTab(p); await press(p, "staggerBtn");
   check("T1 no open composition -> hint", /^Откройте композицию/.test(await p.status()) && (await p.statusKind()) === "");
   await p.close();
 
-  // the in-animation: keys and markers of the first half; the layer's start goes with it because the animation begins right there
+  // The old «Сдвиг» block is gone from the panel; the host still knows shift() (for the AI and older panels),
+  // and «Лесенка» moves keys the same way, so the key-moving rules are checked here directly.
+  const shiftH = async (p, what, n) => JSON.parse(await hostCall(p, "sayframeHost.shift(" + JSON.stringify(what) + "," + n + ")"));
+  const shMoved = (r) => r.ok + ":" + r.moved + "/" + r.skipped + "/" + r.failed;
   clock = { time: 0 };
   L = actor({});
   p = await open({ selectedLayers: [L] });
-  await motionTab(p);
-  await press(p, "shiftFwd");
-  check("T2 one frame later: every key of the first half moved, in every property, with the marker", times(R(L)) === "31,46,135,149" && times(SC(L)) === "31,46" && times(SL(L)) === "61" && times(MK(L)) === "37,138", [times(R(L)), times(SC(L)), times(SL(L)), times(MK(L))].join(" | "));
+  t = await shiftH(p, "in", 1);
+  check("T2 one frame later: every key of the first half moved, in every property, with the marker", times(R(L)) === "31,46,135,149" && times(SC(L)) === "31,46" && times(SL(L)) === "61" && times(MK(L)) === "37,138" && shMoved(t) === "true:1/0/0", [times(R(L)), times(SC(L)), times(SL(L)), times(MK(L)), JSON.stringify(t)].join(" | "));
   check("T2 the out-animation did not move, values are the same", sameVec(R(L).keys.map((k) => k.value), [0, 90, 90, 0]) && sameVec(SC(L).keys[1].value, [100, 100, 100]) && MK(L).keys[0].value.comment === "in");
   check("T2 the layer's start moved with its animation, the end stayed", close2(fr(L.inPoint), 31) && close2(fr(L.outPoint), 150), fr(L.inPoint) + " " + fr(L.outPoint));
   check("T2 a moved key keeps its interpolation, easing, selection and label", R(L).keys[0].inType === KIT.HOLD && R(L).keys[0].outType === KIT.BEZIER && eases(R(L).keys[0].outEase) === "0/75" && eases(R(L).keys[0].inEase) === "11/16.67" && R(L).keys[0].selected && R(L).keys[0].label === 3 && !R(L).keys[1].selected && R(L).keys[1].inType === KIT.LINEAR, eases(R(L).keys[0].outEase) + " " + R(L).keys[0].inType);
-  check("T2 result reported, one undo step", (await p.status()) === "Сдвинуто на 1 кадр позже: 1 слой.\nОтменить: Cmd/Ctrl+Z." && (await p.statusKind()) === "done" && p.ae.log.undo.join() === "begin:Sayframe: shift in time,end", await p.status());
-  await setStep(p, "shiftStep", "5"); await press(p, "shiftBack");
-  check("T2 five frames earlier with the left arrow", times(R(L)) === "26,41,135,149" && times(MK(L)) === "32,138" && close2(fr(L.inPoint), 26) && (await p.status()) === "Сдвинуто на 5 кадров раньше: 1 слой.\nОтменить: Cmd/Ctrl+Z.", times(R(L)) + " " + await p.status());
+  check("T2 one undo step", p.ae.log.undo.join() === "begin:Sayframe: shift in time,end", p.ae.log.undo.join());
+  await shiftH(p, "in", -5);
+  check("T2 five frames earlier", times(R(L)) === "26,41,135,149" && times(MK(L)) === "32,138" && close2(fr(L.inPoint), 26), times(R(L)));
   // keys three frames apart moved by three frames: one lands exactly where the other was
   L2 = mkLayer(clock, { inPoint: 1, outPoint: 5 });
   SL(L2).addKey(2, 1).addKey(2 + 3 * F, 2).addKey(2 + 6 * F, 3);
   p.ae.comp.selectedLayers = [L2];
-  await setStep(p, "shiftStep", "3"); await press(p, "shiftFwd");
+  await shiftH(p, "in", 3);
   check("T2 keys that land on each other's old places stay three separate keys", times(SL(L2)) === "63,66,69" && SL(L2).keys.map((k) => k.value).join() === "1,2,3", times(SL(L2)) + " " + SL(L2).keys.map((k) => k.value).join());
-  await press(p, "shiftBack"); await press(p, "shiftBack");
+  await shiftH(p, "in", -6);
   check("T2 and the other way", times(SL(L2)) === "57,60,63" && SL(L2).keys.map((k) => k.value).join() === "1,2,3", times(SL(L2)));
   check("T2 an animation in the middle of the layer leaves the layer's edges alone", L2.edgeSets.length === 0 && L2.inPoint === 1 && L2.outPoint === 5, L2.edgeSets.join());
-  await setStep(p, "shiftStep", "40"); await press(p, "shiftBack");
+  await shiftH(p, "in", -40);
   check("T2 unless the keys would leave the layer: then the start is pushed out to the first key", times(SL(L2)) === "17,20,23" && close2(fr(L2.inPoint), 17) && close2(fr(L2.outPoint), 150), times(SL(L2)) + " " + fr(L2.inPoint) + " " + fr(L2.outPoint));
   await p.close();
 
   // the out-animation
   L = actor({});
   p = await open({ selectedLayers: [L] });
-  await motionTab(p); await pickSeg(p, "shiftWhat", "out"); await setStep(p, "shiftStep", "3");
-  await press(p, "shiftFwd");
+  await shiftH(p, "out", 3);
   check("T3 out-animation three frames later: keys and marker of the second half, the layer's end with them", times(R(L)) === "30,45,138,152" && times(MK(L)) === "36,141" && times(SC(L)) === "30,45" && times(SL(L)) === "60" && close2(fr(L.outPoint), 153) && close2(fr(L.inPoint), 30), times(R(L)) + " " + fr(L.outPoint) + " " + fr(L.inPoint));
-  await press(p, "shiftBack"); await press(p, "shiftBack");
+  await shiftH(p, "out", -6);
   check("T3 and earlier", times(R(L)) === "30,45,132,146" && close2(fr(L.outPoint), 147), times(R(L)) + " " + fr(L.outPoint));
-  await pickSeg(p, "shiftWhat", "layer"); await press(p, "shiftFwd");
+  await shiftH(p, "layer", 3);
   check("T3 'whole layer' moves everything: both edges, every key, every marker", times(R(L)) === "33,48,135,149" && times(MK(L)) === "39,138" && times(SL(L)) === "63" && close2(fr(L.inPoint), 33) && close2(fr(L.outPoint), 150) && close2(fr(L.startTime), 3), times(R(L)) + " " + fr(L.startTime));
   await p.close();
 
@@ -4309,35 +4316,38 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   SL(L2).addKey(3, 1);                              // only an out-animation
   L3 = actor({ name: "locked", locked: true });
   p = await open({ selectedLayers: [L, L2, L3] });
-  await motionTab(p); await press(p, "shiftFwd");
-  check("T4 a layer without keys in the first half is skipped and a locked one is reported", (await p.status()) === "Сдвинуто на 1 кадр позже: 1 слой. Пропущено: 1 слой (нет ключей в первой половине слоя). Не получилось: 1 слой (слой заблокирован?).\nОтменить: Cmd/Ctrl+Z." && times(SL(L2)) === "90" && times(R(L3)) === "30,45,135,149" && times(R(L)) === "31,46,135,149", await p.status());
-  p.ae.comp.selectedLayers = [L2];
-  await press(p, "shiftFwd");
-  check("T4 nothing to move at all -> said plainly, not an error", (await p.status()) === "Пропущено: 1 слой (нет ключей в первой половине слоя)." && (await p.statusKind()) === "");
+  t = await shiftH(p, "in", 1);
+  check("T4 a layer without keys in the first half is skipped and a locked one is reported", shMoved(t) === "true:1/1/1" && times(SL(L2)) === "90" && times(R(L3)) === "30,45,135,149" && times(R(L)) === "31,46,135,149", JSON.stringify(t));
   // a property After Effects will not take a key back into at a new time
   L2 = mkLayer(clock, { inPoint: 1, outPoint: 5 });
   SL(L2).addKey(2, 5); SL(L2).sticky = true; R(L2).addKey(2, 10);
   p.ae.comp.selectedLayers = [L2];
-  await press(p, "shiftFwd");
-  check("T4 a key that cannot be created at the new time is put back, not lost; the rest moves", times(SL(L2)) === "60" && SL(L2).keys[0].value === 5 && times(R(L2)) === "61" && /Не удалось перенести: 1 ключ\./.test(await p.status()), times(SL(L2)) + " " + await p.status());
+  t = await shiftH(p, "in", 1);
+  check("T4 a key that cannot be created at the new time is put back, not lost; the rest moves", times(SL(L2)) === "60" && SL(L2).keys[0].value === 5 && times(R(L2)) === "61" && t.keysFailed === 1, times(SL(L2)) + " " + JSON.stringify(t));
   await p.close();
 
-  // to the current-time indicator
+  // «Лесенка» → «К указателю времени»
   L = actor({});
   L2 = actor({ name: "late", inPoint: 2, outPoint: 6 }); R(L2).keys.forEach((k) => { k.time += 1; }); SC(L2).keys.forEach((k) => { k.time += 1; }); SL(L2).keys = []; MK(L2).keys = [];
   p = await open({ selectedLayers: [L, L2], compTime: 3 * F + 1 });   // frame 33
-  await motionTab(p); await alignTo(p, "inStart");
-  check("T5 start of the in-animation to the playhead: both layers begin at frame 33 now", times(R(L)) === "33,48,135,149" && times(R(L2)) === "33,48,165,179" && times(SC(L2)) === "33,48" && close2(fr(L.inPoint), 33) && close2(fr(L2.inPoint), 33) && close2(fr(L2.outPoint), 180), times(R(L)) + " | " + times(R(L2)) + " " + fr(L2.inPoint));
-  check("T5 result reported, one undo step", (await p.status()) === "Поставлено на указатель времени: 2 слоя.\nОтменить: Cmd/Ctrl+Z." && p.ae.log.undo.join() === "begin:Sayframe: align to current time,end", await p.status());
-  await alignTo(p, "inStart");
-  check("T5 already there -> says so", (await p.status()) === "Уже на месте: 2 слоя." && (await p.statusKind()) === "" && times(R(L)) === "33,48,135,149");
-  await alignTo(p, "inEnd");
-  check("T5 end of the in-animation to the playhead: the last key of the first half (here the effect's key at frame 63) lands there", times(R(L)) === "3,18,135,149" && times(SL(L)) === "33" && times(R(L2)) === "18,33,165,179" && close2(fr(L.inPoint), 3) && close2(fr(L2.inPoint), 18), times(R(L)) + " " + times(SL(L)));
-  p.ae.comp.time = 140 * F;
-  await alignTo(p, "outStart");
-  check("T5 start of the out-animation", times(R(L)) === "3,18,140,154" && times(MK(L)).split(",")[1] === "143" && times(R(L2)) === "18,33,140,154" && close2(fr(L.outPoint), 155) && close2(fr(L2.outPoint), 155), times(R(L)) + " " + times(MK(L)) + " " + fr(L.outPoint));
-  await alignTo(p, "outEnd");
-  check("T5 end of the out-animation", times(R(L)) === "3,18,126,140" && times(R(L2)) === "18,33,126,140" && close2(fr(L.outPoint), 141), times(R(L)) + " " + fr(L.outPoint));
+  await motionTab(p); await pickSeg(p, "staggerOrder", "align"); await press(p, "staggerBtn");
+  check("T5 layers: both selected layers now start at the time indicator (frame 33), everything on them moves along", close2(fr(L.inPoint), 33) && close2(fr(L2.inPoint), 33) && times(R(L)) === "33,48,138,152" && times(R(L2)) === "33,48,138,152" && close2(fr(L2.outPoint), 153), times(R(L)) + " | " + times(R(L2)) + " " + fr(L.inPoint) + " " + fr(L2.inPoint));
+  check("T5 result reported, one undo step", (await p.status()) === "К указателю времени: 2 слоя.\nОтменить: Cmd/Ctrl+Z." && (await p.statusKind()) === "done" && p.ae.log.undo.join() === "begin:Sayframe: stagger,end", await p.status());
+  await press(p, "staggerBtn");
+  check("T5 pressing again: already there, said plainly", (await p.status()) === "Уже на месте: 2 слоя." && (await p.statusKind()) === "" && times(R(L)) === "33,48,138,152", await p.status());
+  p.ae.comp.time = 40 * F;
+  R(L2).keys.forEach((k) => { k.time += 10 * F; }); SC(L2).keys.forEach((k) => { k.time += 10 * F; });   // L2's animation now starts at frame 43, inside the layer
+  t = [fr(L.startTime), fr(L2.startTime)].join();
+  await pickSeg(p, "staggerWhat", "keys"); await press(p, "staggerBtn");
+  check("T5 keys: the first key of each layer lands on the time indicator (frame 40), the other keys keep their distance", times(R(L)) === "40,55,145,159" && times(SC(L)) === "40,55" && times(R(L2)) === "40,55,145,159" && times(SC(L2)) === "40,55", times(R(L)) + " | " + times(R(L2)));
+  check("T5 keys: the layers themselves stay where they were", [fr(L.startTime), fr(L2.startTime)].join() === t && (await p.status()) === "К указателю времени: 2 слоя.\nОтменить: Cmd/Ctrl+Z.", [fr(L.startTime), fr(L2.startTime)].join() + " " + await p.status());
+  L3 = mkLayer(clock, { name: "plain", inPoint: 0, outPoint: 4 });
+  p.ae.comp.selectedLayers = [L3];
+  await press(p, "staggerBtn");
+  check("T5 keys on a layer without keys -> a hint, nothing changes", (await p.statusKind()) === "" && L3.inPoint === 0, await p.status());
+  await pickSeg(p, "staggerWhat", "layer"); await press(p, "staggerBtn");
+  check("T5 one layer is enough (no «two layers» rule here)", close2(fr(L3.inPoint), 40) && /^К указателю времени: 1 слой\./.test(await p.status()), fr(L3.inPoint) + " " + await p.status());
+  check("T5 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
   // staircase
@@ -4376,27 +4386,16 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T7 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
-  // folding, small size, rearranging
+  // folding
   p = await open({ width: 780 });
   await motionTab(p);
-  c = await cardH(p, "shift");
-  await pickSeg(p, "shiftWhat", "out");
-  await p.page.click("#shiftOptsToggle");
-  check("T8 the minus hides the diagram and leaves every button", !(await vis(p, "#shiftPrevBox")) && (await vis(p, "#shiftWhat")) && (await vis(p, "#shiftFwd")) && (await vis(p, "#shiftStep")) && (await vis(p, "#timeAlign")) && (await fold(p, "shiftOptsToggle")) === "false|Показать схему|+" && (await cardH(p, "shift")) < c - 40 && (await savedMotion(p, "shiftOpts")) === false, (await fold(p, "shiftOptsToggle")) + " " + c + " " + (await cardH(p, "shift")));
+  c = await cardH(p, "stagger");
+  await p.page.click("#staggerOptsToggle");
+  check("T8 the minus hides the hint and leaves every button", !(await vis(p, "#staggerPrevText")) && (await vis(p, "#staggerBtn")) && (await vis(p, "#staggerOrder")) && (await vis(p, "#staggerWhat")) && (await fold(p, "staggerOptsToggle")) === "false|Показать подсказку|+" && (await cardH(p, "stagger")) < c && (await savedMotion(p, "staggerOpts")) === false, (await fold(p, "staggerOptsToggle")) + " " + c + " " + (await cardH(p, "stagger")));
   await p.restart();
-  check("T8 folded stays folded after a restart, the choice still applies", !(await vis(p, "#shiftPrevBox")) && (await val(p, "shiftWhat")) === "out" && (await togglesClear(p)));
-  await p.page.click("#shiftOptsToggle");
-  check("T8 the plus brings the diagram back; «Лесенка» folds its hint", (await vis(p, "#shiftPrevBox")) && (await fold(p, "shiftOptsToggle")) === "true|Скрыть схему|-" && ((await p.page.click("#staggerOptsToggle")), !(await vis(p, "#staggerPrevText"))) && (await vis(p, "#staggerBtn")) && (await vis(p, "#staggerWhat")) && (await fold(p, "staggerOptsToggle")) === "false|Показать подсказку|+");
-  t = await toolRects(p);
-  check("T8 at 780px all four blocks share a row", t.ease.t === t.shift.t && t.align.r < t.shift.l && t.shift.w === 168 && (await overflow(p)) <= 0, JSON.stringify(t.shift));
-  await dragEdge(p, "shift", 150);
-  t = await toolRects(p);
-  check("T8 the block can be widened; the diagram grows with it", t.shift.w === 322 && (await p.page.evaluate(() => document.getElementById("shiftPrev").getBoundingClientRect().width)) > 250, JSON.stringify(t.shift));
-  await arrange(p, '#motionTools [data-tool="shift"] .tool-head b');
-  t = await toolRects(p);
-  await dragFrom(p, middle(t.shift), { x: t.ease.l + 20, y: middle(t.ease).y });
-  check("T8 it is rearranged like the others", (await toolOrder(p)).split(",").indexOf("shift") < 3 && (await savedTools(p)) === (await toolOrder(p)), await toolOrder(p));
-  await p.page.keyboard.press("Escape");
+  check("T8 folded stays folded after a restart", !(await vis(p, "#staggerPrevText")) && (await vis(p, "#staggerBtn")));
+  await p.page.click("#staggerOptsToggle");
+  check("T8 the plus brings the hint back", (await vis(p, "#staggerPrevText")) && (await fold(p, "staggerOptsToggle")) === "true|Скрыть подсказку|-");
   check("T8 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
@@ -5431,8 +5430,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("FI1 a new install: tabs Инструменты, Анимация, Шейп, AI, Проекты; Tools is open", t === "Инструменты*,Анимация,Шейп,AI,Проекты", t);
     t = await cards();
     check("FI1 the button blocks are pinned on top as in the author's panel", ["paste:0,0,8", "unused:8,0,8", "easecopy:17,0,17", "decompose:34,0,8", "organize:0,5,8", "nullp:17,5,8"].every((x) => t[x.split(":")[0]] === x.split(":")[1]) && /^8,[56],8$/.test(t.cache), JSON.stringify(t));
-    check("FI1 under the line: Сдвиг, Лесенка, Якорь, Выровнять in one row, Плавность below them", ["shift:0,", "stagger:12,", "anchor:24,", "align:32,"].every((x) => t[x.split(":")[0]].indexOf(x.split(":")[1]) === 0) && new Set(["shift", "stagger", "anchor", "align"].map((n) => t[n].split(",")[1])).size === 1 && Number(t.ease.split(",")[1]) > Number(t.shift.split(",")[1]) && Number(t.shift.split(",")[1]) >= 12, JSON.stringify(t));
-    check("FI1 hints and lists are folded, Время is open", !(await vis(p, "#pasteHint")) && !(await vis(p, "#anchorKeys")) && !(await vis(p, "#easeCurve")) && (await vis(p, "#shiftWhat")) && p.errors.length === 0, p.errors.join(" | "));
+    check("FI1 under the line: Лесенка, Якорь, Выровнять, Плавность in one row", ["stagger:0,", "anchor:12,", "align:20,", "ease:28,"].every((x) => t[x.split(":")[0]].indexOf(x.split(":")[1]) === 0) && new Set(["stagger", "anchor", "align", "ease"].map((n) => t[n].split(",")[1])).size === 1 && Number(t.stagger.split(",")[1]) >= 12 && !t.shift, JSON.stringify(t));
+    check("FI1 hints and lists are folded, Лесенка is open", !(await vis(p, "#pasteHint")) && !(await vis(p, "#anchorKeys")) && !(await vis(p, "#easeCurve")) && (await vis(p, "#staggerWhat")) && p.errors.length === 0, p.errors.join(" | "));
     await p.page.screenshot({ path: path.join(SHOTS, "51-new-install.png") });
     await p.close();
     p = await open({ fresh: true, width: 380, height: 900 });
@@ -5440,7 +5439,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("FI2 in a narrow panel the same blocks go row by row in the same order, nothing sticks out", t && (await overflow(p)) <= 0);
     await p.close();
     p = await open({ width: 960 });
-    await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ grid: 2, order: "ease,anchor,align,shift,paste,organize", sizes: "", pins: "", places: "ease=0,0;anchor=8,0;align=16,0;shift=0,13;paste=8,13;organize=16,13" })));
+    await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ grid: 2, order: "ease,anchor,align,paste,organize", sizes: "", pins: "", places: "ease=0,0;anchor=8,0;align=16,0;shift=0,13;paste=8,13;organize=16,13" })));
     await p.restart(); await motionTab(p);
     t = await p.page.evaluate(() => { const o = {}; document.querySelectorAll("#motionTools .tool-card").forEach((c) => { const r = c.getBoundingClientRect(); o[c.getAttribute("data-tool")] = Math.round(r.width) + "@" + Math.round(r.top); }); return o; });
     check("NB1 a panel in use keeps its blocks where they were", /^168@/.test(t.ease) && t.ease.split("@")[1] === t.anchor.split("@")[1], JSON.stringify(t));
@@ -5765,7 +5764,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({});
     await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
     t = await p.page.locator("#toolPicker button").evaluateAll((l) => l.map((b) => b.getAttribute("data-tool") + ":" + b.getAttribute("aria-pressed")));
-    check("TP1 settings list every tool of both tabs, all shown", t.length === 14 && t.every((x) => /:true$/.test(x)) && t.indexOf("split:true") >= 0 && (await p.page.locator(".tool-picker-head").evaluateAll((l) => l.map((x) => x.textContent))).join() === "Инструменты,Шейп", t.join());
+    check("TP1 settings list every tool of both tabs, all shown", t.length === 13 && t.every((x) => /:true$/.test(x)) && t.indexOf("split:true") >= 0 && (await p.page.locator(".tool-picker-head").evaluateAll((l) => l.map((x) => x.textContent))).join() === "Инструменты,Шейп", t.join());
     const before = await shown(p);
     await p.page.click('#toolPicker button[data-tool="cache"]'); await p.page.click('#toolPicker button[data-tool="split"]');
     await p.page.waitForTimeout(100);

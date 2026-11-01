@@ -360,41 +360,7 @@
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Выравнивание»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
 
-    <section class="card tool-card shift-card" data-tool="shift" data-info="Сдвиг|Двигает во времени анимацию выделенных слоёв. «Появление» — все ключи и маркеры в первой половине слоя, «Исчезновение» — во второй, «Слой» — слой целиком. Стрелки сдвигают выбранное на N кадров раньше или позже; если анимация стоит у самого края слоя, край сдвигается вместе с ней. «К указателю» ставит начало или конец появления (исчезновения) на указатель времени. Схема сверху показывает, что получится: пунктир — как было, цвет — как станет." aria-label="Сдвиг" title="Двойной щелчок по свободному месту — поменять блоки местами">
-      <button class="tool-grip" aria-label="Переместить блок «Сдвиг»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
-      <button id="shiftOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="shiftPrevBox" aria-label="Скрыть схему" title="Скрыть схему">
-        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
-      </button>
-      <div class="tool-head" title="Двигает во времени появление и исчезновение выделенных слоёв или сами слои">
-        <b>Сдвиг</b>
-      </div>
-      <div class="shift-body">
-        <div id="shiftPrevBox" class="tl-prev">
-          <svg id="shiftPrev" viewBox="0 0 100 24" aria-hidden="true"></svg>
-          <small id="shiftPrevText" class="tl-cap" aria-live="polite"></small>
-        </div>
-        <div id="shiftWhat" class="seg" role="group" aria-label="Что сдвигать">
-          <button type="button" data-v="in" title="Ключи и маркеры в первой половине слоя">Появление</button>
-          <button type="button" data-v="out" title="Ключи и маркеры во второй половине слоя">Исчезновение</button>
-          <button type="button" data-v="layer" title="Слой целиком, со всеми ключами и маркерами">Слой</button>
-        </div>
-        <div class="shift-row shift-row-step">
-          <button id="shiftBack" class="shift-arrow" aria-label="Сдвинуть раньше" title="Сдвинуть раньше"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M11 6l-6 6 6 6"/></svg></button>
-          <span class="shift-count"><input id="shiftStep" class="shift-num" type="text" inputmode="numeric" maxlength="3" autocomplete="off" spellcheck="false" aria-label="На сколько кадров сдвигать" title="На сколько кадров сдвигать за одно нажатие"><span class="shift-unit">кадр.</span></span>
-          <button id="shiftFwd" class="shift-arrow" aria-label="Сдвинуть позже" title="Сдвинуть позже"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></button>
-        </div>
-        <div class="align-sep" role="presentation"></div>
-        <span class="tl-label">К указателю времени</span>
-        <div id="timeAlign" class="tl-icons" role="group" aria-label="Поставить на указатель времени">
-          <button type="button" data-v="inStart" title="Начало появления — на указатель времени" aria-label="Начало появления — на указатель времени"></button>
-          <button type="button" data-v="inEnd" title="Конец появления — на указатель времени" aria-label="Конец появления — на указатель времени"></button>
-          <button type="button" data-v="outStart" title="Начало исчезновения — на указатель времени" aria-label="Начало исчезновения — на указатель времени"></button>
-          <button type="button" data-v="outEnd" title="Конец исчезновения — на указатель времени" aria-label="Конец исчезновения — на указатель времени"></button>
-        </div>
-      </div>
-      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Сдвиг»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
-    </section>
-    <section class="card tool-card stagger-card" data-tool="stagger" data-info="Лесенка|Расставляет выделенные слои один за другим: каждый следующий на N кадров позже предыдущего. «Слои» — слои целиком, «Ключи» — все ключи слоя, а сам слой остаётся на месте (край слоя у анимации едет вместе с ней). Порядок: сверху вниз, случайно или снизу вверх. Нажмёте ещё раз — ступеньки станут вдвое больше." aria-label="Лесенка" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card stagger-card" data-tool="stagger" data-info="Лесенка|Расставляет выделенные слои один за другим: каждый следующий на N кадров позже предыдущего. «Слои» — слои целиком, «Ключи» — все ключи слоя, а сам слой остаётся на месте (край слоя у анимации едет вместе с ней). Порядок: сверху вниз, случайно или снизу вверх; четвёртая кнопка ставит все слои (или первые ключи) на указатель времени. Нажмёте ещё раз — ступеньки станут вдвое больше." aria-label="Лесенка" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Лесенка»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="staggerOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="staggerPrevText" aria-label="Скрыть подсказку" title="Скрыть подсказку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
@@ -411,6 +377,7 @@
           <button type="button" data-v="asc" title="Сверху вниз" aria-label="Сверху вниз"></button>
           <button type="button" data-v="random" title="Случайно" aria-label="Случайно"></button>
           <button type="button" data-v="desc" title="Снизу вверх" aria-label="Снизу вверх"></button>
+          <button type="button" data-v="align" title="Все к указателю времени" aria-label="К указателю времени"></button>
         </div>
         <span id="staggerOrderName" class="tl-label st-order-name"></span>
         <div class="shift-row shift-row-step">
