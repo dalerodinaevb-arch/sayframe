@@ -2594,6 +2594,13 @@ var sayframeHost = (function () {
         try { acP(l, ["ADBE Effect Parade", fx, param]).expression = code; return true; } catch (e) { return false; }
     }
 
+    function kitControl(l, matchName, name, value) {
+        var fx = acAdd(l, ["ADBE Effect Parade"], matchName);
+        try { acP(l, ["ADBE Effect Parade", fx]).name = name; } catch (e0) {}
+        kitSet(l, fx, matchName + "-0001", value);
+        return fx;
+    }
+
     function kitGlassShape(comp, name) {
         var l = comp.layers.addShape(), gi, w = Math.round(comp.width * 0.42), h = Math.round(comp.height * 0.3), ri;
         l.name = name;
@@ -2608,7 +2615,7 @@ var sayframeHost = (function () {
     }
 
     function kitLiquidGlass(comp, labels) {
-        var sel = comp.selectedLayers || [], shape = null, made = false, i, adj, edge, fx, ref, legacy;
+        var sel = comp.selectedLayers || [], shape = null, made = false, i, adj, edge, fx, ref, legacy, stroke = null;
         for (i = 0; i < sel.length; i++) {
             if (!(sel[i] instanceof CameraLayer) && !(sel[i] instanceof LightLayer) && !sel[i].adjustmentLayer) { shape = sel[i]; break; }
         }
@@ -2642,7 +2649,24 @@ var sayframeHost = (function () {
         kitSet(edge, fx, "ADBE Bevel Alpha-0001", 6);
         kitSet(edge, fx, "ADBE Bevel Alpha-0004", 0.8);
         try { if (BlendingMode.OVERLAY !== undefined) { edge.blendingMode = BlendingMode.OVERLAY; } } catch (e2) {}
-        // Order, top to bottom: edge, glass (matted to the shape), shape (hidden: it only gives the outline).
+        // The outline (shape layers only): a copy of the shape with its own paint off and one Stroke on top,
+        // driven by three controls in Effect Controls of that layer: width, colour, opacity.
+        if (shape instanceof ShapeLayer) {
+            stroke = shape.duplicate();
+            stroke.name = labels.stroke || "Glass Stroke";
+            stroke.enabled = true;
+            pfMutePaint(stroke.property("ADBE Root Vectors Group"));
+            kitControl(stroke, "ADBE Slider Control", labels.strokeWidth || "Stroke Width", 2);
+            kitControl(stroke, "ADBE Color Control", labels.strokeColor || "Stroke Color", [1, 1, 1, 1]);
+            kitControl(stroke, "ADBE Slider Control", labels.strokeOpacity || "Stroke Opacity", 70);
+            fx = acAdd(stroke, ["ADBE Root Vectors Group"], "ADBE Vector Graphic - Stroke");
+            try {
+                acP(stroke, ["ADBE Root Vectors Group", fx, "ADBE Vector Stroke Width"]).expression = "Math.max(0, effect(1)(1));";
+                acP(stroke, ["ADBE Root Vectors Group", fx, "ADBE Vector Stroke Color"]).expression = "effect(2)(1);";
+                acP(stroke, ["ADBE Root Vectors Group", fx, "ADBE Vector Stroke Opacity"]).expression = "Math.max(0, Math.min(100, effect(3)(1)));";
+            } catch (e4) {}
+        }
+        // Order, top to bottom: outline, edge, glass (matted to the shape), shape (hidden: it only gives the outline).
         legacy = typeof adj.setTrackMatte !== "function";
         if (legacy) {
             adj.moveAfter(shape);
@@ -2653,11 +2677,186 @@ var sayframeHost = (function () {
             edge.moveBefore(adj);
             adj.setTrackMatte(shape, TrackMatteType.ALPHA);
         }
+        if (stroke) {
+            stroke.moveBefore(edge);
+            try { stroke.parent = shape; } catch (e5) {}
+            stroke.selected = false;
+        }
         shape.enabled = false;
         try { edge.parent = shape; } catch (e3) {}
         edge.selected = false;
         shape.selected = true;
-        return { glass: { name: adj.name, shape: shape.name, edge: edge.name, created: made, legacy: legacy } };
+        return { glass: { name: adj.name, shape: shape.name, edge: edge.name, stroke: stroke ? stroke.name : "", created: made, legacy: legacy } };
+    }
+
+    // ---- Carousel (the Animation tab, section 3D): N cards around a 3D controller null, like a gallery ring.
+    // Card shapes: rect (Rectangle with roundness), circle (Ellipse), tri / hex (a path: a regular polygon whose
+    // corners are rounded by "corners" percent; 100 turns it into its inscribed circle). The cards are 3D layers
+    // parented to the null, so turning the null turns the whole ring.
+    var ORBIT_LAYOUTS = { ring: 1, half: 1, spiral: 1, wave: 1 };
+    var ORBIT_SIDES = { rect: 4, circle: 0, tri: 3, hex: 6 };
+
+    function orbitNum(v, lo, hi, def) {
+        v = Number(v);
+        if (isNaN(v)) { v = def; }
+        return Math.max(lo, Math.min(hi, v));
+    }
+
+    // Where card i of n stands, relative to the null: x, y, z and its Y rotation (it faces out of the ring).
+    function orbitSpot(i, n, layout, radius, h) {
+        var a, y = 0, r;
+        if (layout === "half") { a = n > 1 ? -90 + 180 * i / (n - 1) : 0; }
+        else if (layout === "spiral") { a = i * 540 / n; y = (i - (n - 1) / 2) * h * 0.3; }
+        else {
+            a = i * 360 / n;
+            if (layout === "wave") { y = Math.sin(a * 2 * Math.PI / 180) * h * 0.25; }
+        }
+        r = a * Math.PI / 180;
+        return { x: radius * Math.sin(r), y: y, z: -radius * Math.cos(r), ry: a };
+    }
+
+    // The same colours as the preview in the panel: a purple-to-pink run.
+    function orbitColor(i) {
+        var hue = (250 + i * 22) % 360, s = 0.8, l = 0.62, c = (1 - Math.abs(2 * l - 1)) * s, hp = hue / 60;
+        var x = c * (1 - Math.abs(hp % 2 - 1)), m = l - c / 2, rgb;
+        if (hp < 1) { rgb = [c, x, 0]; } else if (hp < 2) { rgb = [x, c, 0]; } else if (hp < 3) { rgb = [0, c, x]; }
+        else if (hp < 4) { rgb = [0, x, c]; } else if (hp < 5) { rgb = [x, 0, c]; } else { rgb = [c, 0, x]; }
+        return [rgb[0] + m, rgb[1] + m, rgb[2] + m, 1];
+    }
+
+    // A regular polygon (pointy top) with rounded corners, stretched to w x h by its sharp outline.
+    function orbitPoly(sides, t, w, h) {
+        var V = [], i, a, inr, r, d, k, minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, sx, sy, cx, cy;
+        var verts = [], ins = [], outs = [], P, C, N, ua, ub, L, sP, eP;
+        for (i = 0; i < sides; i++) {
+            a = -Math.PI / 2 + i * 2 * Math.PI / sides;
+            V.push([Math.cos(a), Math.sin(a)]);
+            minX = Math.min(minX, V[i][0]); maxX = Math.max(maxX, V[i][0]);
+            minY = Math.min(minY, V[i][1]); maxY = Math.max(maxY, V[i][1]);
+        }
+        sx = w / (maxX - minX); sy = h / (maxY - minY); cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
+        inr = Math.cos(Math.PI / sides);
+        r = Math.max(0, Math.min(1, t)) * inr;
+        d = r * Math.tan(Math.PI / sides);
+        k = 4 / 3 * Math.tan(Math.PI / sides / 2) * r;
+        function pt(p) { return [(p[0] - cx) * sx, (p[1] - cy) * sy]; }
+        function vec(p) { return [p[0] * sx, p[1] * sy]; }
+        for (i = 0; i < sides; i++) {
+            P = V[(i + sides - 1) % sides]; C = V[i]; N = V[(i + 1) % sides];
+            L = Math.sqrt((P[0] - C[0]) * (P[0] - C[0]) + (P[1] - C[1]) * (P[1] - C[1]));
+            ua = [(P[0] - C[0]) / L, (P[1] - C[1]) / L];
+            ub = [(N[0] - C[0]) / L, (N[1] - C[1]) / L];
+            if (r <= 0) {
+                verts.push(pt(C)); ins.push([0, 0]); outs.push([0, 0]);
+                continue;
+            }
+            sP = [C[0] + ua[0] * d, C[1] + ua[1] * d];
+            eP = [C[0] + ub[0] * d, C[1] + ub[1] * d];
+            verts.push(pt(sP)); ins.push([0, 0]); outs.push(vec([-ua[0] * k, -ua[1] * k]));
+            verts.push(pt(eP)); ins.push(vec([-ub[0] * k, -ub[1] * k])); outs.push([0, 0]);
+        }
+        return { vertices: verts, inTangents: ins, outTangents: outs };
+    }
+
+    // One card's look inside a shape layer: a group with the shape and its fill, centred on the layer's origin.
+    function orbitCardShape(l, kind, t, w, h, color) {
+        var gi = acGroup(l), si, s, pl;
+        try { acP(l, ["ADBE Root Vectors Group", gi]).name = "Card"; } catch (e0) {}
+        if (kind === "rect") {
+            si = acIn(l, gi, "ADBE Vector Shape - Rect");
+            acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Rect Size"]).setValue([w, h]);
+            acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Rect Roundness"]).setValue(Math.round(t * Math.min(w, h) / 2 * 10) / 10);
+        } else if (kind === "circle") {
+            si = acIn(l, gi, "ADBE Vector Shape - Ellipse");
+            acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Ellipse Size"]).setValue([w, h]);
+        } else {
+            pl = orbitPoly(ORBIT_SIDES[kind], t, w, h);
+            si = acIn(l, gi, "ADBE Vector Shape - Group");
+            s = new Shape();
+            s.vertices = pl.vertices;
+            s.inTangents = pl.inTangents;
+            s.outTangents = pl.outTangents;
+            s.closed = true;
+            acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Shape"]).setValue(s);
+        }
+        acFill(l, gi, color);
+    }
+
+    function orbitNumber(comp, text, size) {
+        var l = comp.layers.addText(text), p, doc;
+        try {
+            p = acP(l, ["ADBE Text Properties", "ADBE Text Document"]);
+            doc = p.value;
+            doc.fontSize = size;
+            doc.fillColor = [1, 1, 1];
+            try { doc.justification = ParagraphJustification.CENTER_JUSTIFY; } catch (e1) {}
+            p.setValue(doc);
+        } catch (e0) {}
+        return l;
+    }
+
+    function orbitSet(l, name, v) {
+        acP(l, ["ADBE Transform Group", name]).setValue(v);
+    }
+
+    function orbitBuild(comp, o, labels) {
+        var n = Math.round(orbitNum(o.count, 2, 36, 8)), layout = ORBIT_LAYOUTS[o.layout] ? o.layout : "ring";
+        var kind = ORBIT_SIDES.hasOwnProperty(o.shape) ? o.shape : "rect", t = orbitNum(o.corners, 0, 100, 20) / 100;
+        var radius = orbitNum(o.radius, 0, 10000, 600), w = Math.round(orbitNum(o.w, 4, 8000, 400)), h = Math.round(orbitNum(o.h, 4, 8000, 560));
+        var pre = o.mode === "precomp", cx = comp.width / 2, cy = comp.height / 2, fs = Math.round(Math.min(w, h) * 0.32);
+        var ctrl, cam = "", had = false, cards = [], nums = [], i, j, sp, L, txt, cc, inner, folder = null, base;
+        base = labels.card || "Card ";
+        if (pre) {
+            try { folder = app.project.items.addFolder(labels.folder || "Carousel"); } catch (eF) { folder = null; }
+        }
+        for (i = n - 1; i >= 0; i--) {
+            sp = orbitSpot(i, n, layout, radius, h);
+            if (pre) {
+                cc = app.project.items.addComp(base + (i + 1), w, h, comp.pixelAspect || 1, comp.duration, comp.frameRate);
+                if (folder) { try { cc.parentFolder = folder; } catch (eP) {} }
+                inner = cc.layers.addShape();
+                inner.name = labels.shape || "Shape";
+                orbitCardShape(inner, kind, t, w, h, orbitColor(i));
+                orbitSet(inner, "ADBE Position", [w / 2, h / 2]);
+                if (o.numbers) {
+                    txt = orbitNumber(cc, String(i + 1), fs);
+                    orbitSet(txt, "ADBE Position", [w / 2, h / 2 + fs * 0.35]);
+                }
+                L = comp.layers.add(cc);
+            } else {
+                L = comp.layers.addShape();
+                orbitCardShape(L, kind, t, w, h, orbitColor(i));
+            }
+            L.name = base + (i + 1);
+            L.threeDLayer = true;
+            orbitSet(L, "ADBE Position", [cx + sp.x, cy + sp.y, sp.z]);
+            orbitSet(L, "ADBE Rotate Y", sp.ry);
+            cards.unshift(L);
+            if (o.numbers && !pre) {
+                txt = orbitNumber(comp, String(i + 1), fs);
+                txt.name = (labels.number || "Number ") + (i + 1);
+                txt.threeDLayer = true;
+                orbitSet(txt, "ADBE Position", [cx + sp.x, cy + sp.y + fs * 0.35, sp.z]);
+                orbitSet(txt, "ADBE Rotate Y", sp.ry);
+                nums.unshift(txt);
+            }
+        }
+        ctrl = comp.layers.addNull(comp.duration);
+        ctrl.name = labels.ctrl || "Carousel Control";
+        ctrl.threeDLayer = true;
+        orbitSet(ctrl, "ADBE Position", [cx, cy, 0]);
+        for (i = 0; i < cards.length; i++) {
+            if (nums[i]) { nums[i].parent = cards[i]; }
+            cards[i].parent = ctrl;
+        }
+        if (o.camera) {
+            for (j = 1; j <= comp.numLayers; j++) { if (comp.layer(j) instanceof CameraLayer) { had = true; break; } }
+            if (!had) { cam = comp.layers.addCamera(labels.camera || "Carousel Camera", [cx, cy]).name; }
+        }
+        for (i = 0; i < cards.length; i++) { try { cards[i].selected = false; } catch (eS) {} }
+        for (i = 0; i < nums.length; i++) { try { nums[i].selected = false; } catch (eT) {} }
+        ctrl.selected = true;
+        return { cards: n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
     }
 
     // ---- Split / merge shapes (the Shape tab).
@@ -2804,8 +3003,11 @@ var sayframeHost = (function () {
 
     function smXY(v) { return v && typeof v === "object" && typeof v.length === "number" ? [v[0], v[1]] : v; }
 
-    function smMerge(comp, sel) {
-        var shapes = [], skipped = [], notes = [], i, j, L, N, w, wi, ci, tr, gt, s, c, minIn = null, maxOut = null, cx, cy, isIn;
+    // opt.reverse - the bottom layer becomes the first group (for "minus front"); opt.keep - the merged
+    // layers are switched off instead of removed (and keep their children).
+    function smMerge(comp, sel, opt) {
+        var shapes = [], skipped = [], notes = [], i, j, L, N, w, wi, ci, tr, gt, s, c, minIn = null, maxOut = null, cx, cy, isIn, order;
+        opt = opt || {};
         for (i = 0; i < sel.length; i++) { if (sel[i] instanceof ShapeLayer) { shapes.push(sel[i]); } else { skipped.push(sel[i].name); } }
         if (shapes.length < 2) { throw new Error("SM_NEED_SHAPES"); }
         for (i = 0; i < shapes.length; i++) { if (shapes[i].locked) { throw new Error("SM_LOCKED"); } }
@@ -2817,8 +3019,10 @@ var sayframeHost = (function () {
         tr = N.property("ADBE Transform Group");
         tr.property("ADBE Anchor Point").setValue([cx, cy]);
         tr.property("ADBE Position").setValue([cx, cy]);
-        for (i = 0; i < shapes.length; i++) {
-            L = shapes[i];
+        order = shapes.slice();
+        if (opt.reverse) { order.reverse(); }
+        for (i = 0; i < order.length; i++) {
+            L = order[i];
             // A parent is let go first (After Effects keeps the layer where it is), so its transform is all there is.
             if (L.parent) { L.parent = null; }
             if (L.threeDLayer) { notes.push("3d"); }
@@ -2840,7 +3044,7 @@ var sayframeHost = (function () {
             if (maxOut === null || L.outPoint > maxOut) { maxOut = L.outPoint; }
         }
         // Layers that hung on the merged ones now hang on the new layer.
-        for (j = 1; j <= comp.numLayers; j++) {
+        for (j = 1; !opt.keep && j <= comp.numLayers; j++) {
             c = comp.layer(j);
             if (c === N || !c.parent) { continue; }
             isIn = false;
@@ -2850,10 +3054,67 @@ var sayframeHost = (function () {
         N.moveBefore(shapes[0]);
         N.inPoint = minIn;
         N.outPoint = maxOut;
-        for (i = shapes.length - 1; i >= 0; i--) { shapes[i].remove(); }
+        for (i = shapes.length - 1; i >= 0; i--) {
+            if (opt.keep) { shapes[i].enabled = false; } else { shapes[i].remove(); }
+        }
         for (j = 1; j <= comp.numLayers; j++) { comp.layer(j).selected = false; }
         N.selected = true;
+        opt.layer = N;
         return { merged: { name: N.name, count: shapes.length, skipped: skipped, notes: notes } };
+    }
+
+    // ---- Pathfinder (the Shape tab): the selected shape layers become one shape layer with Merge Paths,
+    // like Illustrator's Shape Modes. The shapes stay live: groups can still be moved and animated.
+    // Merge Paths "Subtract" keeps the first path and cuts the next ones out of it, so for "minus front"
+    // the bottom layer goes first. The colour comes from the layer Illustrator would keep.
+    var PF_MODES = { unite: 2, front: 3, intersect: 4, exclude: 5, back: 3 };
+    var PF_NAMES = { unite: "Unite", front: "Minus Front", intersect: "Intersect", exclude: "Exclude", back: "Minus Back" };
+    var PF_PAINT = { "ADBE Vector Graphic - Fill": 1, "ADBE Vector Graphic - Stroke": 1, "ADBE Vector Graphic - G-Fill": 1, "ADBE Vector Graphic - G-Stroke": 1 };
+
+    function pfFirstFill(prop) {
+        var i, it, r;
+        if (!prop) { return null; }
+        for (i = 1; i <= prop.numProperties; i++) {
+            it = prop.property(i);
+            if (it.matchName === "ADBE Vector Graphic - Fill") {
+                try { return it.property("ADBE Vector Fill Color").value; } catch (e) { return null; }
+            }
+            if (it.numProperties && it.matchName !== "ADBE Vector Transform Group") {
+                r = pfFirstFill(it);
+                if (r) { return r; }
+            }
+        }
+        return null;
+    }
+
+    // The fills and strokes inside the merged groups would paint the old shapes: they are switched off.
+    function pfMutePaint(prop) {
+        var i, it;
+        for (i = 1; i <= prop.numProperties; i++) {
+            it = prop.property(i);
+            if (PF_PAINT[it.matchName]) { try { it.enabled = false; } catch (e) {} }
+            else if (it.numProperties && it.matchName !== "ADBE Vector Transform Group") { pfMutePaint(it); }
+        }
+    }
+
+    function pfApply(comp, sel, mode, keep) {
+        var shapes = [], i, colour, res, root, merge, fill, n, opt;
+        if (!PF_MODES[mode]) { throw new Error("BAD_PF_MODE"); }
+        for (i = 0; i < sel.length; i++) { if (sel[i] instanceof ShapeLayer) { shapes.push(sel[i]); } }
+        if (shapes.length < 2) { throw new Error("PF_NEED_SHAPES"); }
+        shapes.sort(function (a, b) { return a.index - b.index; });
+        colour = pfFirstFill((mode === "front" ? shapes[shapes.length - 1] : shapes[0]).property("ADBE Root Vectors Group"));
+        opt = { reverse: mode === "front", keep: keep };
+        res = smMerge(comp, sel, opt);
+        root = opt.layer.property("ADBE Root Vectors Group");
+        n = root.numProperties;
+        for (i = 1; i <= n; i++) { pfMutePaint(root.property(i)); }
+        merge = root.addProperty("ADBE Vector Filter - Merge");
+        merge.property("ADBE Vector Merge Type").setValue(PF_MODES[mode]);
+        fill = root.addProperty("ADBE Vector Graphic - Fill");
+        if (colour) { fill.property("ADBE Vector Fill Color").setValue(colour); }
+        opt.layer.name = shapes[0].name + " - " + PF_NAMES[mode];
+        return { pathfinder: { mode: mode, name: opt.layer.name, count: res.merged.count, skipped: res.merged.skipped, kept: !!keep, notes: res.merged.notes } };
     }
 
     function npCreate(comp, sel) {
@@ -3969,6 +4230,15 @@ var sayframeHost = (function () {
         return out;
     }
 
+    // Where a layer starts for "align": the layer's in point, or its first keyframe.
+    function alignPoint(layer, what) {
+        var a, b;
+        if (what === "layer") { return layer.inPoint; }
+        a = findTransition(layer, "in");
+        b = findTransition(layer, "out");
+        return a.count ? a.first : b.first;
+    }
+
     // Each next layer is moved `frames` frames further than the one before it.
     // what: "layer", "keys" (all keyframes), "in" or "out"; order: "asc" (from the top layer down), "desc" (from the bottom up), "selection" or "random".
     function staggerSelected(comp, what, frames, order) {
@@ -3981,6 +4251,13 @@ var sayframeHost = (function () {
             // A layer with nothing to move does not take a step of the staircase.
             if (!hasKeysFor(layers[i], what)) { out.skipped++; continue; }
             list.push(layers[i]);
+        }
+        // "align": every layer (or its first key) to the time indicator, no staircase.
+        if (order === "align") {
+            if (!list.length) { throw new Error("STAGGER_NO_KEYS"); }
+            for (i = 0; i < list.length; i++) { shiftOne(list[i], what, comp.time - alignPoint(list[i], what), frame, out); }
+            out.aligned = true;
+            return out;
         }
         if (list.length < 2) { throw new Error(layers.length < 2 ? "STAGGER_NEEDS_TWO" : "STAGGER_NO_KEYS"); }
         if (order === "asc" || order === "desc") {
@@ -5370,6 +5647,40 @@ var sayframeHost = (function () {
             });
         },
 
+        // Carousel: o = { count, layout, shape, corners, mode: "shape"|"precomp", radius, w, h, numbers, camera }; labels - layer names.
+        orbitMake: function (o, labels) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (!o || typeof o !== "object") { throw new Error("BAD_ORBIT"); }
+                app.beginUndoGroup("Sayframe: carousel");
+                try {
+                    res = orbitBuild(comp, o, labels || {});
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Pathfinder: mode "unite" | "front" | "intersect" | "exclude" | "back"; keep - hide the source layers instead of removing them.
+        pathfinder: function (mode, keep) {
+            return reply(function () {
+                var comp = activeComp();
+                var sel = comp.selectedLayers;
+                var res;
+                if (!PF_MODES[mode]) { throw new Error("BAD_PF_MODE"); }
+                if (!sel.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                app.beginUndoGroup("Sayframe: pathfinder");
+                try {
+                    res = pfApply(comp, sel, mode, !!keep);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
         // Clear cache: everything After Effects keeps in memory (RAM preview frames, image cache,
         // snapshots, undo history) is dropped at once, like Edit > Purge > All Memory.
         clearCache: function () {
@@ -5664,8 +5975,8 @@ var sayframeHost = (function () {
                 var res;
                 frames = Math.round(Number(frames));
                 if (what !== "in" && what !== "out" && what !== "layer" && what !== "keys") { throw new Error("BAD_SHIFT_TARGET"); }
-                if (order !== "asc" && order !== "desc" && order !== "selection" && order !== "random") { throw new Error("BAD_STAGGER_ORDER"); }
-                if (isNaN(frames) || frames === 0 || Math.abs(frames) > 100000) { throw new Error("BAD_SHIFT_FRAMES"); }
+                if (order !== "asc" && order !== "desc" && order !== "selection" && order !== "random" && order !== "align") { throw new Error("BAD_STAGGER_ORDER"); }
+                if (order !== "align" && (isNaN(frames) || frames === 0 || Math.abs(frames) > 100000)) { throw new Error("BAD_SHIFT_FRAMES"); }
                 if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }
                 app.beginUndoGroup("Sayframe: stagger");
                 try {

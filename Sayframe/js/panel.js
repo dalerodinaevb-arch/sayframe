@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.62.0";
+    var VERSION = "1.63.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -809,6 +809,7 @@
         if (m === "SM_ONE_PIECE") { return "В этом шейпе одна фигура — делить нечего. Чтобы собрать шейпы в один, выделите несколько шейп-слоёв."; }
         if (m === "SM_NOT_SHAPE") { return "Разделить можно шейп-слой с несколькими группами или слой с несколькими масками. Чтобы собрать, выделите несколько шейп-слоёв."; }
         if (m === "SM_NEED_SHAPES") { return "Чтобы собрать в один, выделите хотя бы два шейп-слоя."; }
+        if (m === "PF_NEED_SHAPES") { return "Для Pathfinder выделите хотя бы два шейп-слоя."; }
         if (m === "SM_LOCKED") { return "Слой заблокирован (замок на таймлайне). Снимите замок и нажмите ещё раз."; }
         if (m === "DC_NO_PRECOMP") { return "Выделите слой-прекомпозицию (слой, внутри которого другая композиция) и нажмите ещё раз."; }
         if (m === "CO_NOT_PHOTO") { return "Cut out работает с фото: выделите слой, у которого источник — файл-картинка (JPG, PNG, PSD…), и нажмите ещё раз."; }
@@ -1001,6 +1002,12 @@
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
         fxBtn: el("fxBtn"), snapBtn: el("snapBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
+        orbitPane: el("orbitPane"), orbitStage: el("orbitStage"), orbitRing: el("orbitRing"), orbitLayout: el("orbitLayout"), orbitShape: el("orbitShape"),
+        orbitCornerRow: el("orbitCornerRow"), orbitCornerIco: el("orbitCornerIco"), orbitCorners: el("orbitCorners"), orbitCornersVal: el("orbitCornersVal"),
+        orbitMode: el("orbitMode"), orbitLess: el("orbitLess"), orbitMore: el("orbitMore"), orbitCount: el("orbitCount"),
+        orbitRadius: el("orbitRadius"), orbitRadiusVal: el("orbitRadiusVal"), orbitW: el("orbitW"), orbitWVal: el("orbitWVal"), orbitH: el("orbitH"), orbitHVal: el("orbitHVal"),
+        orbitNumbers: el("orbitNumbers"), orbitCamera: el("orbitCamera"), orbitBtn: el("orbitBtn"),
+        acBody: el("acBody"),
         acTabs: el("acTabs"), acSearch: el("acSearch"), acFavOnly: el("acFavOnly"), acModeRow: el("acModeRow"), acMode: el("acMode"),
         acDurRow: el("acDurRow"), acDur: el("acDur"), acDurVal: el("acDurVal"), acColorRow: el("acColorRow"), acColor: el("acColor"),
         acGrid: el("acGrid"), acHint: el("acHint"), acSize: el("acSize"), acFoot: el("acFoot"),
@@ -1012,14 +1019,13 @@
         cacheBtn: el("cacheBtn"), cacheOptsToggle: el("cacheOptsToggle"), cacheHint: el("cacheHint"),
         nullpBtn: el("nullpBtn"), nullpOptsToggle: el("nullpOptsToggle"), nullpHint: el("nullpHint"),
         splitBtn: el("splitBtn"), splitOptsToggle: el("splitOptsToggle"), splitHint: el("splitHint"),
+        pfModes: el("pfModes"), pfName: el("pfName"), pfSub: el("pfSub"), pfKeep: el("pfKeep"), pfOptsToggle: el("pfOptsToggle"), pfHint: el("pfHint"),
         unusedBtn: el("unusedBtn"), unusedOptsToggle: el("unusedOptsToggle"), unusedHint: el("unusedHint"),
         cutoutBtn: el("cutoutBtn"), cutoutOptsToggle: el("cutoutOptsToggle"), cutoutHint: el("cutoutHint"),
         cutoutView: el("cutoutView"), cutoutName: el("cutoutName"), cutoutClose: el("cutoutClose"), cutoutBrush: el("cutoutBrush"),
         cutoutStage: el("cutoutStage"), cutoutCanvas: el("cutoutCanvas"), cutoutBusy: el("cutoutBusy"), cutoutNote: el("cutoutNote"),
         cutoutEdge: el("cutoutEdge"), cutoutUndo: el("cutoutUndo"), cutoutReset: el("cutoutReset"), cutoutDone: el("cutoutDone"),
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
-        shiftOptsToggle: el("shiftOptsToggle"), shiftPrevBox: el("shiftPrevBox"), shiftPrev: el("shiftPrev"), shiftPrevText: el("shiftPrevText"),
-        shiftWhat: el("shiftWhat"), shiftStep: el("shiftStep"), shiftBack: el("shiftBack"), shiftFwd: el("shiftFwd"), timeAlign: el("timeAlign"),
         staggerOptsToggle: el("staggerOptsToggle"), staggerPrevText: el("staggerPrevText"),
         staggerWhat: el("staggerWhat"), staggerStep: el("staggerStep"), staggerLess: el("staggerLess"), staggerMore: el("staggerMore"),
         staggerOrder: el("staggerOrder"), staggerOrderName: el("staggerOrderName"), staggerBtn: el("staggerBtn"),
@@ -1314,6 +1320,8 @@
         ui.cacheBtn.disabled = on;
         ui.nullpBtn.disabled = on;
         ui.splitBtn.disabled = on;
+        Array.prototype.forEach.call(ui.pfModes.querySelectorAll("button"), function (b) { b.disabled = on; });
+        if (ui.orbitBtn) { ui.orbitBtn.disabled = on; }
         ui.unusedBtn.disabled = on;
         ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
@@ -3476,27 +3484,26 @@
 
     var GRID_VERSION = 2;         // 2 — мелкая сетка (шаг 22 px)
     // Так было до 1.40.0: блоки по порядку, без мест и булавок, всё развёрнуто.
-    var MOTION_LEGACY = { curve: true, order: "ease,anchor,align,shift,paste,organize,easecopy,decompose,cache,nullp,unused,cutout", sizes: "", places: "", pins: "",
-        ecOpts: true, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, cutoutOpts: true, splitOpts: true, anchorOpts: true, alignOpts: true, staggerOpts: true };
+    var MOTION_LEGACY = { curve: true, order: "ease,anchor,align,paste,organize,easecopy,decompose,cache,nullp,unused,cutout", sizes: "", places: "", pins: "",
+        ecOpts: true, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, cutoutOpts: true, splitOpts: true, pfOpts: true, anchorOpts: true, alignOpts: true, staggerOpts: true };
 
-    // Так «Инструменты» выглядят после новой установки: блоки-кнопки закреплены сверху, под линией — «Время»,
+    // Так «Инструменты» выглядят после новой установки: блоки-кнопки закреплены сверху, под линией — «Лесенка»,
     // «Якорь», «Выровнять» и «Плавность»; подсказки и списки свёрнуты (их открывает плюс в углу блока).
     // У тех, кто уже настроил панель, сохранённое не меняется; новые блоки встают сверху, ближе к середине.
     var MOTION_DEFAULTS = { easeIn: 60, easeOut: 60, link: true, curve: false, easeView: "speed", anchorKeys: "key", alignTo: "comp",
-        order: "paste,unused,easecopy,decompose,organize,cache,nullp,cutout,shift,stagger,anchor,align,ease",
-        sizes: "ease=14x0;shift=12x0;stagger=12x0;easecopy=17x0",
-        places: "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;stagger=12,12;anchor=24,12;align=32,12;ease=40,12",
+        order: "paste,unused,easecopy,decompose,organize,cache,nullp,cutout,stagger,anchor,align,ease",
+        sizes: "ease=14x0;stagger=12x0;easecopy=17x0",
+        places: "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;stagger=0,12;anchor=12,12;align=20,12;ease=28,12",
         pins: "paste,unused,easecopy,decompose,organize,cache,nullp,cutout", grid: GRID_VERSION,
-        ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false, cutoutOpts: false, splitOpts: false,
+        ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false, cutoutOpts: false, splitOpts: false, pfOpts: false,
         anchorOpts: false, alignOpts: false,
-        shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true, staggerOpts: true };
-    var SHIFT_TARGETS = ["in", "out", "layer"];
-    var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
-    var STAGGER_ORDERS = ["asc", "random", "desc"];
+        staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", staggerOpts: true,
+        flowFold: "easecopy,anchor,align" };
+    var STAGGER_ORDERS = ["asc", "random", "desc", "align"];
     var STAGGER_TARGETS = ["layer", "keys"];
     var MAX_STEP_FRAMES = 999;
-    var TOOL_NAMES = ["ease", "anchor", "align", "shift", "stagger", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
-    var SHAPE_TOOL_NAMES = ["split"];
+    var TOOL_NAMES = ["ease", "anchor", "align", "stagger", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
+    var SHAPE_TOOL_NAMES = ["pathfinder", "split"];
     // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
     // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
     var G = { names: TOOL_NAMES };
@@ -3585,8 +3592,11 @@
         return out.join(";");
     }
 
+    // Блоки, которым обычная ширина мала: пять кнопок Pathfinder в ряд.
+    var TOOL_WIDE = { pathfinder: 14 };
+
     function sizeOf(name) {
-        return parseSizes(G.st.sizes)[name] || { w: TOOL_DEFAULT_COLS, h: 0 };
+        return parseSizes(G.st.sizes)[name] || { w: TOOL_WIDE[name] || TOOL_DEFAULT_COLS, h: 0 };
     }
 
     // Места блоков: "ease=0,0;anchor=4,0" — колонка и ряд левого верхнего угла. Пусто — блоки идут
@@ -3665,11 +3675,8 @@
         if (m.anchorKeys !== "shift" && m.anchorKeys !== "skip") { m.anchorKeys = "key"; }
         if (m.alignTo !== "selection") { m.alignTo = "comp"; }
         if (m.easeView !== "value") { m.easeView = "speed"; }
-        if (SHIFT_TARGETS.indexOf(m.shiftWhat) < 0) { m.shiftWhat = "in"; }
         if (STAGGER_TARGETS.indexOf(m.staggerWhat) < 0) { m.staggerWhat = m.staggerWhat === "in" || m.staggerWhat === "out" ? "keys" : "layer"; }
-        if (TIME_POINTS.indexOf(m.timeAlign) < 0) { m.timeAlign = "inStart"; }
         if (STAGGER_ORDERS.indexOf(m.staggerOrder) < 0) { m.staggerOrder = "asc"; }
-        m.shiftStep = clampStep(m.shiftStep);
         m.staggerStep = clampStep(m.staggerStep);
         m.order = cleanToolOrder(m.order);
         m.sizes = sizesText(parseSizes(m.sizes));
@@ -3722,7 +3729,7 @@
             { key: "unusedOpts", button: ui.unusedOptsToggle, part: ui.unusedHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "cutoutOpts", button: ui.cutoutOptsToggle, part: ui.cutoutHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "splitOpts", button: ui.splitOptsToggle, part: ui.splitHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
-            { key: "shiftOpts", button: ui.shiftOptsToggle, part: ui.shiftPrevBox, hide: "Скрыть схему", show: "Показать схему" },
+            { key: "pfOpts", button: ui.pfOptsToggle, part: ui.pfHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "staggerOpts", button: ui.staggerOptsToggle, part: ui.staggerPrevText, hide: "Скрыть подсказку", show: "Показать подсказку" }
         ];
     }
@@ -3730,10 +3737,12 @@
     // У SVG нет свойства hidden, поэтому меняем сам атрибут.
     function showFoldParts() {
         var parts = foldParts();
-        var i, j, f, open, label, opt;
+        var i, j, f, open, label, opt, inFlow;
         for (i = 0; i < parts.length; i++) {
             f = parts[i];
-            open = motion[f.key] !== false;
+            // «Студия»: подписи и кривая всегда открыты, а текстовые подсказки спрятаны — их видно при наведении на блок.
+            inFlow = !!(f.part.closest && f.part.closest(".tool-flow"));
+            open = inFlow ? f.hide !== "Скрыть подсказку" : motion[f.key] !== false;
             label = open ? f.hide : f.show;
             if (!open && f.select) {
                 opt = f.select.options[f.select.selectedIndex];
@@ -4012,9 +4021,9 @@
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
         cells = ui.distGrid.querySelectorAll("button");
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
-        cells = [ui.shiftStep, ui.shiftBack, ui.shiftFwd, ui.staggerStep, ui.staggerLess, ui.staggerMore, ui.staggerBtn];
+        cells = [ui.staggerStep, ui.staggerLess, ui.staggerMore, ui.staggerBtn];
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
-        [ui.shiftWhat, ui.timeAlign, ui.staggerWhat, ui.staggerOrder].forEach(function (g) {
+        [ui.staggerWhat, ui.staggerOrder].forEach(function (g) {
             Array.prototype.forEach.call(g.querySelectorAll("button"), function (b) { b.disabled = on; });
         });
     }
@@ -4031,7 +4040,8 @@
         { id: "anim", label: "Движения" },
         { id: "graphic", label: "Графика" },
         { id: "kit", label: "Заготовки" },
-        { id: "sfx", label: "Звуки" }
+        { id: "sfx", label: "Звуки" },
+        { id: "orbit", label: "3D" }
     ];
     var AC_PRESETS = {
         trans: [],
@@ -4039,7 +4049,8 @@
         anim: [],
         graphic: [],
         kit: [],
-        sfx: []
+        sfx: [],
+        orbit: []
     };
     // Переходы прошлых версий (ключами на самом слое, до 1.19): нужны только для «✎ Изменить».
     var AC_LEGACY_TRANS = [["zoom-blur", "Зум с размытием"], ["spin-zoom", "Вращение с зумом"], ["push-left", "Сдвиг влево"], ["push-right", "Сдвиг вправо"],
@@ -4442,6 +4453,7 @@
         var searching = !!ui.acSearch.value.replace(/\s/g, "") || acState.favOnly;
         var sec = acState.sec;
         var editing = sec === "edit" && !searching;
+        var orbitOn = sec === "orbit" && !searching;
         if (sec === "sfx" || searching) { loadSfxPeaks(); }
         if (acSeen) { acSeen.disconnect(); }
         grLive = [];
@@ -4456,8 +4468,15 @@
         // Цвет нужен только графике и переходам-шейпам (шторки, круг).
         ui.acColorRow.hidden = editing || !(searching || sec === "graphic" || (sec === "trans" && acState.tfolder === "shapes"));
         ui.acDurRow.hidden = editing || (!searching && (sec === "sfx" || sec === "graphic" || sec === "kit"));
-        ui.acFoot.hidden = editing;
-        ui.acHint.hidden = editing;
+        ui.acFoot.hidden = editing || orbitOn;
+        ui.acHint.hidden = editing || orbitOn;
+        if (ui.orbitPane) { ui.orbitPane.hidden = !orbitOn; ui.acBody.hidden = orbitOn; }
+        if (orbitOn) {
+            renderSfFolders("");
+            if (ui.acSndRow) { ui.acSndRow.hidden = true; }
+            drawOrbitPreview();
+            return;
+        }
         renderSfFolders(!searching && !editing && (sec === "anim" || sec === "trans" || sec === "text" || sec === "sfx" || sec === "graphic" || sec === "kit") ? sec : "");
         if (ui.acSndRow) {
             ui.acSndRow.hidden = editing || !(searching || sec === "sfx");
@@ -5267,7 +5286,7 @@
         if (sec === "kit") {
             return "Жидкое стекло: выделите слой-фигуру (шейп, текст, логотип) и щёлкните по карточке — фигура станет стеклом, которое увеличивает, " +
                 "размывает и подсвечивает то, что под ним. Ничего не выделено — панель нарисует скруглённый прямоугольник. Двигайте и анимируйте саму фигуру — " +
-                "стекло идёт за ней. Сила — в Effect Controls слоя «Жидкое стекло».";
+                "стекло идёт за ней. Сила — в Effect Controls слоя «Жидкое стекло», обводка (толщина, цвет, прозрачность) — у слоя «Стекло: обводка».";
         }
         if (sec === "graphic") {
             return "Щелчок по карточке добавляет графику новым слоем у указателя времени — поверх выделенного слоя или в центре кадра. " +
@@ -6063,7 +6082,8 @@
                 sfReport(p, res, (res.created ? " Текстового слоя не было — создан новый «Ваш текст»." : "") +
                     (res.notText && !res.created ? " Не текстовые слои пропущены: " + res.notText + "." : ""));
             } else if (p.sec === "kit") {
-                res = await host("kitApply", [p.id, { glass: "Жидкое стекло", edge: "Стекло: блик", shape: "Стекло" }]);
+                res = await host("kitApply", [p.id, { glass: "Жидкое стекло", edge: "Стекло: блик", shape: "Стекло", stroke: "Стекло: обводка",
+                    strokeWidth: "Толщина обводки", strokeColor: "Цвет обводки", strokeOpacity: "Прозрачность обводки" }]);
                 setBusy(false);
                 setStatus(kitReport(res.glass), "done");
             } else if (p.sec === "graphic") {
@@ -6095,6 +6115,7 @@
     function kitReport(g) {
         return "Жидкое стекло готово: " + (g.created ? "нарисовал фигуру «" + g.shape + "» в центре кадра" : "фигура — «" + g.shape + "»") +
             ". Над ней слой «" + g.name + "» (увеличение, размытие, яркость — в Effect Controls) и «" + g.edge + "» — блик по краю. " +
+            (g.stroke ? "Обводка — слой «" + g.stroke + "»: толщина, цвет и прозрачность в его Effect Controls. " : "") +
             "Двигайте и анимируйте «" + g.shape + "» — стекло идёт за ней. Отменить — Cmd/Ctrl+Z.";
     }
 
@@ -6127,6 +6148,185 @@
         var bin = atob(b64), out = new Uint8Array(bin.length), i;
         for (i = 0; i < bin.length; i++) { out[i] = bin.charCodeAt(i); }
         return out;
+    }
+
+    // ---- Раздел «3D»: карусель. Настройки хранятся отдельно; превью — те же карточки в CSS 3D, его можно крутить мышкой.
+    var ORBIT_KEY = "sayframe.orbit.v1";
+    var ORBIT_DEFAULTS = { layout: "ring", shape: "rect", corners: 20, mode: "shape", count: 8, radius: 600, w: 400, h: 560, numbers: true, camera: true };
+    var ORBIT_LAYOUT_NAMES = { ring: "кольцо", half: "полукруг", spiral: "спираль", wave: "волна" };
+    var ORBIT_SIDES = { rect: 4, circle: 0, tri: 3, hex: 6 };
+    var orbit = loadOrbit(), orbitSpin = -24, orbitDrag = null;
+
+    function loadOrbit() {
+        var s, out = {}, k;
+        try { s = JSON.parse(window.localStorage.getItem(ORBIT_KEY) || "{}"); } catch (e) { s = {}; }
+        if (!s || typeof s !== "object") { s = {}; }
+        for (k in ORBIT_DEFAULTS) {
+            if (ORBIT_DEFAULTS.hasOwnProperty(k)) { out[k] = typeof s[k] === typeof ORBIT_DEFAULTS[k] ? s[k] : ORBIT_DEFAULTS[k]; }
+        }
+        if (!ORBIT_LAYOUT_NAMES[out.layout]) { out.layout = "ring"; }
+        if (!ORBIT_SIDES.hasOwnProperty(out.shape)) { out.shape = "rect"; }
+        if (out.mode !== "precomp") { out.mode = "shape"; }
+        out.corners = Math.max(0, Math.min(100, Math.round(out.corners) || 0));
+        out.count = Math.max(2, Math.min(36, Math.round(out.count) || 8));
+        out.radius = Math.max(100, Math.min(3000, Math.round(out.radius) || 600));
+        out.w = Math.max(50, Math.min(2000, Math.round(out.w) || 400));
+        out.h = Math.max(50, Math.min(2000, Math.round(out.h) || 560));
+        return out;
+    }
+
+    function storeOrbit() { try { window.localStorage.setItem(ORBIT_KEY, JSON.stringify(orbit)); } catch (e) {} }
+
+    // Те же формулы, что в host.jsx (orbitSpot, orbitColor, orbitPoly): превью совпадает с тем, что появится в After Effects.
+    function orbitSpot(i, n, layout, radius, h) {
+        var a, y = 0, r;
+        if (layout === "half") { a = n > 1 ? -90 + 180 * i / (n - 1) : 0; }
+        else if (layout === "spiral") { a = i * 540 / n; y = (i - (n - 1) / 2) * h * 0.3; }
+        else {
+            a = i * 360 / n;
+            if (layout === "wave") { y = Math.sin(a * 2 * Math.PI / 180) * h * 0.25; }
+        }
+        r = a * Math.PI / 180;
+        return { x: radius * Math.sin(r), y: y, z: -radius * Math.cos(r), ry: a };
+    }
+
+    function orbitHue(i) { return (250 + i * 22) % 360; }
+
+    // Правильный многоугольник (вершиной вверх) со скруглёнными углами: t = 0 — острые, 1 — вписанный круг.
+    // Путь в рамке w x h (растянут по острому контуру), как в After Effects.
+    function orbitPolyPath(sides, t, w, h) {
+        var V = [], i, a, r, d, minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, sx, sy, cx, cy, out = "", P, C, N, L, ua, ub;
+        for (i = 0; i < sides; i++) {
+            a = -Math.PI / 2 + i * 2 * Math.PI / sides;
+            V.push([Math.cos(a), Math.sin(a)]);
+            minX = Math.min(minX, V[i][0]); maxX = Math.max(maxX, V[i][0]); minY = Math.min(minY, V[i][1]); maxY = Math.max(maxY, V[i][1]);
+        }
+        sx = w / (maxX - minX); sy = h / (maxY - minY); cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
+        r = Math.max(0, Math.min(1, t)) * Math.cos(Math.PI / sides);
+        d = r * Math.tan(Math.PI / sides);
+        function pt(p) { return ((p[0] - cx) * sx + w / 2).toFixed(2) + " " + ((p[1] - cy) * sy + h / 2).toFixed(2); }
+        for (i = 0; i < sides; i++) {
+            P = V[(i + sides - 1) % sides]; C = V[i]; N = V[(i + 1) % sides];
+            L = Math.sqrt((P[0] - C[0]) * (P[0] - C[0]) + (P[1] - C[1]) * (P[1] - C[1]));
+            ua = [(P[0] - C[0]) / L, (P[1] - C[1]) / L];
+            ub = [(N[0] - C[0]) / L, (N[1] - C[1]) / L];
+            if (r <= 0) { out += (i ? "L" : "M") + pt(C); continue; }
+            out += (i ? "L" : "M") + pt([C[0] + ua[0] * d, C[1] + ua[1] * d]) +
+                "A" + (r * sx).toFixed(2) + " " + (r * sy).toFixed(2) + " 0 0 1 " + pt([C[0] + ub[0] * d, C[1] + ub[1] * d]);
+        }
+        return out + "Z";
+    }
+
+    function orbitShapeSvg(kind, t, w, h, fill) {
+        var body;
+        if (kind === "circle") { body = "<ellipse cx=\"" + w / 2 + "\" cy=\"" + h / 2 + "\" rx=\"" + w / 2 + "\" ry=\"" + h / 2 + "\""; }
+        else if (kind === "rect") { body = "<rect x=\"0\" y=\"0\" width=\"" + w + "\" height=\"" + h + "\" rx=\"" + (t * Math.min(w, h) / 2).toFixed(2) + "\""; }
+        else { body = "<path d=\"" + orbitPolyPath(ORBIT_SIDES[kind], t, w, h) + "\""; }
+        return "<svg viewBox=\"0 0 " + w + " " + h + "\" aria-hidden=\"true\">" + body + " fill=\"" + fill + "\" stroke=\"rgba(255,255,255,.25)\" stroke-width=\"" + (Math.min(w, h) / 60).toFixed(2) + "\"/></svg>";
+    }
+
+    function drawOrbitPreview() {
+        var n = orbit.count, ring = ui.orbitRing, i, sp, d, k, w, h, t = orbit.corners / 100, html = "", front, ext;
+        if (!ring) { return; }
+        // Масштаб: вся карусель (радиус + половина карточки) помещается в превью.
+        ext = Math.max(orbit.radius + orbit.w / 2, orbit.h * (orbit.layout === "spiral" ? 1.4 + n * 0.15 : 1.2));
+        k = Math.min(0.3, 125 / ext);
+        w = Math.max(6, orbit.w * k); h = Math.max(6, orbit.h * k);
+        for (i = 0; i < n; i++) {
+            sp = orbitSpot(i, n, orbit.layout, orbit.radius * k, h);
+            front = Math.cos((sp.ry + orbitSpin) * Math.PI / 180) > 0.15;
+            html += "<div class=\"kr-it\" style=\"width:" + w.toFixed(1) + "px;height:" + h.toFixed(1) + "px;left:" + (-w / 2).toFixed(1) + "px;top:" + (-h / 2).toFixed(1) +
+                "px;transform:translate3d(" + sp.x.toFixed(1) + "px," + sp.y.toFixed(1) + "px," + (-sp.z).toFixed(1) + "px) rotateY(" + sp.ry + "deg)\">" +
+                orbitShapeSvg(orbit.shape, t, Math.round(orbit.w), Math.round(orbit.h), "hsl(" + orbitHue(i) + ",80%,62%)") +
+                (orbit.numbers && front && h > 18 ? "<span style=\"font-size:" + Math.max(9, Math.round(Math.min(w, h) * 0.32)) + "px\">" + (i + 1) + "</span>" : "") + "</div>";
+        }
+        d = ring;
+        d.innerHTML = html;
+        d.style.transform = "rotateX(-14deg) rotateY(" + orbitSpin + "deg)";
+    }
+
+    function drawOrbit() {
+        var corner = orbit.shape !== "circle";
+        pressGroupV(ui.orbitLayout, orbit.layout);
+        pressGroupV(ui.orbitShape, orbit.shape);
+        pressGroupV(ui.orbitMode, orbit.mode);
+        ui.orbitCornerRow.hidden = !corner;
+        if (corner) { ui.orbitCornerIco.innerHTML = ui.orbitShape.querySelector("button[data-v=\"" + orbit.shape + "\"] svg").outerHTML; }
+        ui.orbitCorners.value = String(orbit.corners);
+        ui.orbitCornersVal.textContent = orbit.corners + "%";
+        ui.orbitCount.value = String(orbit.count);
+        ui.orbitRadius.value = String(orbit.radius); ui.orbitRadiusVal.textContent = String(orbit.radius);
+        ui.orbitW.value = String(orbit.w); ui.orbitWVal.textContent = String(orbit.w);
+        ui.orbitH.value = String(orbit.h); ui.orbitHVal.textContent = String(orbit.h);
+        ui.orbitNumbers.checked = orbit.numbers;
+        ui.orbitCamera.checked = orbit.camera;
+        drawOrbitPreview();
+    }
+
+    function setOrbit(k, v) { orbit[k] = v; storeOrbit(); drawOrbit(); }
+
+    function setOrbitCount(v) {
+        v = Math.round(Number(v));
+        if (isNaN(v)) { v = orbit.count; }
+        setOrbit("count", Math.max(2, Math.min(36, v)));
+    }
+
+    async function onOrbit() {
+        var res;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Строю карусель…", "busy");
+        try {
+            res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: orbit.mode,
+                radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera },
+                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", folder: "Карусель", shape: "Форма" }]);
+            setBusy(false);
+            setStatus("Карусель готова: " + plural(res.cards, "карточка", "карточки", "карточек") + ", " + ORBIT_LAYOUT_NAMES[res.layout] + ". " +
+                "Крутите её слоем «" + res.ctrl + "» (Y Rotation)." +
+                (res.precomp ? " Каждая карточка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео." : "") +
+                (res.camera ? " Добавлена камера «" + res.camera + "»." : (res.hadCamera ? " Камера в композиции уже была." : "")) +
+                " Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function enableOrbit() {
+        if (!ui.orbitPane) { return; }
+        [["orbitLayout", "layout"], ["orbitShape", "shape"], ["orbitMode", "mode"]].forEach(function (g) {
+            Array.prototype.forEach.call(ui[g[0]].querySelectorAll("button[data-v]"), function (b) {
+                b.addEventListener("click", function () { setOrbit(g[1], b.getAttribute("data-v")); });
+            });
+        });
+        [["orbitCorners", "corners"], ["orbitRadius", "radius"], ["orbitW", "w"], ["orbitH", "h"]].forEach(function (s) {
+            ui[s[0]].addEventListener("input", function () { setOrbit(s[1], Math.round(Number(ui[s[0]].value))); });
+        });
+        ui.orbitLess.addEventListener("click", function () { setOrbitCount(orbit.count - 1); });
+        ui.orbitMore.addEventListener("click", function () { setOrbitCount(orbit.count + 1); });
+        ui.orbitCount.addEventListener("change", function () { setOrbitCount(ui.orbitCount.value); });
+        ui.orbitCount.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") { setOrbitCount(ui.orbitCount.value); }
+            if (e.key === "ArrowUp") { e.preventDefault(); setOrbitCount(orbit.count + 1); }
+            if (e.key === "ArrowDown") { e.preventDefault(); setOrbitCount(orbit.count - 1); }
+        });
+        ui.orbitNumbers.addEventListener("change", function () { setOrbit("numbers", ui.orbitNumbers.checked); });
+        ui.orbitCamera.addEventListener("change", function () { setOrbit("camera", ui.orbitCamera.checked); });
+        ui.orbitBtn.addEventListener("click", onOrbit);
+        // Крутить превью мышкой.
+        ui.orbitStage.addEventListener("pointerdown", function (e) {
+            orbitDrag = { x: e.clientX, spin: orbitSpin };
+            ui.orbitStage.classList.add("dragging");
+            try { ui.orbitStage.setPointerCapture(e.pointerId); } catch (e0) {}
+        });
+        ui.orbitStage.addEventListener("pointermove", function (e) {
+            if (!orbitDrag) { return; }
+            orbitSpin = orbitDrag.spin + (e.clientX - orbitDrag.x) * 0.6;
+            drawOrbitPreview();
+        });
+        ["pointerup", "pointercancel"].forEach(function (t) {
+            ui.orbitStage.addEventListener(t, function () { orbitDrag = null; ui.orbitStage.classList.remove("dragging"); });
+        });
+        drawOrbit();
     }
 
     function enableAc() {
@@ -7321,6 +7521,53 @@
         } catch (e) {
             toolFailed(e);
         }
+    }
+
+    // ---- Pathfinder (вкладка «Шейп»): как Shape Modes в Illustrator, через Merge Paths.
+    var PF_MODES = { unite: ["Объединить", "Все фигуры сливаются в одну"], front: ["Вычесть верхнюю", "Верхние фигуры вырезаются из нижней"],
+        intersect: ["Пересечение", "Остаётся только общая часть"], exclude: ["Исключить", "Общая часть вырезается, остальное остаётся"],
+        back: ["Вычесть нижнюю", "Нижние фигуры вырезаются из верхней"] };
+
+    function showPfMode(v) {
+        var mode = PF_MODES[v] ? v : shape.pfLast;
+        ui.pfName.textContent = PF_MODES[mode][0];
+        ui.pfSub.textContent = PF_MODES[mode][1];
+        Array.prototype.forEach.call(ui.pfModes.querySelectorAll("button[data-v]"), function (b) {
+            b.setAttribute("aria-pressed", b.getAttribute("data-v") === shape.pfLast ? "true" : "false");
+        });
+    }
+
+    async function onPathfinder(mode) {
+        var res, r;
+        if (busy || !PF_MODES[mode]) { return; }
+        shape.pfLast = mode;
+        storeShape();
+        showPfMode(mode);
+        setBusy(true);
+        try {
+            res = await host("pathfinder", [mode, !!shape.pfKeep]);
+            setBusy(false);
+            r = res.pathfinder;
+            setStatus("Pathfinder «" + PF_MODES[mode][0] + "»: " + plural(r.count, "слой", "слоя", "слоёв") + " → «" + r.name + "». " +
+                (r.kept ? "Исходные слои спрятаны (выключен глаз)." : "Исходные слои убраны.") +
+                (r.skipped.length ? " Не шейпы, пропущены: " + r.skipped.join(", ") + "." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function enablePathfinder() {
+        Array.prototype.forEach.call(ui.pfModes.querySelectorAll("button[data-v]"), function (b) {
+            var v = b.getAttribute("data-v");
+            b.addEventListener("click", function () { onPathfinder(v); });
+            b.addEventListener("mouseenter", function () { showPfMode(v); });
+            b.addEventListener("focus", function () { showPfMode(v); });
+            b.addEventListener("mouseleave", function () { showPfMode(null); });
+            b.addEventListener("blur", function () { showPfMode(null); });
+        });
+        ui.pfKeep.checked = !!shape.pfKeep;
+        ui.pfKeep.addEventListener("change", function () { shape.pfKeep = ui.pfKeep.checked; storeShape(); });
+        showPfMode(null);
     }
 
     async function onRemoveUnused() {
@@ -9102,7 +9349,7 @@
 
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m);
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -9170,9 +9417,7 @@
 
     // ---- сдвиг во времени: появление, исчезновение или слой целиком
 
-    var ORDER_NAMES = { asc: "сверху вниз", desc: "снизу вверх", selection: "как выделяли", random: "случайно" };
-    var TIME_POINT_NAMES = { inStart: "Начало появления", inEnd: "Конец появления", outStart: "Начало исчезновения", outEnd: "Конец исчезновения" };
-    var shiftLook = { dir: 1, point: "" };   // что показывает схема «Сдвига»: стрелку (наведение) или указатель
+    var ORDER_NAMES = { asc: "сверху вниз", desc: "снизу вверх", selection: "как выделяли", random: "случайно", align: "к указателю времени" };
 
     function pressGroupV(group, v) {
         Array.prototype.forEach.call(group.querySelectorAll("button[data-v]"), function (b) {
@@ -9180,56 +9425,26 @@
         });
     }
 
-    // Полоска слоя на схеме: слева появление (фиолетовое), справа исчезновение (розовое).
-    // x0..x1 — края слоя, a — длина появления и исчезновения, hi — что выделено цветом.
-    function tlBar(x0, x1, y, h, a, hi, ghost) {
-        var r = Math.min(2.5, h / 2), out;
-        if (ghost) {
-            return "<rect class=\"tl-ghost\" x=\"" + x0 + "\" y=\"" + y + "\" width=\"" + (x1 - x0) + "\" height=\"" + h + "\" rx=\"" + r + "\"/>";
-        }
-        out = "<rect class=\"" + (hi === "layer" ? "tl-hi" : "tl-bar") + "\" x=\"" + x0 + "\" y=\"" + y + "\" width=\"" + (x1 - x0) + "\" height=\"" + h + "\" rx=\"" + r + "\"/>";
-        if (hi !== "layer") {
-            out += "<rect class=\"" + (hi === "in" ? "tl-hi" : "tl-part") + "\" x=\"" + x0 + "\" y=\"" + y + "\" width=\"" + a + "\" height=\"" + h + "\" rx=\"" + r + "\"/>";
-            out += "<rect class=\"" + (hi === "out" ? "tl-out" : "tl-part") + "\" x=\"" + (x1 - a) + "\" y=\"" + y + "\" width=\"" + a + "\" height=\"" + h + "\" rx=\"" + r + "\"/>";
-        }
-        return out;
-    }
-
-    function tlArrow(x1, x2, y) {
-        var d = x2 > x1 ? -3 : 3;
-        return "<path class=\"tl-arrow\" d=\"M" + x1 + " " + y + "H" + x2 + "\"/><path class=\"tl-arrow-head\" d=\"M" + x2 + " " + y + "l" + d + " -2.5v5z\"/>";
-    }
-
-    function tlPlayhead(x, h) {
-        return "<path class=\"tl-cti\" d=\"M" + x + " 3v" + (h - 4) + "\"/><path class=\"tl-cti-head\" d=\"M" + (x - 3) + " 1h6l-3 3.5z\"/>";
-    }
-
-    // Схема «Сдвига»: пунктир — слой как сейчас, цветом — каким станет.
-    function drawShiftPreview() {
-        var what = motion.shiftWhat, n = motion.shiftStep, d = 9 * shiftLook.dir, x0 = 14, x1 = 86, a = 18, y = 11, h = 9, svg = "", text, p, at;
-        if (shiftLook.point) {
-            // На указатель: нужная точка слоя встаёт на синюю линию в середине.
-            p = shiftLook.point;
-            at = { inStart: x0, inEnd: x0 + a, outStart: x1 - a, outEnd: x1 }[p];
-            d = 50 - at;
-            svg = tlBar(x0, x1, y, h, a, "", true) + tlBar(x0 + (p.indexOf("in") === 0 ? d : 0), x1 + (p.indexOf("out") === 0 ? d : 0), y, h, a, p.indexOf("in") === 0 ? "in" : "out") + tlPlayhead(50, 24);
-            text = TIME_POINT_NAMES[p] + " встанет на указатель времени.";
-        } else {
-            svg = tlBar(x0, x1, y, h, a, "", true);
-            if (what === "layer") { svg += tlBar(x0 + d, x1 + d, y, h, a, "layer") + tlArrow(50, 50 + d, 5); }
-            if (what === "in") { svg += tlBar(x0 + d, x1, y, h, a, "in") + tlArrow(x0 + a / 2, x0 + a / 2 + d, 5); }
-            if (what === "out") { svg += tlBar(x0, x1 + d, y, h, a, "out") + tlArrow(x1 - a / 2, x1 - a / 2 + d, 5); }
-            text = { "in": "Появление", out: "Исчезновение", layer: "Слой целиком" }[what] + " сдвинется" + " на " + plural(n, "кадр", "кадра", "кадров") + (shiftLook.dir > 0 ? " позже." : " раньше.");
-        }
-        ui.shiftPrev.innerHTML = svg;
-        ui.shiftPrevText.textContent = text;
-    }
-
     // Значки порядка «Лесенки»: три ступеньки — полоски слоёв или пары ключей, смотря что расставляем.
     var STAIR_STEPS = { asc: [0, 1, 2], random: [1, 0, 2], desc: [2, 1, 0] };
 
     function stairIcon(order, keys) {
         var svg = "", i, x, y;
+        if (order === "align") {
+            // Розовая линия — указатель времени; всё начинается на ней.
+            for (i = 0; i < 3; i++) {
+                y = 4 + i * 8;
+                if (keys) {
+                    x = 21 + i * 3;
+                    svg += "<path class=\"st-key-line\" d=\"M7 " + y + "H" + x + "\"/>" +
+                        "<path d=\"M7 " + (y - 3) + "l3 3-3 3-3-3z\"/><path d=\"M" + x + " " + (y - 3) + "l3 3-3 3-3-3z\"/>";
+                } else {
+                    svg += "<rect x=\"7\" y=\"" + (y - 2.6) + "\" width=\"" + (26 - i * 4) + "\" height=\"5.2\" rx=\"1.8\"/>";
+                }
+            }
+            svg += "<path class=\"st-playhead\" d=\"M7 1V23\"/>";
+            return "<svg viewBox=\"0 0 40 24\" aria-hidden=\"true\">" + svg + "</svg>";
+        }
         for (i = 0; i < 3; i++) {
             x = 3 + STAIR_STEPS[order][i] * 7;
             y = 4 + i * 8;
@@ -9248,35 +9463,22 @@
         Array.prototype.forEach.call(ui.staggerOrder.querySelectorAll("button[data-v]"), function (b) {
             b.innerHTML = stairIcon(b.getAttribute("data-v"), keys);
         });
-        ui.staggerPrevText.textContent = (keys ? "Ключи каждого следующего слоя — на " : "Каждый следующий слой — на ") + plural(n, "кадр", "кадра", "кадров") + " позже предыдущего.";
+        var align = order === "align";
+        var stepRow = ui.staggerBtn.closest(".tool-card").querySelector(".shift-row-step");
+        if (stepRow) { stepRow.hidden = align; }
+        ui.staggerBtn.textContent = align ? "Выровнять" : "Расставить";
+        ui.staggerPrevText.textContent = align
+            ? (keys ? "Первый ключ каждого слоя встанет на указатель времени, остальные ключи сдвинутся вместе с ним." : "Все выделенные слои начнутся там, где стоит указатель времени.")
+            : (keys ? "Ключи каждого следующего слоя — на " : "Каждый следующий слой — на ") + plural(n, "кадр", "кадра", "кадров") + " позже предыдущего.";
+        ui.staggerBtn.title = ui.staggerPrevText.textContent;
         ui.staggerOrderName.textContent = ORDER_NAMES[order].charAt(0).toUpperCase() + ORDER_NAMES[order].slice(1);
     }
 
     function drawShift() {
-        pressGroupV(ui.shiftWhat, motion.shiftWhat);
         pressGroupV(ui.staggerWhat, motion.staggerWhat);
         pressGroupV(ui.staggerOrder, motion.staggerOrder);
-        ui.shiftStep.value = String(motion.shiftStep);
         ui.staggerStep.value = String(motion.staggerStep);
-        drawShiftPreview();
         drawStaggerPreview();
-    }
-
-    // Значки «К указателю»: полоска слоя и синяя линия указателя в нужной точке.
-    // Сегменты «что двигать» — та же полоска с выделенной частью и короткая подпись (полная — в подсказке).
-    function drawTimeIcons() {
-        [ui.shiftWhat].forEach(function (g) {
-            Array.prototype.forEach.call(g.querySelectorAll("button[data-v]"), function (b) {
-                var v = b.getAttribute("data-v"), full = b.getAttribute("aria-label") || b.textContent.replace(/^\s+|\s+$/g, "");
-                b.setAttribute("aria-label", full);
-                b.innerHTML = "<svg viewBox=\"0 0 60 12\" aria-hidden=\"true\">" + tlBar(4, 56, 3, 6, 15, v) + "</svg><span>" +
-                    ({ "in": "Появл.", out: "Исчезн.", layer: full }[v]) + "</span>";
-            });
-        });
-        Array.prototype.forEach.call(ui.timeAlign.querySelectorAll("button[data-v]"), function (b) {
-            var v = b.getAttribute("data-v"), x = { inStart: 6, inEnd: 19, outStart: 41, outEnd: 54 }[v];
-            b.innerHTML = "<svg viewBox=\"0 0 60 24\" aria-hidden=\"true\">" + tlBar(6, 54, 11, 6, 13, v.indexOf("in") === 0 ? "in" : "out") + tlPlayhead(x, 24) + "</svg>";
-        });
     }
 
     // Набранное число кадров; мусор возвращает прежнее значение.
@@ -9298,31 +9500,6 @@
         setStatus(parts.join(" ") + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
     }
 
-    function onShift(direction) {
-        var what = motion.shiftWhat;
-        var frames = motion.shiftStep;
-        if (busy) { return; }
-        setBusy(true);
-        setStatus("Сдвигаю…", "busy");
-        host("shift", [what, direction * frames]).then(function (res) {
-            setBusy(false);
-            showShiftResult(res, what, "Сдвинуто на " + plural(frames, "кадр", "кадра", "кадров") + (direction > 0 ? " позже: " : " раньше: ") + plural(res.moved, "слой", "слоя", "слоёв") + ".");
-        }).catch(toolFailed);
-    }
-
-    function onTimeAlign(point) {
-        point = TIME_POINTS.indexOf(point) >= 0 ? point : motion.timeAlign;
-        motion.timeAlign = point;
-        storeMotion();
-        if (busy) { return; }
-        setBusy(true);
-        setStatus("Ставлю на указатель…", "busy");
-        host("alignTime", [point]).then(function (res) {
-            setBusy(false);
-            showShiftResult(res, point.indexOf("out") === 0 ? "out" : "in", "Поставлено на указатель времени: " + plural(res.moved, "слой", "слоя", "слоёв") + ".");
-        }).catch(toolFailed);
-    }
-
     function onStagger() {
         var what = motion.staggerWhat;
         var frames = motion.staggerStep;
@@ -9331,6 +9508,10 @@
         setStatus("Делаю лесенку…", "busy");
         host("stagger", [what, frames, motion.staggerOrder]).then(function (res) {
             setBusy(false);
+            if (res.aligned) {
+                showShiftResult(res, what, "К указателю времени: " + plural(res.moved, "слой", "слоя", "слоёв") + ".");
+                return;
+            }
             showShiftResult(res, what, "Лесенка: " + plural(res.steps, "слой", "слоя", "слоёв") + ", шаг " + plural(frames, "кадр", "кадра", "кадров") + ".");
         }).catch(toolFailed);
     }
@@ -9348,34 +9529,19 @@
                 });
             });
         }
-        function look(el, dir, point) {
-            el.addEventListener("mouseenter", function () { shiftLook = { dir: dir, point: point }; drawShiftPreview(); });
-            el.addEventListener("mouseleave", function () { shiftLook = { dir: 1, point: "" }; drawShiftPreview(); });
-        }
-        drawTimeIcons();
         drawShift();
-        pick(ui.shiftWhat, "shiftWhat", SHIFT_TARGETS);
         pick(ui.staggerWhat, "staggerWhat", STAGGER_TARGETS);
         pick(ui.staggerOrder, "staggerOrder", STAGGER_ORDERS);
-        look(ui.shiftBack, -1, "");
-        look(ui.shiftFwd, 1, "");
-        Array.prototype.forEach.call(ui.timeAlign.querySelectorAll("button[data-v]"), function (btn) {
-            look(btn, 1, btn.getAttribute("data-v"));
-            btn.addEventListener("click", function () { onTimeAlign(btn.getAttribute("data-v")); });
-        });
-        ui.shiftStep.addEventListener("change", function () { onStepNumber(ui.shiftStep, "shiftStep"); drawShift(); });
         ui.staggerStep.addEventListener("change", function () { onStepNumber(ui.staggerStep, "staggerStep"); drawShift(); });
         ui.staggerLess.addEventListener("click", function () { motion.staggerStep = clampStep(motion.staggerStep - 1); storeMotion(); drawShift(); });
         ui.staggerMore.addEventListener("click", function () { motion.staggerStep = clampStep(motion.staggerStep + 1); storeMotion(); drawShift(); });
-        [ui.shiftStep, ui.staggerStep].forEach(function (input) {
+        [ui.staggerStep].forEach(function (input) {
             input.addEventListener("keydown", function (e) {
                 if (e.key === "Enter") { input.blur(); }
-                if (e.key === "Escape") { input.value = String(motion[input === ui.shiftStep ? "shiftStep" : "staggerStep"]); input.blur(); }
+                if (e.key === "Escape") { input.value = String(motion.staggerStep); input.blur(); }
             });
             input.addEventListener("focus", function () { input.select(); });
         });
-        ui.shiftBack.addEventListener("click", function () { onShift(-1); });
-        ui.shiftFwd.addEventListener("click", function () { onShift(1); });
         ui.staggerBtn.addEventListener("click", onStagger);
         // «i» рядом со списком: объяснение появляется в строке состояния (и во всплывающей подсказке).
         for (i = 0; i < infos.length; i++) {
@@ -9696,8 +9862,128 @@
     function relayoutTools() {
         var keep = G;
         if (!toolGridReady) { return; }
-        GRIDS.forEach(function (g) { G = g; layoutTools(placesNow(), null); });
+        GRIDS.forEach(function (g) {
+            G = g;
+            if (g.flowOrder && flowOn()) { layoutFlow(g); return; }
+            unflow(g);
+            layoutTools(placesNow(), null);
+        });
         G = keep;
+    }
+
+    // ---- «Студия»: раздел «Инструменты» без сетки. Сверху кнопки «в один клик» по четыре в ряд,
+    // ниже блоки с настройками друг под другом (в широкой панели — в две или три колонки).
+    // Блок сворачивается в одну строку щелчком по заголовку. Перестановки и растягивания здесь нет.
+    var FLOW_TILES = { paste: "Картинка", organize: "По папкам", unused: "Лишнее", cache: "Кэш", nullp: "Null", decompose: "Декомпоз", cutout: "Вырезка", split: "Разделить" };
+    var FLOW_ICONS = {
+        ease: '<path d="M4 19C11 19 13 5 20 5"/><circle cx="4" cy="19" r="1.5"/><circle cx="20" cy="5" r="1.5"/>',
+        easecopy: '<rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V6a1 1 0 0 1 1-1h9"/>',
+        stagger: '<path d="M4 6h8M8 12h8M12 18h8"/>',
+        anchor: '<circle cx="12" cy="12" r="6"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',
+        align: '<path d="M5 4v16M9 8h10M9 16h6"/>',
+        pathfinder: '<rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/>'
+    };
+
+    var FLOW_ORDER = ["paste", "organize", "unused", "cache", "nullp", "decompose", "cutout", "ease", "easecopy", "stagger", "anchor", "align"];
+    var FLOW_SHAPE_ORDER = ["split", "pathfinder"];
+
+    function flowOn() { return document.documentElement.getAttribute("data-design") === "studio"; }
+
+    function flowFolded(g) {
+        return String(g.st.flowFold || "").split(",").filter(function (n) { return !!FLOW_ICONS[n]; });
+    }
+
+    function setFlowFold(g, name, folded) {
+        var list = flowFolded(g).filter(function (n) { return n !== name; });
+        if (folded) { list.push(name); }
+        g.st.flowFold = list.join(",");
+        g.store();
+        relayoutTools();
+    }
+
+    function buildFlow(g) {
+        var box = {};
+        [["tilesCap", "small", "flow-cap", "В один клик"], ["tiles", "div", "flow-tiles", ""], ["colsCap", "small", "flow-cap", "С настройками"], ["cols", "div", "flow-cols", ""]].forEach(function (d) {
+            var el = document.createElement(d[1]);
+            el.className = "flow-part " + d[2];
+            el.textContent = d[3];
+            g.el.appendChild(el);
+            box[d[0]] = el;
+        });
+        g.flowOrder.filter(function (n) { return !!FLOW_TILES[n]; }).forEach(function (name) {
+            var card = cardByName(name), btn = card && card.querySelector(".paste-do");
+            if (!btn) { return; }
+            btn.setAttribute("data-short", FLOW_TILES[name]);
+            // Плитка нажимается целиком, не только кнопка в ней.
+            card.addEventListener("click", function (e) {
+                if (g.flow && !btn.contains(e.target) && !btn.disabled) { btn.click(); }
+            });
+        });
+        g.flowOrder.filter(function (n) { return !!FLOW_ICONS[n]; }).forEach(function (name) {
+            var card = cardByName(name), head = card && card.querySelector(".tool-head"), b;
+            if (!head) { return; }
+            head.insertAdjacentHTML("afterbegin", '<span class="flow-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + FLOW_ICONS[name] + "</svg></span>");
+            b = document.createElement("button");
+            b.type = "button";
+            b.className = "flow-fold";
+            b.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg>';
+            b.addEventListener("click", function (e) { e.stopPropagation(); setFlowFold(g, name, !card.classList.contains("flow-folded")); });
+            head.addEventListener("click", function () { if (g.flow) { setFlowFold(g, name, !card.classList.contains("flow-folded")); } });
+            card.appendChild(b);
+        });
+        g.flowBox = box;
+    }
+
+    function layoutFlow(g) {
+        var folded = flowFolded(g);
+        var k = Number(document.documentElement.getAttribute("data-tools")) / 100;
+        var w = g.el.clientWidth, tiles = 0, sets = 0;
+        if (!g.flowBox) { buildFlow(g); }
+        if (!g.flow) {
+            g.flow = true;
+            g.el.classList.add("tool-flow");
+            if (arranging) { setArranging(false); }
+        }
+        if (!(k > 0 && k <= 1)) { k = 1; }
+        g.el.style.gridTemplateColumns = "";
+        g.el.style.gridAutoRows = "";
+        g.el.style.gap = "";
+        g.line.hidden = true;
+        g.flowOrder.forEach(function (name) {
+            var card = cardByName(name), off, isTile, f;
+            if (!card) { return; }
+            off = toolsHidden.indexOf(name) >= 0;
+            isTile = !!FLOW_TILES[name];
+            card.classList.toggle("tool-off", off);
+            card.removeAttribute("data-icons");
+            card.style.setProperty("--kz", String(k));
+            (isTile ? g.flowBox.tiles : g.flowBox.cols).appendChild(card);
+            if (isTile) { if (!off) { tiles++; } return; }
+            if (!off) { sets++; }
+            f = folded.indexOf(name) >= 0;
+            card.classList.toggle("flow-folded", f);
+            card.querySelector(".flow-fold").setAttribute("aria-expanded", f ? "false" : "true");
+            card.querySelector(".flow-fold").title = f ? "Развернуть" : "Свернуть";
+        });
+        g.flowBox.tilesCap.hidden = g.flowBox.tiles.hidden = !tiles;
+        g.flowBox.colsCap.hidden = g.flowBox.cols.hidden = !sets;
+        g.flowBox.cols.setAttribute("data-cols", w >= 980 ? "3" : w >= 620 ? "2" : "1");
+        g.flowBox.tiles.setAttribute("data-wide", w >= 980 ? "true" : "false");
+        showFoldParts();
+        showEcFold();
+    }
+
+    // Обратно к сетке (дизайн сменили на другой): блоки снова прямо в разделе, сетка их расставит.
+    function unflow(g) {
+        if (!g.flow) { return; }
+        g.flow = false;
+        g.el.classList.remove("tool-flow");
+        Array.prototype.forEach.call(g.el.querySelectorAll(".tool-card"), function (card) {
+            card.classList.remove("flow-folded");
+            g.el.appendChild(card);
+        });
+        showFoldParts();
+        showEcFold();
     }
 
     // Запоминает, где блоки стоят сейчас: с этого момента они держат свои клетки.
@@ -9814,6 +10100,7 @@
         }
 
         g.el.addEventListener("mousedown", function (e) {
+            if (g.flow) { return; }
             var card, r;
             G = g;
             card = toolOf(e.target);
@@ -9827,6 +10114,7 @@
 
         // Двойной щелчок по свободному месту блока включает перестановку; по ползунку, числу или кнопке — нет.
         g.el.addEventListener("dblclick", function (e) {
+            if (g.flow) { return; }
             var card;
             G = g;
             card = toolOf(e.target);
@@ -9867,6 +10155,7 @@
 
         // С клавиатуры: фокус на полоске, стрелки двигают блок на клетку.
         g.el.addEventListener("keydown", function (e) {
+            if (g.flow) { return; }
             var grip = e.target;
             G = g;
             var dx = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
@@ -9929,6 +10218,7 @@
         }
 
         g.el.addEventListener("mousedown", function (e) {
+            if (g.flow) { return; }
             var card, r, mode;
             if (e.button !== 0 || !isResizeHandle(e.target)) { return; }
             G = g;
@@ -9962,6 +10252,7 @@
         // С клавиатуры: на правом крае стрелки влево-вправо меняют ширину, на нижнем вверх-вниз — высоту.
         // Home — обычный размер, End — на всю ширину.
         g.el.addEventListener("keydown", function (e) {
+            if (g.flow) { return; }
             var card, name, z, now;
             if (!isResizeHandle(e.target) || e.metaKey || e.ctrlKey || e.altKey) { return; }
             G = g;
@@ -10021,7 +10312,7 @@
 
     var SHAPE_KEY = "sayframe.shape.v1";
     var EC_KEY = "sayframe.easecopy.v1";
-    var SHAPE_DEFAULTS = { order: "", sizes: "", places: "", pins: "", grid: GRID_VERSION };
+    var SHAPE_DEFAULTS = { order: "", sizes: "", places: "", pins: "", grid: GRID_VERSION, flowFold: "", pfKeep: false, pfLast: "unite" };
 
     function loadShape() {
         var m = {}, saved, k, keep = G;
@@ -10069,7 +10360,7 @@
     }
 
     function showEcFold() {
-        var open = motion.ecOpts !== false, label = open ? "Скрыть настройку" : "Показать настройку";
+        var open = motion.ecOpts !== false || ui.motionTools.classList.contains("tool-flow"), label = open ? "Скрыть настройку" : "Показать настройку";
         if (!open) { label += " (сквозная скорость: " + (motion.ecThrough ? "вкл." : "выкл.") + ")"; }
         if (open) { ui.ecOpts.removeAttribute("hidden"); } else { ui.ecOpts.setAttribute("hidden", ""); }
         ui.ecOptsToggle.setAttribute("aria-expanded", open ? "true" : "false");
@@ -10120,12 +10411,14 @@
     }
 
     function enableShape() {
-        var sg = { name: "shape", el: ui.shapeTools, cells: ui.shapeGridCells, line: ui.shapePinLine, names: SHAPE_TOOL_NAMES, st: shape, store: storeShape, defOrder: SHAPE_DEFAULTS.order, last: null };
+        var sg = { name: "shape", flowOrder: FLOW_SHAPE_ORDER, el: ui.shapeTools, cells: ui.shapeGridCells, line: ui.shapePinLine, names: SHAPE_TOOL_NAMES, st: shape, store: storeShape, defOrder: SHAPE_DEFAULTS.order, last: null };
         GRIDS.push(sg);
         enableToolReordering(sg);
         enableToolResizing(sg);
         enablePins(sg);
         watchToolGrid(sg);
+        if (!PF_MODES[shape.pfLast]) { shape.pfLast = "unite"; }
+        enablePathfinder();
         ui.ecOptsToggle.addEventListener("click", function () {
             motion.ecOpts = motion.ecOpts === false;
             showEcFold();
@@ -10142,7 +10435,7 @@
     }
 
     function enableMotion() {
-        var mg = { name: "motion", el: ui.motionTools, cells: ui.gridCells, line: ui.pinLine, names: TOOL_NAMES, st: motion, store: storeMotion, defOrder: MOTION_DEFAULTS.order,
+        var mg = { name: "motion", flowOrder: FLOW_ORDER, el: ui.motionTools, cells: ui.gridCells, line: ui.pinLine, names: TOOL_NAMES, st: motion, store: storeMotion, defOrder: MOTION_DEFAULTS.order,
             defPlaces: MOTION_DEFAULTS.places, defSizes: MOTION_DEFAULTS.sizes, defPins: MOTION_DEFAULTS.pins, last: null };
         GRIDS.push(mg);
         G = mg;
@@ -10615,6 +10908,7 @@
     ui.setTabOther.addEventListener("click", function () { showSetPane("other"); });
     document.addEventListener("keydown", onHotkeyDown, true);
     enableAc();
+    enableOrbit();
     listenHostHotkeys();
     fitTabs();
     if (typeof window.ResizeObserver === "function") { new window.ResizeObserver(fitTabs).observe(ui.tabs); }
