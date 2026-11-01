@@ -2492,6 +2492,28 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.tab("tools");
   }
 
+  // Settings → Прочее → «Превью анимаций: При наведении»: previews stand still and play only under the cursor.
+  {
+    const frame0 = () => p.page.evaluate(() => { const cv = document.querySelector("#acGrid .ac-card canvas.ac-grc"); return cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data.join(); });
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabMore");
+    const groupOk = (await p.page.locator("#previewPlay button").allInnerTexts()).join() === "Всегда,При наведении" && (await p.page.getAttribute('#previewPlay [data-value="always"]', "aria-pressed")) === "true";
+    await p.page.click('#previewPlay [data-value="hover"]'); await p.page.waitForTimeout(150);
+    await p.page.click("#settingsClose");
+    await p.page.mouse.move(1, 1); await p.page.waitForTimeout(300);
+    const s1 = await frame0(); await p.page.waitForTimeout(400); const s2 = await frame0();
+    check("AG2 «При наведении»: the setting is in «Прочее», saved, and previews stand still", groupOk && s1 === s2 && (await p.page.locator('#acGrid .ac-card[data-hover-play="true"]').count()) > 0 &&
+      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).previewPlay)) === "hover", String(groupOk) + " " + (s1 === s2));
+    await p.page.hover("#acGrid .ac-card >> nth=0"); await p.page.waitForTimeout(250);
+    const h1 = await frame0(); await p.page.waitForTimeout(350); const h2 = await frame0();
+    check("AG2 under the cursor the preview plays", h1 !== h2);
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabMore");
+    await p.page.click('#previewPlay [data-value="always"]'); await p.page.waitForTimeout(150);
+    await p.page.click("#settingsClose");
+    await p.page.mouse.move(1, 1); await p.page.waitForTimeout(400);
+    const a1 = await frame0(); await p.page.waitForTimeout(400); const a2 = await frame0();
+    check("AG2 back to «Всегда»: previews play on their own again", a1 !== a2 && p.errors.length === 0, p.errors.join(" | "));
+  }
+
   await p.page.evaluate(() => { const c = document.getElementById("acColor"); c.value = "#ff0000"; c.dispatchEvent(new Event("input", { bubbles: true })); });
   await acClick(p, /^Кольцо$/);
   t = p.ae.log.acLayers[0];

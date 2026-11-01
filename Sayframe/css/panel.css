@@ -1948,6 +1948,8 @@ html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:
 [data-tab="tools"] #viewTools > .ac { flex: 1 1 auto; min-height: 0; }
 [data-tab="tools"] .ac-body { flex: 1 1 auto; min-height: 120px; grid-template-rows: minmax(0, 1fr); }
 [data-tab="tools"] .ac-body > .ac-grid, [data-tab="tools"] .ac-body > .ac-folders { min-height: 0; overflow-y: auto; }
+/* «Макеты» тоже прокручиваются внутри раздела — иначе блоки вылезают под строку состояния внизу. */
+[data-tab="tools"] #orbitPane:not([hidden]) { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 -12px; padding: 10px 12px; }
 [data-tab="tools"] .ac-hint, [data-tab="tools"] .ac-foot, [data-tab="tools"] .ac-tabs, [data-tab="tools"] .ac-bar { flex: none; }
 
 /* «Студия»: «Инструменты» без сетки — сверху кнопки «в один клик», ниже блоки с настройками столбиком
@@ -2040,7 +2042,7 @@ html[data-design="ae"] .kr-b, html[data-design="ae"] .kr-stage, html[data-design
 /* ---- Раздел «Макеты»: блоки сворачиваются по заголовку; в широкой панели — две колонки */
 .mk-pane { display: block; padding-top: 2px; }
 .mk-pane[hidden] { display: none; }
-.mk-pane.mk-wide { columns: 2; column-gap: 12px; }
+.mk-pane.mk-wide { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; align-items: start; }
 .mk-pane .mk-card { break-inside: avoid; margin: 0 0 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
   border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); box-shadow: none; }
 .mk-head { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; min-height: 26px; }

@@ -131,6 +131,7 @@
         hiddenTools: "",    // спрятанные блоки «Инструментов» и «Шейпа», через запятую: "cache,nullp"
         stats: true,        // отправлять ли автору анонимный сигнал «установлено» и «открыто сегодня»
         infoTips: true,     // подсказки-окошки при наведении курсора на секунду
+        previewPlay: "always",  // превью анимаций: "always" — играют сами по кругу, "hover" — только под курсором
         pasteAnywhere: true,    // Cmd/Ctrl+V с картинкой в буфере где угодно в After Effects открывает окно вставки
         fxWhere: "panel",   // где открывается поиск эффектов по сочетанию вне панели: "panel" или "cursor"
         hotkeys: ""         // горячие клавиши: "console=Ctrl+Space;snapshot=;…"; пусто — стандартные
@@ -843,6 +844,7 @@
         } catch (e) {}
         s.panelWidth = clampPanelWidth(s.panelWidth);
         s.toolSize = cleanToolSize(s.toolSize);
+        if (s.previewPlay !== "hover") { s.previewPlay = "always"; }
         ["accent", "bg", "bgTools", "bgMotion", "bgShape", "bgBrand"].forEach(function (k) { var c = parseHex(s[k]); s[k] = c ? c.hex : DEFAULTS[k]; });
         if (!PROVIDERS.hasOwnProperty(s.provider)) { s.provider = "claude"; }
         if (!knownModel(OPENAI_MODELS, s.openaiModel)) { s.openaiModel = OPENAI_MODELS[0].id; }
@@ -998,7 +1000,7 @@
         bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
         bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"),
         bgBrandSwatches: el("bgBrandSwatches"), bgBrandHex: el("bgBrandHex"), bgBrandPick: el("bgBrandPick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        designPick: el("designPick"), panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), toolPicker: el("toolPicker"), fxWhere: el("fxWhere"), fxWhereState: el("fxWhereState"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
+        designPick: el("designPick"), panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), previewPlay: el("previewPlay"), toolTitles: el("toolTitles"), toolPicker: el("toolPicker"), fxWhere: el("fxWhere"), fxWhereState: el("fxWhereState"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
@@ -3308,6 +3310,16 @@
             applyTheme(draft);
         });
 
+        // Превью анимаций: играют всегда или только под курсором. Карточки перестраиваются сразу.
+        ui.previewPlay.addEventListener("click", function (e) {
+            var b = e.target && e.target.closest ? e.target.closest("button[data-value]") : null;
+            var v = b ? b.getAttribute("data-value") : null;
+            if (!draft || (v !== "always" && v !== "hover")) { return; }
+            draft.previewPlay = v;
+            pressGroup(ui.previewPlay, v);
+            setTimeout(function () { commitSettings(); renderAc(); }, 0);
+        });
+
         // Дизайн меняется сразу и сразу сохраняется.
         ui.designPick.addEventListener("click", function (e) {
             var b = e.target && e.target.closest ? e.target.closest("button[data-value]") : null;
@@ -3411,6 +3423,7 @@
         pressGroup(ui.accentSwatches, draft.accent);
         pressGroup(ui.frames, draft.refFrames);
         pressGroup(ui.toolSize, draft.toolSize);
+        pressGroup(ui.previewPlay, draft.previewPlay === "hover" ? "hover" : "always");
         ui.toolTitles.checked = draft.toolTitles;
         showToolPicker();
         ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
@@ -5153,9 +5166,17 @@
     }, { threshold: 0.05 }) : null;
 
     // Карточке с превью — запуск и остановка; играет, пока видна.
+    // В настройках можно выбрать «При наведении»: тогда превью стоит и играет, только пока над ним курсор.
     function acAutoplay(card, play, stop) {
         card.acPlay = play;
         card.acStop = stop;
+        if (settings.previewPlay === "hover") {
+            card.setAttribute("data-hover-play", "true");
+            card.addEventListener("mouseenter", function () { play(); });
+            card.addEventListener("mouseleave", function () { stop(); });
+            window.requestAnimationFrame(function () { stop(); });
+            return;
+        }
         if (acSeen) { acSeen.observe(card); } else { play(); }
     }
 
