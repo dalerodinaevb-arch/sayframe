@@ -3730,10 +3730,12 @@
     // У SVG нет свойства hidden, поэтому меняем сам атрибут.
     function showFoldParts() {
         var parts = foldParts();
-        var i, j, f, open, label, opt;
+        var i, j, f, open, label, opt, inFlow;
         for (i = 0; i < parts.length; i++) {
             f = parts[i];
-            open = motion[f.key] !== false || !!(f.part.closest && f.part.closest(".tool-flow"));
+            // «Студия»: подписи и кривая всегда открыты, а текстовые подсказки спрятаны — их видно при наведении на блок.
+            inFlow = !!(f.part.closest && f.part.closest(".tool-flow"));
+            open = inFlow ? f.hide !== "Скрыть подсказку" : motion[f.key] !== false;
             label = open ? f.hide : f.show;
             if (!open && f.select) {
                 opt = f.select.options[f.select.selectedIndex];
@@ -9270,6 +9272,7 @@
         ui.staggerPrevText.textContent = align
             ? (keys ? "Первый ключ каждого слоя встанет на указатель времени, остальные ключи сдвинутся вместе с ним." : "Все выделенные слои начнутся там, где стоит указатель времени.")
             : (keys ? "Ключи каждого следующего слоя — на " : "Каждый следующий слой — на ") + plural(n, "кадр", "кадра", "кадров") + " позже предыдущего.";
+        ui.staggerBtn.title = ui.staggerPrevText.textContent;
         ui.staggerOrderName.textContent = ORDER_NAMES[order].charAt(0).toUpperCase() + ORDER_NAMES[order].slice(1);
     }
 
