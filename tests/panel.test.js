@@ -1339,7 +1339,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click('#provider button[data-value="openai"]');
   check("C1 switching back and forth keeps both keys", t === "sk-ant-test" && (await p.page.inputValue("#apiKey")) === "sk-openai-test");
   await p.page.click('#models button[data-value="gpt-6-astra"]');
-  await p.page.click("#saveSettings");
+  await p.page.click("#settingsClose");
   t = await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")));
   check("C2 saved: ChatGPT, its key and model; the Claude key stays", t.provider === "openai" && t.openaiKey === "sk-openai-test" && t.openaiModel === "gpt-6-astra" && t.apiKey === "sk-ant-test" && t.model === "claude-sonnet-5-5", JSON.stringify(t));
   check("C2 the first tab is called AI whichever is chosen", (await p.page.locator("#tabClaude").innerText()) === "AI");
@@ -1951,7 +1951,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.locator(".hotkey-edit button", { hasText: "Отмена" }).click();
   t = await p.page.evaluate(() => JSON.parse(window.__keyInterest[window.__keyInterest.length - 1]));
   check("H5b after editing only the real shortcuts are passed to the panel again", t.length === 3, JSON.stringify(t));
-  await p.page.click("#saveSettings");
+  await p.page.click("#settingsClose");
   t = await p.page.evaluate(() => JSON.parse(window.__keyInterest[window.__keyInterest.length - 1]));
   check("H6 saved; After Effects is told about the new keys", JSON.stringify(t.map((x) => x.keyCode).sort((a, b) => a - b)) === JSON.stringify([14, 20, 97]) && (await p.page.getAttribute("#fxBtn", "title")) === "Поиск эффектов (⌃⇧E)", JSON.stringify(t));
   await p.page.keyboard.press("Control+Space");
@@ -1973,7 +1973,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.keyboard.press("Alt+KeyQ");
   check("H8 a new shortcut is kept at once, even if the settings are closed without 'Save'", await p.page.locator("#fxConsole").isVisible());
   await p.page.keyboard.press("Escape");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click("#hotkeysReset"); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click("#hotkeysReset"); await p.page.click("#settingsClose");
   await p.page.keyboard.press("Control+Space");
   check("H8 'Reset' brings back Ctrl+Space and clears the rest", (await p.page.locator("#fxConsole").isVisible()) && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
@@ -2098,7 +2098,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.keyboard.press("Escape");
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   await p.page.click('#fxWhere [data-value="cursor"]');
-  await p.page.click("#saveSettings");
+  await p.page.click("#settingsClose");
   check("FC2 'У курсора' is saved", (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).fxWhere)) === "cursor");
   await p.page.waitForTimeout(900);
   await watcherSays(p, 0, "HIT console 700 400");
@@ -2236,7 +2236,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("PA7 settings: the switch is on by default", await p.page.locator("#pasteAnywhere").isChecked());
   await p.page.locator("#pasteAnywhere").evaluate((el) => el.click());
-  await p.page.click("#saveSettings");
+  await p.page.click("#settingsClose");
   await p.page.waitForFunction(() => window.__spawns.length === 2, null, { timeout: 5000 }).catch(() => {});
   t = await watched(p);
   check("PA7 switched off: Cmd+V is no longer watched, the shortcuts still are", !t.some((x) => x.id === "pasteAny") && t.some((x) => x.id === "console") && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).pasteAnywhere)) === false, JSON.stringify(t));
@@ -2514,17 +2514,42 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.evaluate(() => { const r = document.getElementById("acPitch"); r.value = "-12"; r.dispatchEvent(new Event("input", { bubbles: true })); });
   await acClick(p, "Вжух");
   t = path.join(p.home, "Documents", "Sayframe SFX", "whoosh.wav");
-  check("AC13 clicking a sound copies it to 'Sayframe SFX' and puts it into the comp", fs.existsSync(t) && fs.readFileSync(t).equals(fs.readFileSync(path.join(EXT, "sfx", "whoosh.wav"))) && p.ae.log.imports.join() === t && p.ae.log.layerAdds.length === 1 && /^Звук «Вжух» добавлен/.test(await p.status()), await p.status());
-  check("AC13 pitch −12 semitones plays the layer at half speed (Stretch 200%), like a sampler; the layer is named after the sound", p.ae.log.addedLayers[0].stretch === 200 && p.ae.log.addedLayers[0].name === "♪ Вжух" && /высота тона −?-12 пт/.test(await p.status()), p.ae.log.addedLayers[0].stretch + " " + await p.status());
+  check("AC13 clicking a sound copies it to 'Sayframe SFX' and puts it into the comp", fs.existsSync(t) && p.ae.log.layerAdds.length === 1 && /^Звук «Вжух» добавлен/.test(await p.status()), await p.status());
+  const TONE = (n) => path.join(p.home, "Documents", "Sayframe SFX", "whoosh.tone" + n + ".wav");
+  const FRAMES = (f) => { const b = fs.readFileSync(f); return b.readUInt32LE(40) / (b.readUInt16LE(22) * 2); };
+  const ORIG = FRAMES(path.join(EXT, "sfx", "whoosh.wav"));
+  check("AC13 pitch −12 keeps the length: the panel renders 'whoosh.tone-12.00.wav' (same length), Stretch stays 100%; the layer is named after the sound", fs.existsSync(TONE("-12.00")) && FRAMES(TONE("-12.00")) === ORIG && p.ae.log.imports.join() === TONE("-12.00") && p.ae.log.addedLayers[0].stretch === 100 && p.ae.log.addedLayers[0].name === "♪ Вжух" && /высота тона -12 пт/.test(await p.status()), p.ae.log.imports.join() + " " + p.ae.log.addedLayers[0].stretch + " " + await p.status());
+  check("AC13 the original file goes too, so the next change starts from it", fs.existsSync(t) && fs.readFileSync(t).equals(fs.readFileSync(path.join(EXT, "sfx", "whoosh.wav"))));
   const SND = p.ae.log.addedLayers[0];
-  SND.source.mainSource = { file: { fsName: t } }; p.ae.project.activeItem = p.ae.comp; p.ae.comp.selectedLayers = [SND];
+  // A sound-only layer, as After Effects has it; replacing the source points the layer at the newly imported file.
+  const sndSource = (f) => ({ hasVideo: false, hasAudio: true, mainSource: { file: { fsName: f } } });
+  Object.assign(SND, { hasAudio: true, locked: false, inPoint: 1.5, outPoint: 2.5, source: sndSource(TONE("-12.00")), replaceSource(item) { SND.source = sndSource(p.ae.log.imports[p.ae.log.imports.length - 1]); } });
+  const compLayer = p.ae.comp.layer; p.ae.comp.layer = (i) => (i === SND.index ? SND : compLayer.call(p.ae.comp, i));
+  p.ae.project.activeItem = p.ae.comp; p.ae.comp.selectedLayers = [SND];
   await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".snd-edit");
-  check("AC13 'Edit' on the sound layer shows its pitch and volume", (await p.page.locator(".snd-edit .ac-edit-top b").innerText()) === "Звук «Вжух»" && (await p.page.locator(".snd-edit .ac-edit-row output").allInnerTexts()).join() === "-12 пт,0 дБ", (await p.page.locator(".snd-edit .ac-edit-row output").allInnerTexts()).join());
-  await p.page.evaluate(() => { const i = document.querySelector('.snd-edit input[aria-label="Высота тона"]'); i.value = "7"; i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); });
-  await p.idle(); await p.page.waitForTimeout(50);
-  await p.page.evaluate(() => { const i = document.querySelector('.snd-edit input[aria-label="Громкость"]'); i.value = "-6"; i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); });
-  await p.idle(); await p.page.waitForTimeout(50);
-  check("AC13 +7 semitones → Stretch ≈ 66.7%, −6 dB → Audio Levels", Math.abs(SND.stretch - 100 / Math.pow(2, 7 / 12)) < 1e-6 && JSON.stringify(SND.levels) === "[-6,-6]", SND.stretch + " " + JSON.stringify(SND.levels));
+  check("AC13 'Edit' on the sound layer shows its pitch, length and volume", (await p.page.locator(".snd-edit .ac-edit-top b").innerText()) === "Звук «Вжух»" && (await p.page.locator(".snd-edit .ac-edit-row output").allInnerTexts()).join() === "-12 пт,100%,0 дБ", (await p.page.locator(".snd-edit .ac-edit-row output").allInnerTexts()).join());
+  const slide = async (sel, v) => { await p.page.waitForSelector(sel); await p.page.evaluate(([q, x]) => { const i = document.querySelector(q); i.value = String(x); i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); }, [sel, v]); await p.idle();
+    for (let k = 0; k < 100 && /^Пересчитываю/.test(await p.status()); k++) { await p.page.waitForTimeout(50); } await p.idle(); await p.page.waitForTimeout(80); };
+  await slide('.snd-edit input[aria-label="Высота тона"]', 7);
+  await slide('.snd-edit input[aria-label="Громкость"]', -6);
+  check("AC13 +7 semitones → a new file from the original, same length, Stretch still 100%; −6 dB → Audio Levels", SND.source.mainSource.file.fsName === TONE("+7.00") && FRAMES(TONE("+7.00")) === ORIG && SND.stretch === 100 && JSON.stringify(SND.levels) === "[-6,-6]", SND.source.mainSource.file.fsName + " " + SND.stretch + " " + JSON.stringify(SND.levels));
+  check("AC13 the layer remembers the original and the pitch in its comment", /^\[Sayframe sound\] \{.*"p":7.*"l":100/.test(SND.comment || "") && SND.comment.indexOf("whoosh.wav") > 0, SND.comment);
+  await slide('.snd-edit input[aria-label="Длина"]', 150);
+  check("AC13 'Length' 150% → Stretch 150%, the file is pitched up so the tone stays +7", SND.stretch === 150 && SND.source.mainSource.file.fsName === TONE("+14.02") && FRAMES(TONE("+14.02")) === ORIG, SND.stretch + " " + SND.source.mainSource.file.fsName);
+  await acSec(p, "Звуки");
+  await p.page.evaluate(() => { window.__plays = []; const st = AudioBufferSourceNode.prototype.start; AudioBufferSourceNode.prototype.start = function () { window.__plays.push(this.buffer.duration); return st.apply(this, arguments); }; });
+  await slide("#acPitch", 5); await p.page.waitForTimeout(300);
+  check("AC13b letting go of the slider plays the selected layer's sound right away, with the new settings (length 150%)", (await p.page.evaluate(() => window.__plays.length)) === 1 && (await p.page.locator("#acGrid .ac-card.playing").count()) === 0, JSON.stringify(await p.page.evaluate(() => window.__plays)));
+  check("AC13b the sound bar works on the selected sound layer too: pitch +5 goes into it, the length stays 150%", SND.stretch === 150 && SND.source.mainSource.file.fsName === TONE("+12.02") && JSON.stringify(SND.levels) === "[-6,-6]" && /^Высота тона \+5 пт: слой «♪ Вжух»/.test(await p.status()), SND.stretch + " " + SND.source.mainSource.file.fsName + " " + (await p.status()));
+  await slide("#acVol", 3);
+  check("AC13b … and so does the volume, the pitch and length stay", JSON.stringify(SND.levels) === "[3,3]" && SND.stretch === 150 && SND.source.mainSource.file.fsName === TONE("+12.02"), JSON.stringify(SND.levels));
+  await slide("#acLen", 100);
+  check("AC13b … and the bar's 'Length': back to 100% with the tone kept", SND.stretch === 100 && SND.source.mainSource.file.fsName === TONE("+5.00") && /^Длина 100%: слой «♪ Вжух»/.test(await p.status()), SND.stretch + " " + (await p.status()));
+  p.ae.comp.selectedLayers = [];
+  await slide("#acPitch", 0);
+  check("AC13b nothing selected: the bar only remembers the value for the next sound", SND.source.mainSource.file.fsName === TONE("+5.00"));
+  p.ae.comp.selectedLayers = [SND];
+  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".snd-edit");
   await p.page.locator(".snd-edit button", { hasText: "Убрать" }).click(); await p.idle(); await p.page.waitForTimeout(50);
   check("AC13 'Remove' deletes the sound layer", p.ae.log.layersRemoved.join() === "♪ Вжух" && p.errors.length === 0, p.errors.join(" | "));
   await acSec(p, "Звуки");
@@ -2532,6 +2557,22 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const listed = await p.page.evaluate(() => Array.from(document.querySelectorAll("#acGrid .ac-card")).map((c) => c.getAttribute("data-key").replace(/^sfx:/, "") + ".wav").sort());
   check("AC13 every sound in the panel has its file and every file is in the panel", JSON.stringify(listed) === JSON.stringify(t.slice().sort()), listed.length + " vs " + t.length);
   check("AC13 all 94 sounds are real WAV files", t.length === 94 && t.every((n) => fs.readFileSync(path.join(EXT, "sfx", n)).subarray(0, 4).toString() === "RIFF" && fs.readFileSync(path.join(EXT, "sfx", n)).subarray(8, 12).toString() === "WAVE"), t.join());
+  // Cards show the sound's real waveform (sfx/peaks.json, made by tools/sfx_peaks.py) and its length.
+  const PEAKS = JSON.parse(fs.readFileSync(path.join(EXT, "sfx", "peaks.json"), "utf8"));
+  check("AC14 peaks.json has a waveform for every sound file (run tools/sfx_peaks.py after changing sounds)", t.every((n) => { const k = PEAKS[n.replace(/\.wav$/, "")]; return k && k.p.length === 48 && Math.max(...k.p) === 100 && k.dur > 0; }) && Object.keys(PEAKS).length === t.length);
+  const whooshWav = fs.readFileSync(path.join(EXT, "sfx", "whoosh.wav"));
+  check("AC14 the stored length is the file's length", Math.abs(PEAKS.whoosh.dur - whooshWav.readUInt32LE(40) / 2 / 44100) < 0.002, PEAKS.whoosh.dur);
+  check("AC14 every card draws its own waveform, 48 bars, and shows its length", (await p.page.locator("#acGrid .ac-wave").count()) === 94 && (await p.page.locator("#acGrid .ac-card").first().locator(".ac-wave-svg").first().locator("rect").count()) === 48 && (await p.page.locator("#acGrid .ac-card").first().locator(".ac-dur").innerText()) === (Math.round(PEAKS.whoosh.dur * 10) / 10).toFixed(1).replace(".", ",") + " с");
+  check("AC14 the length is not part of the name", (await acCards(p))[0] === "Вжух");
+  await p.page.evaluate(() => { const r = document.getElementById("acLen"); r.value = "200"; r.dispatchEvent(new Event("input", { bubbles: true })); });
+  check("AC14 'Length' 200% doubles the lengths on the cards right away", (await p.page.locator("#acGrid .ac-card").first().locator(".ac-dur").innerText()) === (Math.round(PEAKS.whoosh.dur * 20) / 10).toFixed(1).replace(".", ",") + " с", await p.page.locator("#acGrid .ac-card").first().locator(".ac-dur").innerText());
+  await p.page.locator("#acGrid .ac-play").first().click(); await p.page.waitForTimeout(300);
+  check("AC14 ▶ marks the card as playing: the played part lights up and a line runs over the wave", (await p.page.locator("#acGrid .ac-card.playing").count()) === 1 && (await p.page.locator("#acGrid .ac-card").first().evaluate((c) => c.classList.contains("playing") && /s$/.test(c.style.getPropertyValue("--play")))) && p.errors.length === 0, p.errors.join(" | "));
+  p.ae.comp.selectedLayers = [];
+  await p.page.evaluate(() => { document.querySelectorAll("#acGrid .ac-card.playing").forEach((c) => c.classList.remove("playing")); window.__plays = []; });
+  await p.page.evaluate(() => { const r = document.getElementById("acVol"); r.value = "-3"; r.dispatchEvent(new Event("input", { bubbles: true })); r.dispatchEvent(new Event("change", { bubbles: true })); });
+  await p.idle(); await p.page.waitForTimeout(300);
+  check("AC14 no sound layer selected: letting go of a slider plays the last sound you listened to, with the new settings", (await p.page.evaluate(() => window.__plays.length)) === 1 && (await p.page.locator("#acGrid .ac-card").first().evaluate((c) => c.classList.contains("playing"))), JSON.stringify(await p.page.evaluate(() => window.__plays)));
   await p.close();
 
   // Favourites, search across sections, card size, nothing selected.
@@ -2738,7 +2779,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#testKey");
   await p.page.waitForFunction(() => /работает|API|связи/.test(document.getElementById("keyHint").textContent));
   check("G1 key test uses the typed key and chosen model with a 1-token request", (await p.page.locator("#keyHint").innerText()) === "Ключ работает." && p.net.requests[0].headers["x-api-key"] === "sk-ant-abc" && p.net.requests[0].body.model === "claude-opus-5-5" && p.net.requests[0].body.max_tokens === 1);
-  await p.page.click("#saveSettings");
+  await p.page.waitForTimeout(600);
+  t = JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.settings.v1")));
+  check("G1 saved by itself, with the window still open: no «Сохранить» button, a quiet «Сохранено ✓» instead", t.apiKey === "sk-ant-abc" && t.accent === "#62c8ff" && t.refFrames === 16 && t.alwaysAsk === true && (await p.page.locator("#saveSettings").count()) === 0 && (await p.page.locator("#settingsSheet").isVisible()) && /Сохранено|сохраняются сами/.test(await p.page.locator("#settingsSaved").innerText()), JSON.stringify(t));
+  await p.page.click("#settingsClose");
   t = JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.settings.v1")));
   check("G1 saved", t.apiKey === "sk-ant-abc" && t.model === "claude-opus-5-5" && t.accent === "#62c8ff" && t.refFrames === 16 && t.alwaysAsk === true && t.selfCheck === false && (await p.page.locator("#settingsSheet").isHidden()) && (await p.status()) === "Настройки сохранены.", JSON.stringify(t));
   await p.page.screenshot({ path: path.join(SHOTS, "09-accent-sky.png") });
@@ -2747,7 +2791,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.fill("#bgHex", "#101014");
   await p.page.click("#settingsClose");
   t = await p.page.evaluate(() => [getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(), getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(), JSON.parse(localStorage.getItem("sayframe.settings.v1")).accent]);
-  check("G2 closing without saving reverts the preview (a new install is in «Студия», its background stays)", t[0] === "#62c8ff" && t[1] === "#111215" && t[2] === "#62c8ff", t.join());
+  check("G2 closing keeps what was changed: the new accent is on screen and saved", t[0] !== "#62c8ff" && t[0] === t[2] && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).bg)) === "#101014", t.join());
   await p.page.click("#settingsBtn");
   await p.page.fill("#apiKey", "bad");
   p.net.replies.push({ type: "error", error: { message: "invalid x-api-key" } });
@@ -2812,8 +2856,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = await spans(p);
   check("W3 the width slider previews live", within(t, 14, 506) && (await box(p, ".sheet-card")).split(",")[2] === "492" && (await p.page.locator("#panelWidthVal").innerText()) === "520 px" && (await box(p, ".composer")).split(",")[2] === "492" && (await box(p, "#tabs")).split(",")[2] === "972", JSON.stringify(t));
   await p.page.click("#settingsClose");
-  check("W3 closing without saving puts the old width back", (await box(p, ".composer")).split(",")[2] === "352" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).panelWidth)) !== 520);
-  await p.page.click("#settingsBtn"); await setWidth(p, 520); await p.page.click("#saveSettings");
+  check("W3 closing keeps the new width", (await box(p, ".composer")).split(",")[2] === "492" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).panelWidth)) === 520);
+  await p.page.click("#settingsBtn"); await setWidth(p, 520); await p.page.click("#settingsClose");
   check("W3 saved width applies to the fields and buttons", (await box(p, ".composer")).split(",")[2] === "492" && (await box(p, "#runBtn")).split(",")[2] === "466" && (await box(p, ".composer")).split(",")[0] === "14" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).panelWidth)) === 520);
   await p.page.screenshot({ path: path.join(SHOTS, "09c-wide-panel-520.png") });
   await p.restart();
@@ -2822,7 +2866,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("W3 settings show the saved width", (await p.page.inputValue("#panelWidth")) === "520" && (await p.page.locator("#panelWidthVal").innerText()) === "520 px");
   await p.page.focus("#panelWidth"); await p.page.keyboard.press("ArrowRight");
   check("W3 the slider works from the keyboard in steps of 10", (await p.page.locator("#panelWidthVal").innerText()) === "530 px" && (await box(p, ".sheet-card")).split(",")[2] === "502");
-  await setWidth(p, 280); await p.page.click("#saveSettings");
+  await setWidth(p, 280); await p.page.click("#settingsClose");
   t = await spans(p);
   check("W3 the narrowest width still fits everything", within(t, 14, 266) && (await overflow(p)) <= 0, JSON.stringify(t));
   await p.page.click("#tabMotion");
@@ -2856,7 +2900,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("FW2 settings sit in the middle, not stretched", t[2] === 560 && Math.abs(t[0] + t[2] / 2 - 500) <= 8 && (await p.page.isChecked("#panelFit")) && (await p.page.locator("#widthRow").isHidden()), JSON.stringify(t));
   await p.page.locator("#panelFit").evaluate((el) => el.click());
   check("FW2 switching it off shows the width slider at once", (await p.page.locator("#panelWidth").isVisible()) && (await p.page.getAttribute("html", "data-fit")) === "off");
-  await p.page.click("#saveSettings"); await p.page.click("#tabClaude");
+  await p.page.click("#settingsClose"); await p.page.click("#tabClaude");
   check("FW2 saved: the fields are back in the 380px column", (await box(p, ".composer")).split(",")[2] === "352", await box(p, ".composer"));
   await p.restart(); await p.page.click("#tabClaude");
   check("FW2 the choice survives a restart", (await p.page.getAttribute("html", "data-fit")) === "off" && (await box(p, ".composer")).split(",")[2] === "352" && p.errors.length === 0, p.errors.join(" | "));
@@ -2891,8 +2935,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click('#designPick [data-value="ae"]');
   check("DS2 picking «After Effects» shows at once: grey, no glow", JSON.stringify(await t()) === JSON.stringify(["ae", "rgb(35, 35, 35)", "none"]), JSON.stringify(await t()));
   await p.page.click("#settingsClose");
-  check("DS2 closing without saving brings the glass back", (await t())[0] === "glass");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="ae"]'); await p.page.click("#saveSettings");
+  check("DS2 closing keeps «After Effects»", (await t())[0] === "ae");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="ae"]'); await p.page.click("#settingsClose");
   await p.restart();
   check("DS3 the design survives a restart and the layout stays the same", (await t())[0] === "ae" && (await p.page.locator("#tabs .tab").count()) === 5 && (await p.page.locator("#runBtn").isVisible()) && p.errors.length === 0, p.errors.join(" | "));
   await p.page.click("#tabMotion");
@@ -2917,8 +2961,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   await p.page.click('#designPick [data-value="studio"]');
   check("DS4 picking «Студия» shows at once: dark, dotted background, no glow", JSON.stringify(await t()) === JSON.stringify(["studio", "rgb(17, 18, 21)", "none", true]), JSON.stringify(await t()));
-  check("DS4 the settings window stays on top in «Студия»", await p.page.evaluate(() => { document.querySelector("#saveSettings").scrollIntoView({ block: "center" }); const b = document.querySelector("#saveSettings").getBoundingClientRect(); const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !!el && !!el.closest("#saveSettings"); }));
-  await p.page.click("#saveSettings");
+  check("DS4 the settings window stays on top in «Студия»", await p.page.evaluate(() => { document.querySelector("#settingsSaved").scrollIntoView({ block: "center" }); const b = document.querySelector("#settingsSaved").getBoundingClientRect(); const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !!el && !!el.closest("#settingsSaved"); }));
+  await p.page.click("#settingsClose");
   await p.restart();
   await p.page.click("#tabMotion");
   t = await p.page.evaluate(() => { const a = document.querySelector('.easecopy-card').getBoundingClientRect(), n = document.querySelector('.easecopy-card').nextElementSibling; const row = [...document.querySelectorAll('.easecopy-card .paste-do')].map((x) => x.getBoundingClientRect()); return [document.documentElement.getAttribute("data-design"), row.every((r) => r.bottom <= a.bottom), getComputedStyle(document.querySelector("#pasteBtn svg")).borderRadius]; });
@@ -3584,10 +3628,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("E1 squeezed to 300px: one under another, same sizes again", (await oneColumn(p)) && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await cellsNow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 380);
   check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 shift:8,13,8,15 paste:0,23,8,7 organize:8,28,8,11" && (await sizesNow(p)) === c);
-  await p.page.click("#settingsBtn"); await setWidth(p, 640); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await setWidth(p, 640); await p.page.click("#settingsClose");
   check("E2 the width setting is for fields and buttons: it changes neither the blocks nor the tab bar", (await box(p, "#tabs")).split(",")[2] === "352" && (await sizesNow(p)) === c && (await firstRow(p)) === 2);
   await resizeTo(p, 1000);
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   c = await sizesNow(p);
   t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.gridAutoRows, cs.columnGap].join("|"); });
   check("E3 at 60%: a finer grid (9px cells, 5px gaps), blocks 8 cells = 107px wide, all in a row", t === "9px|5px" && (await firstRow(p)) === 6 && c.split(",").every((x) => x.indexOf("107x") === 0), t + " " + c);
@@ -3756,7 +3800,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await pinOf(p, "organize").click();
   check("PN6 nothing pinned: no line, the usual layout is back", (await pinLine(p)) === null && (await cellsNow(p)) === c, await cellsNow(p));
   await pinOf(p, "shift").click();
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   await motionTab(p);
   t = await p.page.evaluate(() => { const c = document.querySelector('.tool-card[data-tool="shift"]'), a = c.querySelector(".tool-pin").getBoundingClientRect(), r = c.getBoundingClientRect(); return a.left > r.left && a.right < r.right && a.top >= r.top; });
   check("PN7 small blocks: the pin fits too, the pinned block stays on top", t && (await toolOrder(p)).split(",")[0] === "shift" && (await pinLine(p)) !== null && p.errors.length === 0, p.errors.join(" | "));
@@ -3777,8 +3821,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click('#toolSize button[data-value="60"]');
   check("Z2 choosing small shows at once", (await toolsAttr(p)) === "60" && (await pressedSize(p)) === "60");
   await p.page.click("#settingsClose");
-  check("Z2 closing without saving returns large", (await toolsAttr(p)) === "100" && (await gridBox(p, "anchorGrid")) === "122,122,38,38");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#saveSettings");
+  check("Z2 closing keeps small", (await toolsAttr(p)) === "60");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   check("Z3 saved: the buttons are small now", (await toolsAttr(p)) === "60" && (await gridBox(p, "anchorGrid")) === "73,73,23,23" && (await rowShape(p, "alignGrid")) === "6 18 12" && (await rowShape(p, "distGrid")) === "6 18 12" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).toolSize)) === "60", await gridBox(p, "anchorGrid") + " " + await rowShape(p, "alignGrid"));
   t = await toolRects(p);
   check("Z3 at 380px three blocks at 60% stand in one row", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.ease.l === 14 && t.align.r === 345 && Math.abs(t.ease.w - t.anchor.w) <= 1, JSON.stringify(t));
@@ -3804,7 +3848,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("Z5 the size and the widths survive a restart", (await toolsAttr(p)) === "60" && (await toolRects(p)).anchor.w === 135 && (await gridBox(p, "anchorGrid")) === "73,73,23,23");
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("Z5 settings show the saved size", (await pressedSize(p)) === "60");
-  await p.page.click('#toolSize button[data-value="100"]'); await p.page.click("#saveSettings");
+  await p.page.click('#toolSize button[data-value="100"]'); await p.page.click("#settingsClose");
   t = await toolRects(p);
   check("Z6 back to large: big buttons again, the same 10 cells are now large cells", (await toolsAttr(p)) === "100" && (await gridBox(p, "anchorGrid")) === "122,122,38,38" && t.anchor.w === 212 && (await allInside(p)) && (await overflow(p)) <= 0, JSON.stringify(t.anchor));
   check("Z6 no page errors", p.errors.length === 0, p.errors.join(" | "));
@@ -3887,8 +3931,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.locator("#toolTitles").evaluate((el) => el.click());
   check("F5 switching it off shows at once", (await titlesAttr(p)) === "off");
   await p.page.click("#settingsClose");
-  check("F5 closing without saving brings the titles back", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").first().isVisible()));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.locator("#toolTitles").evaluate((el) => el.click()); await p.page.click("#saveSettings");
+  check("F5 closing keeps the titles hidden", (await titlesAttr(p)) === "off");
   t = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
   check("F6 saved: no titles, the blocks get lower", (await titlesAttr(p)) === "off" && (await p.page.locator("#motionTools .tool-head").evaluateAll((l) => l.every((h) => h.getBoundingClientRect().height === 0))) && t.every((h, i) => h < c[i]) && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).toolTitles)) === false, t.join() + " vs " + c.join());
   check("F6 without titles the corner buttons still cover nothing", (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0);
@@ -3897,12 +3940,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("F6 everything folded, no titles: just the buttons, and the tools work", (await togglesClear(p)) && (await allInside(p)) && (await cardH(p, "anchor")) < 170);
   await p.page.click("#easeBothBtn"); await p.idle();
   check("F6 easing still runs", (await p.status()) === "Выделите ключевые кадры на таймлайне и нажмите ещё раз.");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   t = await toolRects(p);
   check("F7 small, no titles, folded: three blocks in a row, nothing overlaps", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0 && (await cardH(p, "anchor")) <= 134, JSON.stringify(t) + " h=" + await cardH(p, "anchor"));
   await p.page.screenshot({ path: path.join(SHOTS, "29-tools-small-bare.png") });
   await p.page.click("#anchorOptsToggle"); await p.page.click("#alignOptsToggle"); await p.page.click("#easeCurveToggle");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.locator("#toolTitles").evaluate((el) => el.click()); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.locator("#toolTitles").evaluate((el) => el.click()); await p.page.click("#settingsClose");
   check("F7 small with titles and everything open: titles do not run under the corner buttons", (await titlesAttr(p)) === "on" && (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0);
   await p.page.screenshot({ path: path.join(SHOTS, "26-tools-small.png") });
   await p.restart();
@@ -4188,31 +4231,34 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   p = await open({});
   await motionTab(p);
-  check("T1 two blocks, «Сдвиг» and «Лесенка», each with a before/after diagram on top", (await p.page.locator('#motionTools [data-tool="shift"] .tool-head b').innerText()) === "Сдвиг" && (await p.page.locator('#motionTools [data-tool="stagger"] .tool-head b').innerText()) === "Лесенка" && (await vis(p, "#shiftPrev")) && (await vis(p, "#staggerPrev")) && (await p.page.locator(".shift-card select, .stagger-card select").count()) === 0);
-  check("T1 the choices are buttons with a picture of the layer, not lists", (await p.page.locator("#shiftWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "in,out,layer" && (await p.page.locator("#timeAlign button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "inStart,inEnd,outStart,outEnd" && (await p.page.locator("#staggerWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "layer,in,out" && (await p.page.locator("#staggerOrder button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "asc,desc,selection,random" && (await p.page.locator("#shiftWhat button svg rect, #timeAlign button svg rect").count()) >= 15);
-  check("T1 defaults: in-animation, one frame, start of the in-animation, layers, top to bottom", [await val(p, "shiftWhat"), await p.page.inputValue("#shiftStep"), await val(p, "timeAlign"), await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "in,1,inStart,layer,1,asc" && (await p.page.locator("#shiftPrevText").innerText()) === "Появление сдвинется на 1 кадр позже." && (await p.page.locator("#staggerPrevText").innerText()) === "Каждый следующий слой на 1 кадр позже предыдущего, сверху вниз.");
+  check("T1 two blocks, «Сдвиг» (with a before/after diagram) and «Лесенка»", (await p.page.locator('#motionTools [data-tool="shift"] .tool-head b').innerText()) === "Сдвиг" && (await p.page.locator('#motionTools [data-tool="stagger"] .tool-head b').innerText()) === "Лесенка" && (await vis(p, "#shiftPrev")) && (await vis(p, "#staggerWhat")) && (await p.page.locator(".shift-card select, .stagger-card select").count()) === 0);
+  check("T1 the choices are buttons with a picture of the layer, not lists", (await p.page.locator("#shiftWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "in,out,layer" && (await p.page.locator("#timeAlign button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "inStart,inEnd,outStart,outEnd" && (await p.page.locator("#staggerWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "layer,keys" && (await p.page.locator("#staggerOrder button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "asc,random,desc" && (await p.page.locator("#staggerWhat button span").allInnerTexts()).join() === "Слои,Ключи" && (await p.page.locator("#shiftWhat button svg rect, #timeAlign button svg rect").count()) >= 15);
+  check("T1 defaults: in-animation, one frame, start of the in-animation, layers, top to bottom", [await val(p, "shiftWhat"), await p.page.inputValue("#shiftStep"), await val(p, "timeAlign"), await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "in,1,inStart,layer,1,asc" && (await p.page.locator("#shiftPrevText").innerText()) === "Появление сдвинется на 1 кадр позже." && (await p.page.locator("#staggerPrevText").innerText()) === "Каждый следующий слой — на 1 кадр позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 9);
   check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".shift-card button:not(.tool-grip), .shift-card input, .stagger-card button:not(.tool-grip), .stagger-card input"), (el) => { const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
   await p.page.hover("#shiftBack"); t = await p.page.locator("#shiftPrevText").innerText(); await p.page.hover('#timeAlign button[data-v="outEnd"]');
   check("T1 the diagram follows the mouse: the left arrow shows «earlier», an align button shows the playhead", t === "Появление сдвинется на 1 кадр раньше." && (await p.page.locator("#shiftPrevText").innerText()) === "Конец исчезновения встанет на указатель времени." && (await p.page.locator("#shiftPrev .tl-cti").count()) === 1, t);
-  await pickSeg(p, "staggerOrder", "desc"); await pickSeg(p, "staggerWhat", "in"); await p.page.click("#staggerMore"); await p.page.click("#staggerMore");
-  check("T1 the staircase diagram and its text change with the choices; + and - change the step", (await p.page.locator("#staggerPrevText").innerText()) === "Каждый следующий слой появляется на 3 кадра позже предыдущего, снизу вверх." && (await p.page.locator("#staggerOrderName").innerText()) === "Снизу вверх" && (await p.page.inputValue("#staggerStep")) === "3", await p.page.locator("#staggerPrevText").innerText());
+  await pickSeg(p, "staggerOrder", "desc"); await pickSeg(p, "staggerWhat", "keys"); await p.page.click("#staggerMore"); await p.page.click("#staggerMore");
+  check("T1 «Ключи»: the order icons turn into keyframes, the text says so; + and - change the step", (await p.page.locator("#staggerPrevText").innerText()) === "Ключи каждого следующего слоя — на 3 кадра позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 0 && (await p.page.locator("#staggerOrder button svg path").count()) === 27 && (await p.page.locator("#staggerOrderName").innerText()) === "Снизу вверх" && (await p.page.inputValue("#staggerStep")) === "3", await p.page.locator("#staggerPrevText").innerText());
   await p.page.click("#staggerLess"); await p.page.click("#staggerLess"); await p.page.click("#staggerLess"); await pickSeg(p, "staggerOrder", "asc"); await pickSeg(p, "staggerWhat", "layer");
   check("T1 the step does not go below one frame", (await p.page.inputValue("#staggerStep")) === "1");
   await press(p, "shiftFwd");
   check("T1 nothing selected -> a hint, not an error", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && (await p.statusKind()) === "" && p.ae.log.undo.length === 0);
   await alignTo(p, "inStart"); t = await p.status(); await press(p, "staggerBtn");
   check("T1 the same for the other two buttons", t === "Выделите слой в композиции и нажмите ещё раз." && (await p.status()) === t);
-  await pickSeg(p, "shiftWhat", "out"); await pickSeg(p, "staggerWhat", "in"); await pickSeg(p, "staggerOrder", "random");
+  await pickSeg(p, "shiftWhat", "out"); await pickSeg(p, "staggerWhat", "keys"); await pickSeg(p, "staggerOrder", "random");
   await setStep(p, "shiftStep", "12"); await setStep(p, "staggerStep", "5");
   await setStep(p, "shiftStep", "abc"); t = await p.page.inputValue("#shiftStep");
   await setStep(p, "shiftStep", "0"); t += "," + await p.page.inputValue("#shiftStep");
   await setStep(p, "shiftStep", "77", "Escape"); t += "," + await p.page.inputValue("#shiftStep");
   check("T1 a step that is not a whole number from 1 is thrown away, Escape cancels typing", t === "12,12,12", t);
   await p.restart();
-  check("T1 every choice survives a restart", [await val(p, "shiftWhat"), await p.page.inputValue("#shiftStep"), await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "out,12,in,5,random" && (await vis(p, "#shiftFwd")));
+  check("T1 every choice survives a restart", [await val(p, "shiftWhat"), await p.page.inputValue("#shiftStep"), await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "out,12,keys,5,random" && (await vis(p, "#shiftFwd")));
   await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ shiftWhat: "x", shiftStep: -4, timeAlign: 5, staggerWhat: null, staggerStep: 100000, staggerOrder: "up" })));
   await p.restart(); await motionTab(p);
   check("T1 broken saved values fall back safely", [await val(p, "shiftWhat"), await p.page.inputValue("#shiftStep"), await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "in,1,layer,999,asc" && p.errors.length === 0);
+  await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ staggerWhat: "out", staggerOrder: "selection" })));
+  await p.restart(); await motionTab(p);
+  check("T1 an older saved choice («Исчезновение», «Как выделяли») becomes «Ключи», top to bottom", [await val(p, "staggerWhat"), await val(p, "staggerOrder")].join() === "keys,asc");
   await p.close();
   p = await open({ noActiveComp: true });
   await motionTab(p); await press(p, "shiftBack");
@@ -4307,8 +4353,6 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T6 pressing again makes the steps bigger", starts(bx) === "0,4,8");
   await pickSeg(p, "staggerOrder", "desc"); await press(p, "staggerBtn");
   check("T6 bottom to top: the bottom layer stays (0,4,8 -> 4,6,8)", starts(bx) === "4,6,8", starts(bx));
-  await pickSeg(p, "staggerOrder", "selection"); await press(p, "staggerBtn");
-  check("T6 in the order they were picked (3, 1, 2)", starts(bx) === "6,10,8", starts(bx));
   bx.forEach((l) => { l.startTime = 0; });
   await pickSeg(p, "staggerOrder", "random"); await setStep(p, "staggerStep", "10"); await press(p, "staggerBtn");
   check("T6 random: the same steps in some order", starts(bx).split(",").map(Number).sort((a, b) => a - b).join() === "0,10,20", starts(bx));
@@ -4316,11 +4360,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   bx = trio();
   L2 = mkLayer(clock, { name: "plain", index: 2, inPoint: 1, outPoint: 5 });   // no keys: sits between the first and the second
   p = await open({ selectedLayers: [bx[0], L2, bx[1], bx[2]] });
-  await motionTab(p); await pickSeg(p, "staggerWhat", "in"); await setStep(p, "staggerStep", "4"); await press(p, "staggerBtn");
-  check("T7 staircase of in-animations: only their keys move, a layer without keys takes no step", bx.map((l) => times(R(l))).join(" | ") === "30,45,135,149 | 34,49,135,149 | 38,53,135,149" && starts(bx) === "0,0,0" && close2(fr(bx[2].inPoint), 38) && close2(fr(bx[2].outPoint), 150) && L2.inPoint === 1, bx.map((l) => times(R(l))).join(" | "));
-  check("T7 the skipped layer is named in the report", (await p.status()) === "Лесенка: 3 слоя, шаг 4 кадра. Пропущено: 1 слой (нет ключей в первой половине слоя).\nОтменить: Cmd/Ctrl+Z.", await p.status());
-  await pickSeg(p, "staggerWhat", "out"); await press(p, "staggerBtn");
-  check("T7 staircase of out-animations", bx.map((l) => times(R(l))).join(" | ") === "30,45,135,149 | 34,49,139,153 | 38,53,143,157" && close2(fr(bx[2].outPoint), 158), bx.map((l) => times(R(l))).join(" | "));
+  await motionTab(p); await pickSeg(p, "staggerWhat", "keys"); await setStep(p, "staggerStep", "4"); await press(p, "staggerBtn");
+  check("T7 staircase of keys: every key of each next layer moves, the layer stays, its edges follow the animation; a layer without keys takes no step", bx.map((l) => times(R(l))).join(" | ") === "30,45,135,149 | 34,49,139,153 | 38,53,143,157" && starts(bx) === "0,0,0" && close2(fr(bx[2].inPoint), 38) && close2(fr(bx[2].outPoint), 158) && close2(fr(bx[0].inPoint), 30) && L2.inPoint === 1, bx.map((l) => times(R(l)) + "@" + fr(l.inPoint) + "-" + fr(l.outPoint)).join(" | "));
+  check("T7 the skipped layer is named in the report", (await p.status()) === "Лесенка: 3 слоя, шаг 4 кадра. Пропущено: 1 слой (у слоя нет ключей).\nОтменить: Cmd/Ctrl+Z.", await p.status());
+  t = [JSON.parse(await hostCall(p, 'sayframeHost.stagger("in",4,"asc")')), JSON.parse(await hostCall(p, 'sayframeHost.stagger("keys",4,"selection")'))];
+  check("T7 the host still knows «in», «out» and «as picked» (for the AI and older panels)", t.every((x) => x.ok), JSON.stringify(t));
   p.ae.comp.selectedLayers = [bx[0]];
   await press(p, "staggerBtn");
   check("T7 one layer -> a hint", (await p.status()) === "Для лесенки выделите хотя бы два слоя." && (await p.statusKind()) === "");
@@ -4342,7 +4386,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.restart();
   check("T8 folded stays folded after a restart, the choice still applies", !(await vis(p, "#shiftPrevBox")) && (await val(p, "shiftWhat")) === "out" && (await togglesClear(p)));
   await p.page.click("#shiftOptsToggle");
-  check("T8 the plus brings the diagram back; «Лесенка» folds the same way", (await vis(p, "#shiftPrevBox")) && (await fold(p, "shiftOptsToggle")) === "true|Скрыть схему|-" && ((await p.page.click("#staggerOptsToggle")), !(await vis(p, "#staggerPrevBox"))) && (await vis(p, "#staggerBtn")) && (await fold(p, "staggerOptsToggle")) === "false|Показать схему|+");
+  check("T8 the plus brings the diagram back; «Лесенка» folds its hint", (await vis(p, "#shiftPrevBox")) && (await fold(p, "shiftOptsToggle")) === "true|Скрыть схему|-" && ((await p.page.click("#staggerOptsToggle")), !(await vis(p, "#staggerPrevText"))) && (await vis(p, "#staggerBtn")) && (await vis(p, "#staggerWhat")) && (await fold(p, "staggerOptsToggle")) === "false|Показать подсказку|+");
   t = await toolRects(p);
   check("T8 at 780px all four blocks share a row", t.ease.t === t.shift.t && t.align.r < t.shift.l && t.shift.w === 168 && (await overflow(p)) <= 0, JSON.stringify(t.shift));
   await dragEdge(p, "shift", 150);
@@ -4837,7 +4881,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("IT4 a click hides it at once", (await tip()) === "");
     await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
     check("IT5 Settings → General has a switch for it, on", await p.page.locator("#infoTipsOn").isChecked());
-    await p.page.locator("label.switch", { has: p.page.locator("#infoTipsOn") }).click(); await p.page.click("#saveSettings");
+    await p.page.locator("label.switch", { has: p.page.locator("#infoTipsOn") }).click(); await p.page.click("#settingsClose");
     await p.page.mouse.move(b3.x + 20, b3.y + 10); await p.page.waitForTimeout(1300);
     check("IT5 switched off: no window", (await tip()) === "" && p.errors.length === 0, p.errors.join(" | "));
     await p.close();
@@ -5651,7 +5695,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("SC2 the accent colour also has a palette", (await p.page.locator("#accentSwatches .color-pick").count()) === 1);
     await p.page.fill("#bgShapeHex", "#12ab34");
     await p.page.locator("#bgMotionPick").evaluate((el) => { el.value = "#a1b2c3"; el.dispatchEvent(new Event("input", { bubbles: true })); });
-    await p.page.click("#saveSettings");
+    await p.page.click("#settingsClose");
     await p.page.click("#tabMotion"); const m = await bgNow();
     await p.page.click("#tabShape"); const sh = await bgNow();
     await p.page.click("#tabClaude"); const ai = await bgNow();
@@ -5691,7 +5735,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click("#setTabOther");
     check("ST4 Settings → General has the 'Анонимная статистика' switch, on by default", (await p.page.locator("#statsOn").isChecked()) && /Анонимная статистика/.test(await p.page.locator("#setPaneOther").innerText()));
     await p.page.locator("label.switch", { has: p.page.locator("#statsOn") }).click();
-    await p.page.click("#saveSettings");
+    await p.page.click("#settingsClose");
     await p.page.evaluate(() => { const st = JSON.parse(localStorage.getItem("sayframe.stats.v1")); st.day = "2000-1-1"; localStorage.setItem("sayframe.stats.v1", JSON.stringify(st)); });
     await p.restart();
     await p.page.waitForTimeout(4600);
@@ -5714,6 +5758,31 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.evaluate(() => { const s = document.getElementById("settingsSheet"); s.scrollTop = s.scrollHeight; });
   await p.page.screenshot({ path: path.join(SHOTS, "15-settings-version.png") });
   await p.close();
+
+  // Settings → which tools to show: a hidden block leaves its grid, the choice is saved and survives a restart.
+  {
+    const shown = (p) => p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll("#motionTools .tool-card, #shapeTools .tool-card"), (c) => getComputedStyle(c).display !== "none").map((c) => c.getAttribute("data-tool")).sort().join());
+    p = await open({});
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+    t = await p.page.locator("#toolPicker button").evaluateAll((l) => l.map((b) => b.getAttribute("data-tool") + ":" + b.getAttribute("aria-pressed")));
+    check("TP1 settings list every tool of both tabs, all shown", t.length === 14 && t.every((x) => /:true$/.test(x)) && t.indexOf("split:true") >= 0 && (await p.page.locator(".tool-picker-head").evaluateAll((l) => l.map((x) => x.textContent))).join() === "Инструменты,Шейп", t.join());
+    const before = await shown(p);
+    await p.page.click('#toolPicker button[data-tool="cache"]'); await p.page.click('#toolPicker button[data-tool="split"]');
+    await p.page.waitForTimeout(100);
+    check("TP2 a click hides the block at once and is saved without «Сохранить»", (await p.page.getAttribute('#toolPicker button[data-tool="cache"]', "aria-pressed")) === "false" && (await shown(p)).split(",").indexOf("cache") < 0 && (await shown(p)).split(",").indexOf("split") < 0 && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).hiddenTools)) === "cache,split", [await p.page.getAttribute('#toolPicker button[data-tool="cache"]', "aria-pressed"), await shown(p), await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).hiddenTools)].join(" | "));
+    await p.page.click("#settingsClose"); await p.page.click("#tabMotion");
+    check("TP2 the rest of the grid closes up: no overlap, nothing outside", (await p.page.locator('#motionTools [data-tool="cache"]').isHidden()) && (await p.page.locator('#motionTools [data-tool="ease"]').isVisible()) && (await overflow(p)) <= 0);
+    await p.restart();
+    check("TP3 hidden stays hidden after a restart", (await shown(p)).split(",").indexOf("cache") < 0 && p.errors.length === 0, p.errors.join(" | "));
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+    await p.page.click('#toolPicker button[data-tool="cache"]'); await p.page.click('#toolPicker button[data-tool="split"]');
+    await p.page.click("#settingsClose");
+    check("TP3 a second click brings every block back", (await shown(p)) === before && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).hiddenTools)) === "");
+    await p.page.evaluate(() => { const s = JSON.parse(localStorage.getItem("sayframe.settings.v1")); s.hiddenTools = "nope, ease ,ease"; localStorage.setItem("sayframe.settings.v1", JSON.stringify(s)); });
+    await p.restart();
+    check("TP4 a broken saved list is cleaned: unknown names ignored", (await shown(p)).split(",").indexOf("ease") < 0 && (await shown(p)).split(",").length === before.split(",").length - 1 && p.errors.length === 0);
+    await p.close();
+  }
 
   await browser.close();
   console.log("\n" + pass + " passed, " + fail + " failed");

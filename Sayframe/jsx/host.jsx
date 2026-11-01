@@ -1379,6 +1379,15 @@ var sayframeHost = (function () {
             String(layer.source.mainSource.file.fsName).indexOf("Sayframe SFX") >= 0); } catch (e0) { return false; }
     }
 
+    function sndSetLayer(layer, len, volume) {
+        var lv;
+        layer.stretch = Math.max(10, Math.min(1000, len));
+        try {
+            lv = layer.property("ADBE Audio Group").property("ADBE Audio Levels");
+            lv.setValue([volume, volume]);
+        } catch (e0) {}
+    }
+
     function sndApply(layer, pitch, volume) {
         var lv;
         pitch = Math.max(-24, Math.min(24, pitch));
@@ -1389,11 +1398,62 @@ var sayframeHost = (function () {
         } catch (e0) {}
     }
 
+    // What the sound bar did to a layer: the original file, the pitch (semitones) and the length (percent), in the
+    // layer's comment, on a line of its own. The audio itself may be a file the panel rendered (pitch without the length).
+    var SND_MARK = "[Sayframe sound] ";
+
+    function sndLoad(layer) {
+        var c = "", at, end, o = null;
+        try { c = String(layer.comment || ""); } catch (e0) {}
+        at = c.indexOf(SND_MARK);
+        if (at < 0) { return null; }
+        end = c.indexOf("\n", at);
+        try { o = eval("(" + c.substring(at + SND_MARK.length, end < 0 ? c.length : end) + ")"); } catch (e1) { o = null; }
+        return o && typeof o === "object" ? o : null;
+    }
+
+    function sndSave(layer, o) {
+        var c = "", lines, out = [], i;
+        try { c = String(layer.comment || ""); } catch (e0) {}
+        lines = c ? c.split("\n") : [];
+        for (i = 0; i < lines.length; i++) { if (lines[i].indexOf(SND_MARK) !== 0) { out.push(lines[i]); } }
+        out.push(SND_MARK + toJSON(o));
+        try { layer.comment = out.join("\n"); } catch (e1) {}
+    }
+
+    function sndFilePath(layer) {
+        try { return String(layer.source.mainSource.file.fsName); } catch (e0) { return ""; }
+    }
+
+    // A sound-only layer the bar can work on: not locked, audio and no picture.
+    function sndTarget(layer) {
+        try { return !layer.locked && layer.hasAudio && layer.source && layer.source.hasVideo === false && layer.source.hasAudio && !!sndFilePath(layer); } catch (e0) { return false; }
+    }
+
+    // The original file, the pitch you hear and the length, as the bar shows them. A layer the bar never touched:
+    // its own file, and the Stretch it has (After Effects plays a stretched layer lower, so that is its pitch).
+    function sndState(layer) {
+        var m = sndLoad(layer), v = 0, lv, len = layer.stretch || 100;
+        try { lv = layer.property("ADBE Audio Group").property("ADBE Audio Levels").value; v = lv[0]; } catch (e0) {}
+        if (m && m.src) { return { src: String(m.src), pitch: Number(m.p) || 0, len: Number(m.l) || len, volume: Math.round(v * 10) / 10 }; }
+        return { src: sndFilePath(layer), pitch: Math.round(12 * Math.log(100 / len) / Math.LN2 * 10) / 10, len: Math.round(len * 10) / 10, volume: Math.round(v * 10) / 10 };
+    }
+
+    function sndFindItem(file) {
+        var proj = app.project, i, it;
+        for (i = 1; i <= proj.numItems; i++) {
+            it = proj.item(i);
+            try { if (it.mainSource && it.mainSource.file && it.mainSource.file.fsName === file.fsName) { return it; } } catch (e0) {}
+        }
+        return null;
+    }
+
     function sndDescribe(layer) {
         var v = 0, lv;
         if (!sndIs(layer)) { return null; }
         try { lv = layer.property("ADBE Audio Group").property("ADBE Audio Levels").value; v = lv[0]; } catch (e0) {}
-        return { name: String(layer.name), pitch: Math.round(12 * Math.log(100 / (layer.stretch || 100)) / Math.LN2 * 10) / 10, volume: Math.round(v * 10) / 10 };
+        var st = sndState(layer);
+        return { name: String(layer.name), pitch: st.pitch, len: st.len, volume: st.volume };
     }
 
     // ---- Graphics, the way Animation Composer's graphic components work: a new layer at the time indicator
@@ -3842,8 +3902,40 @@ var sayframeHost = (function () {
         }
     }
 
+    // Moves every keyframe of the layer by dt seconds (the "in" and the "out" animation together).
+    // An edge of the layer that the animation touches moves with it; a key that would fall outside the layer stretches it.
+    function shiftAllKeys(layer, dt, frame, out) {
+        var a = findTransition(layer, "in");
+        var b = findTransition(layer, "out");
+        var span = a.span;
+        var before = out.keys;
+        var first, last, atStart, atEnd, start, end, lists, i;
+        if (!a.count && !b.count) { return "none"; }
+        if (Math.abs(dt) < frame / 1000) { return "same"; }
+        first = a.count ? a.first : b.first;
+        last = b.count ? b.last : a.last;
+        atStart = Math.abs(first - span.start) <= frame * EDGE_FRAMES;
+        atEnd = Math.abs(last - span.end) <= frame * EDGE_FRAMES;
+        // Far side first, so that no key has to jump over one that is still waiting to move.
+        lists = dt > 0 ? b.list.concat(a.list) : a.list.concat(b.list);
+        for (i = 0; i < lists.length; i++) { moveKeysOf(lists[i], dt, frame / 4, out); }
+        if (out.keys === before) { return "failed"; }
+        start = atStart ? span.start + dt : Math.min(span.start, first + dt);
+        end = atEnd ? span.end + dt : Math.max(span.end, last + dt + frame);
+        trimLayer(layer, start, end);
+        return "moved";
+    }
+
     function shiftOne(layer, what, dt, frame, out) {
-        if (what === "layer") { shiftLayer(layer, dt, frame, out); } else { countShift(shiftTransition(layer, what, dt, frame, out), out); }
+        if (what === "layer") { shiftLayer(layer, dt, frame, out); }
+        else if (what === "keys") { countShift(shiftAllKeys(layer, dt, frame, out), out); }
+        else { countShift(shiftTransition(layer, what, dt, frame, out), out); }
+    }
+
+    function hasKeysFor(layer, what) {
+        if (what === "layer") { return true; }
+        if (what === "keys") { return findTransition(layer, "in").count + findTransition(layer, "out").count > 0; }
+        return findTransition(layer, what).count > 0;
     }
 
     function newShiftCount(total) {
@@ -3878,7 +3970,7 @@ var sayframeHost = (function () {
     }
 
     // Each next layer is moved `frames` frames further than the one before it.
-    // order: "asc" (from the top layer down), "desc" (from the bottom up), "selection" or "random".
+    // what: "layer", "keys" (all keyframes), "in" or "out"; order: "asc" (from the top layer down), "desc" (from the bottom up), "selection" or "random".
     function staggerSelected(comp, what, frames, order) {
         var layers = comp.selectedLayers;
         var frame = comp.frameDuration;
@@ -3887,7 +3979,7 @@ var sayframeHost = (function () {
         var i, j, tmp, step;
         for (i = 0; i < layers.length; i++) {
             // A layer with nothing to move does not take a step of the staircase.
-            if (what !== "layer" && !findTransition(layers[i], what).count) { out.skipped++; continue; }
+            if (!hasKeysFor(layers[i], what)) { out.skipped++; continue; }
             list.push(layers[i]);
         }
         if (list.length < 2) { throw new Error(layers.length < 2 ? "STAGGER_NEEDS_TWO" : "STAGGER_NO_KEYS"); }
@@ -4451,6 +4543,55 @@ var sayframeHost = (function () {
             });
         },
 
+        // The sound bar of the Animation tab on whatever is selected: every selected sound-only layer (a library
+        // sound or any audio file). Video layers are left alone, so their picture never speeds up.
+        sndTargets: function () {
+            return reply(function () {
+                var comp = app.project.activeItem, out = [], i, L, st;
+                if (!(comp instanceof CompItem)) { return { list: [] }; }
+                for (i = 0; i < comp.selectedLayers.length; i++) {
+                    L = comp.selectedLayers[i];
+                    if (!sndTarget(L)) { continue; }
+                    st = sndState(L);
+                    out.push({ index: L.index, name: String(L.name), src: st.src, pitch: st.pitch, len: st.len, volume: st.volume });
+                }
+                return { list: out };
+            });
+        },
+
+        // list: [{index, file, len, volume, src, pitch}] - the file to play (the original or one the panel rendered),
+        // the Stretch, the volume; src and pitch go into the comment so the next change starts from the original.
+        sndApplyFiles: function (list) {
+            return reply(function () {
+                var comp = activeComp(), done = 0, i, o, L, file, item;
+                app.beginUndoGroup("Sayframe: sound");
+                try {
+                    for (i = 0; i < list.length; i++) {
+                        o = list[i];
+                        L = comp.layer(o.index);
+                        if (!L || !sndTarget(L)) { continue; }
+                        file = new File(o.file);
+                        if (!file.exists) { throw new Error("SOUND_NOT_FOUND"); }
+                        if (sndFilePath(L) !== file.fsName) {
+                            item = sndFindItem(file);
+                            if (!item) {
+                                item = app.project.importFile(new ImportOptions(file));
+                                try { item.parentFolder = projectBin("Sayframe SFX"); } catch (e1) {}
+                            }
+                            L.replaceSource(item, false);
+                            restoreActive(comp);
+                        }
+                        sndSetLayer(L, Number(o.len) || 100, Number(o.volume) || 0);
+                        sndSave(L, { src: String(o.src), p: Number(o.pitch) || 0, l: Number(o.len) || 100 });
+                        done++;
+                    }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { count: done, name: list.length ? String(comp.layer(list[0].index).name) : "" };
+            });
+        },
+
         sndRemove: function () {
             return reply(function () {
                 var e = acEditLayer();
@@ -4625,7 +4766,8 @@ var sayframeHost = (function () {
         },
 
         // Imports a sound once (reused if it is already in the project) and puts it at the time indicator.
-        acSound: function (path, binName, pitch, volume, title) {
+        // path: the file to play (maybe rendered with the pitch); len: the layer's Stretch; meta: {src, p, l} for the comment.
+        acSound: function (path, binName, len, volume, title, meta) {
             return reply(function () {
                 var comp = activeComp();
                 var proj = app.project;
@@ -4648,11 +4790,12 @@ var sayframeHost = (function () {
                     l = comp.layers.add(item);
                     l.startTime = comp.time;
                     if (title) { try { l.name = String(title); } catch (e2) {} }
-                    sndApply(l, Number(pitch) || 0, Number(volume) || 0);
+                    sndSetLayer(l, Number(len) || 100, Number(volume) || 0);
+                    if (meta) { sndSave(l, meta); }
                 } finally {
                     app.endUndoGroup();
                 }
-                return { name: String(item.name), reused: reused, pitch: Number(pitch) || 0 };
+                return { name: String(item.name), reused: reused };
             });
         },
 
@@ -5514,13 +5657,13 @@ var sayframeHost = (function () {
             });
         },
 
-        // Staircase: every next layer (or its "in"/"out" animation) starts a few frames later.
+        // Staircase: every next layer (or its keyframes, or its "in"/"out" animation) starts a few frames later.
         stagger: function (what, frames, order) {
             return reply(function () {
                 var comp = activeComp();
                 var res;
                 frames = Math.round(Number(frames));
-                if (what !== "in" && what !== "out" && what !== "layer") { throw new Error("BAD_SHIFT_TARGET"); }
+                if (what !== "in" && what !== "out" && what !== "layer" && what !== "keys") { throw new Error("BAD_SHIFT_TARGET"); }
                 if (order !== "asc" && order !== "desc" && order !== "selection" && order !== "random") { throw new Error("BAD_STAGGER_ORDER"); }
                 if (isNaN(frames) || frames === 0 || Math.abs(frames) > 100000) { throw new Error("BAD_SHIFT_FRAMES"); }
                 if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }

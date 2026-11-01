@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.61.0";
+    var VERSION = "1.62.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -128,6 +128,7 @@
         panelWidth: 380,    // ширина содержимого в пикселях, когда panelFit выключен
         toolSize: "100",    // масштаб блоков раздела «Инструменты» в процентах: "100", "90", "80", "70", "60" или "50"
         toolTitles: true,   // показывать ли названия блоков раздела «Инструменты»
+        hiddenTools: "",    // спрятанные блоки «Инструментов» и «Шейпа», через запятую: "cache,nullp"
         stats: true,        // отправлять ли автору анонимный сигнал «установлено» и «открыто сегодня»
         infoTips: true,     // подсказки-окошки при наведении курсора на секунду
         pasteAnywhere: true,    // Cmd/Ctrl+V с картинкой в буфере где угодно в After Effects открывает окно вставки
@@ -817,7 +818,7 @@
         if (m === "CO_LAYER_GONE") { return "Слоя, с которого открыли фото, больше нет в открытой композиции. Откройте ту композицию и нажмите Cut out ещё раз."; }
         if (m === "CO_NOT_SAVED") { return "Не удалось сохранить картинку без фона на диск. Проверьте, что в папке проекта можно записывать файлы."; }
         if (m === "STAGGER_NEEDS_TWO") { return "Для лесенки выделите хотя бы два слоя."; }
-        if (m === "STAGGER_NO_KEYS") { return "Для лесенки нужно хотя бы два слоя с ключами в этой половине слоя. Чтобы сдвинуть слои целиком, выберите «Слои»."; }
+        if (m === "STAGGER_NO_KEYS") { return "Для лесенки нужно хотя бы два слоя с ключами. Чтобы сдвинуть слои целиком, выберите «Слои»."; }
         if (m === "DISTRIBUTE_NEEDS_THREE") { return "Чтобы распределить слои, выделите три или больше: крайние останутся на месте, остальные встанут между ними через равные промежутки."; }
         if (m === "ALIGN_NEEDS_TWO") { return "Чтобы выровнять слои друг по другу, выделите хотя бы два. Один слой выравнивается по композиции."; }
         return m;
@@ -914,6 +915,10 @@
         root.setProperty("--tz", String(Number(cleanToolSize(s.toolSize)) / 100));
         document.documentElement.setAttribute("data-titles", s.toolTitles === false ? "off" : "on");
         applyHostSkin(s.design === "ae");
+        toolsHidden = hiddenToolList(s.hiddenTools);
+        Array.prototype.forEach.call(document.querySelectorAll(".motion-tools .tool-card[data-tool]"), function (c) {
+            c.classList.toggle("tool-off", toolsHidden.indexOf(c.getAttribute("data-tool")) >= 0);
+        });
         relayoutTools();
     }
 
@@ -991,7 +996,7 @@
         bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
         bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"),
         bgBrandSwatches: el("bgBrandSwatches"), bgBrandHex: el("bgBrandHex"), bgBrandPick: el("bgBrandPick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        designPick: el("designPick"), panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), fxWhere: el("fxWhere"), fxWhereState: el("fxWhereState"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
+        designPick: el("designPick"), panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), toolPicker: el("toolPicker"), fxWhere: el("fxWhere"), fxWhereState: el("fxWhereState"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
@@ -1015,10 +1020,10 @@
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
         shiftOptsToggle: el("shiftOptsToggle"), shiftPrevBox: el("shiftPrevBox"), shiftPrev: el("shiftPrev"), shiftPrevText: el("shiftPrevText"),
         shiftWhat: el("shiftWhat"), shiftStep: el("shiftStep"), shiftBack: el("shiftBack"), shiftFwd: el("shiftFwd"), timeAlign: el("timeAlign"),
-        staggerOptsToggle: el("staggerOptsToggle"), staggerPrevBox: el("staggerPrevBox"), staggerPrev: el("staggerPrev"), staggerPrevText: el("staggerPrevText"),
+        staggerOptsToggle: el("staggerOptsToggle"), staggerPrevText: el("staggerPrevText"),
         staggerWhat: el("staggerWhat"), staggerStep: el("staggerStep"), staggerLess: el("staggerLess"), staggerMore: el("staggerMore"),
         staggerOrder: el("staggerOrder"), staggerOrderName: el("staggerOrderName"), staggerBtn: el("staggerBtn"),
-        frames: el("frames"), saveSettings: el("saveSettings"),
+        frames: el("frames"), settingsSaved: el("settingsSaved"),
         modal: el("modal"), modalTitle: el("modalTitle"), modalText: el("modalText"), modalCode: el("modalCode"),
         modalButtons: el("modalButtons"),
         updateBar: el("updateBar"), updateTitle: el("updateTitle"), updateNotes: el("updateNotes"),
@@ -1088,6 +1093,7 @@
         }
         TABS[name].slot.appendChild(ui.statusBox);
         currentTab = name;
+        document.documentElement.setAttribute("data-tab", name);
         applyTheme(draft || settings);
         if (name === "motion" || name === "shape") { relayoutTools(); }
         try { window.localStorage.setItem(TAB_KEY, name); } catch (e) {}
@@ -3287,7 +3293,7 @@
             applyTheme(draft);
         });
 
-        // Дизайн меняется сразу; без «Сохранить» вернётся прежний.
+        // Дизайн меняется сразу и сразу сохраняется.
         ui.designPick.addEventListener("click", function (e) {
             var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
             if (!draft || DESIGNS.indexOf(v) < 0) { return; }
@@ -3308,7 +3314,7 @@
             applyTheme(draft);
         });
 
-        // «На всю ширину» и ширина меняются сразу; без «Сохранить» вернётся прежнее.
+        // «На всю ширину» и ширина меняются сразу и сразу же сохраняются.
         ui.panelFit.addEventListener("change", function () {
             if (!draft) { return; }
             draft.panelFit = ui.panelFit.checked;
@@ -3371,6 +3377,7 @@
         pressGroup(ui.frames, draft.refFrames);
         pressGroup(ui.toolSize, draft.toolSize);
         ui.toolTitles.checked = draft.toolTitles;
+        showToolPicker();
         ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
         pressGroup(ui.fxWhere, draft.fxWhere === "cursor" ? "cursor" : "panel");
         pressGroup(ui.designPick, DESIGNS.indexOf(draft.design) >= 0 ? draft.design : "studio");
@@ -3381,26 +3388,56 @@
         ui.hotkeyNote.textContent = "";
         renderHotkeys();
         showSetPane("ai");
+        ui.settingsSaved.textContent = "Изменения сохраняются сами.";
+        ui.settingsSaved.className = "hint settings-saved";
+        settingsChanged = false;
         ui.sheet.hidden = false;
         ui.sheet.scrollTop = 0;
     }
 
-    function closeSettings(save) {
-        if (save && draft) {
-            keepTypedKey();
-            draft.selfCheck = ui.selfCheck.checked;
-            draft.alwaysAsk = ui.alwaysAsk.checked;
-            draft.brandPics = ui.brandPics.checked;
-            draft.toolTitles = ui.toolTitles.checked;
-            draft.pasteAnywhere = ui.pasteAnywhere.checked;
-            draft.stats = ui.statsOn.checked;
-            draft.infoTips = ui.infoTipsOn.checked;
-            settings = draft;
-            storeSettings(settings);
-            registerHotkeys();
-            hotkeyHint();
-            setStatus(aiKey() ? "Настройки сохранены." : "Ключ API не задан.", aiKey() ? "done" : "");
-        }
+    // Настройки сохраняются сами: любое изменение сразу записывается, «×» просто закрывает окно.
+    var commitTimer = null, savedFlash = null, settingsChanged = false;
+
+    function commitSettings() {
+        var next = {}, k;
+        if (commitTimer) { clearTimeout(commitTimer); commitTimer = null; }
+        if (!draft) { return false; }
+        keepTypedKey();
+        draft.selfCheck = ui.selfCheck.checked;
+        draft.alwaysAsk = ui.alwaysAsk.checked;
+        draft.brandPics = ui.brandPics.checked;
+        draft.toolTitles = ui.toolTitles.checked;
+        draft.pasteAnywhere = ui.pasteAnywhere.checked;
+        draft.stats = ui.statsOn.checked;
+        draft.infoTips = ui.infoTipsOn.checked;
+        for (k in draft) { if (draft.hasOwnProperty(k)) { next[k] = draft[k]; } }
+        if (JSON.stringify(next) === JSON.stringify(settings)) { return false; }
+        settings = next;
+        storeSettings(settings);
+        registerHotkeys();
+        hotkeyHint();
+        settingsChanged = true;
+        ui.settingsSaved.textContent = "Сохранено ✓";
+        ui.settingsSaved.className = "hint settings-saved ok";
+        if (savedFlash) { clearTimeout(savedFlash); }
+        savedFlash = setTimeout(function () {
+            ui.settingsSaved.textContent = "Изменения сохраняются сами.";
+            ui.settingsSaved.className = "hint settings-saved";
+        }, 1500);
+        return true;
+    }
+
+    // Щелчок и выбор сохраняются сразу (после своих обработчиков), набор текста — после короткой паузы.
+    function scheduleCommit(ms) {
+        if (!draft) { return; }
+        if (commitTimer) { clearTimeout(commitTimer); }
+        commitTimer = setTimeout(commitSettings, ms);
+    }
+
+    function closeSettings() {
+        commitSettings();
+        if (settingsChanged) { setStatus(aiKey() ? "Настройки сохранены." : "Ключ API не задан.", aiKey() ? "done" : ""); }
+        settingsChanged = false;
         draft = null;
         stopHotkeyEdit();
         applyTheme(settings);
@@ -3425,7 +3462,7 @@
         ui.keyHint.className = "hint";
         settings = trial;
         callAI([{ role: "user", content: "ping" }], 1, undefined, { quiet: true }).then(function (r) {
-            settings = saved;
+            if (settings === trial) { settings = saved; }
             ui.testKey.disabled = false;
             ui.keyHint.textContent = r.ok ? "Ключ работает." : r.error;
             ui.keyHint.className = "hint " + (r.ok ? "ok" : "bad");
@@ -3455,7 +3492,8 @@
         shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true, staggerOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
     var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
-    var STAGGER_ORDERS = ["asc", "desc", "selection", "random"];
+    var STAGGER_ORDERS = ["asc", "random", "desc"];
+    var STAGGER_TARGETS = ["layer", "keys"];
     var MAX_STEP_FRAMES = 999;
     var TOOL_NAMES = ["ease", "anchor", "align", "shift", "stagger", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
     var SHAPE_TOOL_NAMES = ["split"];
@@ -3628,7 +3666,7 @@
         if (m.alignTo !== "selection") { m.alignTo = "comp"; }
         if (m.easeView !== "value") { m.easeView = "speed"; }
         if (SHIFT_TARGETS.indexOf(m.shiftWhat) < 0) { m.shiftWhat = "in"; }
-        if (SHIFT_TARGETS.indexOf(m.staggerWhat) < 0) { m.staggerWhat = "layer"; }
+        if (STAGGER_TARGETS.indexOf(m.staggerWhat) < 0) { m.staggerWhat = m.staggerWhat === "in" || m.staggerWhat === "out" ? "keys" : "layer"; }
         if (TIME_POINTS.indexOf(m.timeAlign) < 0) { m.timeAlign = "inStart"; }
         if (STAGGER_ORDERS.indexOf(m.staggerOrder) < 0) { m.staggerOrder = "asc"; }
         m.shiftStep = clampStep(m.shiftStep);
@@ -3685,7 +3723,7 @@
             { key: "cutoutOpts", button: ui.cutoutOptsToggle, part: ui.cutoutHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "splitOpts", button: ui.splitOptsToggle, part: ui.splitHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "shiftOpts", button: ui.shiftOptsToggle, part: ui.shiftPrevBox, hide: "Скрыть схему", show: "Показать схему" },
-            { key: "staggerOpts", button: ui.staggerOptsToggle, part: ui.staggerPrevBox, hide: "Скрыть схему", show: "Показать схему" }
+            { key: "staggerOpts", button: ui.staggerOptsToggle, part: ui.staggerPrevText, hide: "Скрыть подсказку", show: "Показать подсказку" }
         ];
     }
 
@@ -4272,9 +4310,8 @@
     });
 
     var AC_GLYPH = { arrow: "➜", star: "★", counter: "42%", timer: "00:10" };
-    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false, folder: "all", tfolder: "all", tdur: 0.8, xfolder: "all", xunit: "all", sfolder: "all", pitch: 0, vol: 0, gfolder: "all", kfolder: "all" };
+    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false, folder: "all", tfolder: "all", tdur: 0.8, xfolder: "all", xunit: "all", sfolder: "all", pitch: 0, len: 100, vol: 0, gfolder: "all", kfolder: "all" };
     var acState = loadAcState();
-    var acAudio = null;
 
     function loadAcState() {
         var s, out = {}, k;
@@ -4296,6 +4333,7 @@
         if (!GR_FOLDERS.some(function (f) { return f.id === out.gfolder; })) { out.gfolder = "all"; }
         if (!KIT_FOLDERS.some(function (f) { return f.id === out.kfolder; })) { out.kfolder = "all"; }
         out.pitch = Math.max(-12, Math.min(12, Math.round(Number(out.pitch)) || 0));
+        out.len = Math.max(50, Math.min(200, Math.round((Number(out.len) || 100) / 5) * 5));
         out.vol = Math.max(-24, Math.min(6, Math.round(Number(out.vol)) || 0));
         out.tdur = Math.min(3, Math.max(0.2, Math.round(Number(out.tdur) * 10) / 10 || 0.8));
         out.fav = Array.isArray(s.fav) ? s.fav.filter(function (x) { return typeof x === "string"; }) : [];
@@ -4381,7 +4419,14 @@
             thumb.appendChild(bar);
         }
         if (p.sec === "sfx") {
-            for (i = 0; i < 5; i++) { bar = document.createElement("i"); obj.appendChild(bar); }
+            // Настоящая волна звука (из sfx/peaks.json); пока она не прочитана — пять полосок-эквалайзер.
+            if (SFX_PEAKS && SFX_PEAKS[p.id]) {
+                obj.className = "ac-obj ac-wave";
+                thumb.classList.add("ac-thumb-wave");
+                obj.innerHTML = sfxWaveSvg(SFX_PEAKS[p.id].p, "") + sfxWaveSvg(SFX_PEAKS[p.id].p, "ac-wave-done") + "<i class=\"ac-wave-head\"></i>";
+            } else {
+                for (i = 0; i < 5; i++) { bar = document.createElement("i"); obj.appendChild(bar); }
+            }
         }
         if (p.sec === "kit") {
             // Стекло над цветной картинкой: под ним всё размыто и чуть увеличено, по краю — блик.
@@ -4397,6 +4442,7 @@
         var searching = !!ui.acSearch.value.replace(/\s/g, "") || acState.favOnly;
         var sec = acState.sec;
         var editing = sec === "edit" && !searching;
+        if (sec === "sfx" || searching) { loadSfxPeaks(); }
         if (acSeen) { acSeen.disconnect(); }
         grLive = [];
         ui.acGrid.innerHTML = "";
@@ -4417,6 +4463,8 @@
             ui.acSndRow.hidden = editing || !(searching || sec === "sfx");
             ui.acPitch.value = String(acState.pitch);
             ui.acPitchVal.textContent = pitchText(acState.pitch);
+            ui.acLen.value = String(acState.len);
+            ui.acLenVal.textContent = lenText(acState.len);
             ui.acVol.value = String(acState.vol);
             ui.acVolVal.textContent = volText(acState.vol);
         }
@@ -5226,8 +5274,8 @@
                 "Длительность — длина слоя; цвет, размер и толщина — в Effect Controls.";
         }
         if (sec === "sfx") {
-            return "▶ — послушать с выбранной высотой тона. Щелчок по карточке кладёт звук в композицию у указателя времени. " +
-                "Высота тона — как в сэмплере: выше — звук короче, ниже — длиннее.";
+            return "▶ — послушать с выбранными тоном и длиной. Щелчок по карточке кладёт звук в композицию у указателя времени. " +
+                "Высота тона меняет только тон, «Длина» — только длину (растягивание клипа, как в Audition). Выделен звуковой слой в композиции — ползунки меняют и его. Отпустили ползунок — звук сразу играет с новыми настройками.";
         }
         if (sec === "text") {
             return "Выделите текстовый слой и щёлкните по карточке (нет слоя — панель создаст новый); щелчок по отмеченной снимает пресет. " +
@@ -5299,6 +5347,14 @@
             play.setAttribute("aria-label", "Послушать «" + p.name + "»");
             play.addEventListener("click", function (e) { e.stopPropagation(); acPreviewSound(p); });
             card.appendChild(play);
+            if (SFX_PEAKS && SFX_PEAKS[p.id]) {
+                badge = document.createElement("span");
+                badge.className = "ac-dur";
+                card.classList.add("has-dur");
+                badge.setAttribute("data-id", p.id);
+                badge.textContent = sfxDurText(p.id);
+                card.appendChild(badge);
+            }
         }
         if (p.motion) {
             badge = document.createElement("span");
@@ -5613,12 +5669,9 @@
         head.appendChild(name);
         head.appendChild(remove);
         box.appendChild(head);
-        box.appendChild(acSlider("Высота тона", -12, 12, 1, Math.round(snd.pitch), pitchText, function (v) {
-            sfEditCall("sndSet", [v, null], "Высота тона изменена.");
-        }));
-        box.appendChild(acSlider("Громкость", -24, 6, 1, Math.round(snd.volume), volText, function (v) {
-            sfEditCall("sndSet", [null, v], "Громкость изменена.");
-        }));
+        box.appendChild(acSlider("Высота тона", -12, 12, 1, Math.round(snd.pitch), pitchText, function (v) { sndChanged({ pitch: v }); }));
+        box.appendChild(acSlider("Длина", 50, 200, 5, Math.round(snd.len || 100), lenText, function (v) { sndChanged({ len: v }); }));
+        box.appendChild(acSlider("Громкость", -24, 6, 1, Math.round(snd.volume), volText, function (v) { sndChanged({ volume: v }); }));
         return box;
     }
 
@@ -5716,20 +5769,217 @@
 
     function acSoundPath(id) { return platform.join(extensionDir(), "sfx", id + ".wav"); }
 
-    // Превью звучит так же, как слой в After Effects: быстрее — выше, медленнее — ниже (без сохранения высоты).
+    // ---- звук: высота тона без изменения длины и длина без изменения тона.
+    // After Effects умеет только Stretch (быстрее — выше и короче). Поэтому длина — это Stretch слоя, а тон панель
+    // пересчитывает сама: растягивает звук по времени кусочками (WSOLA) и проигрывает быстрее — длина та же, тон выше.
+    // Сдвиг тона файла = тон + 12·log2(длина/100): Stretch потом понизит его ровно на столько.
+
+    function sndFileShift(pitch, len) { return Math.round((pitch + 12 * Math.log(len / 100) / Math.LN2) * 100) / 100; }
+
+    // WAV (PCM 16/24/32 бит или float) → { rate, ch: [Float32Array…] }.
+    function wavDecode(bytes) {
+        var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), pos = 12, fmt = null, id, size, n, chs, i, c, bps, off, out, frames;
+        if (bytes.length < 44 || dv.getUint32(0, false) !== 0x52494646 || dv.getUint32(8, false) !== 0x57415645) { return null; }
+        while (pos + 8 <= bytes.length) {
+            id = dv.getUint32(pos, false); size = dv.getUint32(pos + 4, true);
+            if (id === 0x666d7420) { fmt = { tag: dv.getUint16(pos + 8, true), n: dv.getUint16(pos + 10, true), rate: dv.getUint32(pos + 12, true), bits: dv.getUint16(pos + 22, true) }; }
+            if (id === 0x64617461 && fmt) {
+                n = fmt.n; bps = fmt.bits / 8; frames = Math.floor(Math.min(size, bytes.length - pos - 8) / (bps * n));
+                chs = []; for (c = 0; c < n; c++) { chs.push(new Float32Array(frames)); }
+                for (i = 0; i < frames; i++) {
+                    for (c = 0; c < n; c++) {
+                        off = pos + 8 + (i * n + c) * bps;
+                        if (fmt.tag === 3 && bps === 4) { out = dv.getFloat32(off, true); }
+                        else if (bps === 2) { out = dv.getInt16(off, true) / 32768; }
+                        else if (bps === 3) { out = ((dv.getUint8(off) | (dv.getUint8(off + 1) << 8) | (dv.getInt8(off + 2) << 16))) / 8388608; }
+                        else if (bps === 4) { out = dv.getInt32(off, true) / 2147483648; }
+                        else { out = (dv.getUint8(off) - 128) / 128; }
+                        chs[c][i] = out;
+                    }
+                }
+                return { rate: fmt.rate, ch: chs };
+            }
+            pos += 8 + size + (size & 1);
+        }
+        return null;
+    }
+
+    function wavEncode(snd) {
+        var n = snd.ch.length, frames = snd.ch[0].length, len = 44 + frames * n * 2, buf = new ArrayBuffer(len), dv = new DataView(buf), i, c, v, o = 44;
+        function str(at, t) { for (var k = 0; k < t.length; k++) { dv.setUint8(at + k, t.charCodeAt(k)); } }
+        str(0, "RIFF"); dv.setUint32(4, len - 8, true); str(8, "WAVE"); str(12, "fmt "); dv.setUint32(16, 16, true);
+        dv.setUint16(20, 1, true); dv.setUint16(22, n, true); dv.setUint32(24, snd.rate, true); dv.setUint32(28, snd.rate * n * 2, true);
+        dv.setUint16(32, n * 2, true); dv.setUint16(34, 16, true); str(36, "data"); dv.setUint32(40, frames * n * 2, true);
+        for (i = 0; i < frames; i++) {
+            for (c = 0; c < n; c++) { v = Math.max(-1, Math.min(1, snd.ch[c][i])); dv.setInt16(o, v < 0 ? v * 32768 : v * 32767, true); o += 2; }
+        }
+        return new Uint8Array(buf);
+    }
+
+    // Растягивает звук по времени в r раз, не меняя тон: кусочки по ~23 мс, каждый следующий берётся там,
+    // где он лучше всего продолжает предыдущий (WSOLA). Смещения ищутся по смеси каналов — каналы не расходятся.
+    function sndStretchTime(ch, rate, r) {
+        var N = rate >= 88000 ? 2048 : 1024, Hs = N / 2, tol = N / 8, L = N / 4, len = ch[0].length;
+        var outLen = Math.max(1, Math.round(len * r)), mono = new Float32Array(len), win = new Float32Array(N);
+        var out = ch.map(function () { return new Float32Array(outLen + N); }), norm = new Float32Array(outLen + N);
+        var i, k, c, at, best, bestScore, cand, sc, j, prev = 0, nat;
+        for (i = 0; i < len; i++) { for (c = 0; c < ch.length; c++) { mono[i] += ch[c][i]; } }
+        for (i = 0; i < N; i++) { win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N); }
+        for (k = 0; k * Hs < outLen; k++) {
+            at = Math.round(k * Hs / r);
+            best = at;
+            if (k > 0) {
+                nat = prev + Hs;
+                bestScore = -Infinity;
+                for (cand = Math.max(0, at - tol); cand <= Math.min(len - L - 1, at + tol); cand++) {
+                    sc = 0;
+                    for (j = 0; j < L; j += 4) { if (nat + j < len) { sc += mono[cand + j] * mono[nat + j]; } }
+                    if (sc > bestScore) { bestScore = sc; best = cand; }
+                }
+            }
+            best = Math.max(0, Math.min(len - 1, best));
+            for (i = 0; i < N; i++) {
+                if (best + i >= len) { break; }
+                for (c = 0; c < ch.length; c++) { out[c][k * Hs + i] += ch[c][best + i] * win[i]; }
+                norm[k * Hs + i] += win[i];
+            }
+            prev = best;
+        }
+        return out.map(function (o) {
+            var res = new Float32Array(outLen);
+            for (i = 0; i < outLen; i++) { res[i] = norm[i] > 1e-3 ? o[i] / norm[i] : 0; }
+            return res;
+        });
+    }
+
+    // Тон на semis полутонов выше (ниже), длина та же: растянуть в r раз и проиграть в r раз быстрее.
+    function sndPitchShift(snd, semis) {
+        var r = Math.pow(2, semis / 12), long, len = snd.ch[0].length;
+        if (Math.abs(semis) < 0.01) { return snd; }
+        long = sndStretchTime(snd.ch, snd.rate, r);
+        return { rate: snd.rate, ch: long.map(function (x) {
+            var o = new Float32Array(len), i, t, a, f;
+            for (i = 0; i < len; i++) {
+                t = i * r; a = Math.floor(t); f = t - a;
+                o[i] = a + 1 < x.length ? x[a] * (1 - f) + x[a + 1] * f : (a < x.length ? x[a] : 0);
+            }
+            return o;
+        }) };
+    }
+
+    // Любой звук (не WAV — через декодер браузера) → { rate, ch }.
+    async function sndRead(file) {
+        var bytes = base64ToBytes(await platform.readBase64(file)), snd = wavDecode(bytes), Ctx, ctx, buf, i;
+        if (snd) { return snd; }
+        Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        if (!Ctx) { throw new Error("Не получилось прочитать звук: этот формат панель не открывает. Сохраните его как WAV."); }
+        ctx = new Ctx(1, 1, 44100);
+        buf = await ctx.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+        snd = { rate: buf.sampleRate, ch: [] };
+        for (i = 0; i < buf.numberOfChannels; i++) { snd.ch.push(buf.getChannelData(i)); }
+        return snd;
+    }
+
+    // Файл со сдвинутым тоном рядом с прочими звуками: «имя.tone+3.40.wav». Готовый не пересчитывается.
+    async function sndVariant(src, shift, folder) {
+        var name, dest;
+        if (Math.abs(shift) < 0.01) { return src; }
+        name = platform.basename(src).replace(/(\.tone[+-]\d+\.\d\d)?\.[^.]*$/i, "") + ".tone" + (shift > 0 ? "+" : "-") + Math.abs(shift).toFixed(2) + ".wav";
+        dest = platform.join(folder, name);
+        if (await platform.exists(dest)) { return dest; }
+        await platform.writeBytes(dest, wavEncode(sndPitchShift(await sndRead(src), shift)));
+        return dest;
+    }
+
+    async function sndFolder() {
+        var info = await host("info", []), folder;
+        if (!info.fileAccess) { throw new Error(FILE_ACCESS_HINT); }
+        folder = info.projectPath ? platform.join(platform.dirname(info.projectPath), "Sayframe SFX") : platform.join(platform.homedir(), "Documents", "Sayframe SFX");
+        await platform.mkdirp(folder);
+        return folder;
+    }
+
+    // Превью звучит так же, как будет в After Effects: тон — пересчётом, длина — скоростью (как Stretch).
+    var acCtx = null, acSrc = null, acLastSound = "";
     function acPreviewSound(p) {
+        acLastSound = p.id;
+        return sndPlay(acSoundPath(p.id), acState.pitch, acState.len, acState.vol, p.id);
+    }
+
+    async function sndPlay(file, pitch, len, vol, id) {
+        var snd, Ctx, buf, gain, c;
         try {
-            if (acAudio) { acAudio.pause(); }
-            acAudio = new Audio("file://" + encodeURI(acSoundPath(p.id)));
-            acAudio.preservesPitch = false;
-            acAudio.webkitPreservesPitch = false;
-            acAudio.playbackRate = Math.pow(2, acState.pitch / 12);
-            acAudio.volume = Math.min(1, Math.pow(10, acState.vol / 20));
-            acAudio.play();
+            if (acSrc) { try { acSrc.stop(); } catch (e0) {} acSrc = null; }
+            Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) { return; }
+            if (!acCtx) { acCtx = new Ctx(); }
+            snd = sndPitchShift(await sndRead(file), sndFileShift(pitch, len));
+            buf = acCtx.createBuffer(snd.ch.length, snd.ch[0].length, snd.rate);
+            for (c = 0; c < snd.ch.length; c++) { buf.getChannelData(c).set(snd.ch[c]); }
+            acSrc = acCtx.createBufferSource();
+            acSrc.buffer = buf;
+            acSrc.playbackRate.value = 100 / len;
+            gain = acCtx.createGain();
+            gain.gain.value = Math.pow(10, vol / 20);
+            acSrc.connect(gain); gain.connect(acCtx.destination);
+            acSrc.start();
+            if (id) { sfxShowPlaying(id, buf.duration * len / 100); }
         } catch (e) {}
     }
 
+    // Отпустили ползунок: выделенный звуковой слой меняется и сразу звучит с новыми тоном, длиной и громкостью;
+    // слой не выделен — звучит звук, который вы последним слушали или вставили из библиотеки.
+    async function sndChanged(change) {
+        var list = await sndToSelected(change);
+        if (list && list.length) { return sndPlay(list[0].src, list[0].pitch, list[0].len, list[0].volume, ""); }
+        if (acLastSound && acState.sec === "sfx" && SFX_BY_ID[acLastSound]) { return acPreviewSound({ id: acLastSound }); }
+    }
+
+    // Волны карточек «Звуки»: длина и 48 уровней громкости на каждый звук, читаются один раз.
+    var SFX_PEAKS = null, sfxPeaksLoading = false;
+    function loadSfxPeaks() {
+        if (SFX_PEAKS || sfxPeaksLoading) { return; }
+        sfxPeaksLoading = true;
+        platform.readText(platform.join(extensionDir(), "sfx", "peaks.json")).then(function (text) {
+            var d = JSON.parse(text);
+            if (d && typeof d === "object") { SFX_PEAKS = d; if (acState.sec === "sfx" || ui.acSearch.value) { renderAc(); } }
+        }).catch(function () {});
+    }
+
+    function sfxWaveSvg(pk, cls) {
+        var out = "", i, a;
+        for (i = 0; i < pk.length; i++) {
+            a = Math.max(0.6, (Number(pk[i]) || 0) / 100 * 19);
+            out += "<rect x=\"" + (i * 2 + 0.3) + "\" y=\"" + (20 - a).toFixed(1) + "\" width=\"1.4\" height=\"" + (2 * a).toFixed(1) + "\" rx=\"0.5\"/>";
+        }
+        return "<svg class=\"ac-wave-svg" + (cls ? " " + cls : "") + "\" viewBox=\"0 0 " + pk.length * 2 + " 40\" preserveAspectRatio=\"none\" aria-hidden=\"true\">" +
+            "<line x1=\"0\" x2=\"" + pk.length * 2 + "\" y1=\"20\" y2=\"20\"/>" + out + "</svg>";
+    }
+
+    // Длина звука на карточке — с учётом ползунка «Длина».
+    function sfxDurText(id) {
+        var d = SFX_PEAKS && SFX_PEAKS[id] ? SFX_PEAKS[id].dur * acState.len / 100 : 0;
+        return d ? (Math.round(d * 10) / 10).toFixed(1).replace(".", ",") + " с" : "";
+    }
+
+    function sfxUpdateDurs() {
+        Array.prototype.forEach.call(document.querySelectorAll("#acGrid .ac-dur"), function (el) { el.textContent = sfxDurText(el.getAttribute("data-id")); });
+    }
+
+    // Пока звук играет, пройденная часть волны подсвечивается и по ней бежит линия.
+    function sfxShowPlaying(id, seconds) {
+        Array.prototype.forEach.call(document.querySelectorAll("#acGrid .ac-card.playing"), function (c) { c.classList.remove("playing"); });
+        var card = document.querySelector('#acGrid .ac-card[data-key="sfx:' + id + '"]');
+        if (!card || !seconds) { return; }
+        void card.offsetWidth;
+        card.style.setProperty("--play", seconds.toFixed(3) + "s");
+        card.classList.add("playing");
+        clearTimeout(card.playTimer);
+        card.playTimer = setTimeout(function () { card.classList.remove("playing"); }, seconds * 1000 + 100);
+    }
+
     function pitchText(v) { v = Math.round(v * 10) / 10; return (v > 0 ? "+" : "") + String(v).replace(".", ",") + " пт"; }
+    function lenText(v) { return Math.round(v) + "%"; }
     function volText(v) { v = Math.round(v * 10) / 10; return (v > 0 ? "+" : "") + String(v).replace(".", ",") + " дБ"; }
 
     // Ряд «Высота тона / Громкость» для звуков: значения запоминаются и идут в слой при вставке.
@@ -5737,14 +5987,49 @@
         var row = document.createElement("div");
         row.id = "acSndRow";
         row.className = "ac-row ac-snd";
-        row.innerHTML = '<label class="ac-slider">Высота тона <input id="acPitch" class="range" type="range" min="-12" max="12" step="1" aria-label="Высота тона"><output id="acPitchVal"></output></label>' +
-            '<label class="ac-slider">Громкость <input id="acVol" class="range" type="range" min="-24" max="6" step="1" aria-label="Громкость"><output id="acVolVal"></output></label>';
+        row.innerHTML = '<label class="ac-slider"><span>Высота тона</span><input id="acPitch" class="range" type="range" min="-12" max="12" step="1" aria-label="Высота тона"><output id="acPitchVal"></output></label>' +
+            '<label class="ac-slider" title="Растягивание клипа: длиннее или короче, тон тот же"><span>Длина</span><input id="acLen" class="range" type="range" min="50" max="200" step="5" aria-label="Длина"><output id="acLenVal"></output></label>' +
+            '<label class="ac-slider"><span>Громкость</span><input id="acVol" class="range" type="range" min="-24" max="6" step="1" aria-label="Громкость"><output id="acVolVal"></output></label>';
         ui.acFoot.querySelector(".ac-opts").appendChild(row);
         ui.acSndRow = row;
         ui.acPitch = row.querySelector("#acPitch"); ui.acPitchVal = row.querySelector("#acPitchVal");
         ui.acVol = row.querySelector("#acVol"); ui.acVolVal = row.querySelector("#acVolVal");
+        ui.acLen = row.querySelector("#acLen"); ui.acLenVal = row.querySelector("#acLenVal");
+        ui.acLen.addEventListener("input", function () { acState.len = Number(ui.acLen.value); ui.acLenVal.textContent = lenText(acState.len); storeAcState(); sfxUpdateDurs(); });
+        ui.acLen.addEventListener("change", function () { sndChanged({ len: acState.len }); });
         ui.acPitch.addEventListener("input", function () { acState.pitch = Number(ui.acPitch.value); ui.acPitchVal.textContent = pitchText(acState.pitch); storeAcState(); });
         ui.acVol.addEventListener("input", function () { acState.vol = Number(ui.acVol.value); ui.acVolVal.textContent = volText(acState.vol); storeAcState(); });
+        // Отпустили ползунок — то же значение уходит в выделенные звуковые слои (любой звук, не только из библиотеки).
+        ui.acPitch.addEventListener("change", function () { sndChanged({ pitch: acState.pitch }); });
+        ui.acVol.addEventListener("change", function () { sndChanged({ volume: acState.vol }); });
+    }
+
+    // Меняет у выделенных звуковых слоёв то, что задано в change ({pitch} / {len} / {volume}), остальное у каждого своё.
+    async function sndToSelected(change, quietIfNone) {
+        var res, folder, list = [], i, t, pitch, len, file, what;
+        if (busy) { return; }
+        try { res = await host("sndTargets", []); } catch (e0) { return; }
+        if (!res || !res.list || !res.list.length) { return; }
+        setBusy(true);
+        setStatus("Пересчитываю звук…", "busy");
+        try {
+            folder = await sndFolder();
+            for (i = 0; i < res.list.length; i++) {
+                t = res.list[i];
+                pitch = change.pitch !== undefined ? change.pitch : t.pitch;
+                len = change.len !== undefined ? change.len : t.len;
+                file = await sndVariant(t.src, sndFileShift(pitch, len), folder);
+                list.push({ index: t.index, file: file, len: len, volume: change.volume !== undefined ? change.volume : t.volume, src: t.src, pitch: pitch });
+            }
+            res = await host("sndApplyFiles", [list]);
+            setBusy(false);
+            what = change.pitch !== undefined ? "Высота тона " + pitchText(change.pitch) : change.len !== undefined ? "Длина " + lenText(change.len) : "Громкость " + volText(change.volume);
+            setStatus(what + ": " + (res.count === 1 ? "слой «" + res.name + "»" : plural(res.count, "звуковой слой", "звуковых слоя", "звуковых слоёв")) + ".\nОтменить: Cmd/Ctrl+Z.", "done");
+            if (acEdit && acEdit.sound) { loadAcEdit(); }
+            return list;
+        } catch (e) {
+            toolFailed(e);
+        }
     }
 
     function hexToRgb01(hex) {
@@ -5790,19 +6075,17 @@
                     (res.text ? " Текст — отдельным слоем «" + res.text + "», он привязан к графике." : "") +
                     " Растяните слой, чтобы изменить длительность; цвет, размер и толщина — в Effect Controls и во «✎ Изменить». Отменить — Cmd/Ctrl+Z.", "done");
             } else {
-                info = await host("info", []);
-                if (!info.fileAccess) { throw new Error(FILE_ACCESS_HINT); }
-                folder = info.projectPath ? platform.join(platform.dirname(info.projectPath), "Sayframe SFX") :
-                    platform.join(platform.homedir(), "Documents", "Sayframe SFX");
-                await platform.mkdirp(folder);
+                acLastSound = p.id;
+                folder = await sndFolder();
                 dest = platform.join(folder, p.id + ".wav");
                 if (!(await platform.exists(dest))) {
                     await platform.writeBytes(dest, base64ToBytes(await platform.readBase64(acSoundPath(p.id))));
                 }
-                res = await host("acSound", [dest, "Sayframe SFX", acState.pitch, acState.vol, "♪ " + p.name]);
+                res = await host("acSound", [await sndVariant(dest, sndFileShift(acState.pitch, acState.len), folder), "Sayframe SFX", acState.len, acState.vol, "♪ " + p.name,
+                    { src: dest, p: acState.pitch, l: acState.len }]);
                 setBusy(false);
-                setStatus("Звук «" + p.name + "» добавлен у указателя времени" + (acState.pitch ? ", высота тона " + pitchText(acState.pitch) : "") + "." +
-                    (res.reused ? "" : " Файл лежит в папке «Sayframe SFX» рядом с проектом.") + " Высоту тона и громкость можно поменять во «✎ Изменить».", "done");
+                setStatus("Звук «" + p.name + "» добавлен у указателя времени" + (acState.pitch ? ", высота тона " + pitchText(acState.pitch) : "") + (acState.len !== 100 ? ", длина " + lenText(acState.len) : "") + "." +
+                    (res.reused ? "" : " Файл лежит в папке «Sayframe SFX» рядом с проектом.") + " Выделите слой и двигайте ползунки внизу — он поменяется.", "done");
             }
         } catch (e) {
             toolFailed(e);
@@ -8942,22 +9225,30 @@
         ui.shiftPrevText.textContent = text;
     }
 
-    // Схема «Лесенки»: три слоя, пунктир — как сейчас (все вместе), цветом — по ступенькам.
-    function drawStaggerPreview() {
-        var what = motion.staggerWhat, order = motion.staggerOrder, n = motion.staggerStep, step = 11, svg = "", i, k, y, x0 = 8, x1 = 58, a = 12;
-        var steps = { asc: [0, 1, 2], desc: [2, 1, 0], selection: [1, 0, 2], random: [2, 0, 1] }[order];
+    // Значки порядка «Лесенки»: три ступеньки — полоски слоёв или пары ключей, смотря что расставляем.
+    var STAIR_STEPS = { asc: [0, 1, 2], random: [1, 0, 2], desc: [2, 1, 0] };
+
+    function stairIcon(order, keys) {
+        var svg = "", i, x, y;
         for (i = 0; i < 3; i++) {
-            k = steps[i] * step;
-            y = 3 + i * 9;
-            svg += tlBar(x0, x1, y, 6, a, "", true);
-            if (what === "layer") { svg += tlBar(x0 + k, x1 + k, y, 6, a, "layer"); }
-            if (what === "in") { svg += tlBar(x0 + k, x1, y, 6, a, "in"); }
-            if (what === "out") { svg += tlBar(x0, x1 + k, y, 6, a, "out"); }
-            svg += "<text class=\"tl-num\" x=\"" + (x1 + 2 * step + 5) + "\" y=\"" + (y + 5.5) + "\">" + (i + 1) + "</text>";
+            x = 3 + STAIR_STEPS[order][i] * 7;
+            y = 4 + i * 8;
+            if (keys) {
+                svg += "<path class=\"st-key-line\" d=\"M" + (x + 3) + " " + y + "H" + (x + 17) + "\"/>" +
+                    "<path d=\"M" + (x + 3) + " " + (y - 3) + "l3 3-3 3-3-3z\"/><path d=\"M" + (x + 17) + " " + (y - 3) + "l3 3-3 3-3-3z\"/>";
+            } else {
+                svg += "<rect x=\"" + x + "\" y=\"" + (y - 2.6) + "\" width=\"22\" height=\"5.2\" rx=\"1.8\"/>";
+            }
         }
-        ui.staggerPrev.innerHTML = svg;
-        ui.staggerPrevText.textContent = "Каждый следующий " + (what === "layer" ? "слой" : what === "in" ? "слой появляется" : "слой исчезает") + " на " +
-            plural(n, "кадр", "кадра", "кадров") + " позже предыдущего, " + ORDER_NAMES[order] + ".";
+        return "<svg viewBox=\"0 0 40 24\" aria-hidden=\"true\">" + svg + "</svg>";
+    }
+
+    function drawStaggerPreview() {
+        var keys = motion.staggerWhat === "keys", order = motion.staggerOrder, n = motion.staggerStep;
+        Array.prototype.forEach.call(ui.staggerOrder.querySelectorAll("button[data-v]"), function (b) {
+            b.innerHTML = stairIcon(b.getAttribute("data-v"), keys);
+        });
+        ui.staggerPrevText.textContent = (keys ? "Ключи каждого следующего слоя — на " : "Каждый следующий слой — на ") + plural(n, "кадр", "кадра", "кадров") + " позже предыдущего.";
         ui.staggerOrderName.textContent = ORDER_NAMES[order].charAt(0).toUpperCase() + ORDER_NAMES[order].slice(1);
     }
 
@@ -8974,7 +9265,7 @@
     // Значки «К указателю»: полоска слоя и синяя линия указателя в нужной точке.
     // Сегменты «что двигать» — та же полоска с выделенной частью и короткая подпись (полная — в подсказке).
     function drawTimeIcons() {
-        [ui.shiftWhat, ui.staggerWhat].forEach(function (g) {
+        [ui.shiftWhat].forEach(function (g) {
             Array.prototype.forEach.call(g.querySelectorAll("button[data-v]"), function (b) {
                 var v = b.getAttribute("data-v"), full = b.getAttribute("aria-label") || b.textContent.replace(/^\s+|\s+$/g, "");
                 b.setAttribute("aria-label", full);
@@ -9000,7 +9291,7 @@
         var parts = [];
         if (res.moved) { parts.push(done); }
         if (res.unchanged && !res.steps) { parts.push("Уже на месте: " + plural(res.unchanged, "слой", "слоя", "слоёв") + "."); }
-        if (res.skipped) { parts.push("Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + " (нет ключей " + (what === "out" ? "во второй" : "в первой") + " половине слоя)."); }
+        if (res.skipped) { parts.push("Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + (what === "keys" ? " (у слоя нет ключей)." : " (нет ключей " + (what === "out" ? "во второй" : "в первой") + " половине слоя).")); }
         if (res.failed) { parts.push("Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + " (слой заблокирован?)."); }
         if (res.keysFailed && !res.failed) { parts.push("Не удалось перенести: " + plural(res.keysFailed, "ключ", "ключа", "ключей") + "."); }
         if (!parts.length) { parts.push("Нечего сдвигать."); }
@@ -9064,7 +9355,7 @@
         drawTimeIcons();
         drawShift();
         pick(ui.shiftWhat, "shiftWhat", SHIFT_TARGETS);
-        pick(ui.staggerWhat, "staggerWhat", SHIFT_TARGETS);
+        pick(ui.staggerWhat, "staggerWhat", STAGGER_TARGETS);
         pick(ui.staggerOrder, "staggerOrder", STAGGER_ORDERS);
         look(ui.shiftBack, -1, "");
         look(ui.shiftFwd, 1, "");
@@ -9097,7 +9388,66 @@
     // ---- сетка блоков раздела «Инструменты»
 
     function toolCards() {
-        return Array.prototype.slice.call(G.el.querySelectorAll(".tool-card"));
+        return Array.prototype.slice.call(G.el.querySelectorAll(".tool-card:not(.tool-off)"));
+    }
+
+    // ---- какие блоки показывать: Настройки → Общие → «Какие инструменты показывать»
+
+    var toolsHidden = [];
+
+    function hiddenToolList(text) {
+        var all = TOOL_NAMES.concat(SHAPE_TOOL_NAMES), out = [];
+        String(text || "").split(",").forEach(function (n) {
+            n = n.replace(/\s/g, "");
+            if (all.indexOf(n) >= 0 && out.indexOf(n) < 0) { out.push(n); }
+        });
+        return out;
+    }
+
+    function toolPickerName(card) {
+        var b = card.querySelector(".tool-head b");
+        var name = card.getAttribute("aria-label") || (b ? b.textContent : "") || card.getAttribute("data-tool");
+        return name.replace(/^\s+|\s+$/g, "");
+    }
+
+    // Список строится один раз: заголовок раздела и кнопки-«галочки» его инструментов.
+    function buildToolPicker() {
+        [["Инструменты", "motionTools", TOOL_NAMES], ["Шейп", "shapeTools", SHAPE_TOOL_NAMES]].forEach(function (g) {
+            var head = document.createElement("small"), box = document.getElementById(g[1]), row = document.createElement("div");
+            head.className = "tool-picker-head";
+            head.textContent = g[0];
+            row.className = "tool-picker-row";
+            g[2].forEach(function (name) {
+                var card = box && box.querySelector('.tool-card[data-tool="' + name + '"]'), b;
+                if (!card) { return; }
+                b = document.createElement("button");
+                b.type = "button";
+                b.setAttribute("data-tool", name);
+                b.innerHTML = "<span class=\"tool-picker-mark\" aria-hidden=\"true\"></span><span></span>";
+                b.lastChild.textContent = toolPickerName(card);
+                b.addEventListener("click", function () {
+                    var list;
+                    if (!draft) { return; }
+                    list = hiddenToolList(draft.hiddenTools);
+                    if (list.indexOf(name) >= 0) { list.splice(list.indexOf(name), 1); } else { list.push(name); }
+                    draft.hiddenTools = list.join(",");
+                    showToolPicker();
+                    applyTheme(draft);
+                });
+                row.appendChild(b);
+            });
+            ui.toolPicker.appendChild(head);
+            ui.toolPicker.appendChild(row);
+        });
+    }
+
+    function showToolPicker() {
+        var list = hiddenToolList((draft || settings).hiddenTools);
+        Array.prototype.forEach.call(ui.toolPicker.querySelectorAll("button[data-tool]"), function (b) {
+            var on = list.indexOf(b.getAttribute("data-tool")) < 0;
+            b.setAttribute("aria-pressed", on ? "true" : "false");
+            b.title = on ? "Показан. Щёлкните, чтобы спрятать" : "Спрятан. Щёлкните, чтобы показать";
+        });
     }
 
     function toolOf(node) {
@@ -9252,6 +9602,8 @@
         for (i = 0; i < names.length; i++) {
             card = cardByName(names[i]);
             if (!card) { continue; }
+            card.classList.toggle("tool-off", toolsHidden.indexOf(names[i]) >= 0);
+            if (toolsHidden.indexOf(names[i]) >= 0) { continue; }
             cards[names[i]] = card;
             z = sizeOf(names[i]);
             it = { name: names[i], index: i, w: Math.min(Math.max(z.w, Math.min(TOOL_MIN_COLS, cols)), cols), h: z.h };
@@ -9360,6 +9712,8 @@
             for (i = 0; i < G.names.length; i++) {
                 q = G.last.pos[G.names[i]];
                 if (q) { places[G.names[i]] = { x: q.x, y: q.y }; }
+                // Спрятанный блок помнит своё место: вернётся туда же.
+                else if (toolsHidden.indexOf(G.names[i]) >= 0 && placesNow() && placesNow()[G.names[i]]) { places[G.names[i]] = placesNow()[G.names[i]]; }
             }
             G.st.places = placesText(places);
         }
@@ -10201,6 +10555,7 @@
 
     applyTheme(settings);
     buildSettings();
+    buildToolPicker();
     showRef();
     applyTabOrder();
     showTab(savedTab());
@@ -10268,8 +10623,10 @@
     window.addEventListener("unload", stopKeyWatch);
     hotkeyHint();
     ui.settingsBtn.addEventListener("click", openSettings);
-    ui.settingsClose.addEventListener("click", function () { closeSettings(false); });
-    ui.saveSettings.addEventListener("click", function () { closeSettings(true); });
+    ui.settingsClose.addEventListener("click", function () { closeSettings(); });
+    ui.sheet.addEventListener("click", function () { scheduleCommit(0); });
+    ui.sheet.addEventListener("change", function () { scheduleCommit(0); });
+    ui.sheet.addEventListener("input", function () { scheduleCommit(400); });
     ui.testKey.addEventListener("click", onTestKey);
     ui.updateNow.addEventListener("click", onUpdateNow);
     ui.updateLater.addEventListener("click", onUpdateLater);

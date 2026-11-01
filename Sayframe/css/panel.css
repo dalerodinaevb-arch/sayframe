@@ -1259,6 +1259,12 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .ac-mode button { min-width: 0; padding: 0 9px; font-size: 12px; }
 .ac-slider .range { width: 110px; }
 .ac-slider output { min-width: 38px; color: var(--text); }
+/* Звуки: три ползунка ровными колонками — название сверху, ползунок и значение под ним */
+.ac-row.ac-snd { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 14px; flex: 1 1 100%; }
+.ac-snd .ac-slider { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 6px; min-width: 0; }
+.ac-snd .ac-slider > span { grid-column: 1 / -1; }
+.ac-snd .ac-slider .range { width: 100%; min-width: 0; }
+.ac-snd .ac-slider output { min-width: 0; white-space: nowrap; }
 .ac-color input { width: 34px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; }
 .ac-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--ac-size, 112px), 1fr)); gap: 10px; }
 .ac-grid.busy { opacity: 0.55; pointer-events: none; }
@@ -1369,6 +1375,20 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .ac-sfx { display: flex; align-items: center; gap: 4px; height: 40%; }
 .ac-sfx i { display: block; width: 5px; height: 40%; border-radius: 3px; background: var(--accent-hi); }
 .ac-sfx i:nth-child(2) { height: 80%; } .ac-sfx i:nth-child(3) { height: 100%; } .ac-sfx i:nth-child(4) { height: 60%; } .ac-sfx i:nth-child(5) { height: 30%; }
+/* Звуки: настоящая волна на карточке, пройденная часть подсвечивается, пока звук играет */
+.ac-wave { position: absolute; inset: 22% 8px; display: block; }
+.ac-wave-svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: var(--accent-hi); }
+.ac-wave-svg line { stroke: var(--accent-hi); stroke-opacity: 0.35; stroke-width: 0.6; vector-effect: non-scaling-stroke; }
+.ac-wave-done { fill: #f9a8d4; clip-path: inset(0 100% 0 0); }
+.ac-wave-done line { stroke: #f9a8d4; }
+.ac-wave-head { position: absolute; top: -4px; bottom: -4px; left: 0; width: 2px; border-radius: 1px; background: #fff; opacity: 0; }
+.ac-card.playing .ac-wave-done { animation: wave-done var(--play, 1s) linear forwards; }
+.ac-card.playing .ac-wave-head { opacity: 1; animation: wave-head var(--play, 1s) linear forwards; }
+@keyframes wave-done { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes wave-head { from { left: 0; } to { left: calc(100% - 2px); } }
+.ac-card.has-dur .ac-name { padding-right: 40px; }
+.ac-thumb.ac-thumb-wave { background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.22), rgba(var(--accent-rgb), 0.06)), #120e1a; }
+.ac-dur { position: absolute; right: 2px; bottom: 0; font: 600 11px/1.25 var(--round); color: var(--muted); opacity: 0.8; pointer-events: none; }
 .ac-card:hover .ac-sfx i, .ac-card:focus-visible .ac-sfx i { animation: pv-eq 0.6s ease-in-out infinite alternate; }
 .ac-card:hover .ac-sfx i:nth-child(2n), .ac-card:focus-visible .ac-sfx i:nth-child(2n) { animation-delay: -0.3s; }
 @keyframes pv-eq { from { transform: scaleY(0.3); } to { transform: scaleY(1); } }
@@ -1827,3 +1847,49 @@ html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:
 .kit-play .kit-bg b, .kit-play .kit-lens b { animation: kit-slide 3.2s ease-in-out infinite alternate; }
 @keyframes kit-slide { from { transform: translateX(-28%); } to { transform: translateX(28%); } }
 @media (prefers-reduced-motion: reduce) { .kit-play .kit-bg b, .kit-play .kit-lens b { animation: none; } }
+
+/* «Лесенка»: сверху две большие кнопки «Слои / Ключи», под ними три ступеньки порядка. */
+.st-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 5px; border-radius: 12px; background: rgba(0, 0, 0, 0.28); border: 1px solid var(--line); }
+.st-modes button { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 2px 8px; border: 1px solid transparent; border-radius: 9px;
+  background: transparent; color: var(--muted); font: 600 12px/1 var(--round); cursor: pointer; }
+.st-modes button svg { display: block; width: 30px; height: 23px; fill: currentColor; }
+.st-modes button span { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-modes button:hover:not(:disabled) { color: var(--text); }
+.st-modes button[aria-pressed="true"] { background: rgba(var(--accent-rgb), 0.24); border-color: rgba(var(--accent-rgb), 0.75); color: var(--text); }
+.st-modes button[aria-pressed="true"] svg { fill: var(--accent-hi, var(--accent)); }
+.st-orders { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.st-orders button { height: 38px; min-width: 0; padding: 6px 4px; border: 1px solid var(--line); border-radius: 9px; background: rgba(0, 0, 0, 0.22); color: var(--muted); cursor: pointer; }
+.st-orders button svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+.st-orders button .st-key-line { stroke: currentColor; stroke-width: 1.2; opacity: 0.55; fill: none; }
+.st-orders button:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.18); border-color: rgba(var(--accent-rgb), 0.7); color: var(--text); }
+.st-orders button[aria-pressed="true"] { background: rgba(var(--accent-rgb), 0.28); border-color: rgba(var(--accent-rgb), 0.75); color: var(--accent-hi, var(--accent)); }
+.st-modes button:disabled, .st-orders button:disabled { opacity: 0.45; cursor: default; }
+.st-order-name { text-align: center; margin-top: -2px; }
+.st-cap[hidden] { display: none; }
+.stagger-card .shift-go { width: 100%; }
+
+/* Настройки сохраняются сами: вместо кнопки «Сохранить» — тихая строка, которая на миг говорит «Сохранено ✓». */
+.settings-saved { text-align: center; margin: 4px 0 2px; transition: color 0.2s; }
+.settings-saved.ok { color: var(--ok, #4ade80); }
+
+/* Настройки → какие инструменты показывать: кнопки-«галочки», спрятанный блок пропадает из сетки. */
+.tool-card.tool-off { display: none !important; }
+.tool-picker { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 2px; }
+.tool-picker-head { color: var(--muted); font: 600 10.5px/1.2 var(--round); letter-spacing: 0.06em; text-transform: uppercase; margin-top: 4px; }
+.tool-picker-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.tool-picker button { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 5px 11px 5px 8px; border: 1px solid var(--line); border-radius: 9px;
+  background: rgba(0, 0, 0, 0.2); color: var(--muted); font: 600 12px/1.2 var(--round); cursor: pointer; text-align: left; }
+.tool-picker button:hover { color: var(--text); border-color: rgba(var(--accent-rgb), 0.6); }
+.tool-picker-mark { flex: none; width: 15px; height: 15px; border-radius: 5px; border: 1.5px solid currentColor; opacity: 0.6; position: relative; }
+.tool-picker button[aria-pressed="true"] { color: var(--text); background: rgba(var(--accent-rgb), 0.16); border-color: rgba(var(--accent-rgb), 0.55); }
+.tool-picker button[aria-pressed="true"] .tool-picker-mark { opacity: 1; background: var(--accent); border-color: var(--accent); }
+.tool-picker button[aria-pressed="true"] .tool-picker-mark::after { content: ""; position: absolute; left: 4.5px; top: 1.5px; width: 3.5px; height: 7px; border: solid var(--on-accent, #fff); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.tool-picker button[aria-pressed="false"] span:last-child { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.25); }
+
+/* «Анимация»: раздел занимает всю высоту панели, прокручиваются только карточки (и список видов слева),
+   а полоса внизу — высота тона, громкость, длительность, размер — видна всегда. */
+[data-tab="tools"] #app > #viewTools { flex: 1 1 auto; min-height: 340px; }
+[data-tab="tools"] #viewTools > .ac { flex: 1 1 auto; min-height: 0; }
+[data-tab="tools"] .ac-body { flex: 1 1 auto; min-height: 120px; grid-template-rows: minmax(0, 1fr); }
+[data-tab="tools"] .ac-body > .ac-grid, [data-tab="tools"] .ac-body > .ac-folders { min-height: 0; overflow-y: auto; }
+[data-tab="tools"] .ac-hint, [data-tab="tools"] .ac-foot, [data-tab="tools"] .ac-tabs, [data-tab="tools"] .ac-bar { flex: none; }
