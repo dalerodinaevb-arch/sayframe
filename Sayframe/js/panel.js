@@ -898,7 +898,57 @@
         document.documentElement.setAttribute("data-tools", cleanToolSize(s.toolSize));
         root.setProperty("--tz", String(Number(cleanToolSize(s.toolSize)) / 100));
         document.documentElement.setAttribute("data-titles", s.toolTitles === false ? "off" : "on");
+        applyHostSkin(s.design === "ae");
         relayoutTools();
+    }
+
+    // Дизайн «After Effects» берёт цвета у самого After Effects: фон панелей (его меняет ползунок
+    // «Яркость» в настройках внешнего вида) и цвет выделения. Остальные оттенки — от фона, как у Adobe.
+    var AE_SKIN_VARS = ["--ae-bg", "--ae-card", "--ae-top", "--ae-deep", "--ae-in", "--ae-in2", "--ae-glass", "--ae-glass2", "--ae-line",
+        "--ae-btn", "--ae-btn-hi", "--ae-edge", "--ae-text", "--ae-muted", "--ae-faint", "--ae-acc", "--ae-acc-hi", "--ae-acc-rgb"];
+
+    function hostSkin() {
+        var env, skin, bg, hi;
+        function rgb(c) {
+            c = c && c.color ? c.color : c;
+            return c && isFinite(c.red) && isFinite(c.green) && isFinite(c.blue) ? { r: Math.round(c.red), g: Math.round(c.green), b: Math.round(c.blue) } : null;
+        }
+        try { env = JSON.parse(window.__adobe_cep__.getHostEnvironment()); } catch (e) { return null; }
+        skin = env && env.appSkinInfo;
+        bg = skin && rgb(skin.panelBackgroundColor);
+        hi = skin && rgb(skin.systemHighlightColor);
+        return bg ? { bg: bg, hi: hi } : null;
+    }
+
+    function applyHostSkin(on) {
+        var root = document.documentElement.style, skin = on ? hostSkin() : null, b, light, acc, tone;
+        if (!skin) { AE_SKIN_VARS.forEach(function (v) { root.removeProperty(v); }); return; }
+        b = skin.bg;
+        light = 0.299 * b.r + 0.587 * b.g + 0.114 * b.b > 150;
+        // На светлом фоне всё, что на тёмном светлее фона, становится темнее, и наоборот.
+        tone = function (d) {
+            function c(v) { return Math.max(0, Math.min(255, v + (light ? -d : d))); }
+            return toHex(c(b.r), c(b.g), c(b.b));
+        };
+        acc = skin.hi || { r: 45, g: 140, b: 235 };
+        root.setProperty("--ae-bg", toHex(b.r, b.g, b.b));
+        root.setProperty("--ae-card", tone(5));
+        root.setProperty("--ae-top", tone(-5));
+        root.setProperty("--ae-deep", tone(-15));
+        root.setProperty("--ae-in", tone(-9));
+        root.setProperty("--ae-in2", tone(-4));
+        root.setProperty("--ae-glass", tone(7));
+        root.setProperty("--ae-glass2", tone(14));
+        root.setProperty("--ae-line", tone(23));
+        root.setProperty("--ae-btn", tone(21));
+        root.setProperty("--ae-btn-hi", tone(31));
+        root.setProperty("--ae-edge", tone(36));
+        root.setProperty("--ae-text", light ? "#1e1e1e" : "#d6d6d6");
+        root.setProperty("--ae-muted", light ? "#4a4a4a" : "#a3a3a3");
+        root.setProperty("--ae-faint", light ? "#6e6e6e" : "#767676");
+        root.setProperty("--ae-acc", toHex(acc.r, acc.g, acc.b));
+        root.setProperty("--ae-acc-hi", toHex(acc.r + (255 - acc.r) * 0.25, acc.g + (255 - acc.g) * 0.25, acc.b + (255 - acc.b) * 0.25));
+        root.setProperty("--ae-acc-rgb", acc.r + ", " + acc.g + ", " + acc.b);
     }
 
     // ------------------------------------------------------------------ ui
@@ -6701,6 +6751,8 @@
         if (cep && typeof cep.addEventListener === "function") {
             try { cep.addEventListener(HOST_KEY_EVENT, onHostHotkey); } catch (e) {}
             try { cep.addEventListener(FX_EVENT, onFxPopupApplied); } catch (e2) {}
+            // В After Effects поменяли яркость интерфейса — тема «After Effects» перекрашивается сразу.
+            try { cep.addEventListener("com.adobe.csxs.events.ThemeColorChanged", function () { applyHostSkin(document.documentElement.getAttribute("data-design") === "ae"); }); } catch (e3) {}
         }
     }
 
