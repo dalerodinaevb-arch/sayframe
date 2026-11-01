@@ -5094,6 +5094,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await setRange(p, "#orbitCorners", 100);
     check("OR1 + and − change the count, the preview follows; the slider says 100%", (await p.page.inputValue("#orbitCount")) === "9" && (await p.page.locator("#orbitRing .kr-it").count()) === 9 && (await p.page.locator("#orbitCornersVal").innerText()) === "100%");
     const before = await p.page.getAttribute("#orbitRing", "style");
+    await p.page.locator("#orbitStage").scrollIntoViewIfNeeded();
     const box = await p.page.locator("#orbitStage").boundingBox();
     await p.page.mouse.move(box.x + 100, box.y + 100); await p.page.mouse.down(); await p.page.mouse.move(box.x + 200, box.y + 100); await p.page.mouse.up();
     check("OR1 dragging the preview turns it", (await p.page.getAttribute("#orbitRing", "style")) !== before, before);
@@ -5104,10 +5105,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await orbitTab(p); await p.page.click("#orbitBtn"); await p.idle();
     const ctrl = Lx(p, "Карусель: управление"), c1 = Lx(p, "Карточка 1"), c3 = Lx(p, "Карточка 3"), n1 = Lx(p, "Номер 1");
-    check("OR2 «Создать карусель»: a camera, the controller null, 8 cards with their numbers, one undo step", names(p) === "Карусель: камера,Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8].map((i) => "Номер " + i + ",Карточка " + i).join(",") + ",BG" &&
+    check("OR2 «Создать карусель»: a camera on its own 3D null, the controller null, 8 cards with their numbers, one undo step", names(p) === "Карусель: управление камерой,Карусель: камера,Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8].map((i) => "Номер " + i + ",Карточка " + i).join(",") + ",BG" &&
       p.ae.log.undo.join() === "begin:Sayframe: carousel,end", names(p));
     check("OR2 the cards are 3D, on a ring of 600 around the middle, turned to face out, hanging on the null", c1.threeDLayer && ctrl.threeDLayer && ctrl.nullLayer && c1.parent === ctrl && c3.parent === ctrl && near(tf(ctrl, "ADBE Position"), [960, 540, 0]) &&
-      near(tf(c1, "ADBE Position"), [960, 540, -600]) && tf(c1, "ADBE Rotate Y") === 0 && near(tf(c3, "ADBE Position"), [1560, 540, 0]) && tf(c3, "ADBE Rotate Y") === 90, JSON.stringify(tf(c3, "ADBE Position")));
+      near(tf(c1, "ADBE Position"), [960, 540, -600]) && tf(c1, "ADBE Rotate Y") === 0 && near(tf(c3, "ADBE Position"), [1560, 540, 0]) && tf(c3, "ADBE Rotate Y") === -90 &&
+      Lx(p, "Карусель: камера").parent === Lx(p, "Карусель: управление камерой") && Lx(p, "Карусель: управление камерой").threeDLayer && near(tf(Lx(p, "Карусель: управление камерой"), "ADBE Position"), [960, 540, 0]), JSON.stringify(tf(c3, "ADBE Position")));
     check("OR2 a card: a 400×560 rectangle, corners 20% (40 px), its own colour; the number hangs on its card", JSON.stringify(acAt(c1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[400,560]" &&
       acAt(c1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Roundness").value === 40 && !!acAt(c1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Graphic - Fill") &&
       n1.parent === c1 && n1.threeDLayer && ctrl.selected && !c1.selected);
@@ -5125,7 +5127,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     t = Lx(p, "Карточка 1");
     check("OR3 «Шейп + прекомп»: 3 card comps in a «Карусель» folder, each with the shape (a rounded triangle path) and no number", comps.map((c) => c.name).sort().join() === "Карточка 1,Карточка 2,Карточка 3" && p.ae.log.bins.indexOf("Карусель") >= 0 &&
       comps.every((c) => c.list.length === 1 && c.list[0].name === "Форма" && acAt(c.list[0], "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length === 6), comps.map((c) => c.name + ":" + c.list.map((l) => l.name)).join(" "));
-    check("OR3 half ring: the first card at −90°, the last at 90°; a camera was there, no second one", !!t && t.source && tf(t, "ADBE Rotate Y") === -90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === 90 && names(p) === "Карусель: управление,Карточка 1,Карточка 2,Карточка 3,Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
+    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one", !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление,Карточка 1,Карточка 2,Карточка 3,Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
     await p.close();
   }
 

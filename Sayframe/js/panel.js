@@ -6531,12 +6531,12 @@
         try {
             res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: orbit.mode,
                 radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera },
-                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", folder: "Карусель", shape: "Форма" }]);
+                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма" }]);
             setBusy(false);
             setStatus("Карусель готова: " + plural(res.cards, "карточка", "карточки", "карточек") + ", " + ORBIT_LAYOUT_NAMES[res.layout] + ". " +
                 "Крутите её слоем «" + res.ctrl + "» (Y Rotation)." +
                 (res.precomp ? " Каждая карточка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео." : "") +
-                (res.camera ? " Добавлена камера «" + res.camera + "»." : (res.hadCamera ? " Камера в композиции уже была." : "")) +
+                (res.camera ? " Добавлена камера «" + res.camera + "»" + (res.camRig ? " на 3D-нуле «" + res.camRig + "»: крутите или двигайте его, чтобы облететь карусель." : ".") : (res.hadCamera ? " Камера в композиции уже была." : "")) +
                 " Отменить — Cmd/Ctrl+Z.", "done");
         } catch (e) {
             toolFailed(e);
