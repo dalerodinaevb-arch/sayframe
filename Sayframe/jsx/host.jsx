@@ -3842,8 +3842,40 @@ var sayframeHost = (function () {
         }
     }
 
+    // Moves every keyframe of the layer by dt seconds (the "in" and the "out" animation together).
+    // An edge of the layer that the animation touches moves with it; a key that would fall outside the layer stretches it.
+    function shiftAllKeys(layer, dt, frame, out) {
+        var a = findTransition(layer, "in");
+        var b = findTransition(layer, "out");
+        var span = a.span;
+        var before = out.keys;
+        var first, last, atStart, atEnd, start, end, lists, i;
+        if (!a.count && !b.count) { return "none"; }
+        if (Math.abs(dt) < frame / 1000) { return "same"; }
+        first = a.count ? a.first : b.first;
+        last = b.count ? b.last : a.last;
+        atStart = Math.abs(first - span.start) <= frame * EDGE_FRAMES;
+        atEnd = Math.abs(last - span.end) <= frame * EDGE_FRAMES;
+        // Far side first, so that no key has to jump over one that is still waiting to move.
+        lists = dt > 0 ? b.list.concat(a.list) : a.list.concat(b.list);
+        for (i = 0; i < lists.length; i++) { moveKeysOf(lists[i], dt, frame / 4, out); }
+        if (out.keys === before) { return "failed"; }
+        start = atStart ? span.start + dt : Math.min(span.start, first + dt);
+        end = atEnd ? span.end + dt : Math.max(span.end, last + dt + frame);
+        trimLayer(layer, start, end);
+        return "moved";
+    }
+
     function shiftOne(layer, what, dt, frame, out) {
-        if (what === "layer") { shiftLayer(layer, dt, frame, out); } else { countShift(shiftTransition(layer, what, dt, frame, out), out); }
+        if (what === "layer") { shiftLayer(layer, dt, frame, out); }
+        else if (what === "keys") { countShift(shiftAllKeys(layer, dt, frame, out), out); }
+        else { countShift(shiftTransition(layer, what, dt, frame, out), out); }
+    }
+
+    function hasKeysFor(layer, what) {
+        if (what === "layer") { return true; }
+        if (what === "keys") { return findTransition(layer, "in").count + findTransition(layer, "out").count > 0; }
+        return findTransition(layer, what).count > 0;
     }
 
     function newShiftCount(total) {
@@ -3878,7 +3910,7 @@ var sayframeHost = (function () {
     }
 
     // Each next layer is moved `frames` frames further than the one before it.
-    // order: "asc" (from the top layer down), "desc" (from the bottom up), "selection" or "random".
+    // what: "layer", "keys" (all keyframes), "in" or "out"; order: "asc" (from the top layer down), "desc" (from the bottom up), "selection" or "random".
     function staggerSelected(comp, what, frames, order) {
         var layers = comp.selectedLayers;
         var frame = comp.frameDuration;
@@ -3887,7 +3919,7 @@ var sayframeHost = (function () {
         var i, j, tmp, step;
         for (i = 0; i < layers.length; i++) {
             // A layer with nothing to move does not take a step of the staircase.
-            if (what !== "layer" && !findTransition(layers[i], what).count) { out.skipped++; continue; }
+            if (!hasKeysFor(layers[i], what)) { out.skipped++; continue; }
             list.push(layers[i]);
         }
         if (list.length < 2) { throw new Error(layers.length < 2 ? "STAGGER_NEEDS_TWO" : "STAGGER_NO_KEYS"); }
@@ -5514,13 +5546,13 @@ var sayframeHost = (function () {
             });
         },
 
-        // Staircase: every next layer (or its "in"/"out" animation) starts a few frames later.
+        // Staircase: every next layer (or its keyframes, or its "in"/"out" animation) starts a few frames later.
         stagger: function (what, frames, order) {
             return reply(function () {
                 var comp = activeComp();
                 var res;
                 frames = Math.round(Number(frames));
-                if (what !== "in" && what !== "out" && what !== "layer") { throw new Error("BAD_SHIFT_TARGET"); }
+                if (what !== "in" && what !== "out" && what !== "layer" && what !== "keys") { throw new Error("BAD_SHIFT_TARGET"); }
                 if (order !== "asc" && order !== "desc" && order !== "selection" && order !== "random") { throw new Error("BAD_STAGGER_ORDER"); }
                 if (isNaN(frames) || frames === 0 || Math.abs(frames) > 100000) { throw new Error("BAD_SHIFT_FRAMES"); }
                 if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }

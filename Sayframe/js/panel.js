@@ -817,7 +817,7 @@
         if (m === "CO_LAYER_GONE") { return "Слоя, с которого открыли фото, больше нет в открытой композиции. Откройте ту композицию и нажмите Cut out ещё раз."; }
         if (m === "CO_NOT_SAVED") { return "Не удалось сохранить картинку без фона на диск. Проверьте, что в папке проекта можно записывать файлы."; }
         if (m === "STAGGER_NEEDS_TWO") { return "Для лесенки выделите хотя бы два слоя."; }
-        if (m === "STAGGER_NO_KEYS") { return "Для лесенки нужно хотя бы два слоя с ключами в этой половине слоя. Чтобы сдвинуть слои целиком, выберите «Слои»."; }
+        if (m === "STAGGER_NO_KEYS") { return "Для лесенки нужно хотя бы два слоя с ключами. Чтобы сдвинуть слои целиком, выберите «Слои»."; }
         if (m === "DISTRIBUTE_NEEDS_THREE") { return "Чтобы распределить слои, выделите три или больше: крайние останутся на месте, остальные встанут между ними через равные промежутки."; }
         if (m === "ALIGN_NEEDS_TWO") { return "Чтобы выровнять слои друг по другу, выделите хотя бы два. Один слой выравнивается по композиции."; }
         return m;
@@ -1015,7 +1015,7 @@
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
         shiftOptsToggle: el("shiftOptsToggle"), shiftPrevBox: el("shiftPrevBox"), shiftPrev: el("shiftPrev"), shiftPrevText: el("shiftPrevText"),
         shiftWhat: el("shiftWhat"), shiftStep: el("shiftStep"), shiftBack: el("shiftBack"), shiftFwd: el("shiftFwd"), timeAlign: el("timeAlign"),
-        staggerOptsToggle: el("staggerOptsToggle"), staggerPrevBox: el("staggerPrevBox"), staggerPrev: el("staggerPrev"), staggerPrevText: el("staggerPrevText"),
+        staggerOptsToggle: el("staggerOptsToggle"), staggerPrevText: el("staggerPrevText"),
         staggerWhat: el("staggerWhat"), staggerStep: el("staggerStep"), staggerLess: el("staggerLess"), staggerMore: el("staggerMore"),
         staggerOrder: el("staggerOrder"), staggerOrderName: el("staggerOrderName"), staggerBtn: el("staggerBtn"),
         frames: el("frames"), saveSettings: el("saveSettings"),
@@ -3455,7 +3455,8 @@
         shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true, staggerOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
     var TIME_POINTS = ["inStart", "inEnd", "outStart", "outEnd"];
-    var STAGGER_ORDERS = ["asc", "desc", "selection", "random"];
+    var STAGGER_ORDERS = ["asc", "random", "desc"];
+    var STAGGER_TARGETS = ["layer", "keys"];
     var MAX_STEP_FRAMES = 999;
     var TOOL_NAMES = ["ease", "anchor", "align", "shift", "stagger", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
     var SHAPE_TOOL_NAMES = ["split"];
@@ -3628,7 +3629,7 @@
         if (m.alignTo !== "selection") { m.alignTo = "comp"; }
         if (m.easeView !== "value") { m.easeView = "speed"; }
         if (SHIFT_TARGETS.indexOf(m.shiftWhat) < 0) { m.shiftWhat = "in"; }
-        if (SHIFT_TARGETS.indexOf(m.staggerWhat) < 0) { m.staggerWhat = "layer"; }
+        if (STAGGER_TARGETS.indexOf(m.staggerWhat) < 0) { m.staggerWhat = m.staggerWhat === "in" || m.staggerWhat === "out" ? "keys" : "layer"; }
         if (TIME_POINTS.indexOf(m.timeAlign) < 0) { m.timeAlign = "inStart"; }
         if (STAGGER_ORDERS.indexOf(m.staggerOrder) < 0) { m.staggerOrder = "asc"; }
         m.shiftStep = clampStep(m.shiftStep);
@@ -3685,7 +3686,7 @@
             { key: "cutoutOpts", button: ui.cutoutOptsToggle, part: ui.cutoutHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "splitOpts", button: ui.splitOptsToggle, part: ui.splitHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "shiftOpts", button: ui.shiftOptsToggle, part: ui.shiftPrevBox, hide: "Скрыть схему", show: "Показать схему" },
-            { key: "staggerOpts", button: ui.staggerOptsToggle, part: ui.staggerPrevBox, hide: "Скрыть схему", show: "Показать схему" }
+            { key: "staggerOpts", button: ui.staggerOptsToggle, part: ui.staggerPrevText, hide: "Скрыть подсказку", show: "Показать подсказку" }
         ];
     }
 
@@ -8942,22 +8943,30 @@
         ui.shiftPrevText.textContent = text;
     }
 
-    // Схема «Лесенки»: три слоя, пунктир — как сейчас (все вместе), цветом — по ступенькам.
-    function drawStaggerPreview() {
-        var what = motion.staggerWhat, order = motion.staggerOrder, n = motion.staggerStep, step = 11, svg = "", i, k, y, x0 = 8, x1 = 58, a = 12;
-        var steps = { asc: [0, 1, 2], desc: [2, 1, 0], selection: [1, 0, 2], random: [2, 0, 1] }[order];
+    // Значки порядка «Лесенки»: три ступеньки — полоски слоёв или пары ключей, смотря что расставляем.
+    var STAIR_STEPS = { asc: [0, 1, 2], random: [1, 0, 2], desc: [2, 1, 0] };
+
+    function stairIcon(order, keys) {
+        var svg = "", i, x, y;
         for (i = 0; i < 3; i++) {
-            k = steps[i] * step;
-            y = 3 + i * 9;
-            svg += tlBar(x0, x1, y, 6, a, "", true);
-            if (what === "layer") { svg += tlBar(x0 + k, x1 + k, y, 6, a, "layer"); }
-            if (what === "in") { svg += tlBar(x0 + k, x1, y, 6, a, "in"); }
-            if (what === "out") { svg += tlBar(x0, x1 + k, y, 6, a, "out"); }
-            svg += "<text class=\"tl-num\" x=\"" + (x1 + 2 * step + 5) + "\" y=\"" + (y + 5.5) + "\">" + (i + 1) + "</text>";
+            x = 3 + STAIR_STEPS[order][i] * 7;
+            y = 4 + i * 8;
+            if (keys) {
+                svg += "<path class=\"st-key-line\" d=\"M" + (x + 3) + " " + y + "H" + (x + 17) + "\"/>" +
+                    "<path d=\"M" + (x + 3) + " " + (y - 3) + "l3 3-3 3-3-3z\"/><path d=\"M" + (x + 17) + " " + (y - 3) + "l3 3-3 3-3-3z\"/>";
+            } else {
+                svg += "<rect x=\"" + x + "\" y=\"" + (y - 2.6) + "\" width=\"22\" height=\"5.2\" rx=\"1.8\"/>";
+            }
         }
-        ui.staggerPrev.innerHTML = svg;
-        ui.staggerPrevText.textContent = "Каждый следующий " + (what === "layer" ? "слой" : what === "in" ? "слой появляется" : "слой исчезает") + " на " +
-            plural(n, "кадр", "кадра", "кадров") + " позже предыдущего, " + ORDER_NAMES[order] + ".";
+        return "<svg viewBox=\"0 0 40 24\" aria-hidden=\"true\">" + svg + "</svg>";
+    }
+
+    function drawStaggerPreview() {
+        var keys = motion.staggerWhat === "keys", order = motion.staggerOrder, n = motion.staggerStep;
+        Array.prototype.forEach.call(ui.staggerOrder.querySelectorAll("button[data-v]"), function (b) {
+            b.innerHTML = stairIcon(b.getAttribute("data-v"), keys);
+        });
+        ui.staggerPrevText.textContent = (keys ? "Ключи каждого следующего слоя — на " : "Каждый следующий слой — на ") + plural(n, "кадр", "кадра", "кадров") + " позже предыдущего.";
         ui.staggerOrderName.textContent = ORDER_NAMES[order].charAt(0).toUpperCase() + ORDER_NAMES[order].slice(1);
     }
 
@@ -8974,7 +8983,7 @@
     // Значки «К указателю»: полоска слоя и синяя линия указателя в нужной точке.
     // Сегменты «что двигать» — та же полоска с выделенной частью и короткая подпись (полная — в подсказке).
     function drawTimeIcons() {
-        [ui.shiftWhat, ui.staggerWhat].forEach(function (g) {
+        [ui.shiftWhat].forEach(function (g) {
             Array.prototype.forEach.call(g.querySelectorAll("button[data-v]"), function (b) {
                 var v = b.getAttribute("data-v"), full = b.getAttribute("aria-label") || b.textContent.replace(/^\s+|\s+$/g, "");
                 b.setAttribute("aria-label", full);
@@ -9000,7 +9009,7 @@
         var parts = [];
         if (res.moved) { parts.push(done); }
         if (res.unchanged && !res.steps) { parts.push("Уже на месте: " + plural(res.unchanged, "слой", "слоя", "слоёв") + "."); }
-        if (res.skipped) { parts.push("Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + " (нет ключей " + (what === "out" ? "во второй" : "в первой") + " половине слоя)."); }
+        if (res.skipped) { parts.push("Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + (what === "keys" ? " (у слоя нет ключей)." : " (нет ключей " + (what === "out" ? "во второй" : "в первой") + " половине слоя).")); }
         if (res.failed) { parts.push("Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + " (слой заблокирован?)."); }
         if (res.keysFailed && !res.failed) { parts.push("Не удалось перенести: " + plural(res.keysFailed, "ключ", "ключа", "ключей") + "."); }
         if (!parts.length) { parts.push("Нечего сдвигать."); }
@@ -9064,7 +9073,7 @@
         drawTimeIcons();
         drawShift();
         pick(ui.shiftWhat, "shiftWhat", SHIFT_TARGETS);
-        pick(ui.staggerWhat, "staggerWhat", SHIFT_TARGETS);
+        pick(ui.staggerWhat, "staggerWhat", STAGGER_TARGETS);
         pick(ui.staggerOrder, "staggerOrder", STAGGER_ORDERS);
         look(ui.shiftBack, -1, "");
         look(ui.shiftFwd, 1, "");
