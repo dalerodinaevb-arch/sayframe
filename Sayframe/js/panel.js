@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.63.0";
+    var VERSION = "1.64.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -131,6 +131,7 @@
         hiddenTools: "",    // спрятанные блоки «Инструментов» и «Шейпа», через запятую: "cache,nullp"
         stats: true,        // отправлять ли автору анонимный сигнал «установлено» и «открыто сегодня»
         infoTips: true,     // подсказки-окошки при наведении курсора на секунду
+        previewPlay: "always",  // превью анимаций: "always" — играют сами по кругу, "hover" — только под курсором
         pasteAnywhere: true,    // Cmd/Ctrl+V с картинкой в буфере где угодно в After Effects открывает окно вставки
         fxWhere: "panel",   // где открывается поиск эффектов по сочетанию вне панели: "panel" или "cursor"
         hotkeys: ""         // горячие клавиши: "console=Ctrl+Space;snapshot=;…"; пусто — стандартные
@@ -810,6 +811,8 @@
         if (m === "SM_NOT_SHAPE") { return "Разделить можно шейп-слой с несколькими группами или слой с несколькими масками. Чтобы собрать, выделите несколько шейп-слоёв."; }
         if (m === "SM_NEED_SHAPES") { return "Чтобы собрать в один, выделите хотя бы два шейп-слоя."; }
         if (m === "PF_NEED_SHAPES") { return "Для Pathfinder выделите хотя бы два шейп-слоя."; }
+        if (m === "NO_TEXT_LAYER") { return "Выделите текстовый слой — плашка встанет под ним."; }
+        if (m === "GRID_TOO_TIGHT") { return "Отступы больше самой сетки: уменьшите отступ или число строк и столбцов."; }
         if (m === "SM_LOCKED") { return "Слой заблокирован (замок на таймлайне). Снимите замок и нажмите ещё раз."; }
         if (m === "DC_NO_PRECOMP") { return "Выделите слой-прекомпозицию (слой, внутри которого другая композиция) и нажмите ещё раз."; }
         if (m === "CO_NOT_PHOTO") { return "Cut out работает с фото: выделите слой, у которого источник — файл-картинка (JPG, PNG, PSD…), и нажмите ещё раз."; }
@@ -842,6 +845,7 @@
         } catch (e) {}
         s.panelWidth = clampPanelWidth(s.panelWidth);
         s.toolSize = cleanToolSize(s.toolSize);
+        if (s.previewPlay !== "hover") { s.previewPlay = "always"; }
         ["accent", "bg", "bgTools", "bgMotion", "bgShape", "bgBrand"].forEach(function (k) { var c = parseHex(s[k]); s[k] = c ? c.hex : DEFAULTS[k]; });
         if (!PROVIDERS.hasOwnProperty(s.provider)) { s.provider = "claude"; }
         if (!knownModel(OPENAI_MODELS, s.openaiModel)) { s.openaiModel = OPENAI_MODELS[0].id; }
@@ -921,7 +925,32 @@
             c.classList.toggle("tool-off", toolsHidden.indexOf(c.getAttribute("data-tool")) >= 0);
         });
         relayoutTools();
+        stickTop();
     }
+
+    // Шапка и вкладки стоят на месте, когда раздел прокручивают: вкладки прилипают сразу под шапкой.
+    function stickTop() {
+        var top = document.querySelector("#app > .top"), app = document.getElementById("app"), tabs = document.getElementById("tabs");
+        var shade, cs, pad, gap, h;
+        if (!top || !app || !tabs) { return; }
+        shade = document.getElementById("topShade");
+        if (!shade) {
+            shade = document.createElement("div");
+            shade.id = "topShade";
+            shade.setAttribute("aria-hidden", "true");
+            app.insertBefore(shade, app.firstChild);
+            app.addEventListener("scroll", function () { app.classList.toggle("app-scrolled", app.scrollTop > 2); });
+        }
+        cs = window.getComputedStyle(app);
+        pad = parseFloat(cs.paddingTop) || 0;
+        gap = parseFloat(cs.rowGap || cs.gap) || 0;
+        app.style.setProperty("--top-h", top.offsetHeight + "px");
+        // Подложка от самого верха панели до низа вкладок (и полпромежутка под ними); места в разделе не занимает.
+        h = pad + top.offsetHeight + gap + tabs.offsetHeight + gap / 2;
+        shade.style.height = h + "px";
+        shade.style.margin = (-pad) + "px " + (-pad) + "px " + (pad - h - gap) + "px";
+    }
+    window.addEventListener("resize", stickTop);
 
     // Дизайн «After Effects» берёт цвета у самого After Effects: фон панелей (его меняет ползунок
     // «Яркость» в настройках внешнего вида) и цвет выделения. Остальные оттенки — от фона, как у Adobe.
@@ -997,7 +1026,7 @@
         bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
         bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"),
         bgBrandSwatches: el("bgBrandSwatches"), bgBrandHex: el("bgBrandHex"), bgBrandPick: el("bgBrandPick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        designPick: el("designPick"), panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), toolTitles: el("toolTitles"), toolPicker: el("toolPicker"), fxWhere: el("fxWhere"), fxWhereState: el("fxWhereState"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
+        designPick: el("designPick"), panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), previewPlay: el("previewPlay"), toolTitles: el("toolTitles"), toolPicker: el("toolPicker"), fxWhere: el("fxWhere"), fxWhereState: el("fxWhereState"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
@@ -1007,18 +1036,28 @@
         orbitMode: el("orbitMode"), orbitLess: el("orbitLess"), orbitMore: el("orbitMore"), orbitCount: el("orbitCount"),
         orbitRadius: el("orbitRadius"), orbitRadiusVal: el("orbitRadiusVal"), orbitW: el("orbitW"), orbitWVal: el("orbitWVal"), orbitH: el("orbitH"), orbitHVal: el("orbitHVal"),
         orbitNumbers: el("orbitNumbers"), orbitCamera: el("orbitCamera"), orbitBtn: el("orbitBtn"),
+        gridStage: el("gridStage"), gridW: el("gridW"), gridH: el("gridH"), gridFit: el("gridFit"), gridRows: el("gridRows"), gridRowsLess: el("gridRowsLess"), gridRowsMore: el("gridRowsMore"),
+        gridCols: el("gridCols"), gridColsLess: el("gridColsLess"), gridColsMore: el("gridColsMore"), gridGap: el("gridGap"), gridGapVal: el("gridGapVal"), gridGapName: el("gridGapName"),
+        gridGapV: el("gridGapV"), gridGapVVal: el("gridGapVVal"), gridGapVRow: el("gridGapVRow"), gridRound: el("gridRound"), gridRoundVal: el("gridRoundVal"),
+        gridRand: el("gridRand"), gridRandVal: el("gridRandVal"), gridSplit: el("gridSplit"), gridSeed: el("gridSeed"), gridDice: el("gridDice"), gridMode: el("gridMode"),
+        gridNumbers: el("gridNumbers"), gridStagger: el("gridStagger"), gridBtn: el("gridBtn"),
         acBody: el("acBody"),
         acTabs: el("acTabs"), acSearch: el("acSearch"), acFavOnly: el("acFavOnly"), acModeRow: el("acModeRow"), acMode: el("acMode"),
         acDurRow: el("acDurRow"), acDur: el("acDur"), acDurVal: el("acDurVal"), acColorRow: el("acColorRow"), acColor: el("acColor"),
         acGrid: el("acGrid"), acHint: el("acHint"), acSize: el("acSize"), acFoot: el("acFoot"),
         fxKeys: el("fxKeys"), fxKeysCombo: el("fxKeysCombo"),
-        setTabAI: el("setTabAI"), setTabOther: el("setTabOther"), setPaneAI: el("setPaneAI"), setPaneOther: el("setPaneOther"),
+        setTabs: el("setTabs"), themeNote: el("themeNote"), accentGroup: el("accentGroup"), bgGroup: el("bgGroup"),
         hotkeys: el("hotkeys"), hotkeysReset: el("hotkeysReset"), hotkeyNote: el("hotkeyNote"),
         organizeBtn: el("organizeBtn"), organizeOptsToggle: el("organizeOptsToggle"), organizeHint: el("organizeHint"),
         decomposeBtn: el("decomposeBtn"), decomposeOptsToggle: el("decomposeOptsToggle"), decomposeHint: el("decomposeHint"),
         cacheBtn: el("cacheBtn"), cacheOptsToggle: el("cacheOptsToggle"), cacheHint: el("cacheHint"),
         nullpBtn: el("nullpBtn"), nullpOptsToggle: el("nullpOptsToggle"), nullpHint: el("nullpHint"),
         splitBtn: el("splitBtn"), splitOptsToggle: el("splitOptsToggle"), splitHint: el("splitHint"),
+        tbText: el("tbText"), tbPresets: el("tbPresets"), tbPer: el("tbPer"), tbLook: el("tbLook"), tbStyle: el("tbStyle"), tbAppear: el("tbAppear"),
+        tbSwatches: el("tbSwatches"), tbColor: el("tbColor"), tbStrokeColor: el("tbStrokeColor"), tbStrokeRow: el("tbStrokeRow"), tbStrokeWRow: el("tbStrokeWRow"),
+        tbPx: el("tbPx"), tbPxVal: el("tbPxVal"), tbPy: el("tbPy"), tbPyVal: el("tbPyVal"), tbRound: el("tbRound"), tbRoundVal: el("tbRoundVal"),
+        tbStroke: el("tbStroke"), tbStrokeVal: el("tbStrokeVal"), tbSkew: el("tbSkew"), tbSkewVal: el("tbSkewVal"), tbOpacity: el("tbOpacity"), tbOpacityVal: el("tbOpacityVal"),
+        tbShadow: el("tbShadow"), tbBtn: el("tbBtn"),
         pfModes: el("pfModes"), pfName: el("pfName"), pfSub: el("pfSub"), pfKeep: el("pfKeep"), pfOptsToggle: el("pfOptsToggle"), pfHint: el("pfHint"),
         unusedBtn: el("unusedBtn"), unusedOptsToggle: el("unusedOptsToggle"), unusedHint: el("unusedHint"),
         cutoutBtn: el("cutoutBtn"), cutoutOptsToggle: el("cutoutOptsToggle"), cutoutHint: el("cutoutHint"),
@@ -1322,6 +1361,8 @@
         ui.splitBtn.disabled = on;
         Array.prototype.forEach.call(ui.pfModes.querySelectorAll("button"), function (b) { b.disabled = on; });
         if (ui.orbitBtn) { ui.orbitBtn.disabled = on; }
+        if (ui.gridBtn) { ui.gridBtn.disabled = on; }
+        if (ui.tbBtn) { ui.tbBtn.disabled = on; }
         ui.unusedBtn.disabled = on;
         ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
@@ -3301,12 +3342,24 @@
             applyTheme(draft);
         });
 
+        // Превью анимаций: играют всегда или только под курсором. Карточки перестраиваются сразу.
+        ui.previewPlay.addEventListener("click", function (e) {
+            var b = e.target && e.target.closest ? e.target.closest("button[data-value]") : null;
+            var v = b ? b.getAttribute("data-value") : null;
+            if (!draft || (v !== "always" && v !== "hover")) { return; }
+            draft.previewPlay = v;
+            pressGroup(ui.previewPlay, v);
+            setTimeout(function () { commitSettings(); renderAc(); }, 0);
+        });
+
         // Дизайн меняется сразу и сразу сохраняется.
         ui.designPick.addEventListener("click", function (e) {
-            var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
+            var b = e.target && e.target.closest ? e.target.closest("button[data-value]") : null;
+            var v = b ? b.getAttribute("data-value") : null;
             if (!draft || DESIGNS.indexOf(v) < 0) { return; }
             draft.design = v;
             pressGroup(ui.designPick, v);
+            showThemeOpts(v);
             applyTheme(draft);
         });
         ui.fxWhere.addEventListener("click", function (e) {
@@ -3345,18 +3398,36 @@
         });
     }
 
-    // Настройки разбиты на два раздела: всё про нейросеть (AI) и остальное («Общие»).
+    // Настройки разбиты на пять разделов: AI, Темы, Инструменты, Клавиши, Прочее.
+    var SET_PANES = ["ai", "theme", "tools", "keys", "more"];
     var setPane = "ai";
 
     function showSetPane(name) {
-        setPane = name === "other" ? "other" : "ai";
-        ui.setPaneAI.hidden = setPane !== "ai";
-        ui.setPaneOther.hidden = setPane !== "other";
-        ui.setTabAI.setAttribute("aria-selected", String(setPane === "ai"));
-        ui.setTabAI.setAttribute("aria-pressed", String(setPane === "ai"));
-        ui.setTabOther.setAttribute("aria-selected", String(setPane === "other"));
-        ui.setTabOther.setAttribute("aria-pressed", String(setPane === "other"));
-        if (setPane !== "other") { stopHotkeyEdit(); }
+        setPane = SET_PANES.indexOf(name) >= 0 ? name : "ai";
+        SET_PANES.forEach(function (k) {
+            var id = k.charAt(0).toUpperCase() + k.slice(1), on = k === setPane;
+            el("setPane" + (k === "ai" ? "AI" : id)).hidden = !on;
+            el("setTab" + (k === "ai" ? "AI" : id)).setAttribute("aria-selected", String(on));
+            el("setTab" + (k === "ai" ? "AI" : id)).setAttribute("aria-pressed", String(on));
+        });
+        if (setPane !== "keys") { stopHotkeyEdit(); }
+    }
+
+    // Акцент и фон разделов есть только у «Стекла»: у «After Effects» и «Студии» свои цвета, их настройки прячутся.
+    var DESIGN_NOTES = { ae: "У темы «After Effects» свои цвета: акцент и фон разделов у неё не меняются.", studio: "У «Студии» свои цвета: акцент и фон разделов у неё не меняются." };
+
+    function showThemeOpts(design) {
+        var own = !!DESIGN_NOTES[design];
+        ui.accentGroup.hidden = own;
+        ui.bgGroup.hidden = own;
+        ui.themeNote.hidden = !own;
+        ui.themeNote.textContent = DESIGN_NOTES[design] || "";
+    }
+
+    // Широкие настройки (панель растянута, «На всю ширину»): разделы встают слева столбиком.
+    function fitSettings() {
+        var card = ui.sheet ? ui.sheet.querySelector(".sheet-card") : null;
+        if (card) { card.classList.toggle("set-wide", card.getBoundingClientRect().width >= 680); }
     }
 
     function openSettings() {
@@ -3384,11 +3455,13 @@
         pressGroup(ui.accentSwatches, draft.accent);
         pressGroup(ui.frames, draft.refFrames);
         pressGroup(ui.toolSize, draft.toolSize);
+        pressGroup(ui.previewPlay, draft.previewPlay === "hover" ? "hover" : "always");
         ui.toolTitles.checked = draft.toolTitles;
         showToolPicker();
         ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
         pressGroup(ui.fxWhere, draft.fxWhere === "cursor" ? "cursor" : "panel");
         pressGroup(ui.designPick, DESIGNS.indexOf(draft.design) >= 0 ? draft.design : "studio");
+        showThemeOpts(DESIGNS.indexOf(draft.design) >= 0 ? draft.design : "studio");
         ui.statsOn.checked = draft.stats !== false;
         ui.infoTipsOn.checked = draft.infoTips !== false;
         closeFxConsole();
@@ -3400,6 +3473,7 @@
         ui.settingsSaved.className = "hint settings-saved";
         settingsChanged = false;
         ui.sheet.hidden = false;
+        fitSettings();
         ui.sheet.scrollTop = 0;
     }
 
@@ -3498,12 +3572,12 @@
         ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false, cutoutOpts: false, splitOpts: false, pfOpts: false,
         anchorOpts: false, alignOpts: false,
         staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", staggerOpts: true,
-        flowFold: "easecopy,anchor,align" };
+        flowFold: "easecopy,anchor,align", flowSort: "" };
     var STAGGER_ORDERS = ["asc", "random", "desc", "align"];
     var STAGGER_TARGETS = ["layer", "keys"];
     var MAX_STEP_FRAMES = 999;
     var TOOL_NAMES = ["ease", "anchor", "align", "stagger", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
-    var SHAPE_TOOL_NAMES = ["pathfinder", "split"];
+    var SHAPE_TOOL_NAMES = ["pathfinder", "split", "textbox"];
     // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
     // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
     var G = { names: TOOL_NAMES };
@@ -3592,8 +3666,8 @@
         return out.join(";");
     }
 
-    // Блоки, которым обычная ширина мала: пять кнопок Pathfinder в ряд.
-    var TOOL_WIDE = { pathfinder: 14 };
+    // Блоки, которым обычная ширина мала: пять кнопок Pathfinder в ряд, превью и ползунки плашки.
+    var TOOL_WIDE = { pathfinder: 14, textbox: 14 };
 
     function sizeOf(name) {
         return parseSizes(G.st.sizes)[name] || { w: TOOL_WIDE[name] || TOOL_DEFAULT_COLS, h: 0 };
@@ -4041,7 +4115,7 @@
         { id: "graphic", label: "Графика" },
         { id: "kit", label: "Заготовки" },
         { id: "sfx", label: "Звуки" },
-        { id: "orbit", label: "3D" }
+        { id: "orbit", label: "Макеты" }
     ];
     var AC_PRESETS = {
         trans: [],
@@ -4474,7 +4548,9 @@
         if (orbitOn) {
             renderSfFolders("");
             if (ui.acSndRow) { ui.acSndRow.hidden = true; }
+            drawMkFolds();
             drawOrbitPreview();
+            drawGridPreview();
             return;
         }
         renderSfFolders(!searching && !editing && (sec === "anim" || sec === "trans" || sec === "text" || sec === "sfx" || sec === "graphic" || sec === "kit") ? sec : "");
@@ -5122,9 +5198,17 @@
     }, { threshold: 0.05 }) : null;
 
     // Карточке с превью — запуск и остановка; играет, пока видна.
+    // В настройках можно выбрать «При наведении»: тогда превью стоит и играет, только пока над ним курсор.
     function acAutoplay(card, play, stop) {
         card.acPlay = play;
         card.acStop = stop;
+        if (settings.previewPlay === "hover") {
+            card.setAttribute("data-hover-play", "true");
+            card.addEventListener("mouseenter", function () { play(); });
+            card.addEventListener("mouseleave", function () { stop(); });
+            window.requestAnimationFrame(function () { stop(); });
+            return;
+        }
         if (acSeen) { acSeen.observe(card); } else { play(); }
     }
 
@@ -6150,7 +6234,170 @@
         return out;
     }
 
-    // ---- Раздел «3D»: карусель. Настройки хранятся отдельно; превью — те же карточки в CSS 3D, его можно крутить мышкой.
+    // ---- Grid: бенто-сетка из скруглённых плиток. Раскладка — тот же код, что в host.jsx (gridLayout):
+    // одно и то же «Вариант» даёт одну и ту же раскладку и в превью, и в After Effects.
+    var GRID_DEFAULTS = { rows: 4, cols: 5, gap: 20, split: false, gapV: 20, round: 20, rand: 100, seed: 12345, fit: true, w: 1920, h: 1080, mode: "shape", numbers: true, stagger: true };
+
+    function gridImul(a, b) {
+        var ah = (a >>> 16) & 0xffff, al = a & 0xffff, bh = (b >>> 16) & 0xffff, bl = b & 0xffff;
+        return ((al * bl) + ((((ah * bl + al * bh) & 0xffff) << 16) >>> 0)) | 0;
+    }
+
+    function gridRng(seed) {
+        var a = Math.floor(Number(seed) || 0) >>> 0;
+        return function () {
+            var t;
+            a = (a + 0x6D2B79F5) >>> 0;
+            t = a;
+            t = gridImul(t ^ (t >>> 15), t | 1);
+            t ^= t + gridImul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    function gridLayout(rows, cols, rand, seed) {
+        var rng = gridRng(seed), occ = [], boxes = [], r, c, w, h, i, j, p = Math.max(0, Math.min(100, rand)) / 100;
+        var maxW = Math.max(1, Math.min(cols, 1 + Math.round(p * 2))), maxH = Math.max(1, Math.min(rows, 1 + Math.round(p)));
+        for (r = 0; r < rows; r++) { occ.push([]); for (c = 0; c < cols; c++) { occ[r].push(false); } }
+        function clear(r0, c0, ww, hh) {
+            var y, x;
+            if (r0 + hh > rows || c0 + ww > cols) { return false; }
+            for (y = r0; y < r0 + hh; y++) { for (x = c0; x < c0 + ww; x++) { if (occ[y][x]) { return false; } } }
+            return true;
+        }
+        for (r = 0; r < rows; r++) {
+            for (c = 0; c < cols; c++) {
+                if (occ[r][c]) { continue; }
+                w = 1; h = 1;
+                if (rng() < p * 0.6) { w = 1 + Math.floor(rng() * maxW); h = 1 + Math.floor(rng() * maxH); }
+                while (w > 1 && !clear(r, c, w, 1)) { w--; }
+                while (h > 1 && !clear(r, c, w, h)) { h--; }
+                for (i = r; i < r + h; i++) { for (j = c; j < c + w; j++) { occ[i][j] = true; } }
+                boxes.push({ r: r, c: c, w: w, h: h });
+            }
+        }
+        return boxes;
+    }
+
+    function drawGridPreview() {
+        var g = orbit.grid, st = ui.gridStage, boxes, W, H, sw, sh, k, gx, gy, cw, ch, html = "", pad = 10, ox, oy;
+        if (!st || st.offsetParent === null) { return; }
+        boxes = gridLayout(g.rows, g.cols, g.rand, g.seed);
+        W = g.fit ? 1920 : g.w; H = g.fit ? 1080 : g.h;
+        sw = st.clientWidth - pad * 2; sh = st.clientHeight - pad * 2;
+        k = Math.min(sw / W, sh / H);
+        gx = g.gap * k; gy = (g.split ? g.gapV : g.gap) * k;
+        cw = (W * k - gx * (g.cols - 1)) / g.cols; ch = (H * k - gy * (g.rows - 1)) / g.rows;
+        ox = pad + (sw - W * k) / 2; oy = pad + (sh - H * k) / 2;
+        boxes.forEach(function (b, i) {
+            var bw = b.w * cw + (b.w - 1) * gx, bh = b.h * ch + (b.h - 1) * gy;
+            html += "<div class=\"gr-box\" style=\"--h:" + (250 + i * 9) + ";left:" + (ox + b.c * (cw + gx)).toFixed(1) + "px;top:" + (oy + b.r * (ch + gy)).toFixed(1) +
+                "px;width:" + Math.max(1, bw).toFixed(1) + "px;height:" + Math.max(1, bh).toFixed(1) + "px;border-radius:" + Math.min(g.round * k, Math.min(bw, bh) / 2).toFixed(1) + "px\">" +
+                (g.numbers && bh > 12 ? "<span style=\"font-size:" + Math.round(Math.max(9, Math.min(15, Math.min(bw, bh) * 0.35))) + "px\">" + (i + 1) + "</span>" : "") + "</div>";
+        });
+        st.innerHTML = html;
+    }
+
+    function drawGrid() {
+        var g = orbit.grid;
+        if (!ui.gridStage) { return; }
+        ui.gridRows.value = String(g.rows);
+        ui.gridCols.value = String(g.cols);
+        ui.gridW.value = String(g.w); ui.gridH.value = String(g.h);
+        ui.gridW.disabled = g.fit; ui.gridH.disabled = g.fit;
+        ui.gridFit.setAttribute("aria-pressed", String(g.fit));
+        ui.gridGap.value = String(g.gap); ui.gridGapVal.textContent = String(g.gap);
+        ui.gridGapV.value = String(g.gapV); ui.gridGapVVal.textContent = String(g.gapV);
+        ui.gridGapVRow.hidden = !g.split;
+        ui.gridGapName.textContent = g.split ? "По горизонтали" : "Отступ";
+        ui.gridSplit.checked = g.split;
+        ui.gridRound.value = String(g.round); ui.gridRoundVal.textContent = String(g.round);
+        ui.gridRand.value = String(g.rand); ui.gridRandVal.textContent = g.rand + "%";
+        ui.gridSeed.value = String(g.seed);
+        pressGroupV(ui.gridMode, g.mode);
+        ui.gridNumbers.checked = g.numbers;
+        ui.gridStagger.checked = g.stagger;
+        drawGridPreview();
+    }
+
+    function setGrid(k, v) { orbit.grid[k] = v; storeOrbit(); drawGrid(); }
+
+    function gridInt(v, lo, hi, def) {
+        v = Math.round(Number(v));
+        return isNaN(v) ? def : Math.max(lo, Math.min(hi, v));
+    }
+
+    async function onGrid() {
+        var res, g = orbit.grid;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Строю сетку…", "busy");
+        try {
+            res = await host("gridMake", [{ rows: g.rows, cols: g.cols, gap: g.gap, split: g.split, gapV: g.gapV, round: g.round, rand: g.rand, seed: g.seed,
+                fit: g.fit, w: g.w, h: g.h, mode: g.mode, numbers: g.numbers, stagger: g.stagger },
+                { tile: "Плитка ", number: "Номер плитки ", ctrl: "Grid: управление", folder: "Grid", shape: "Форма" }]);
+            setBusy(false);
+            setStatus("Сетка готова: " + plural(res.tiles, "плитка", "плитки", "плиток") + ", " + res.w + "×" + res.h + ". Двигайте всю сетку слоем «" + res.ctrl + "»." +
+                (res.precomp ? " Каждая плитка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео." : "") +
+                (res.stagger ? " Плитки появляются по очереди от указателя времени." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function enableGrid() {
+        if (!ui.gridStage) { return; }
+        var step = function (btn, key, d, lo, hi) { btn.addEventListener("click", function () { setGrid(key, gridInt(orbit.grid[key] + d, lo, hi, orbit.grid[key])); }); };
+        step(ui.gridRowsLess, "rows", -1, 1, 20); step(ui.gridRowsMore, "rows", 1, 1, 20);
+        step(ui.gridColsLess, "cols", -1, 1, 20); step(ui.gridColsMore, "cols", 1, 1, 20);
+        [["gridRows", "rows", 1, 20], ["gridCols", "cols", 1, 20], ["gridW", "w", 16, 16000], ["gridH", "h", 16, 16000], ["gridSeed", "seed", 0, 999999]].forEach(function (f) {
+            ui[f[0]].addEventListener("change", function () { setGrid(f[1], gridInt(ui[f[0]].value, f[2], f[3], orbit.grid[f[1]])); });
+            ui[f[0]].addEventListener("keydown", function (e) { if (e.key === "Enter") { setGrid(f[1], gridInt(ui[f[0]].value, f[2], f[3], orbit.grid[f[1]])); } });
+        });
+        [["gridGap", "gap"], ["gridGapV", "gapV"], ["gridRound", "round"], ["gridRand", "rand"]].forEach(function (s) {
+            ui[s[0]].addEventListener("input", function () { setGrid(s[1], Math.round(Number(ui[s[0]].value))); });
+        });
+        ui.gridFit.addEventListener("click", function () { setGrid("fit", !orbit.grid.fit); });
+        ui.gridSplit.addEventListener("change", function () { setGrid("split", ui.gridSplit.checked); });
+        ui.gridNumbers.addEventListener("change", function () { setGrid("numbers", ui.gridNumbers.checked); });
+        ui.gridStagger.addEventListener("change", function () { setGrid("stagger", ui.gridStagger.checked); });
+        ui.gridDice.addEventListener("click", function () { setGrid("seed", Math.floor(Math.random() * 99999) + 1); });
+        Array.prototype.forEach.call(ui.gridMode.querySelectorAll("button[data-v]"), function (b) {
+            b.addEventListener("click", function () { setGrid("mode", b.getAttribute("data-v")); });
+        });
+        ui.gridBtn.addEventListener("click", onGrid);
+        drawGrid();
+    }
+
+    // Блоки раздела «Макеты» сворачиваются щелчком по заголовку; в широкой панели встают в две колонки.
+    function drawMkFolds() {
+        var folded = (orbit.fold || "").split(",");
+        Array.prototype.forEach.call(document.querySelectorAll("#orbitPane .mk-card"), function (c) {
+            var on = folded.indexOf(c.getAttribute("data-mk")) >= 0, b = c.querySelector(".mk-fold");
+            c.classList.toggle("mk-folded", on);
+            if (b) { b.setAttribute("aria-expanded", String(!on)); b.setAttribute("aria-label", on ? "Развернуть" : "Свернуть"); }
+        });
+        if (ui.orbitPane) { ui.orbitPane.classList.toggle("mk-wide", ui.orbitPane.getBoundingClientRect().width >= 620); }
+    }
+
+    function enableMkFolds() {
+        Array.prototype.forEach.call(document.querySelectorAll("#orbitPane .mk-card"), function (c) {
+            var name = c.getAttribute("data-mk");
+            c.querySelector(".mk-head").addEventListener("click", function () {
+                var list = (orbit.fold || "").split(",").filter(function (x) { return x && x !== name; });
+                if (!c.classList.contains("mk-folded")) { list.push(name); }
+                orbit.fold = list.join(",");
+                storeOrbit();
+                drawMkFolds();
+                drawOrbitPreview();
+                drawGridPreview();
+            });
+        });
+        window.addEventListener("resize", function () { if (ui.orbitPane && !ui.orbitPane.hidden) { drawMkFolds(); drawOrbitPreview(); drawGridPreview(); } });
+        drawMkFolds();
+    }
+
+    // ---- Раздел «Макеты»: карусель. Настройки хранятся отдельно; превью — те же карточки в CSS 3D, его можно крутить мышкой.
     var ORBIT_KEY = "sayframe.orbit.v1";
     var ORBIT_DEFAULTS = { layout: "ring", shape: "rect", corners: 20, mode: "shape", count: 8, radius: 600, w: 400, h: 560, numbers: true, camera: true };
     var ORBIT_LAYOUT_NAMES = { ring: "кольцо", half: "полукруг", spiral: "спираль", wave: "волна" };
@@ -6172,6 +6419,18 @@
         out.radius = Math.max(100, Math.min(3000, Math.round(out.radius) || 600));
         out.w = Math.max(50, Math.min(2000, Math.round(out.w) || 400));
         out.h = Math.max(50, Math.min(2000, Math.round(out.h) || 560));
+        out.fold = typeof s.fold === "string" ? s.fold : "";
+        out.grid = {};
+        var g = s.grid && typeof s.grid === "object" ? s.grid : {};
+        for (k in GRID_DEFAULTS) {
+            if (GRID_DEFAULTS.hasOwnProperty(k)) { out.grid[k] = typeof g[k] === typeof GRID_DEFAULTS[k] ? g[k] : GRID_DEFAULTS[k]; }
+        }
+        g = out.grid;
+        g.rows = gridInt(g.rows, 1, 20, 4); g.cols = gridInt(g.cols, 1, 20, 5);
+        g.gap = gridInt(g.gap, 0, 200, 20); g.gapV = gridInt(g.gapV, 0, 200, 20); g.round = gridInt(g.round, 0, 200, 20);
+        g.rand = gridInt(g.rand, 0, 100, 100); g.seed = gridInt(g.seed, 0, 999999, 12345);
+        g.w = gridInt(g.w, 16, 16000, 1920); g.h = gridInt(g.h, 16, 16000, 1080);
+        if (g.mode !== "precomp") { g.mode = "shape"; }
         return out;
     }
 
@@ -6279,12 +6538,12 @@
         try {
             res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: orbit.mode,
                 radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera },
-                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", folder: "Карусель", shape: "Форма" }]);
+                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма" }]);
             setBusy(false);
             setStatus("Карусель готова: " + plural(res.cards, "карточка", "карточки", "карточек") + ", " + ORBIT_LAYOUT_NAMES[res.layout] + ". " +
                 "Крутите её слоем «" + res.ctrl + "» (Y Rotation)." +
                 (res.precomp ? " Каждая карточка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео." : "") +
-                (res.camera ? " Добавлена камера «" + res.camera + "»." : (res.hadCamera ? " Камера в композиции уже была." : "")) +
+                (res.camera ? " Добавлена камера «" + res.camera + "»" + (res.camRig ? " на 3D-нуле «" + res.camRig + "»: крутите или двигайте его, чтобы облететь карусель." : ".") : (res.hadCamera ? " Камера в композиции уже была." : "")) +
                 " Отменить — Cmd/Ctrl+Z.", "done");
         } catch (e) {
             toolFailed(e);
@@ -6336,6 +6595,8 @@
             b.setAttribute("role", "tab");
             b.setAttribute("data-sec", s.id);
             b.textContent = s.label;
+            // В «Студии» подсказки под карточками нет — она всплывает при наведении на название раздела.
+            if (s.id !== "orbit") { b.setAttribute("data-info", s.label + "|" + acHintText(s.id)); }
             b.addEventListener("click", function () {
                 acState.sec = s.id;
                 acState.favOnly = false;
@@ -7390,7 +7651,7 @@
         closeFxConsole();
         openSettings();
         if (ui.sheet.hidden) { return; }
-        showSetPane("other");
+        showSetPane("keys");
         startHotkeyEdit("console");
         ui.hotkeys.scrollIntoView({ block: "center" });
     }
@@ -7521,6 +7782,129 @@
         } catch (e) {
             toolFailed(e);
         }
+    }
+
+    // ---- «Плашка под текстом» (вкладка «Шейп»): шейп-слой под текстом, который подстраивается под текст.
+    // Превью в блоке рисуется CSS и меняется сразу; в After Effects то же самое делают выражения (host textBox).
+    var TB_KEY = "sayframe.textbox.v1";
+    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, appear: "left", shadow: false };
+    var TB_PRESETS = {
+        news: { per: "line", look: "fill", style: "box", color: "#111111", px: 16, py: 4, round: 0, skew: 0, shadow: false, appear: "left" },
+        sport: { per: "line", look: "fill", style: "box", color: "#ff4f6d", px: 22, py: 6, round: 0, skew: 14, shadow: false, appear: "lines" },
+        sticker: { per: "all", look: "fill", style: "box", color: "#ffffff", px: 26, py: 12, round: 18, skew: 0, shadow: true, appear: "center" },
+        pill: { per: "all", look: "fill", style: "box", color: "#3a0f63", px: 34, py: 12, round: 100, skew: 0, shadow: false, appear: "center" },
+        frame: { per: "all", look: "stroke", style: "box", strokeColor: "#ffffff", stroke: 4, px: 28, py: 14, round: 40, skew: 0, shadow: false, appear: "center" },
+        marker: { per: "line", look: "fill", style: "marker", color: "#ffcc33", px: 6, py: 0, round: 0, skew: 0, shadow: false, appear: "left" }
+    };
+    var TB_RANGES = { px: [0, 120], py: [0, 80], round: [0, 100], stroke: [1, 30], skew: [-40, 40], opacity: [0, 100] };
+    var TB_CHOICES = { per: ["all", "line"], look: ["fill", "stroke", "both"], style: ["box", "marker"], appear: ["none", "left", "center", "lines"] };
+
+    function tbClean(src) {
+        var o = {}, k;
+        for (k in TB_DEFAULTS) { if (TB_DEFAULTS.hasOwnProperty(k)) { o[k] = TB_DEFAULTS[k]; } }
+        if (src && typeof src === "object") {
+            for (k in TB_DEFAULTS) {
+                if (TB_DEFAULTS.hasOwnProperty(k) && typeof src[k] === typeof TB_DEFAULTS[k]) { o[k] = src[k]; }
+            }
+        }
+        for (k in TB_RANGES) { if (TB_RANGES.hasOwnProperty(k)) { o[k] = Math.max(TB_RANGES[k][0], Math.min(TB_RANGES[k][1], Math.round(Number(o[k]) || 0))); } }
+        for (k in TB_CHOICES) { if (TB_CHOICES.hasOwnProperty(k) && TB_CHOICES[k].indexOf(o[k]) < 0) { o[k] = TB_DEFAULTS[k]; } }
+        if (!parseHex(o.color)) { o.color = TB_DEFAULTS.color; }
+        if (!parseHex(o.strokeColor)) { o.strokeColor = TB_DEFAULTS.strokeColor; }
+        o.color = parseHex(o.color).hex; o.strokeColor = parseHex(o.strokeColor).hex;
+        return o;
+    }
+
+    var tb = (function () { try { return tbClean(JSON.parse(window.localStorage.getItem(TB_KEY) || "null")); } catch (e) { return tbClean(null); } })();
+
+    function storeTb() { try { window.localStorage.setItem(TB_KEY, JSON.stringify(tb)); } catch (e) {} }
+
+    function drawTb() {
+        var t = ui.tbText, s = t.style, fill = tb.look !== "stroke", line = tb.look !== "fill", k;
+        if (!t) { return; }
+        t.classList.toggle("tb-all", tb.per === "all");
+        t.classList.toggle("tb-marker", tb.style === "marker");
+        s.setProperty("--px", tb.px + "px");
+        s.setProperty("--py", tb.py + "px");
+        s.setProperty("--r", tb.round + "px");
+        s.setProperty("--fill", fill ? tb.color : "transparent");
+        s.setProperty("--stroke", tb.strokeColor);
+        s.setProperty("--sw", line ? Math.max(1, Math.round(tb.stroke / 2)) + "px" : "0px");
+        s.setProperty("--skew", String(tb.skew));
+        s.setProperty("--op", String(tb.opacity / 100));
+        s.setProperty("--shadow", tb.shadow ? "6px 6px 0 rgba(0,0,0,.45)" : "none");
+        // Светлая плашка — тёмный текст, чтобы его было видно.
+        k = parseHex(tb.color);
+        t.style.color = fill && tb.style === "box" && k && (0.299 * k.r + 0.587 * k.g + 0.114 * k.b) / 255 > 0.6 ? "#3a0f63" : "#fff";
+        ["per", "look", "style", "appear"].forEach(function (key) { pressGroupV(ui["tb" + key.charAt(0).toUpperCase() + key.slice(1)], tb[key]); });
+        Array.prototype.forEach.call(ui.tbSwatches.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === tb.color ? "true" : "false"); });
+        ui.tbColor.value = tb.color;
+        ui.tbStrokeColor.value = tb.strokeColor;
+        ui.tbStrokeRow.hidden = ui.tbStrokeWRow.hidden = !line;
+        [["Px", "px", ""], ["Py", "py", ""], ["Round", "round", ""], ["Stroke", "stroke", ""], ["Skew", "skew", "°"], ["Opacity", "opacity", "%"]].forEach(function (d) {
+            ui["tb" + d[0]].value = String(tb[d[1]]);
+            ui["tb" + d[0] + "Val"].textContent = tb[d[1]] + d[2];
+        });
+        ui.tbShadow.checked = tb.shadow;
+    }
+
+    function setTb(changes) {
+        var k;
+        for (k in changes) { if (changes.hasOwnProperty(k)) { tb[k] = changes[k]; } }
+        tb = tbClean(tb);
+        storeTb();
+        drawTb();
+    }
+
+    function tbRgb(hex) { var c = parseHex(hex); return [c.r / 255, c.g / 255, c.b / 255]; }
+
+    async function onTextBox() {
+        var res, r, n;
+        if (busy) { return; }
+        setBusy(true);
+        try {
+            res = await host("textBox", [{ per: tb.per, look: tb.look, style: tb.style, color: tbRgb(tb.color), strokeColor: tbRgb(tb.strokeColor),
+                px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, appear: tb.appear, shadow: tb.shadow },
+                { box: "Плашка", helper: "Плашка: строка", part: "Плашка", side: "По бокам", vert: "Сверху/снизу", round: "Скругление", color: "Цвет",
+                    fillOn: "Заливка", strokeOn: "Обводка", strokeW: "Толщина обводки", strokeColor: "Цвет обводки", skew: "Наклон" }]);
+            setBusy(false);
+            r = res.textBox.boxes;
+            n = r.length;
+            setStatus("Плашка готова: " + (n === 1 ? "«" + r[0].box + "»" : plural(n, "слой", "слоя", "слоёв")) + ". Она подстраивается под текст сама; " +
+                "цвет, отступы, скругление, обводка и наклон — в Effect Controls плашки." + (r[0].lines ? " Под каждую строку своя плашка (и запас на две новые строки)." : "") +
+                " Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function enableTextBox() {
+        if (!ui.tbText) { return; }
+        ["per", "look", "style", "appear"].forEach(function (key) {
+            var box = ui["tb" + key.charAt(0).toUpperCase() + key.slice(1)];
+            box.addEventListener("click", function (e) {
+                var b = e.target.closest ? e.target.closest("button[data-v]") : null, ch = {};
+                if (!b) { return; }
+                ch[key] = b.getAttribute("data-v");
+                setTb(ch);
+            });
+        });
+        ui.tbPresets.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("button[data-v]") : null;
+            if (b && TB_PRESETS[b.getAttribute("data-v")]) { setTb(TB_PRESETS[b.getAttribute("data-v")]); }
+        });
+        ui.tbSwatches.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("button[data-v]") : null;
+            if (b) { setTb({ color: b.getAttribute("data-v"), look: tb.look === "stroke" ? "fill" : tb.look }); }
+        });
+        ui.tbColor.addEventListener("input", function () { setTb({ color: ui.tbColor.value }); });
+        ui.tbStrokeColor.addEventListener("input", function () { setTb({ strokeColor: ui.tbStrokeColor.value }); });
+        [["Px", "px"], ["Py", "py"], ["Round", "round"], ["Stroke", "stroke"], ["Skew", "skew"], ["Opacity", "opacity"]].forEach(function (d) {
+            ui["tb" + d[0]].addEventListener("input", function () { var ch = {}; ch[d[1]] = Number(ui["tb" + d[0]].value); setTb(ch); });
+        });
+        ui.tbShadow.addEventListener("change", function () { setTb({ shadow: ui.tbShadow.checked }); });
+        ui.tbBtn.addEventListener("click", onTextBox);
+        drawTb();
     }
 
     // ---- Pathfinder (вкладка «Шейп»): как Shape Modes в Illustrator, через Merge Paths.
@@ -9349,7 +9733,7 @@
 
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT" || m === "NO_TEXT_LAYER";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -9873,7 +10257,8 @@
 
     // ---- «Студия»: раздел «Инструменты» без сетки. Сверху кнопки «в один клик» по четыре в ряд,
     // ниже блоки с настройками друг под другом (в широкой панели — в две или три колонки).
-    // Блок сворачивается в одну строку щелчком по заголовку. Перестановки и растягивания здесь нет.
+    // Блок сворачивается в одну строку щелчком по заголовку. Плитки и блоки можно перетащить на другое место
+    // (блок — за заголовок); порядок запоминается. Растягивания здесь нет.
     var FLOW_TILES = { paste: "Картинка", organize: "По папкам", unused: "Лишнее", cache: "Кэш", nullp: "Null", decompose: "Декомпоз", cutout: "Вырезка", split: "Разделить" };
     var FLOW_ICONS = {
         ease: '<path d="M4 19C11 19 13 5 20 5"/><circle cx="4" cy="19" r="1.5"/><circle cx="20" cy="5" r="1.5"/>',
@@ -9881,11 +10266,12 @@
         stagger: '<path d="M4 6h8M8 12h8M12 18h8"/>',
         anchor: '<circle cx="12" cy="12" r="6"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',
         align: '<path d="M5 4v16M9 8h10M9 16h6"/>',
-        pathfinder: '<rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/>'
+        pathfinder: '<rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/>',
+        textbox: '<rect x="3" y="6" width="18" height="12" rx="3"/><path d="M8 10h8M12 10v5"/>'
     };
 
     var FLOW_ORDER = ["paste", "organize", "unused", "cache", "nullp", "decompose", "cutout", "ease", "easecopy", "stagger", "anchor", "align"];
-    var FLOW_SHAPE_ORDER = ["split", "pathfinder"];
+    var FLOW_SHAPE_ORDER = ["split", "pathfinder", "textbox"];
 
     function flowOn() { return document.documentElement.getAttribute("data-design") === "studio"; }
 
@@ -9899,6 +10285,68 @@
         g.st.flowFold = list.join(",");
         g.store();
         relayoutTools();
+    }
+
+    // Порядок блоков: сохранённый, а блоки, которых в нём нет (новые), — в конце, как по умолчанию.
+    function flowSorted(g) {
+        var saved = String(g.st.flowSort || "").split(",").filter(function (n, i, a) { return g.flowOrder.indexOf(n) >= 0 && a.indexOf(n) === i; });
+        return saved.concat(g.flowOrder.filter(function (n) { return saved.indexOf(n) < 0; }));
+    }
+
+    // Перетаскивание: плитку — за любое место, блок — за заголовок. Двигаются только среди своих
+    // (плитки среди плиток, блоки среди блоков). Короткий щелчок работает как раньше.
+    function enableFlowDrag(g) {
+        var drag = null;
+        function cardName(card) { return card.getAttribute("data-tool"); }
+        function onMove(e) {
+            var over, rect, before, box;
+            if (!drag) { return; }
+            if (!drag.on) {
+                if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 6) { return; }
+                drag.on = true;
+                drag.card.classList.add("flow-drag");
+                g.el.classList.add("flow-sorting");
+            }
+            e.preventDefault();
+            box = drag.card.parentNode;
+            over = document.elementFromPoint(e.clientX, e.clientY);
+            over = over && over.closest ? over.closest(".tool-card") : null;
+            if (!over || over === drag.card || over.parentNode !== box) { return; }
+            rect = over.getBoundingClientRect();
+            before = drag.tile ? (e.clientY < rect.top || (e.clientY <= rect.bottom && e.clientX < rect.left + rect.width / 2))
+                : e.clientY < rect.top + rect.height / 2;
+            box.insertBefore(drag.card, before ? over : over.nextSibling);
+        }
+        function onUp() {
+            var d = drag, names;
+            drag = null;
+            document.removeEventListener("pointermove", onMove, true);
+            document.removeEventListener("pointerup", onUp, true);
+            document.removeEventListener("pointercancel", onUp, true);
+            if (!d || !d.on) { return; }
+            d.card.classList.remove("flow-drag");
+            g.el.classList.remove("flow-sorting");
+            names = Array.prototype.map.call(g.flowBox.tiles.querySelectorAll(".tool-card"), cardName)
+                .concat(Array.prototype.map.call(g.flowBox.cols.querySelectorAll(".tool-card"), cardName));
+            g.st.flowSort = names.join(",");
+            g.store();
+            // Отпустили — это не щелчок: плитка не срабатывает, блок не сворачивается.
+            function eat(e) { e.stopPropagation(); e.preventDefault(); }
+            document.addEventListener("click", eat, true);
+            setTimeout(function () { document.removeEventListener("click", eat, true); }, 0);
+        }
+        g.el.addEventListener("pointerdown", function (e) {
+            var card, tile;
+            if (!g.flow || e.button !== 0 || !e.target.closest) { return; }
+            card = e.target.closest(".tool-card");
+            if (!card || !g.flowBox || (card.parentNode !== g.flowBox.tiles && card.parentNode !== g.flowBox.cols)) { return; }
+            tile = card.parentNode === g.flowBox.tiles;
+            if (!tile && (!e.target.closest(".tool-head") || e.target.closest(".flow-fold"))) { return; }
+            drag = { card: card, tile: tile, x: e.clientX, y: e.clientY, on: false };
+            document.addEventListener("pointermove", onMove, true);
+            document.addEventListener("pointerup", onUp, true);
+            document.addEventListener("pointercancel", onUp, true);
+        });
     }
 
     function buildFlow(g) {
@@ -9932,6 +10380,7 @@
             card.appendChild(b);
         });
         g.flowBox = box;
+        enableFlowDrag(g);
     }
 
     function layoutFlow(g) {
@@ -9949,7 +10398,7 @@
         g.el.style.gridAutoRows = "";
         g.el.style.gap = "";
         g.line.hidden = true;
-        g.flowOrder.forEach(function (name) {
+        flowSorted(g).forEach(function (name) {
             var card = cardByName(name), off, isTile, f;
             if (!card) { return; }
             off = toolsHidden.indexOf(name) >= 0;
@@ -10312,7 +10761,7 @@
 
     var SHAPE_KEY = "sayframe.shape.v1";
     var EC_KEY = "sayframe.easecopy.v1";
-    var SHAPE_DEFAULTS = { order: "", sizes: "", places: "", pins: "", grid: GRID_VERSION, flowFold: "", pfKeep: false, pfLast: "unite" };
+    var SHAPE_DEFAULTS = { order: "", sizes: "", places: "", pins: "", grid: GRID_VERSION, flowFold: "", flowSort: "", pfKeep: false, pfLast: "unite" };
 
     function loadShape() {
         var m = {}, saved, k, keep = G;
@@ -10419,6 +10868,7 @@
         watchToolGrid(sg);
         if (!PF_MODES[shape.pfLast]) { shape.pfLast = "unite"; }
         enablePathfinder();
+        enableTextBox();
         ui.ecOptsToggle.addEventListener("click", function () {
             motion.ecOpts = motion.ecOpts === false;
             showEcFold();
@@ -10904,11 +11354,15 @@
         hotkeyHint();
         renderHotkeys();
     });
-    ui.setTabAI.addEventListener("click", function () { showSetPane("ai"); });
-    ui.setTabOther.addEventListener("click", function () { showSetPane("other"); });
+    Array.prototype.forEach.call(ui.setTabs.querySelectorAll("button[data-pane]"), function (b) {
+        b.addEventListener("click", function () { showSetPane(b.getAttribute("data-pane")); });
+    });
+    window.addEventListener("resize", fitSettings);
     document.addEventListener("keydown", onHotkeyDown, true);
     enableAc();
     enableOrbit();
+    enableGrid();
+    enableMkFolds();
     listenHostHotkeys();
     fitTabs();
     if (typeof window.ResizeObserver === "function") { new window.ResizeObserver(fitTabs).observe(ui.tabs); }

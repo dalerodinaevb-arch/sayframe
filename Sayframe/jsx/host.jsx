@@ -2712,7 +2712,9 @@ var sayframeHost = (function () {
             if (layout === "wave") { y = Math.sin(a * 2 * Math.PI / 180) * h * 0.25; }
         }
         r = a * Math.PI / 180;
-        return { x: radius * Math.sin(r), y: y, z: -radius * Math.cos(r), ry: a };
+        // A layer looks along -Z; a Y rotation of +q turns that to (-sin q, 0, -cos q). The card at angle a must look
+        // out of the ring, along (sin a, 0, -cos a), so it turns by -a (checked in After Effects: +a faced inward).
+        return { x: radius * Math.sin(r), y: y, z: -radius * Math.cos(r), ry: a === 0 ? 0 : -a };
     }
 
     // The same colours as the preview in the panel: a purple-to-pink run.
@@ -2804,7 +2806,7 @@ var sayframeHost = (function () {
         var kind = ORBIT_SIDES.hasOwnProperty(o.shape) ? o.shape : "rect", t = orbitNum(o.corners, 0, 100, 20) / 100;
         var radius = orbitNum(o.radius, 0, 10000, 600), w = Math.round(orbitNum(o.w, 4, 8000, 400)), h = Math.round(orbitNum(o.h, 4, 8000, 560));
         var pre = o.mode === "precomp", cx = comp.width / 2, cy = comp.height / 2, fs = Math.round(Math.min(w, h) * 0.32);
-        var ctrl, cam = "", had = false, cards = [], nums = [], i, j, sp, L, txt, cc, inner, folder = null, base;
+        var ctrl, cam = "", had = false, cards = [], nums = [], i, j, sp, L, txt, cc, inner, folder = null, base, camL, rig = null;
         base = labels.card || "Card ";
         if (pre) {
             try { folder = app.project.items.addFolder(labels.folder || "Carousel"); } catch (eF) { folder = null; }
@@ -2851,12 +2853,261 @@ var sayframeHost = (function () {
         }
         if (o.camera) {
             for (j = 1; j <= comp.numLayers; j++) { if (comp.layer(j) instanceof CameraLayer) { had = true; break; } }
-            if (!had) { cam = comp.layers.addCamera(labels.camera || "Carousel Camera", [cx, cy]).name; }
+            if (!had) {
+                // The camera hangs on its own 3D null in the middle: turn or move the null to fly around the carousel.
+                camL = comp.layers.addCamera(labels.camera || "Carousel Camera", [cx, cy]);
+                cam = camL.name;
+                rig = comp.layers.addNull(comp.duration);
+                rig.name = labels.camRig || "Camera Control";
+                rig.threeDLayer = true;
+                orbitSet(rig, "ADBE Position", [cx, cy, 0]);
+                camL.parent = rig;
+                try { rig.selected = false; camL.selected = false; } catch (eC) {}
+            }
         }
         for (i = 0; i < cards.length; i++) { try { cards[i].selected = false; } catch (eS) {} }
         for (i = 0; i < nums.length; i++) { try { nums[i].selected = false; } catch (eT) {} }
         ctrl.selected = true;
-        return { cards: n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
+        return { cards: n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, camRig: rig ? rig.name : "", hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
+    }
+
+    // ---- Grid (section "Layouts"): a bento grid of rounded tiles. rows x cols cells; with "rand" some
+    // neighbouring cells merge into bigger tiles. The same seed always gives the same layout (the panel
+    // draws its preview with the very same code), so what is in the preview is what gets built.
+    // Math.imul is not in ExtendScript (ES3): the same 32-bit multiply by halves.
+    function gridImul(a, b) {
+        var ah = (a >>> 16) & 0xffff, al = a & 0xffff, bh = (b >>> 16) & 0xffff, bl = b & 0xffff;
+        return ((al * bl) + ((((ah * bl + al * bh) & 0xffff) << 16) >>> 0)) | 0;
+    }
+
+    function gridRng(seed) {
+        var a = Math.floor(Number(seed) || 0) >>> 0;
+        return function () {
+            var t;
+            a = (a + 0x6D2B79F5) >>> 0;
+            t = a;
+            t = gridImul(t ^ (t >>> 15), t | 1);
+            t ^= t + gridImul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    function gridLayout(rows, cols, rand, seed) {
+        var rng = gridRng(seed), occ = [], boxes = [], r, c, w, h, i, j, free, p = Math.max(0, Math.min(100, rand)) / 100;
+        var maxW = Math.max(1, Math.min(cols, 1 + Math.round(p * 2))), maxH = Math.max(1, Math.min(rows, 1 + Math.round(p)));
+        for (r = 0; r < rows; r++) { occ.push([]); for (c = 0; c < cols; c++) { occ[r].push(false); } }
+        function clear(r0, c0, ww, hh) {
+            var y, x;
+            if (r0 + hh > rows || c0 + ww > cols) { return false; }
+            for (y = r0; y < r0 + hh; y++) { for (x = c0; x < c0 + ww; x++) { if (occ[y][x]) { return false; } } }
+            return true;
+        }
+        for (r = 0; r < rows; r++) {
+            for (c = 0; c < cols; c++) {
+                if (occ[r][c]) { continue; }
+                w = 1; h = 1;
+                if (rng() < p * 0.6) { w = 1 + Math.floor(rng() * maxW); h = 1 + Math.floor(rng() * maxH); }
+                while (w > 1 && !clear(r, c, w, 1)) { w--; }
+                while (h > 1 && !clear(r, c, w, h)) { h--; }
+                for (i = r; i < r + h; i++) { for (j = c; j < c + w; j++) { occ[i][j] = true; } }
+                free = { r: r, c: c, w: w, h: h };
+                boxes.push(free);
+            }
+        }
+        return boxes;
+    }
+
+    function gridColor(i) {
+        var hue = (250 + i * 9) % 360, s = 0.75, l = 0.6, c = (1 - Math.abs(2 * l - 1)) * s, hp = hue / 60;
+        var x = c * (1 - Math.abs(hp % 2 - 1)), m = l - c / 2, rgb;
+        if (hp < 1) { rgb = [c, x, 0]; } else if (hp < 2) { rgb = [x, c, 0]; } else if (hp < 3) { rgb = [0, c, x]; }
+        else if (hp < 4) { rgb = [0, x, c]; } else if (hp < 5) { rgb = [x, 0, c]; } else { rgb = [c, 0, x]; }
+        return [rgb[0] + m, rgb[1] + m, rgb[2] + m, 1];
+    }
+
+    function gridTileShape(l, w, h, round, color) {
+        var gi = acGroup(l), si;
+        try { acP(l, ["ADBE Root Vectors Group", gi]).name = "Tile"; } catch (e0) {}
+        si = acIn(l, gi, "ADBE Vector Shape - Rect");
+        acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Rect Size"]).setValue([w, h]);
+        acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Rect Roundness"]).setValue(Math.min(round, Math.min(w, h) / 2));
+        acFill(l, gi, color);
+    }
+
+    // Tiles come in one after another: opacity 0 -> 100 and scale 85 -> 100 over 10 frames, 2 frames apart.
+    function gridReveal(l, comp, k) {
+        var f = comp.frameDuration || 1 / 30, t0 = comp.time + k * 2 * f, t1 = t0 + 10 * f;
+        try {
+            acKeys(acTransform(l, "ADBE Opacity"), [t0, t1], [0, 100], 70);
+            acKeys(acTransform(l, "ADBE Scale"), [t0, t1], [[85, 85, 100], [100, 100, 100]], 70);
+        } catch (e0) {}
+    }
+
+    function gridBuild(comp, o, labels) {
+        var rows = Math.round(orbitNum(o.rows, 1, 20, 4)), cols = Math.round(orbitNum(o.cols, 1, 20, 5));
+        var W = o.fit ? comp.width : Math.round(orbitNum(o.w, 16, 16000, 1920)), H = o.fit ? comp.height : Math.round(orbitNum(o.h, 16, 16000, 1080));
+        var gx = orbitNum(o.gap, 0, 1000, 20), gy = o.split ? orbitNum(o.gapV, 0, 1000, 20) : gx, round = orbitNum(o.round, 0, 2000, 20);
+        var boxes = gridLayout(rows, cols, orbitNum(o.rand, 0, 100, 100), o.seed), pre = o.mode === "precomp";
+        var cw = (W - gx * (cols - 1)) / cols, ch = (H - gy * (rows - 1)) / rows, ox = (comp.width - W) / 2, oy = (comp.height - H) / 2;
+        var tiles = [], nums = [], i, b, bw, bh, x, y, L, cc, inner, txt, folder = null, ctrl, fs, base = labels.tile || "Tile ";
+        if (cw < 1 || ch < 1) { throw new Error("GRID_TOO_TIGHT"); }
+        if (pre) { try { folder = app.project.items.addFolder(labels.folder || "Grid"); } catch (eF) { folder = null; } }
+        for (i = boxes.length - 1; i >= 0; i--) {
+            b = boxes[i];
+            bw = Math.round(b.w * cw + (b.w - 1) * gx); bh = Math.round(b.h * ch + (b.h - 1) * gy);
+            x = ox + b.c * (cw + gx) + bw / 2; y = oy + b.r * (ch + gy) + bh / 2;
+            fs = Math.round(Math.max(12, Math.min(bw, bh) * 0.28));
+            if (pre) {
+                cc = app.project.items.addComp(base + (i + 1), Math.max(4, bw), Math.max(4, bh), comp.pixelAspect || 1, comp.duration, comp.frameRate);
+                if (folder) { try { cc.parentFolder = folder; } catch (eP) {} }
+                inner = cc.layers.addShape();
+                inner.name = labels.shape || "Shape";
+                gridTileShape(inner, bw, bh, round, gridColor(i));
+                orbitSet(inner, "ADBE Position", [bw / 2, bh / 2]);
+                if (o.numbers) {
+                    txt = orbitNumber(cc, String(i + 1), fs);
+                    orbitSet(txt, "ADBE Position", [bw / 2, bh / 2 + fs * 0.35]);
+                }
+                L = comp.layers.add(cc);
+            } else {
+                L = comp.layers.addShape();
+                gridTileShape(L, bw, bh, round, gridColor(i));
+            }
+            L.name = base + (i + 1);
+            orbitSet(L, "ADBE Position", [x, y]);
+            tiles.unshift(L);
+            if (o.numbers && !pre) {
+                txt = orbitNumber(comp, String(i + 1), fs);
+                txt.name = (labels.number || "Number ") + (i + 1);
+                orbitSet(txt, "ADBE Position", [x, y + fs * 0.35]);
+                nums.unshift(txt);
+            }
+        }
+        ctrl = comp.layers.addNull(comp.duration);
+        ctrl.name = labels.ctrl || "Grid Control";
+        orbitSet(ctrl, "ADBE Position", [comp.width / 2, comp.height / 2]);
+        for (i = 0; i < tiles.length; i++) {
+            if (nums[i]) { nums[i].parent = tiles[i]; }
+            tiles[i].parent = ctrl;
+            if (o.stagger) { gridReveal(tiles[i], comp, i); }
+            try { tiles[i].selected = false; if (nums[i]) { nums[i].selected = false; } } catch (eS) {}
+        }
+        ctrl.selected = true;
+        return { tiles: tiles.length, ctrl: ctrl.name, precomp: pre, folder: folder ? folder.name : "", w: W, h: H, stagger: !!o.stagger };
+    }
+
+    // ---- Text box (the Shape tab): a shape layer under a text layer that follows the text.
+    // The box hangs on the text layer (parent) and reads its size with sourceRectAtTime, so it grows and
+    // shrinks while the text is typed, edited or animated. Everything is set in Effect Controls of the box.
+    // One box for the whole text, or one per line: each line gets an invisible helper text layer that shows
+    // only that line (an expression), and its box reads the helper's size. Two spare lines are ready.
+    var TB_LINE_SPLIT = "/\\r\\n|\\r|\\n|\\u0003/";
+
+    function tbQ(s) {
+        return "\"" + String(s).replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"";
+    }
+
+    function tbLines(t) {
+        var s = "";
+        try { s = String(acP(t, ["ADBE Text Properties", "ADBE Text Document"]).value.text); } catch (e0) { s = ""; }
+        return s.split(/\r\n|\r|\n|\u0003/).length;
+    }
+
+    function tbFx(lab, key) { return "effect(" + tbQ(lab[key]) + ")(1)"; }
+
+    // The box rectangle: size, position and the point it grows from, for the whole text (src = "parent")
+    // or for one line (src = the helper layer, shifted down by the line's place).
+    function tbRectCode(lab, src, line, marker) {
+        var head = "var c=" + tbFx(lab, "side") + ", v=" + tbFx(lab, "vert") + ", r=" + src + ".sourceRectAtTime(time,false), dy=0;";
+        if (line > 0) {
+            head += "var m=parent.sourceRectAtTime(time,false), n=String(parent.text.sourceText).split(" + TB_LINE_SPLIT + ").length, ld;" +
+                "try{var st=parent.text.sourceText.style; ld=st.autoLeading?st.fontSize*1.2:st.leading;}catch(e){ld=n>1?(m.height-r.height)/(n-1):0;}" +
+                "dy=" + line + "*ld;";
+        }
+        var y = marker ? "r.top+r.height*0.79+dy" : "r.top+r.height/2+dy";
+        var h = marker ? "r.height*0.42+2*v" : "r.height+2*v";
+        return {
+            size: head + "r.width>0?[r.width+2*c," + h + "]:[0,0];",
+            pos: head + "[r.left+r.width/2," + y + "];",
+            left: head + "[r.left-c," + y + "];"
+        };
+    }
+
+    function tbGroup(B, comp, lab, o, src, line, k) {
+        var gi = acGroup(B), ri, fi, si, code = tbRectCode(lab, src, line, o.style === "marker"), from = o.appear === "center" ? code.pos : code.left;
+        var f = comp.frameDuration || 1 / 30, t0, t1;
+        try { acP(B, ["ADBE Root Vectors Group", gi]).name = (lab.part || "Box") + " " + (line + 1); } catch (e0) {}
+        ri = acIn(B, gi, "ADBE Vector Shape - Rect");
+        acGP(B, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Size"]).expression = code.size;
+        acGP(B, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Position"]).expression = code.pos;
+        acGP(B, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Roundness"]).expression = tbFx(lab, "round");
+        si = acIn(B, gi, "ADBE Vector Graphic - Stroke");
+        acGP(B, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Color"]).expression = tbFx(lab, "strokeColor");
+        acGP(B, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Width"]).expression = tbFx(lab, "strokeOn") + "?" + tbFx(lab, "strokeW") + ":0";
+        fi = acIn(B, gi, "ADBE Vector Graphic - Fill");
+        acGP(B, gi, ["ADBE Vectors Group", fi, "ADBE Vector Fill Color"]).expression = tbFx(lab, "color");
+        acGP(B, gi, ["ADBE Vectors Group", fi, "ADBE Vector Fill Opacity"]).expression = tbFx(lab, "fillOn") + "?100:0";
+        // The group grows from the left edge (or the middle) of its box; the slant leans it like a sports title.
+        acGP(B, gi, ["ADBE Vector Transform Group", "ADBE Vector Anchor"]).expression = from;
+        acGP(B, gi, ["ADBE Vector Transform Group", "ADBE Vector Position"]).expression = from;
+        acGP(B, gi, ["ADBE Vector Transform Group", "ADBE Vector Skew"]).expression = "-" + tbFx(lab, "skew");
+        if (o.appear && o.appear !== "none") {
+            t0 = comp.time + (o.appear === "lines" ? k * 3 * f : 0);
+            t1 = t0 + 10 * f;
+            acKeys(acGP(B, gi, ["ADBE Vector Transform Group", "ADBE Vector Scale"]), [t0, t1],
+                [o.appear === "center" ? [0, 0] : [0, 100], [100, 100]], 75);
+        }
+        return gi;
+    }
+
+    function tbBuild(comp, t, o, lab) {
+        var B = comp.layers.addShape(), per = o.per === "line", n = per ? Math.min(16, tbLines(t) + 2) : 1;
+        var c = o.color || [0.23, 0.06, 0.39], sc = o.strokeColor || [1, 1, 1], look = o.look || "fill", helpers = [], H, i, fx, base;
+        B.name = (lab.box || "Box") + ": " + t.name;
+        try { B.moveAfter(t); } catch (eM) {}
+        // Controls first: the expressions below read them.
+        kitControl(B, "ADBE Slider Control", lab.side, orbitNum(o.px, 0, 1000, 18));
+        kitControl(B, "ADBE Slider Control", lab.vert, orbitNum(o.py, 0, 1000, 6));
+        kitControl(B, "ADBE Slider Control", lab.round, orbitNum(o.round, 0, 1000, 0));
+        kitControl(B, "ADBE Color Control", lab.color, [c[0], c[1], c[2], 1]);
+        kitControl(B, "ADBE Checkbox Control", lab.fillOn, look === "stroke" ? 0 : 1);
+        kitControl(B, "ADBE Checkbox Control", lab.strokeOn, look === "fill" ? 0 : 1);
+        kitControl(B, "ADBE Slider Control", lab.strokeW, orbitNum(o.stroke, 0, 200, 4));
+        kitControl(B, "ADBE Color Control", lab.strokeColor, [sc[0], sc[1], sc[2], 1]);
+        kitControl(B, "ADBE Slider Control", lab.skew, orbitNum(o.skew, -60, 60, 0));
+        if (o.shadow) {
+            fx = acAdd(B, ["ADBE Effect Parade"], "ADBE Drop Shadow");
+            kitSet(B, fx, "ADBE Drop Shadow-0004", 10);
+            kitSet(B, fx, "ADBE Drop Shadow-0005", 0);
+        }
+        B.parent = t;
+        orbitSet(B, "ADBE Anchor Point", [0, 0]);
+        orbitSet(B, "ADBE Position", [0, 0]);
+        orbitSet(B, "ADBE Scale", [100, 100]);
+        try { orbitSet(B, "ADBE Rotate Z", 0); } catch (eR) {}
+        orbitSet(B, "ADBE Opacity", orbitNum(o.opacity, 0, 100, 100));
+        if (!per) {
+            tbGroup(B, comp, lab, o, "parent", 0, 0);
+        } else {
+            base = (lab.helper || "Box line") + " " + t.name + " ";
+            for (i = 0; i < n; i++) {
+                H = comp.layers.addText("");
+                try { acP(H, ["ADBE Text Properties", "ADBE Text Document"]).setValue(acP(t, ["ADBE Text Properties", "ADBE Text Document"]).value); } catch (eD) {}
+                H.name = base + (i + 1);
+                acP(H, ["ADBE Text Properties", "ADBE Text Document"]).expression =
+                    "var L=String(parent.text.sourceText).split(" + TB_LINE_SPLIT + ");L.length>" + i + "?L[" + i + "]:\"\"";
+                try { H.moveAfter(B); } catch (eH) {}
+                H.parent = t;
+                orbitSet(H, "ADBE Anchor Point", [0, 0]);
+                orbitSet(H, "ADBE Position", [0, 0]);
+                orbitSet(H, "ADBE Opacity", 0);
+                try { H.shy = true; } catch (eS) {}
+                helpers.push(H);
+                tbGroup(B, comp, lab, o, "thisComp.layer(" + tbQ(H.name) + ")", i, i);
+            }
+        }
+        try { B.selected = false; } catch (e1) {}
+        return { box: B.name, lines: per ? n : 0, helpers: helpers.length };
     }
 
     // ---- Split / merge shapes (the Shape tab).
@@ -5647,6 +5898,22 @@ var sayframeHost = (function () {
             });
         },
 
+        // Grid: o = { rows, cols, gap, split, gapV, round, rand, seed, fit, w, h, mode, numbers, stagger }; labels - layer names.
+        gridMake: function (o, labels) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (!o || typeof o !== "object") { throw new Error("BAD_GRID"); }
+                app.beginUndoGroup("Sayframe: grid");
+                try {
+                    res = gridBuild(comp, o, labels || {});
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
         // Carousel: o = { count, layout, shape, corners, mode: "shape"|"precomp", radius, w, h, numbers, camera }; labels - layer names.
         orbitMake: function (o, labels) {
             return reply(function () {
@@ -5664,6 +5931,24 @@ var sayframeHost = (function () {
         },
 
         // Pathfinder: mode "unite" | "front" | "intersect" | "exclude" | "back"; keep - hide the source layers instead of removing them.
+        // Text box: o = { per: "all"|"line", look: "fill"|"stroke"|"both", style: "box"|"marker", color, strokeColor,
+        // px, py, round, stroke, skew, opacity, shadow, appear: "none"|"left"|"center"|"lines" }; lab - control and layer names.
+        textBox: function (o, lab) {
+            return reply(function () {
+                var comp = activeComp(), sel = comp.selectedLayers, texts = [], res = [], i;
+                if (!o || typeof o !== "object" || !lab) { throw new Error("BAD_TEXTBOX"); }
+                for (i = 0; i < sel.length; i++) { if (sel[i] instanceof TextLayer) { texts.push(sel[i]); } }
+                if (!texts.length) { throw new Error("NO_TEXT_LAYER"); }
+                app.beginUndoGroup("Sayframe: text box");
+                try {
+                    for (i = 0; i < texts.length; i++) { res.push(tbBuild(comp, texts[i], o, lab)); }
+                } finally {
+                    app.endUndoGroup();
+                }
+                return { textBox: { boxes: res } };
+            });
+        },
+
         pathfinder: function (mode, keep) {
             return reply(function () {
                 var comp = activeComp();
