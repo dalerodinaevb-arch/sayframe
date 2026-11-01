@@ -1339,7 +1339,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click('#provider button[data-value="openai"]');
   check("C1 switching back and forth keeps both keys", t === "sk-ant-test" && (await p.page.inputValue("#apiKey")) === "sk-openai-test");
   await p.page.click('#models button[data-value="gpt-6-astra"]');
-  await p.page.click("#saveSettings");
+  await p.page.click("#settingsClose");
   t = await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")));
   check("C2 saved: ChatGPT, its key and model; the Claude key stays", t.provider === "openai" && t.openaiKey === "sk-openai-test" && t.openaiModel === "gpt-6-astra" && t.apiKey === "sk-ant-test" && t.model === "claude-sonnet-5-5", JSON.stringify(t));
   check("C2 the first tab is called AI whichever is chosen", (await p.page.locator("#tabClaude").innerText()) === "AI");
@@ -1951,7 +1951,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.locator(".hotkey-edit button", { hasText: "Отмена" }).click();
   t = await p.page.evaluate(() => JSON.parse(window.__keyInterest[window.__keyInterest.length - 1]));
   check("H5b after editing only the real shortcuts are passed to the panel again", t.length === 3, JSON.stringify(t));
-  await p.page.click("#saveSettings");
+  await p.page.click("#settingsClose");
   t = await p.page.evaluate(() => JSON.parse(window.__keyInterest[window.__keyInterest.length - 1]));
   check("H6 saved; After Effects is told about the new keys", JSON.stringify(t.map((x) => x.keyCode).sort((a, b) => a - b)) === JSON.stringify([14, 20, 97]) && (await p.page.getAttribute("#fxBtn", "title")) === "Поиск эффектов (⌃⇧E)", JSON.stringify(t));
   await p.page.keyboard.press("Control+Space");
@@ -1973,7 +1973,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.keyboard.press("Alt+KeyQ");
   check("H8 a new shortcut is kept at once, even if the settings are closed without 'Save'", await p.page.locator("#fxConsole").isVisible());
   await p.page.keyboard.press("Escape");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click("#hotkeysReset"); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click("#hotkeysReset"); await p.page.click("#settingsClose");
   await p.page.keyboard.press("Control+Space");
   check("H8 'Reset' brings back Ctrl+Space and clears the rest", (await p.page.locator("#fxConsole").isVisible()) && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
@@ -2098,7 +2098,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.keyboard.press("Escape");
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   await p.page.click('#fxWhere [data-value="cursor"]');
-  await p.page.click("#saveSettings");
+  await p.page.click("#settingsClose");
   check("FC2 'У курсора' is saved", (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).fxWhere)) === "cursor");
   await p.page.waitForTimeout(900);
   await watcherSays(p, 0, "HIT console 700 400");
@@ -2236,7 +2236,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("PA7 settings: the switch is on by default", await p.page.locator("#pasteAnywhere").isChecked());
   await p.page.locator("#pasteAnywhere").evaluate((el) => el.click());
-  await p.page.click("#saveSettings");
+  await p.page.click("#settingsClose");
   await p.page.waitForFunction(() => window.__spawns.length === 2, null, { timeout: 5000 }).catch(() => {});
   t = await watched(p);
   check("PA7 switched off: Cmd+V is no longer watched, the shortcuts still are", !t.some((x) => x.id === "pasteAny") && t.some((x) => x.id === "console") && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).pasteAnywhere)) === false, JSON.stringify(t));
@@ -2738,7 +2738,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#testKey");
   await p.page.waitForFunction(() => /работает|API|связи/.test(document.getElementById("keyHint").textContent));
   check("G1 key test uses the typed key and chosen model with a 1-token request", (await p.page.locator("#keyHint").innerText()) === "Ключ работает." && p.net.requests[0].headers["x-api-key"] === "sk-ant-abc" && p.net.requests[0].body.model === "claude-opus-5-5" && p.net.requests[0].body.max_tokens === 1);
-  await p.page.click("#saveSettings");
+  await p.page.waitForTimeout(600);
+  t = JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.settings.v1")));
+  check("G1 saved by itself, with the window still open: no «Сохранить» button, a quiet «Сохранено ✓» instead", t.apiKey === "sk-ant-abc" && t.accent === "#62c8ff" && t.refFrames === 16 && t.alwaysAsk === true && (await p.page.locator("#saveSettings").count()) === 0 && (await p.page.locator("#settingsSheet").isVisible()) && /Сохранено|сохраняются сами/.test(await p.page.locator("#settingsSaved").innerText()), JSON.stringify(t));
+  await p.page.click("#settingsClose");
   t = JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.settings.v1")));
   check("G1 saved", t.apiKey === "sk-ant-abc" && t.model === "claude-opus-5-5" && t.accent === "#62c8ff" && t.refFrames === 16 && t.alwaysAsk === true && t.selfCheck === false && (await p.page.locator("#settingsSheet").isHidden()) && (await p.status()) === "Настройки сохранены.", JSON.stringify(t));
   await p.page.screenshot({ path: path.join(SHOTS, "09-accent-sky.png") });
@@ -2747,7 +2750,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.fill("#bgHex", "#101014");
   await p.page.click("#settingsClose");
   t = await p.page.evaluate(() => [getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(), getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(), JSON.parse(localStorage.getItem("sayframe.settings.v1")).accent]);
-  check("G2 closing without saving reverts the preview (a new install is in «Студия», its background stays)", t[0] === "#62c8ff" && t[1] === "#111215" && t[2] === "#62c8ff", t.join());
+  check("G2 closing keeps what was changed: the new accent is on screen and saved", t[0] !== "#62c8ff" && t[0] === t[2] && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).bg)) === "#101014", t.join());
   await p.page.click("#settingsBtn");
   await p.page.fill("#apiKey", "bad");
   p.net.replies.push({ type: "error", error: { message: "invalid x-api-key" } });
@@ -2812,8 +2815,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = await spans(p);
   check("W3 the width slider previews live", within(t, 14, 506) && (await box(p, ".sheet-card")).split(",")[2] === "492" && (await p.page.locator("#panelWidthVal").innerText()) === "520 px" && (await box(p, ".composer")).split(",")[2] === "492" && (await box(p, "#tabs")).split(",")[2] === "972", JSON.stringify(t));
   await p.page.click("#settingsClose");
-  check("W3 closing without saving puts the old width back", (await box(p, ".composer")).split(",")[2] === "352" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).panelWidth)) !== 520);
-  await p.page.click("#settingsBtn"); await setWidth(p, 520); await p.page.click("#saveSettings");
+  check("W3 closing keeps the new width", (await box(p, ".composer")).split(",")[2] === "492" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).panelWidth)) === 520);
+  await p.page.click("#settingsBtn"); await setWidth(p, 520); await p.page.click("#settingsClose");
   check("W3 saved width applies to the fields and buttons", (await box(p, ".composer")).split(",")[2] === "492" && (await box(p, "#runBtn")).split(",")[2] === "466" && (await box(p, ".composer")).split(",")[0] === "14" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).panelWidth)) === 520);
   await p.page.screenshot({ path: path.join(SHOTS, "09c-wide-panel-520.png") });
   await p.restart();
@@ -2822,7 +2825,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("W3 settings show the saved width", (await p.page.inputValue("#panelWidth")) === "520" && (await p.page.locator("#panelWidthVal").innerText()) === "520 px");
   await p.page.focus("#panelWidth"); await p.page.keyboard.press("ArrowRight");
   check("W3 the slider works from the keyboard in steps of 10", (await p.page.locator("#panelWidthVal").innerText()) === "530 px" && (await box(p, ".sheet-card")).split(",")[2] === "502");
-  await setWidth(p, 280); await p.page.click("#saveSettings");
+  await setWidth(p, 280); await p.page.click("#settingsClose");
   t = await spans(p);
   check("W3 the narrowest width still fits everything", within(t, 14, 266) && (await overflow(p)) <= 0, JSON.stringify(t));
   await p.page.click("#tabMotion");
@@ -2856,7 +2859,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("FW2 settings sit in the middle, not stretched", t[2] === 560 && Math.abs(t[0] + t[2] / 2 - 500) <= 8 && (await p.page.isChecked("#panelFit")) && (await p.page.locator("#widthRow").isHidden()), JSON.stringify(t));
   await p.page.locator("#panelFit").evaluate((el) => el.click());
   check("FW2 switching it off shows the width slider at once", (await p.page.locator("#panelWidth").isVisible()) && (await p.page.getAttribute("html", "data-fit")) === "off");
-  await p.page.click("#saveSettings"); await p.page.click("#tabClaude");
+  await p.page.click("#settingsClose"); await p.page.click("#tabClaude");
   check("FW2 saved: the fields are back in the 380px column", (await box(p, ".composer")).split(",")[2] === "352", await box(p, ".composer"));
   await p.restart(); await p.page.click("#tabClaude");
   check("FW2 the choice survives a restart", (await p.page.getAttribute("html", "data-fit")) === "off" && (await box(p, ".composer")).split(",")[2] === "352" && p.errors.length === 0, p.errors.join(" | "));
@@ -2891,8 +2894,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click('#designPick [data-value="ae"]');
   check("DS2 picking «After Effects» shows at once: grey, no glow", JSON.stringify(await t()) === JSON.stringify(["ae", "rgb(35, 35, 35)", "none"]), JSON.stringify(await t()));
   await p.page.click("#settingsClose");
-  check("DS2 closing without saving brings the glass back", (await t())[0] === "glass");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="ae"]'); await p.page.click("#saveSettings");
+  check("DS2 closing keeps «After Effects»", (await t())[0] === "ae");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="ae"]'); await p.page.click("#settingsClose");
   await p.restart();
   check("DS3 the design survives a restart and the layout stays the same", (await t())[0] === "ae" && (await p.page.locator("#tabs .tab").count()) === 5 && (await p.page.locator("#runBtn").isVisible()) && p.errors.length === 0, p.errors.join(" | "));
   await p.page.click("#tabMotion");
@@ -2917,8 +2920,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   await p.page.click('#designPick [data-value="studio"]');
   check("DS4 picking «Студия» shows at once: dark, dotted background, no glow", JSON.stringify(await t()) === JSON.stringify(["studio", "rgb(17, 18, 21)", "none", true]), JSON.stringify(await t()));
-  check("DS4 the settings window stays on top in «Студия»", await p.page.evaluate(() => { document.querySelector("#saveSettings").scrollIntoView({ block: "center" }); const b = document.querySelector("#saveSettings").getBoundingClientRect(); const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !!el && !!el.closest("#saveSettings"); }));
-  await p.page.click("#saveSettings");
+  check("DS4 the settings window stays on top in «Студия»", await p.page.evaluate(() => { document.querySelector("#settingsSaved").scrollIntoView({ block: "center" }); const b = document.querySelector("#settingsSaved").getBoundingClientRect(); const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !!el && !!el.closest("#settingsSaved"); }));
+  await p.page.click("#settingsClose");
   await p.restart();
   await p.page.click("#tabMotion");
   t = await p.page.evaluate(() => { const a = document.querySelector('.easecopy-card').getBoundingClientRect(), n = document.querySelector('.easecopy-card').nextElementSibling; const row = [...document.querySelectorAll('.easecopy-card .paste-do')].map((x) => x.getBoundingClientRect()); return [document.documentElement.getAttribute("data-design"), row.every((r) => r.bottom <= a.bottom), getComputedStyle(document.querySelector("#pasteBtn svg")).borderRadius]; });
@@ -3584,10 +3587,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("E1 squeezed to 300px: one under another, same sizes again", (await oneColumn(p)) && (await sizesNow(p)) === c && (await overflow(p)) <= 0, (await cellsNow(p)) + " " + (await sizesNow(p)));
   await resizeTo(p, 380);
   check("E1 and back to 380px: the first layout returns", (await cellsNow(p)) === "ease:0,0,8,12 anchor:8,0,8,13 align:0,12,8,11 shift:8,13,8,15 paste:0,23,8,7 organize:8,28,8,11" && (await sizesNow(p)) === c);
-  await p.page.click("#settingsBtn"); await setWidth(p, 640); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await setWidth(p, 640); await p.page.click("#settingsClose");
   check("E2 the width setting is for fields and buttons: it changes neither the blocks nor the tab bar", (await box(p, "#tabs")).split(",")[2] === "352" && (await sizesNow(p)) === c && (await firstRow(p)) === 2);
   await resizeTo(p, 1000);
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   c = await sizesNow(p);
   t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.gridAutoRows, cs.columnGap].join("|"); });
   check("E3 at 60%: a finer grid (9px cells, 5px gaps), blocks 8 cells = 107px wide, all in a row", t === "9px|5px" && (await firstRow(p)) === 6 && c.split(",").every((x) => x.indexOf("107x") === 0), t + " " + c);
@@ -3756,7 +3759,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await pinOf(p, "organize").click();
   check("PN6 nothing pinned: no line, the usual layout is back", (await pinLine(p)) === null && (await cellsNow(p)) === c, await cellsNow(p));
   await pinOf(p, "shift").click();
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   await motionTab(p);
   t = await p.page.evaluate(() => { const c = document.querySelector('.tool-card[data-tool="shift"]'), a = c.querySelector(".tool-pin").getBoundingClientRect(), r = c.getBoundingClientRect(); return a.left > r.left && a.right < r.right && a.top >= r.top; });
   check("PN7 small blocks: the pin fits too, the pinned block stays on top", t && (await toolOrder(p)).split(",")[0] === "shift" && (await pinLine(p)) !== null && p.errors.length === 0, p.errors.join(" | "));
@@ -3777,8 +3780,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click('#toolSize button[data-value="60"]');
   check("Z2 choosing small shows at once", (await toolsAttr(p)) === "60" && (await pressedSize(p)) === "60");
   await p.page.click("#settingsClose");
-  check("Z2 closing without saving returns large", (await toolsAttr(p)) === "100" && (await gridBox(p, "anchorGrid")) === "122,122,38,38");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#saveSettings");
+  check("Z2 closing keeps small", (await toolsAttr(p)) === "60");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   check("Z3 saved: the buttons are small now", (await toolsAttr(p)) === "60" && (await gridBox(p, "anchorGrid")) === "73,73,23,23" && (await rowShape(p, "alignGrid")) === "6 18 12" && (await rowShape(p, "distGrid")) === "6 18 12" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).toolSize)) === "60", await gridBox(p, "anchorGrid") + " " + await rowShape(p, "alignGrid"));
   t = await toolRects(p);
   check("Z3 at 380px three blocks at 60% stand in one row", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.ease.l === 14 && t.align.r === 345 && Math.abs(t.ease.w - t.anchor.w) <= 1, JSON.stringify(t));
@@ -3804,7 +3807,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("Z5 the size and the widths survive a restart", (await toolsAttr(p)) === "60" && (await toolRects(p)).anchor.w === 135 && (await gridBox(p, "anchorGrid")) === "73,73,23,23");
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("Z5 settings show the saved size", (await pressedSize(p)) === "60");
-  await p.page.click('#toolSize button[data-value="100"]'); await p.page.click("#saveSettings");
+  await p.page.click('#toolSize button[data-value="100"]'); await p.page.click("#settingsClose");
   t = await toolRects(p);
   check("Z6 back to large: big buttons again, the same 10 cells are now large cells", (await toolsAttr(p)) === "100" && (await gridBox(p, "anchorGrid")) === "122,122,38,38" && t.anchor.w === 212 && (await allInside(p)) && (await overflow(p)) <= 0, JSON.stringify(t.anchor));
   check("Z6 no page errors", p.errors.length === 0, p.errors.join(" | "));
@@ -3887,8 +3890,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.locator("#toolTitles").evaluate((el) => el.click());
   check("F5 switching it off shows at once", (await titlesAttr(p)) === "off");
   await p.page.click("#settingsClose");
-  check("F5 closing without saving brings the titles back", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").first().isVisible()));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.locator("#toolTitles").evaluate((el) => el.click()); await p.page.click("#saveSettings");
+  check("F5 closing keeps the titles hidden", (await titlesAttr(p)) === "off");
   t = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
   check("F6 saved: no titles, the blocks get lower", (await titlesAttr(p)) === "off" && (await p.page.locator("#motionTools .tool-head").evaluateAll((l) => l.every((h) => h.getBoundingClientRect().height === 0))) && t.every((h, i) => h < c[i]) && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).toolTitles)) === false, t.join() + " vs " + c.join());
   check("F6 without titles the corner buttons still cover nothing", (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0);
@@ -3897,12 +3899,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("F6 everything folded, no titles: just the buttons, and the tools work", (await togglesClear(p)) && (await allInside(p)) && (await cardH(p, "anchor")) < 170);
   await p.page.click("#easeBothBtn"); await p.idle();
   check("F6 easing still runs", (await p.status()) === "Выделите ключевые кадры на таймлайне и нажмите ещё раз.");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   t = await toolRects(p);
   check("F7 small, no titles, folded: three blocks in a row, nothing overlaps", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0 && (await cardH(p, "anchor")) <= 134, JSON.stringify(t) + " h=" + await cardH(p, "anchor"));
   await p.page.screenshot({ path: path.join(SHOTS, "29-tools-small-bare.png") });
   await p.page.click("#anchorOptsToggle"); await p.page.click("#alignOptsToggle"); await p.page.click("#easeCurveToggle");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.locator("#toolTitles").evaluate((el) => el.click()); await p.page.click("#saveSettings");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.locator("#toolTitles").evaluate((el) => el.click()); await p.page.click("#settingsClose");
   check("F7 small with titles and everything open: titles do not run under the corner buttons", (await titlesAttr(p)) === "on" && (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0);
   await p.page.screenshot({ path: path.join(SHOTS, "26-tools-small.png") });
   await p.restart();
@@ -4838,7 +4840,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("IT4 a click hides it at once", (await tip()) === "");
     await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
     check("IT5 Settings → General has a switch for it, on", await p.page.locator("#infoTipsOn").isChecked());
-    await p.page.locator("label.switch", { has: p.page.locator("#infoTipsOn") }).click(); await p.page.click("#saveSettings");
+    await p.page.locator("label.switch", { has: p.page.locator("#infoTipsOn") }).click(); await p.page.click("#settingsClose");
     await p.page.mouse.move(b3.x + 20, b3.y + 10); await p.page.waitForTimeout(1300);
     check("IT5 switched off: no window", (await tip()) === "" && p.errors.length === 0, p.errors.join(" | "));
     await p.close();
@@ -5652,7 +5654,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("SC2 the accent colour also has a palette", (await p.page.locator("#accentSwatches .color-pick").count()) === 1);
     await p.page.fill("#bgShapeHex", "#12ab34");
     await p.page.locator("#bgMotionPick").evaluate((el) => { el.value = "#a1b2c3"; el.dispatchEvent(new Event("input", { bubbles: true })); });
-    await p.page.click("#saveSettings");
+    await p.page.click("#settingsClose");
     await p.page.click("#tabMotion"); const m = await bgNow();
     await p.page.click("#tabShape"); const sh = await bgNow();
     await p.page.click("#tabClaude"); const ai = await bgNow();
@@ -5692,7 +5694,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click("#setTabOther");
     check("ST4 Settings → General has the 'Анонимная статистика' switch, on by default", (await p.page.locator("#statsOn").isChecked()) && /Анонимная статистика/.test(await p.page.locator("#setPaneOther").innerText()));
     await p.page.locator("label.switch", { has: p.page.locator("#statsOn") }).click();
-    await p.page.click("#saveSettings");
+    await p.page.click("#settingsClose");
     await p.page.evaluate(() => { const st = JSON.parse(localStorage.getItem("sayframe.stats.v1")); st.day = "2000-1-1"; localStorage.setItem("sayframe.stats.v1", JSON.stringify(st)); });
     await p.restart();
     await p.page.waitForTimeout(4600);

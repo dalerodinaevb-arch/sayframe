@@ -1847,3 +1847,7 @@ html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:
 .st-order-name { text-align: center; margin-top: -2px; }
 .st-cap[hidden] { display: none; }
 .stagger-card .shift-go { width: 100%; }
+
+/* Настройки сохраняются сами: вместо кнопки «Сохранить» — тихая строка, которая на миг говорит «Сохранено ✓». */
+.settings-saved { text-align: center; margin: 4px 0 2px; transition: color 0.2s; }
+.settings-saved.ok { color: var(--ok, #4ade80); }

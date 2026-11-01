@@ -1018,7 +1018,7 @@
         staggerOptsToggle: el("staggerOptsToggle"), staggerPrevText: el("staggerPrevText"),
         staggerWhat: el("staggerWhat"), staggerStep: el("staggerStep"), staggerLess: el("staggerLess"), staggerMore: el("staggerMore"),
         staggerOrder: el("staggerOrder"), staggerOrderName: el("staggerOrderName"), staggerBtn: el("staggerBtn"),
-        frames: el("frames"), saveSettings: el("saveSettings"),
+        frames: el("frames"), settingsSaved: el("settingsSaved"),
         modal: el("modal"), modalTitle: el("modalTitle"), modalText: el("modalText"), modalCode: el("modalCode"),
         modalButtons: el("modalButtons"),
         updateBar: el("updateBar"), updateTitle: el("updateTitle"), updateNotes: el("updateNotes"),
@@ -3287,7 +3287,7 @@
             applyTheme(draft);
         });
 
-        // Дизайн меняется сразу; без «Сохранить» вернётся прежний.
+        // Дизайн меняется сразу и сразу сохраняется.
         ui.designPick.addEventListener("click", function (e) {
             var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
             if (!draft || DESIGNS.indexOf(v) < 0) { return; }
@@ -3308,7 +3308,7 @@
             applyTheme(draft);
         });
 
-        // «На всю ширину» и ширина меняются сразу; без «Сохранить» вернётся прежнее.
+        // «На всю ширину» и ширина меняются сразу и сразу же сохраняются.
         ui.panelFit.addEventListener("change", function () {
             if (!draft) { return; }
             draft.panelFit = ui.panelFit.checked;
@@ -3381,26 +3381,56 @@
         ui.hotkeyNote.textContent = "";
         renderHotkeys();
         showSetPane("ai");
+        ui.settingsSaved.textContent = "Изменения сохраняются сами.";
+        ui.settingsSaved.className = "hint settings-saved";
+        settingsChanged = false;
         ui.sheet.hidden = false;
         ui.sheet.scrollTop = 0;
     }
 
-    function closeSettings(save) {
-        if (save && draft) {
-            keepTypedKey();
-            draft.selfCheck = ui.selfCheck.checked;
-            draft.alwaysAsk = ui.alwaysAsk.checked;
-            draft.brandPics = ui.brandPics.checked;
-            draft.toolTitles = ui.toolTitles.checked;
-            draft.pasteAnywhere = ui.pasteAnywhere.checked;
-            draft.stats = ui.statsOn.checked;
-            draft.infoTips = ui.infoTipsOn.checked;
-            settings = draft;
-            storeSettings(settings);
-            registerHotkeys();
-            hotkeyHint();
-            setStatus(aiKey() ? "Настройки сохранены." : "Ключ API не задан.", aiKey() ? "done" : "");
-        }
+    // Настройки сохраняются сами: любое изменение сразу записывается, «×» просто закрывает окно.
+    var commitTimer = null, savedFlash = null, settingsChanged = false;
+
+    function commitSettings() {
+        var next = {}, k;
+        if (commitTimer) { clearTimeout(commitTimer); commitTimer = null; }
+        if (!draft) { return false; }
+        keepTypedKey();
+        draft.selfCheck = ui.selfCheck.checked;
+        draft.alwaysAsk = ui.alwaysAsk.checked;
+        draft.brandPics = ui.brandPics.checked;
+        draft.toolTitles = ui.toolTitles.checked;
+        draft.pasteAnywhere = ui.pasteAnywhere.checked;
+        draft.stats = ui.statsOn.checked;
+        draft.infoTips = ui.infoTipsOn.checked;
+        for (k in draft) { if (draft.hasOwnProperty(k)) { next[k] = draft[k]; } }
+        if (JSON.stringify(next) === JSON.stringify(settings)) { return false; }
+        settings = next;
+        storeSettings(settings);
+        registerHotkeys();
+        hotkeyHint();
+        settingsChanged = true;
+        ui.settingsSaved.textContent = "Сохранено ✓";
+        ui.settingsSaved.className = "hint settings-saved ok";
+        if (savedFlash) { clearTimeout(savedFlash); }
+        savedFlash = setTimeout(function () {
+            ui.settingsSaved.textContent = "Изменения сохраняются сами.";
+            ui.settingsSaved.className = "hint settings-saved";
+        }, 1500);
+        return true;
+    }
+
+    // Щелчок и выбор сохраняются сразу (после своих обработчиков), набор текста — после короткой паузы.
+    function scheduleCommit(ms) {
+        if (!draft) { return; }
+        if (commitTimer) { clearTimeout(commitTimer); }
+        commitTimer = setTimeout(commitSettings, ms);
+    }
+
+    function closeSettings() {
+        commitSettings();
+        if (settingsChanged) { setStatus(aiKey() ? "Настройки сохранены." : "Ключ API не задан.", aiKey() ? "done" : ""); }
+        settingsChanged = false;
         draft = null;
         stopHotkeyEdit();
         applyTheme(settings);
@@ -3425,7 +3455,7 @@
         ui.keyHint.className = "hint";
         settings = trial;
         callAI([{ role: "user", content: "ping" }], 1, undefined, { quiet: true }).then(function (r) {
-            settings = saved;
+            if (settings === trial) { settings = saved; }
             ui.testKey.disabled = false;
             ui.keyHint.textContent = r.ok ? "Ключ работает." : r.error;
             ui.keyHint.className = "hint " + (r.ok ? "ok" : "bad");
@@ -10277,8 +10307,10 @@
     window.addEventListener("unload", stopKeyWatch);
     hotkeyHint();
     ui.settingsBtn.addEventListener("click", openSettings);
-    ui.settingsClose.addEventListener("click", function () { closeSettings(false); });
-    ui.saveSettings.addEventListener("click", function () { closeSettings(true); });
+    ui.settingsClose.addEventListener("click", function () { closeSettings(); });
+    ui.sheet.addEventListener("click", function () { scheduleCommit(0); });
+    ui.sheet.addEventListener("change", function () { scheduleCommit(0); });
+    ui.sheet.addEventListener("input", function () { scheduleCommit(400); });
     ui.testKey.addEventListener("click", onTestKey);
     ui.updateNow.addEventListener("click", onUpdateNow);
     ui.updateLater.addEventListener("click", onUpdateLater);
