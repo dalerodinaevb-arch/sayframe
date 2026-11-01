@@ -1759,3 +1759,22 @@ html[data-design="studio"] .motion-tools > .tool-card.solo .paste-do:hover { bac
 html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do { background: transparent !important; border-color: transparent !important; padding: 0 !important; justify-content: center !important; }
 html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do svg { width: 22px !important; height: 22px !important; padding: 9px !important; border-radius: 11px !important; }
 html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:not(:disabled) svg { background: rgba(var(--accent-rgb), .26); }
+
+/* «Заготовки»: превью жидкого стекла. Цветная картинка едет под стеклом; внутри стекла — та же картинка,
+   увеличенная, размытая и посветлее (так и работает слой «Жидкое стекло» в After Effects). */
+.ac-kit { position: absolute; inset: 0; }
+.kit-bg, .kit-lens { position: absolute; inset: 0; background: linear-gradient(135deg, #222a4a, #0d0f1a); }
+.kit-bg b, .kit-lens b { position: absolute; display: block; }
+.kit-bg b:nth-child(1), .kit-lens b:nth-child(1) { left: 8%; top: 18%; width: 30%; height: 48%; border-radius: 50%; background: #ff7a3d; }
+.kit-bg b:nth-child(2), .kit-lens b:nth-child(2) { left: 46%; top: 8%; width: 14%; height: 84%; border-radius: 4px; background: #3d7bff; }
+.kit-bg b:nth-child(3), .kit-lens b:nth-child(3) { left: 66%; top: 50%; width: 26%; height: 41.6%; border-radius: 50%; background: #ff3d9a; }
+.kit-glass {
+  position: absolute; left: 22%; top: 22%; width: 56%; height: 56%; border-radius: 22% / 35%; overflow: hidden; isolation: isolate;
+  border: 1px solid rgba(255, 255, 255, 0.38); background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1.5px 1px rgba(255, 255, 255, 0.75), inset 0 -1px 1px rgba(255, 255, 255, 0.25), 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+.kit-glass .kit-lens { inset: auto; left: -39.29%; top: -39.29%; width: 178.57%; height: 178.57%; transform: scale(1.18); filter: blur(2.5px) brightness(1.18) saturate(1.2); }
+.kit-glass::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(160deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 45%); }
+.kit-play .kit-bg b, .kit-play .kit-lens b { animation: kit-slide 3.2s ease-in-out infinite alternate; }
+@keyframes kit-slide { from { transform: translateX(-28%); } to { transform: translateX(28%); } }
+@media (prefers-reduced-motion: reduce) { .kit-play .kit-bg b, .kit-play .kit-lens b { animation: none; } }

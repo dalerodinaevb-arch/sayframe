@@ -353,6 +353,54 @@ function mkDcLayer(comp, sp, log) {
   L.setParentWithJump = (p) => { parentRef = p; L.jumps++; };
   return L;
 }
+// --- Split / merge shapes: shape layers whose Contents is a tree of groups, rectangles and fills, with property types.
+function smNode(mn, type, name, kids, value) {
+  const n = acInit({}, mn, value === undefined ? null : value, null); n.name = name || mn; n.propertyType = type; n.enabled = true;
+  (kids || []).forEach((k) => { k.parentProperty = n; n.children.push(k); k.propertyIndex = n.children.length; });
+  return n;
+}
+const smLeaf = (mn, v) => smNode(mn, 6212, mn, [], v);
+const smRect = (w) => smNode("ADBE Vector Shape - Rect", 6214, "Rectangle Path 1", [smLeaf("ADBE Vector Rect Size", [w, w]), smLeaf("ADBE Vector Rect Position", [0, 0])]);
+const smFill = (c) => smNode("ADBE Vector Graphic - Fill", 6214, "Fill 1", [smLeaf("ADBE Vector Fill Color", c)]);
+const smGroup = (name, kids, pos) => smNode("ADBE Vector Group", 6214, name, [smNode("ADBE Vectors Group", 6213, "Contents", kids),
+  smNode("ADBE Vector Transform Group", 6214, "Transform", [smLeaf("ADBE Vector Anchor", [0, 0]), smLeaf("ADBE Vector Position", pos || [0, 0]), smLeaf("ADBE Vector Scale", [100, 100]), smLeaf("ADBE Vector Rotation", 0), smLeaf("ADBE Vector Group Opacity", 100)])]);
+function smClone(n) {
+  const c = smNode(n.matchName, n.propertyType, n.name, n.children.map(smClone), JSON.parse(JSON.stringify(n.value)));
+  c.keys = JSON.parse(JSON.stringify(n.keys)); c.expression = n.expression; c.maskMode = n.maskMode; c.enabled = n.enabled; return c;
+}
+function smLayer(c, sp, log) {
+  const L = acInit(sp.shape === false ? {} : new ShapeLayer(), sp.name, null, log);
+  Object.assign(L, { name: sp.name, comp: c, selected: !!sp.selected, locked: !!sp.locked, threeDLayer: false, inPoint: sp.inPoint || 0, outPoint: sp.outPoint === undefined ? 10 : sp.outPoint, parent: null, propertyDepth: 0 });
+  Object.defineProperty(L, "index", { get: () => c.list.indexOf(L) + 1 });
+  const attach = (k) => { k.parentProperty = L; L.children.push(k); k.propertyIndex = L.children.length; };
+  if (!sp.bare) {
+    if (sp.shape !== false) attach(smNode("ADBE Root Vectors Group", 6213, "Contents", sp.groups || []));
+    if (sp.masks) attach(smNode("ADBE Mask Parade", 6213, "Masks", sp.masks.map((m, i) => { const a = smNode("ADBE Mask Atom", 6214, "Mask " + (i + 1), [smLeaf("ADBE Mask Shape", null)]); a.maskMode = m; return a; })));
+    const tr = L.property("ADBE Transform Group");
+    tr.property("ADBE Anchor Point").value = sp.anchor || [0, 0, 0]; tr.property("ADBE Position").value = sp.position || [960, 540, 0];
+    tr.property("ADBE Scale").value = sp.scale || [100, 100, 100]; tr.property("ADBE Rotate Z").value = sp.rotation || 0; tr.property("ADBE Opacity").value = sp.opacity === undefined ? 100 : sp.opacity;
+    (sp.posKeys || []).forEach((k) => tr.property("ADBE Position").setValueAtTime(k[0], k[1]));
+  }
+  L.duplicate = () => { const n = smLayer(c, { name: L.name + " 2", shape: L instanceof ShapeLayer, bare: true }, log); L.children.forEach((k) => { const kc = smClone(k); kc.parentProperty = n; n.children.push(kc); kc.propertyIndex = n.children.length; });
+    n.selected = L.selected; n.parent = L.parent; c.list.splice(c.list.indexOf(L), 0, n); log.smDups = (log.smDups || 0) + 1; return n; };
+  L.remove = () => { if (L.locked) throw new Error("layer is locked"); c.list.splice(c.list.indexOf(L), 1); log.smRemoved = (log.smRemoved || []).concat([L.name]); };
+  L.moveBefore = (o) => { const l = c.list; l.splice(l.indexOf(L), 1); l.splice(l.indexOf(o), 0, L); };
+  L.moveAfter = (o) => { const l = c.list; l.splice(l.indexOf(L), 1); l.splice(l.indexOf(o) + 1, 0, L); };
+  L.enabled = true;
+  if (!c.legacyMatte) L.setTrackMatte = (m, type) => { L.matte = m; L.matteType = type; };
+  return L;
+}
+function mkSmComp(specs, log, legacyMatte) {
+  const c = Object.assign(new CompItem(), { name: "Main", width: 1920, height: 1080, duration: 10, list: [], legacyMatte: !!legacyMatte });
+  Object.defineProperty(c, "numLayers", { get: () => c.list.length });
+  Object.defineProperty(c, "selectedLayers", { get: () => c.list.filter((l) => l.selected) });
+  c.layer = (i) => c.list[i - 1] || null;
+  c.layers = { addShape() { const l = smLayer(c, { name: "Shape Layer 1" }, log); c.list.unshift(l); return l; },
+    addSolid(color, name, w, h) { const l = smLayer(c, { name, shape: false }, log); l.solidSize = [w, h]; c.list.unshift(l); return l; } };
+  specs.forEach((sp) => c.list.push(smLayer(c, sp, log)));
+  specs.forEach((sp, i) => { if (sp.parent) c.list[i].parent = c.list.find((x) => x.name === sp.parent); });
+  return c;
+}
 // --- Projects (brand books): a comp with a text, a shape, a solid and a plain layer, as the brand tools see them.
 function mkBrColor(v) { const p = { value: v, numKeys: 0, canSetExpression: true, expression: "", setValue(x) { p.value = x; }, setValueAtKey(k, x) { p.value = x; } }; return p; }
 function mkBrFx(log) {
@@ -485,6 +533,7 @@ function makeAE(opts, tmpDir) {
     log.dcInner = inner;
   }
   if (opts.np) { dcMain = mkDcComp("Main", opts.np, log); }
+  if (opts.sm) { dcMain = mkSmComp(opts.sm, log, opts.legacyMatte); }
   // opts.co: { path, still, w, h } — the open comp has a photo layer «Фото» (selected) and «BG».
   if (opts.co) {
     const src = Object.assign(new FootageItem(), { name: path.basename(opts.co.path), width: opts.co.w || CO_W, height: opts.co.h || CO_H,
@@ -576,7 +625,7 @@ function makeAE(opts, tmpDir) {
     purge: (t) => { log.purges = (log.purges || []).concat([t]); },
     fonts: opts.noFonts ? undefined : { allFonts: [[{ postScriptName: "Inter-Regular" }, { postScriptName: "Inter-Bold" }], [{ postScriptName: "Montserrat-Bold" }]],
       getFontsByPostScriptName: (n) => (/^(Inter|Montserrat|ArialMT)/.test(n) ? [{ postScriptName: n }] : []) } };
-  const ctx = vm.createContext({ app, PurgeTarget: opts.noPurge ? undefined : { ALL_CACHES: 1012, UNDO_CACHES: 1013, SNAPSHOT_CACHES: 1014, IMAGE_CACHES: 1015 }, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, Window, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {}, screens: [{ left: 0, top: 0, right: 1440, bottom: 900 }] },
+  const ctx = vm.createContext({ app, PurgeTarget: opts.noPurge ? undefined : { ALL_CACHES: 1012, UNDO_CACHES: 1013, SNAPSHOT_CACHES: 1014, IMAGE_CACHES: 1015 }, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212, OVERLAY: 5224 }, TrackMatteType: { ALPHA: 5013, NO_TRACK_MATTE: 5012 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, Window, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {}, screens: [{ left: 0, top: 0, right: 1440, bottom: 900 }] },
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   ctx.$.global = ctx;
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
@@ -1868,7 +1917,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsClose");
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   t = await p.page.locator("#hotkeys .hotkey-row span").allInnerTexts();
-  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Разложить по папкам (Organize),Разобрать прекомпозицию (Decompose),Очистить кэш (Clear cache),Null / Parent,Удалить лишнее из проекта (Remove unused),Вырезать фон на фото (Cut out),Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—,—,—,—,—,—", t.join());
+  check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Разложить по папкам (Organize),Разобрать прекомпозицию (Decompose),Очистить кэш (Clear cache),Null / Parent,Разделить / объединить шейпы,Удалить лишнее из проекта (Remove unused),Вырезать фон на фото (Cut out),Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—,—,—,—,—,—", t.join());
   await p.page.locator("#hotkeys").scrollIntoViewIfNeeded();
   await p.page.screenshot({ path: path.join(SHOTS, "25-hotkeys-settings.png") });
   await p.page.click('#hotkeys [data-action="console"]');
@@ -2873,7 +2922,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T2 Tools tab shows only the tools", (await vis(p, "#viewTools #acGrid")) && !(await vis(p, "#prompt")) && !(await vis(p, "#runBtn")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#newBtn")) && !(await vis(p, "#fixBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "false");
   check("T2 status line moved to the Tools tab", (await p.page.locator("#viewTools #statusBox").count()) === 1 && (await p.page.locator("#statusBox").count()) === 1 && (await vis(p, "#status")));
   await p.page.screenshot({ path: path.join(SHOTS, "17-tab-tools.png") });
-  check("T2 the Animation tab holds the preset library with five sections; the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Звуки,✎ Изменить");
+  check("T2 the Animation tab holds the preset library with six sections; the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Заготовки,Звуки,✎ Изменить");
   await p.paste(); await p.idle(); await p.modalClick("Оставить как есть");
   check("T3 the paste block reports its result on its tab", /^Картинка вставлена/.test(await p.status()) && (await vis(p, "#status")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1 && p.ae.log.imports.length === 1, await p.status());
   t = await p.status();
@@ -4631,7 +4680,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     sel(SRC, [1, 2]); sel(DST, []);
     p = await open({ selectedProperties: [SRC] });
     await p.page.click("#tabMotion");
-    check("EC1 the 'Копия плавности' block is in Tools, on the grid with the other blocks, with its pin; the Shape tab only has a note for now", (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin").count()) === 1 && (await p.page.locator("#viewShape .tool-card").count()) === 0 && (await p.page.locator("#viewShape .shape-empty").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
+    check("EC1 the 'Копия плавности' block is in Tools, on the grid with the other blocks, with its pin; the Shape tab has only its own block", (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin").count()) === 1 && (await p.page.locator("#viewShape .tool-card").count()) === 1 && (await p.page.locator("#viewShape .tool-card[data-tool='split']").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
     const ecInside = () => p.page.evaluate(() => { const card = document.querySelector("#motionTools .tool-card[data-tool='easecopy']"), c = card.getBoundingClientRect();
       return Array.prototype.every.call(card.querySelectorAll("button:not(.tool-pin):not(.tool-toggle):not(.tool-grip), label, small, b"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 1 && r.right <= c.right + 1 && r.top >= c.top - 1 && r.bottom <= c.bottom + 1); }); });
     check("EC1 nothing sticks out of the block (large blocks)", await ecInside());
@@ -4768,6 +4817,99 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.locator("label.switch", { has: p.page.locator("#infoTipsOn") }).click(); await p.page.click("#saveSettings");
     await p.page.mouse.move(b3.x + 20, b3.y + 10); await p.page.waitForTimeout(1300);
     check("IT5 switched off: no window", (await tip()) === "" && p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
+  }
+
+  // «Заготовки» on the Animation tab: liquid glass from the selected layer (or a new rounded rectangle).
+  {
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const fxOf = (l) => acAt(l, "ADBE Effect Parade").children.map((e) => e.matchName).join(",");
+    const kitTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="kit"]'); };
+    p = await open({ sm: [{ name: "Pill", selected: true, groups: [smGroup("Box", [smRect(200), smFill([1, 1, 1, 1])])], inPoint: 1, outPoint: 7 }, { name: "BG" }] });
+    await kitTab(p);
+    check("KG1 a «Заготовки» section between «Графика» and «Звуки», with its kinds on the left and the liquid glass card", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#acTabs button"), (b) => b.textContent).join("|"))).indexOf("Графика|Заготовки|Звуки") >= 0 &&
+      (await p.page.locator("#acGrid .ac-card").count()) === 1 && (await p.page.locator("#acGrid .ac-card .ac-name").innerText()) === "Жидкое стекло" && (await p.page.locator("#acFolders .ac-folder").allInnerTexts()).join() === "Все,Эффекты", (await p.page.locator("#acFolders .ac-folder").allInnerTexts()).join());
+    check("KG1 no duration and no colour for kits; the hint says how the glass works", (await p.page.locator("#acDurRow").isHidden()) && (await p.page.locator("#acColorRow").isHidden()) && /Жидкое стекло: выделите слой-фигуру/.test(await p.page.locator("#acHint").innerText()));
+    check("KG1 the preview: glass over a moving picture, playing while visible", (await p.page.locator("#acGrid .ac-card.kit-play .kit-glass .kit-lens").count()) === 1 && (await p.page.evaluate(() => getComputedStyle(document.querySelector(".kit-bg b")).animationName)) === "kit-slide");
+    await p.page.screenshot({ path: path.join(SHOTS, "77-kit-liquid-glass.png") });
+    await p.page.click("#acGrid .ac-card"); await p.idle();
+    const adj = Lx(p, "Жидкое стекло"), edge = Lx(p, "Стекло: блик"), pill = Lx(p, "Pill");
+    check("KG2 three layers, top to bottom: the edge light, the glass (matted to the shape), the shape (hidden)", names(p) === "Стекло: блик,Жидкое стекло,Pill,BG" && adj.adjustmentLayer === true && adj.matte === pill && adj.matteType === 5013 && pill.enabled === false && edge.enabled === true, names(p));
+    check("KG2 the glass bulges, blurs and brightens; the bulge follows the shape by expressions", fxOf(adj) === "ADBE Bulge,ADBE Gaussian Blur 2,ADBE Brightness & Contrast 2" && /thisComp\.layer\("Pill"\)/.test(acAt(adj, "ADBE Effect Parade", 1, "ADBE Bulge-0003").expression) && /sourceRectAtTime/.test(acAt(adj, "ADBE Effect Parade", 1, "ADBE Bulge-0001").expression) && acAt(adj, "ADBE Effect Parade", 2, "ADBE Gaussian Blur 2-0001").value === 12 && adj.inPoint === 1 && adj.outPoint === 7, fxOf(adj));
+    check("KG2 the edge: a grey copy in Overlay with Bevel Alpha, hanging on the shape", fxOf(edge) === "ADBE Fill,ADBE Bevel Alpha" && edge.blendingMode === 5224 && edge.parent === pill && JSON.stringify(acAt(edge, "ADBE Effect Parade", 1, "ADBE Fill-0002").value) === "[0.5,0.5,0.5,1]");
+    check("KG2 one undo step; the shape is selected; the report", p.ae.log.undo.join() === "begin:Sayframe: liquid glass,end" && pill.selected && !edge.selected && /^Жидкое стекло готово: фигура — «Pill»/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+    await p.close();
+
+    p = await open({ sm: [{ name: "BG" }] });
+    await kitTab(p); await p.page.click("#acGrid .ac-card"); await p.idle();
+    t = Lx(p, "Стекло");
+    check("KG3 nothing selected: a rounded rectangle «Стекло» in the middle becomes the glass", names(p) === "Стекло: блик,Жидкое стекло,Стекло,BG" && JSON.stringify(acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[806,324]" && /нарисовал фигуру «Стекло»/.test(await p.status()), names(p) + " " + (await p.status()));
+    await p.close();
+
+    p = await open({ sm: [{ name: "Pill", selected: true, groups: [smGroup("Box", [smRect(200)])] }, { name: "BG" }], legacyMatte: true });
+    await kitTab(p); await p.page.click("#acGrid .ac-card"); await p.idle();
+    check("KG4 an older After Effects (matte only from the layer above): the shape sits right above the glass", names(p) === "Стекло: блик,Pill,Жидкое стекло,BG" && Lx(p, "Жидкое стекло").trackMatteType === 5013 && p.errors.length === 0, names(p));
+    await p.close();
+  }
+
+  // Split / merge on the Shape tab: one shape layer splits into its groups (or a layer into its masks), several merge into one.
+  {
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const groupsOf = (l) => acAt(l, "ADBE Root Vectors Group").children.map((g) => g.name).join(",");
+    const shapeTab = async (p) => { await p.page.click("#tabShape"); };
+    const three = () => [{ name: "Icons", selected: true, groups: [smGroup("Star", [smRect(10), smFill([1, 0, 0, 1])]), smGroup("Moon", [smRect(20)]), smFill([0, 0, 1, 1]), smGroup("Sun", [smRect(30)])] }, { name: "BG" }];
+    p = await open({ sm: three() });
+    await shapeTab(p);
+    check("SM1 a «Разделить» block on the Shape tab with one button and a short hint", (await p.page.locator('#viewShape .tool-card[data-tool="split"] #splitBtn').isVisible()) && (await p.page.locator("#splitBtn").innerText()).trim() === "Разделить / собрать" && (await p.page.locator('[data-tool="split"] .tool-head b').innerText()) === "Разделить");
+    await p.page.screenshot({ path: path.join(SHOTS, "78-shape-split.png") });
+    await p.page.click("#splitBtn"); await p.idle();
+    check("SM2 one shape with three groups: three layers in the same place, top to bottom as the groups; the original is gone", names(p) === "Star,Moon,Sun,BG" && p.ae.log.smRemoved.join() === "Icons", names(p));
+    check("SM2 each piece keeps only its group, and the fill outside the groups (it paints every piece)", groupsOf(Lx(p, "Star")) === "Star,Fill 1" && groupsOf(Lx(p, "Moon")) === "Moon,Fill 1" && groupsOf(Lx(p, "Sun")) === "Fill 1,Sun", ["Star", "Moon", "Sun"].map((n) => groupsOf(Lx(p, n))).join(" | "));
+    check("SM2 one undo step; the pieces are selected; the report names them", p.ae.log.undo.join() === "begin:Sayframe: split shape,end" && ["Star", "Moon", "Sun"].every((n) => Lx(p, n).selected) && (await p.status()) === "Разделено: «Icons» → 3 слоя: Star, Moon, Sun. Отменить — Cmd/Ctrl+Z.", await p.status());
+    await p.close();
+
+    p = await open({ sm: [{ name: "Logo", selected: true, groups: [smGroup("Group 1", [smGroup("L", [smRect(5)]), smGroup("O", [smRect(6)]), smFill([1, 1, 1, 1])])] }] });
+    await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
+    t = (n) => acAt(Lx(p, n), "ADBE Root Vectors Group", 1, "ADBE Vectors Group").children.map((g) => g.name).join(",");
+    check("SM3 one group holding several: those inner groups are the pieces, the outer group stays around each", names(p) === "L,O" && t("L") === "L,Fill 1" && t("O") === "O,Fill 1", names(p) + " " + (Lx(p, "L") ? t("L") : ""));
+    await p.close();
+
+    p = await open({ sm: [{ name: "Box", selected: true, groups: [smGroup("Group 1", [smRect(5), smFill([1, 1, 1, 1])])] }] });
+    await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
+    check("SM4 one piece only: a hint, nothing changes", names(p) === "Box" && /одна фигура/.test(await p.status()) && (await p.page.getAttribute("#statusBox", "class")) === "status", await p.status());
+    await p.close();
+
+    p = await open({ sm: [{ name: "Solid", shape: false, selected: true, masks: [6812, 6813, 6812] }] });
+    p.ae.ctx.MaskMode = { NONE: 6812 - 1, ADD: 6812, SUBTRACT: 6813 };
+    await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
+    t = (n) => acAt(Lx(p, n), "ADBE Mask Parade").children.map((m) => m.name + ":" + m.maskMode).join(",");
+    check("SM5 a layer with three masks splits by masks; a Subtract mask alone becomes Add", names(p) === "Solid - Mask 1,Solid - Mask 2,Solid - Mask 3" && t("Solid - Mask 1") === "Mask 1:6812" && t("Solid - Mask 2") === "Mask 2:6812" && /по маскам/.test(await p.status()), names(p) + " " + (await p.status()));
+    await p.close();
+
+    p = await open({ sm: [{ name: "Text" }, { name: "Top", selected: true, position: [300, 200, 0], anchor: [10, 10, 0], scale: [50, 50, 100], rotation: 30, opacity: 80, groups: [smGroup("Box", [smRect(40), smFill([1, 0, 0, 1])], [5, 6])], inPoint: 1, outPoint: 6 },
+      { name: "Kid", parent: "Bottom" }, { name: "Bottom", selected: true, posKeys: [[0, [100, 100, 0]], [2, [900, 500, 0]]], groups: [smGroup("Dot", [smRect(8)])], inPoint: 0, outPoint: 9 }, { name: "Note", shape: false, selected: true }] });
+    await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
+    const M = Lx(p, "Top + 1");
+    t = (i, mn) => acAt(M, "ADBE Root Vectors Group", i, "ADBE Vector Transform Group", mn);
+    check("SM6 several shapes: one new layer where the top one was; the merged layers are gone", names(p) === "Text,Top + 1,Kid,Note" && p.ae.log.smRemoved.join() === "Bottom,Top" && p.ae.log.undo.join() === "begin:Sayframe: merge shapes,end", names(p));
+    check("SM6 each layer is a group with the layer's transform, so nothing moves", acAt(M, "ADBE Root Vectors Group").children.map((g) => g.name).join() === "Top,Bottom" && JSON.stringify(t(1, "ADBE Vector Position").value) === "[300,200]" && JSON.stringify(t(1, "ADBE Vector Anchor").value) === "[10,10]" && JSON.stringify(t(1, "ADBE Vector Scale").value) === "[50,50]" && t(1, "ADBE Vector Rotation").value === 30 && t(1, "ADBE Vector Group Opacity").value === 80,
+      JSON.stringify([t(1, "ADBE Vector Position").value, t(1, "ADBE Vector Scale").value]));
+    check("SM6 position keys come along; the new layer's space is the comp's (anchor and position in the middle)", JSON.stringify(t(2, "ADBE Vector Position").keys.map((k) => [k.t, k.v])) === "[[0,[100,100]],[2,[900,500]]]" && JSON.stringify(acAt(M, "ADBE Transform Group", "ADBE Anchor Point").value) === "[960,540]" && JSON.stringify(acAt(M, "ADBE Transform Group", "ADBE Position").value) === "[960,540]");
+    const box = acAt(M, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", 1);
+    check("SM6 the contents are copied: group, rectangle size, fill colour and the group's own transform", box && box.name === "Box" && JSON.stringify(acAt(box, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[40,40]" && JSON.stringify(acAt(box, "ADBE Vectors Group", "ADBE Vector Graphic - Fill", "ADBE Vector Fill Color").value) === "[1,0,0,1]" && JSON.stringify(acAt(box, "ADBE Vector Transform Group", "ADBE Vector Position").value) === "[5,6]");
+    check("SM6 a layer that hung on a merged one hangs on the new layer; times cover both; the new layer is selected", Lx(p, "Kid").parent === M && M.inPoint === 0 && M.outPoint === 9 && M.selected && !Lx(p, "Text").selected);
+    check("SM6 the report: merged, and what was not a shape", /^Собрано в один шейп: «Top \+ 1» из 2 слоёв/.test(await p.status()) && /Не шейпы, пропущены: Note\./.test(await p.status()), await p.status());
+    await p.close();
+
+    p = await open({ sm: [{ name: "Top", selected: true, groups: [smGroup("A", [])] }, { name: "Note", shape: false, selected: true }] });
+    await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
+    check("SM7 one shape and a text: merging needs two shapes — a hint", names(p) === "Top,Note" && (await p.status()) === "Чтобы собрать в один, выделите хотя бы два шейп-слоя." && p.errors.length === 0, await p.status());
+    await p.close();
+    p = await open({ sm: [{ name: "Top", groups: [smGroup("A", [])] }] });
+    await shapeTab(p); await p.page.click("#splitBtn"); await p.idle();
+    check("SM7 nothing selected: the usual hint", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз.", await p.status());
     await p.close();
   }
 

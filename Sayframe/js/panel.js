@@ -804,6 +804,10 @@
         if (m === "LOGO_NOT_FOUND") { return "Файл логотипа не найден. Удалите его из проекта и добавьте снова."; }
         if (m === "ICON_NOT_FOUND") { return "Файл иконки не найден. Удалите её из проекта и добавьте снова."; }
         if (m === "BR_NO_TEXT") { return "Выделите текстовый слой в композиции и нажмите ещё раз."; }
+        if (m === "SM_ONE_PIECE") { return "В этом шейпе одна фигура — делить нечего. Чтобы собрать шейпы в один, выделите несколько шейп-слоёв."; }
+        if (m === "SM_NOT_SHAPE") { return "Разделить можно шейп-слой с несколькими группами или слой с несколькими масками. Чтобы собрать, выделите несколько шейп-слоёв."; }
+        if (m === "SM_NEED_SHAPES") { return "Чтобы собрать в один, выделите хотя бы два шейп-слоя."; }
+        if (m === "SM_LOCKED") { return "Слой заблокирован (замок на таймлайне). Снимите замок и нажмите ещё раз."; }
         if (m === "DC_NO_PRECOMP") { return "Выделите слой-прекомпозицию (слой, внутри которого другая композиция) и нажмите ещё раз."; }
         if (m === "CO_NOT_PHOTO") { return "Cut out работает с фото: выделите слой, у которого источник — файл-картинка (JPG, PNG, PSD…), и нажмите ещё раз."; }
         if (m === "CO_NOT_STILL") { return "Cut out вырезает фон на фото, а это видео. Для видео в After Effects есть Roto Brush."; }
@@ -991,6 +995,7 @@
         decomposeBtn: el("decomposeBtn"), decomposeOptsToggle: el("decomposeOptsToggle"), decomposeHint: el("decomposeHint"),
         cacheBtn: el("cacheBtn"), cacheOptsToggle: el("cacheOptsToggle"), cacheHint: el("cacheHint"),
         nullpBtn: el("nullpBtn"), nullpOptsToggle: el("nullpOptsToggle"), nullpHint: el("nullpHint"),
+        splitBtn: el("splitBtn"), splitOptsToggle: el("splitOptsToggle"), splitHint: el("splitHint"),
         unusedBtn: el("unusedBtn"), unusedOptsToggle: el("unusedOptsToggle"), unusedHint: el("unusedHint"),
         cutoutBtn: el("cutoutBtn"), cutoutOptsToggle: el("cutoutOptsToggle"), cutoutHint: el("cutoutHint"),
         cutoutView: el("cutoutView"), cutoutName: el("cutoutName"), cutoutClose: el("cutoutClose"), cutoutBrush: el("cutoutBrush"),
@@ -1289,6 +1294,7 @@
         ui.decomposeBtn.disabled = on;
         ui.cacheBtn.disabled = on;
         ui.nullpBtn.disabled = on;
+        ui.splitBtn.disabled = on;
         ui.unusedBtn.disabled = on;
         ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
@@ -3421,7 +3427,7 @@
     var GRID_VERSION = 2;         // 2 — мелкая сетка (шаг 22 px)
     // Так было до 1.40.0: блоки по порядку, без мест и булавок, всё развёрнуто.
     var MOTION_LEGACY = { curve: true, order: "ease,anchor,align,shift,paste,organize,easecopy,decompose,cache,nullp,unused,cutout", sizes: "", places: "", pins: "",
-        ecOpts: true, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, cutoutOpts: true, anchorOpts: true, alignOpts: true };
+        ecOpts: true, pasteOpts: true, organizeOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true, cutoutOpts: true, splitOpts: true, anchorOpts: true, alignOpts: true };
 
     // Так «Инструменты» выглядят после новой установки: блоки-кнопки закреплены сверху, под линией — «Время»,
     // «Якорь», «Выровнять» и «Плавность»; подсказки и списки свёрнуты (их открывает плюс в углу блока).
@@ -3431,7 +3437,7 @@
         sizes: "ease=14x0;shift=12x0;easecopy=17x0",
         places: "paste=0,0;unused=8,0;easecopy=17,0;decompose=34,0;organize=0,5;cache=8,5;nullp=17,5;cutout=25,5;shift=0,12;anchor=12,12;align=20,12;ease=28,12",
         pins: "paste,unused,easecopy,decompose,organize,cache,nullp,cutout", grid: GRID_VERSION,
-        ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false, cutoutOpts: false,
+        ecOpts: false, ecThrough: false, pasteOpts: false, organizeOpts: false, decomposeOpts: false, cacheOpts: false, nullpOpts: false, unusedOpts: false, cutoutOpts: false, splitOpts: false,
         anchorOpts: false, alignOpts: false,
         shiftWhat: "in", shiftStep: 1, timeAlign: "inStart", staggerWhat: "layer", staggerStep: 1, staggerOrder: "asc", shiftOpts: true };
     var SHIFT_TARGETS = ["in", "out", "layer"];
@@ -3439,7 +3445,7 @@
     var STAGGER_ORDERS = ["asc", "desc", "selection", "random"];
     var MAX_STEP_FRAMES = 999;
     var TOOL_NAMES = ["ease", "anchor", "align", "shift", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
-    var SHAPE_TOOL_NAMES = [];
+    var SHAPE_TOOL_NAMES = ["split"];
     // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
     // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
     var G = { names: TOOL_NAMES };
@@ -3459,7 +3465,7 @@
     // (TOOL_DEFAULT_COLS клеток); блок уже этого не обрезает кнопки, а уменьшает их целиком —
     // так блок можно сузить до TOOL_MIN_COLS клеток.
     // Блоки, в которых только кнопки: суженными они показывают одни иконки.
-    var ICON_TOOLS = ["paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
+    var ICON_TOOLS = ["paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout", "split"];
     var ICON_ROW_COLS = 7;        // «Копия» иконками в ряд — ровно 7 клеток; уже — столбик в 4 клетки
     // Ширина блока-иконок: столбик (4 клетки) или ряд (7 клеток, если в блоке несколько кнопок). Промежуточной нет.
     // Шаг клавиатурой у блока-иконок: столбик → ряд → обычный блок и обратно, без застревания на месте.
@@ -3663,6 +3669,7 @@
             { key: "nullpOpts", button: ui.nullpOptsToggle, part: ui.nullpHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "unusedOpts", button: ui.unusedOptsToggle, part: ui.unusedHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "cutoutOpts", button: ui.cutoutOptsToggle, part: ui.cutoutHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
+            { key: "splitOpts", button: ui.splitOptsToggle, part: ui.splitHint, hide: "Скрыть подсказку", show: "Показать подсказку" },
             { key: "shiftOpts", button: ui.shiftOptsToggle, part: ui.shiftPick, more: [ui.timePick, ui.staggerPick, ui.staggerOrder], hide: "Скрыть списки", show: "Показать списки",
                 selects: [ui.shiftWhat, ui.timeAlign, ui.staggerWhat, ui.staggerOrder] }
         ];
@@ -3902,6 +3909,7 @@
         { id: "text", label: "Текст" },
         { id: "anim", label: "Движения" },
         { id: "graphic", label: "Графика" },
+        { id: "kit", label: "Заготовки" },
         { id: "sfx", label: "Звуки" }
     ];
     var AC_PRESETS = {
@@ -3909,6 +3917,7 @@
         text: [],
         anim: [],
         graphic: [],
+        kit: [],
         sfx: []
     };
     // Переходы прошлых версий (ключами на самом слое, до 1.19): нужны только для «✎ Изменить».
@@ -4101,6 +4110,13 @@
         ["titles", "lower-third", "Плашка для титра"], ["titles", "callout", "Выноска"], ["titles", "label", "Ярлык"], ["titles", "progress", "Полоса загрузки"],
         ["titles", "counter", "Счётчик"], ["titles", "timer", "Таймер"]
     ];
+    // ---- «Заготовки» — готовые вещи для монтажёра: эффекты-сборки (жидкое стекло), потом макеты телефонов и т. п.
+    // Всё собирается из стандартных эффектов After Effects, без сторонних плагинов.
+    var KIT_FOLDERS = [{ id: "all", label: "Все" }, { id: "fx", label: "Эффекты" }];
+    var KIT_LIST = [["fx", "liquid-glass", "Жидкое стекло"]];
+    var KIT_BY_ID = {};
+    KIT_LIST.forEach(function (k) { KIT_BY_ID[k[1]] = { folder: k[0] }; AC_PRESETS.kit.push([k[1], k[2]]); });
+
     var GR_TEXT_DEFAULT = { "lower-third": "Имя Фамилия", "callout": "Подпись", "label": "Ярлык" };
     var GR_BY_ID = {};
     GR_LIST.forEach(function (g) { GR_BY_ID[g[1]] = { folder: g[0], title: g[2] }; AC_PRESETS.graphic.push([g[1], g[2]]); });
@@ -4173,7 +4189,7 @@
     });
 
     var AC_GLYPH = { arrow: "➜", star: "★", counter: "42%", timer: "00:10" };
-    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false, folder: "all", tfolder: "all", tdur: 0.8, xfolder: "all", xunit: "all", sfolder: "all", pitch: 0, vol: 0, gfolder: "all" };
+    var AC_DEFAULTS = { sec: "trans", fav: [], mode: "in", dur: 0.6, color: "#ffffff", size: 112, favOnly: false, folder: "all", tfolder: "all", tdur: 0.8, xfolder: "all", xunit: "all", sfolder: "all", pitch: 0, vol: 0, gfolder: "all", kfolder: "all" };
     var acState = loadAcState();
     var acAudio = null;
 
@@ -4195,6 +4211,7 @@
         if (!TX_UNITS.some(function (f) { return f.id === out.xunit; })) { out.xunit = "all"; }
         if (!SFX_FOLDERS.some(function (f) { return f.id === out.sfolder; })) { out.sfolder = "all"; }
         if (!GR_FOLDERS.some(function (f) { return f.id === out.gfolder; })) { out.gfolder = "all"; }
+        if (!KIT_FOLDERS.some(function (f) { return f.id === out.kfolder; })) { out.kfolder = "all"; }
         out.pitch = Math.max(-12, Math.min(12, Math.round(Number(out.pitch)) || 0));
         out.vol = Math.max(-24, Math.min(6, Math.round(Number(out.vol)) || 0));
         out.tdur = Math.min(3, Math.max(0.2, Math.round(Number(out.tdur) * 10) / 10 || 0.8));
@@ -4214,6 +4231,7 @@
                 if (s.id === "trans" && TR_BY_ID[p[0]]) { item.folder = TR_BY_ID[p[0]].folder; item.title = p[1]; }
                 if (s.id === "sfx" && SFX_BY_ID[p[0]]) { item.folder = SFX_BY_ID[p[0]].folder; }
                 if (s.id === "graphic" && GR_BY_ID[p[0]]) { item.folder = GR_BY_ID[p[0]].folder; }
+                if (s.id === "kit" && KIT_BY_ID[p[0]]) { item.folder = KIT_BY_ID[p[0]].folder; }
                 if (s.id === "text" && TX_BY_ID[p[0]]) {
                     sf = TX_BY_ID[p[0]];
                     item.folder = sf.folder; item.motion = sf.motion; item.curve = sf.curve; item.title = sf.title; item.shape = sf.shape; item.unit = sf.unit;
@@ -4241,6 +4259,7 @@
             if (p.sec === "trans") { return acState.tfolder === "all" || p.folder === acState.tfolder; }
             if (p.sec === "sfx") { return acState.sfolder === "all" || p.folder === acState.sfolder; }
             if (p.sec === "graphic") { return acState.gfolder === "all" || p.folder === acState.gfolder; }
+            if (p.sec === "kit") { return acState.kfolder === "all" || p.folder === acState.kfolder; }
             if (p.sec === "text") { return (acState.xfolder === "all" || p.folder === acState.xfolder) && (acState.xunit === "all" || p.unit === acState.xunit); }
             return true;
         });
@@ -4281,6 +4300,11 @@
         if (p.sec === "sfx") {
             for (i = 0; i < 5; i++) { bar = document.createElement("i"); obj.appendChild(bar); }
         }
+        if (p.sec === "kit") {
+            // Стекло над цветной картинкой: под ним всё размыто и чуть увеличено, по краю — блик.
+            obj.className = "ac-obj ac-kit kit-" + p.id;
+            obj.innerHTML = "<i class=\"kit-bg\"><b></b><b></b><b></b></i><i class=\"kit-glass\"><i class=\"kit-lens\"><b></b><b></b><b></b></i></i>";
+        }
         thumb.appendChild(obj);
         return thumb;
     }
@@ -4302,10 +4326,10 @@
         ui.acModeRow.hidden = editing || !(searching || sec === "text" || sec === "anim");
         // Цвет нужен только графике и переходам-шейпам (шторки, круг).
         ui.acColorRow.hidden = editing || !(searching || sec === "graphic" || (sec === "trans" && acState.tfolder === "shapes"));
-        ui.acDurRow.hidden = editing || (!searching && (sec === "sfx" || sec === "graphic"));
+        ui.acDurRow.hidden = editing || (!searching && (sec === "sfx" || sec === "graphic" || sec === "kit"));
         ui.acFoot.hidden = editing;
         ui.acHint.hidden = editing;
-        renderSfFolders(!searching && !editing && (sec === "anim" || sec === "trans" || sec === "text" || sec === "sfx" || sec === "graphic") ? sec : "");
+        renderSfFolders(!searching && !editing && (sec === "anim" || sec === "trans" || sec === "text" || sec === "sfx" || sec === "graphic" || sec === "kit") ? sec : "");
         if (ui.acSndRow) {
             ui.acSndRow.hidden = editing || !(searching || sec === "sfx");
             ui.acPitch.value = String(acState.pitch);
@@ -4343,7 +4367,7 @@
 
     // Папки внутри раздела, как в дереве Animation Composer: у «Движений» и у «Переходов» свои.
     function renderSfFolders(sec) {
-        var box = ui.acFolders, key = sec === "trans" ? "tfolder" : (sec === "text" ? "xfolder" : (sec === "sfx" ? "sfolder" : (sec === "graphic" ? "gfolder" : "folder")));
+        var box = ui.acFolders, key = sec === "trans" ? "tfolder" : (sec === "text" ? "xfolder" : (sec === "sfx" ? "sfolder" : (sec === "graphic" ? "gfolder" : (sec === "kit" ? "kfolder" : "folder"))));
         if (!box) { return; }
         box.hidden = !sec;
         box.parentNode.classList.toggle("with-side", !!sec);
@@ -4367,7 +4391,7 @@
                 box.appendChild(b);
             });
         }
-        chips(sec === "trans" ? TR_FOLDERS : (sec === "text" ? TX_FOLDERS : (sec === "sfx" ? SFX_FOLDERS : (sec === "graphic" ? GR_FOLDERS : SF_FOLDERS))), key, "data-folder");
+        chips(sec === "trans" ? TR_FOLDERS : (sec === "text" ? TX_FOLDERS : (sec === "sfx" ? SFX_FOLDERS : (sec === "graphic" ? GR_FOLDERS : (sec === "kit" ? KIT_FOLDERS : SF_FOLDERS)))), key, "data-folder");
         if (sec === "text") {
             var br = document.createElement("span");
             br.className = "ac-folder-break";
@@ -5109,6 +5133,11 @@
     }
 
     function acHintText(sec) {
+        if (sec === "kit") {
+            return "Жидкое стекло: выделите слой-фигуру (шейп, текст, логотип) и щёлкните по карточке — фигура станет стеклом, которое увеличивает, " +
+                "размывает и подсвечивает то, что под ним. Ничего не выделено — панель нарисует скруглённый прямоугольник. Двигайте и анимируйте саму фигуру — " +
+                "стекло идёт за ней. Сила — в Effect Controls слоя «Жидкое стекло».";
+        }
         if (sec === "graphic") {
             return "Щелчок по карточке добавляет графику новым слоем у указателя времени — поверх выделенного слоя или в центре кадра. " +
                 "Длительность — длина слоя; цвет, размер и толщина — в Effect Controls.";
@@ -5208,6 +5237,9 @@
         }
         if (p.sec === "trans") {
             acAutoplay(card, function () { trPreview(card, p); }, function () { stopTrPreview(card); });
+        }
+        if (p.sec === "kit") {
+            acAutoplay(card, function () { card.classList.add("kit-play"); }, function () { card.classList.remove("kit-play"); });
         }
         card.addEventListener("click", function () { applyAc(p); });
         card.addEventListener("keydown", function (e) {
@@ -5662,6 +5694,10 @@
                 sfSetState(res.state);
                 sfReport(p, res, (res.created ? " Текстового слоя не было — создан новый «Ваш текст»." : "") +
                     (res.notText && !res.created ? " Не текстовые слои пропущены: " + res.notText + "." : ""));
+            } else if (p.sec === "kit") {
+                res = await host("kitApply", [p.id, { glass: "Жидкое стекло", edge: "Стекло: блик", shape: "Стекло" }]);
+                setBusy(false);
+                setStatus(kitReport(res.glass), "done");
             } else if (p.sec === "graphic") {
                 res = await host("grApply", [p.id, GR_DUR[p.folder] || 2, hexToRgb01(acState.color), {
                     title: p.name, marker: "Графика: ", color: "Цвет", size: "Размер", value: "Значение", thick: "Толщина",
@@ -5688,6 +5724,12 @@
         } catch (e) {
             toolFailed(e);
         }
+    }
+
+    function kitReport(g) {
+        return "Жидкое стекло готово: " + (g.created ? "нарисовал фигуру «" + g.shape + "» в центре кадра" : "фигура — «" + g.shape + "»") +
+            ". Над ней слой «" + g.name + "» (увеличение, размытие, яркость — в Effect Controls) и «" + g.edge + "» — блик по краю. " +
+            "Двигайте и анимируйте «" + g.shape + "» — стекло идёт за ней. Отменить — Cmd/Ctrl+Z.";
     }
 
     function sfReport(p, res, extra) {
@@ -6265,6 +6307,7 @@
         { id: "decompose", label: "Разобрать прекомпозицию (Decompose)", def: "" },
         { id: "cache", label: "Очистить кэш (Clear cache)", def: "" },
         { id: "nullp", label: "Null / Parent", def: "" },
+        { id: "split", label: "Разделить / объединить шейпы", def: "" },
         { id: "unused", label: "Удалить лишнее из проекта (Remove unused)", def: "" },
         { id: "cutout", label: "Вырезать фон на фото (Cut out)", def: "" },
         { id: "paste", label: "Вставить картинку из буфера", def: "" },
@@ -6357,6 +6400,7 @@
         else if (id === "decompose") { onDecompose(); }
         else if (id === "cache") { onClearCache(); }
         else if (id === "nullp") { onNullParent(); }
+        else if (id === "split") { onSplitMerge(); }
         else if (id === "unused") { onRemoveUnused(); }
         else if (id === "cutout") { onCutout(); }
         else if (id === "paste") { pasteImage(null); }
@@ -6879,6 +6923,35 @@
             res = await host("nullParent", []);
             setBusy(false);
             setStatus(nullReport(res), res.children && !res.children.names.length ? "" : "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    var SM_NOTES = { "3d": "3D слоя не перенесено (группы плоские)", effects: "эффекты слоёв не перенесены", masks: "маски слоёв не перенесены",
+        separated: "у положения с раздельными X и Y взято только значение, без ключей" };
+
+    function splitReport(r) {
+        var s = r.split, m = r.merged, list, notes = [];
+        if (s) {
+            list = s.names.length > 8 ? s.names.slice(0, 8).join(", ") + " и ещё " + (s.names.length - 8) : s.names.join(", ");
+            return "Разделено: «" + s.name + "» → " + plural(s.count, "слой", "слоя", "слоёв") +
+                (s.kind === "masks" ? " (по маскам)" : "") + ": " + list + ". Отменить — Cmd/Ctrl+Z.";
+        }
+        (m.notes || []).forEach(function (n) { if (SM_NOTES[n] && notes.indexOf(SM_NOTES[n]) < 0) { notes.push(SM_NOTES[n]); } });
+        return "Собрано в один шейп: «" + m.name + "» из " + m.count + " слоёв, каждый стал группой." +
+            (m.skipped.length ? " Не шейпы, пропущены: " + m.skipped.join(", ") + "." : "") +
+            (notes.length ? " Учтите: " + notes.join("; ") + "." : "") + " Отменить — Cmd/Ctrl+Z.";
+    }
+
+    async function onSplitMerge() {
+        var res;
+        if (busy) { return; }
+        setBusy(true);
+        try {
+            res = await host("shapeSplitMerge", []);
+            setBusy(false);
+            setStatus(splitReport(res), "done");
         } catch (e) {
             toolFailed(e);
         }
@@ -8663,7 +8736,7 @@
 
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m);
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -9961,6 +10034,7 @@
     ui.decomposeBtn.addEventListener("click", onDecompose);
     ui.cacheBtn.addEventListener("click", onClearCache);
     ui.nullpBtn.addEventListener("click", onNullParent);
+    ui.splitBtn.addEventListener("click", onSplitMerge);
     ui.unusedBtn.addEventListener("click", onRemoveUnused);
     ui.cutoutBtn.addEventListener("click", onCutout);
     enableCutout();
