@@ -1930,10 +1930,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#fxBtn");
   check("H3a the search window shows its shortcut with a link to change it", (await p.page.locator("#fxKeys").innerText()) === "Сочетание для поиска: ⌃Space — изменить");
   await p.page.click("#fxKeys");
-  check("H3a the link opens the settings on 'General' with the search shortcut waiting for a new key", (await p.page.locator("#settingsSheet").isVisible()) && (await p.page.locator("#fxConsole").isHidden()) && (await p.page.locator("#setTabOther").getAttribute("aria-selected")) === "true" && (await p.page.locator('#hotkeys [data-action="console"]').innerText()) === "Нажмите сочетание…");
+  check("H3a the link opens the settings on 'General' with the search shortcut waiting for a new key", (await p.page.locator("#settingsSheet").isVisible()) && (await p.page.locator("#fxConsole").isHidden()) && (await p.page.locator("#setTabKeys").getAttribute("aria-selected")) === "true" && (await p.page.locator('#hotkeys [data-action="console"]').innerText()) === "Нажмите сочетание…");
   await p.page.keyboard.press("Escape");
   await p.page.click("#settingsClose");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabKeys");
   t = await p.page.locator("#hotkeys .hotkey-row span").allInnerTexts();
   check("H3 settings list every action with its shortcut", t.join() === "Поиск эффектов (FX Console),Снимок кадра,Разложить по папкам (Organize),Разобрать прекомпозицию (Decompose),Очистить кэш (Clear cache),Null / Parent,Разделить / объединить шейпы,Удалить лишнее из проекта (Remove unused),Вырезать фон на фото (Cut out),Вставить картинку из буфера,Вкладка AI,Вкладка «Анимация»,Вкладка «Инструменты»" && (await p.page.locator("#hotkeys .hotkey-btn").allInnerTexts()).join() === "⌃Space,—,—,—,—,—,—,—,—,—,—,—,—", t.join());
   await p.page.locator("#hotkeys").scrollIntoViewIfNeeded();
@@ -1985,13 +1985,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.keyboard.press("Control+Shift+KeyE");
   check("H8 shortcuts survive a restart", await p.page.locator("#fxConsole").isVisible());
   await p.page.keyboard.press("Escape");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabKeys");
   await p.page.click('#hotkeys [data-action="console"]'); await p.page.keyboard.press("Alt+KeyQ");
   await p.page.click("#settingsClose");
   await p.page.keyboard.press("Alt+KeyQ");
   check("H8 a new shortcut is kept at once, even if the settings are closed without 'Save'", await p.page.locator("#fxConsole").isVisible());
   await p.page.keyboard.press("Escape");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click("#hotkeysReset"); await p.page.click("#settingsClose");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabKeys"); await p.page.click("#hotkeysReset"); await p.page.click("#settingsClose");
   await p.page.keyboard.press("Control+Space");
   check("H8 'Reset' brings back Ctrl+Space and clears the rest", (await p.page.locator("#fxConsole").isVisible()) && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
@@ -2027,7 +2027,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("K3 when the panel itself caught the press, the event from After Effects is ignored (no double toggle)", t.length === 1 && (await p.page.locator("#fxConsole").isVisible()));
   await p.page.keyboard.press("Escape");
   await holdKeys(p, {});
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabKeys");
   await p.page.click('#hotkeys [data-action="tabTools"]'); await p.page.keyboard.press("Alt+Digit3");
   await p.page.waitForTimeout(200);
   t = JSON.parse(vm.runInContext("JSON.stringify($.global.__sayframeKeys)", p.ae.ctx));
@@ -2051,7 +2051,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("KW1 the panel starts the key watcher (osascript on Mac) with a pulse file and the list of shortcuts", t.length === 1 && t[0].file === "osascript" && c[0] === "-l" && c[1] === "JavaScript" &&
     /CGEventSourceKeyState/.test(fs.readFileSync(c[2], "utf8")) && fs.existsSync(c[3]) &&
     JSON.stringify(JSON.parse(fs.readFileSync(c[4], "utf8"))) === JSON.stringify([{ id: "console", code: 49, ctrl: true, alt: false, shift: false, cmd: false }, { id: "pasteAny", code: 9, ctrl: false, alt: false, shift: false, cmd: true }]), JSON.stringify(t));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabKeys");
   check("KW1 settings say the helper is starting", (await p.page.locator("#keyWatchState").innerText()) === "Запускаю помощника за клавишами…");
   await watcherSays(p, 0, "READY");
   check("KW1 and then that it works", (await p.page.locator("#keyWatchState").innerText()) === "Помощник за клавишами работает: сочетания срабатывают во всём After Effects.");
@@ -2080,7 +2080,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await watcherSays(p, 0, "HIT nothing");
   await watcherSays(p, 0, "garbage");
   check("KW3 unknown lines are ignored", (await p.page.locator("#fxConsole").isHidden()) && p.errors.length === 0, p.errors.join(" | "));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabKeys");
   await p.page.click('#hotkeys [data-action="tabTools"]'); await p.page.keyboard.press("Alt+Digit3");
   await p.page.waitForFunction(() => window.__spawns.length === 2, null, { timeout: 5000 }).catch(() => {});
   t = await spawns(p);
@@ -2095,7 +2095,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.evaluate(() => window.__spawns[1].onExit(1, "execution error: CGEventSourceKeyState is not defined (-2700)\n"));
   await p.page.waitForTimeout(200);
   check("KW5 if the watcher stops, After Effects still watches the keys", hostKeys(p).length === 2 && p.errors.length === 0, JSON.stringify(hostKeys(p)));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabKeys");
   t = await p.page.locator("#keyWatchState").innerText();
   check("KW5 settings say why it stopped", t === "Помощник за клавишами не запустился: execution error: CGEventSourceKeyState is not defined (-2700). Сочетания работают, пока фокус на панели, и через After Effects.", t);
   await p.close();
@@ -2106,7 +2106,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ keyWatch: true, selectedLayers: [SL1] });
   await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
   await watcherSays(p, 0, "READY");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabKeys");
   check("FC1 settings: the search opens in the panel by default, 'У курсора' is the other choice", (await p.page.locator("#fxWhere button").allInnerTexts()).join() === "В панели Sayframe,У курсора" && (await p.page.getAttribute('#fxWhere [data-value="panel"]', "aria-pressed")) === "true");
   await p.page.click("#settingsClose");
   await p.page.evaluate(() => { document.hasFocus = () => false; document.activeElement && document.activeElement.blur(); });
@@ -2114,7 +2114,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.waitForTimeout(150);
   check("FC1 by default the shortcut from outside opens the search in the panel", (await p.page.locator("#fxConsole").isVisible()) && p.ae.log.windows.length === 0);
   await p.page.keyboard.press("Escape");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabKeys");
   await p.page.click('#fxWhere [data-value="cursor"]');
   await p.page.click("#settingsClose");
   check("FC2 'У курсора' is saved", (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).fxWhere)) === "cursor");
@@ -2251,7 +2251,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.waitForFunction(() => window.__spawns.length === 1, null, { timeout: 5000 }).catch(() => {});
   await pasteFromAE(p, false);
   check("PA6 a copied file that is not a picture: no dialog", (await p.page.locator("#modal").isHidden()));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTools");
   check("PA7 settings: the switch is on by default", await p.page.locator("#pasteAnywhere").isChecked());
   await p.page.locator("#pasteAnywhere").evaluate((el) => el.click());
   await p.page.click("#settingsClose");
@@ -2782,8 +2782,20 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.fill("#apiKey", "  sk-ant-abc  ");
   await p.page.locator("#models button", { hasText: "Opus 5.5" }).click();
   check("S0 settings open on the AI section: provider, key, model, checks and reference frames; colours and shortcuts are under 'General'", (await p.page.locator("#setTabAI").getAttribute("aria-selected")) === "true" && (await p.page.locator("#apiKey").isVisible()) && (await p.page.locator("#frames").isVisible()) && (await p.page.locator("#selfCheck").isVisible() || await p.page.locator("label.switch", { hasText: "проверяет результат" }).isVisible()) && (await p.page.locator("#accentSwatches").isHidden()) && (await p.page.locator("#hotkeys").isHidden()));
-  await p.page.click("#setTabOther");
-  check("S0 'General' holds colours, width, blocks and shortcuts; the AI fields are hidden", (await p.page.locator("#accentSwatches").isVisible()) && (await p.page.locator("#panelFit").isVisible()) && (await p.page.locator("#toolSize").isVisible()) && (await p.page.locator("#hotkeys").isVisible()) && (await p.page.locator("#apiKey").isHidden()) && (await p.page.locator("#setTabOther").getAttribute("aria-selected")) === "true");
+  await p.page.click("#setTabTheme");
+  check("S0 five sections with icons: AI, Темы, Инструменты, Клавиши, Прочее", (await p.page.locator("#setTabs button").allInnerTexts()).join() === "AI,Темы,Инструменты,Клавиши,Прочее" && (await p.page.locator("#setTabs button svg").count()) === 5);
+  check("S0 «Темы»: three theme cards and the width; «Студия» has its own colours, so no accent or section backgrounds; the AI fields are hidden", (await p.page.locator("#designPick button").count()) === 3 && (await p.page.locator("#panelFit").isVisible()) && !(await p.page.locator("#accentSwatches").isVisible()) && !(await p.page.locator("#bgSwatches").isVisible()) && /свои цвета/.test(await p.page.locator("#themeNote").innerText()) && (await p.page.locator("#apiKey").isHidden()) && (await p.page.locator("#setTabTheme").getAttribute("aria-selected")) === "true");
+  await p.page.click('#designPick [data-value="ae"]');
+  check("S0 «After Effects» has its own colours too", !(await p.page.locator("#accentSwatches").isVisible()) && /After Effects/.test(await p.page.locator("#themeNote").innerText()));
+  await p.page.click('#designPick [data-value="glass"]');
+  check("S0 «Стекло»: the accent colour and the section backgrounds show up, the note goes", (await p.page.locator("#accentSwatches").isVisible()) && (await p.page.locator("#bgSwatches").isVisible()) && !(await p.page.locator("#themeNote").isVisible()));
+  await p.page.click("#setTabTools");
+  check("S0 «Инструменты» holds block size and which tools; «Клавиши» the shortcuts; «Прочее» hints and statistics", (await p.page.locator("#toolSize").isVisible()) && (await p.page.locator("#toolPicker").isVisible()) && !(await p.page.locator("#panelFit").isVisible()));
+  await p.page.click("#setTabKeys");
+  check("S0 «Клавиши»", (await p.page.locator("#hotkeys").isVisible()) && (await p.page.locator("#fxWhere").isVisible()));
+  await p.page.click("#setTabMore");
+  check("S0 «Прочее»", (await p.page.locator("#infoTipsOn").isVisible() || await p.page.locator("label.switch", { hasText: "Подсказки при наведении" }).isVisible()) && (await p.page.locator("label.switch", { hasText: "Анонимная статистика" }).isVisible()));
+  await p.page.click("#setTabTheme");
   await p.page.screenshot({ path: path.join(SHOTS, "07b-settings-general.png") });
   await p.page.locator("#accentSwatches button").nth(1).click();
   await p.page.click("#setTabAI");
@@ -2804,7 +2816,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.settings.v1")));
   check("G1 saved", t.apiKey === "sk-ant-abc" && t.model === "claude-opus-5-5" && t.accent === "#62c8ff" && t.refFrames === 16 && t.alwaysAsk === true && t.selfCheck === false && (await p.page.locator("#settingsSheet").isHidden()) && (await p.status()) === "Настройки сохранены.", JSON.stringify(t));
   await p.page.screenshot({ path: path.join(SHOTS, "09-accent-sky.png") });
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme");
   await p.page.locator("#accentSwatches button").nth(2).click();
   await p.page.fill("#bgHex", "#101014");
   await p.page.click("#settingsClose");
@@ -2840,7 +2852,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const spans = (p) => p.page.evaluate(() => Array.prototype.slice.call(document.querySelectorAll("#app > .view:not(#viewMotion), #app .view:not([hidden]):not(#viewMotion) > *, .sheet:not([hidden]) .sheet-card, .modal:not([hidden]) .modal-card")).filter((el) => el.offsetParent !== null || el.getClientRects().length).map((el) => { const r = el.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)]; }).filter((x) => x[1] > x[0]));
   const within = (list, left, right) => list.length > 0 && list.every((x) => x[0] >= left && x[1] <= right);
   const overflow = (p) => p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  const setWidth = async (p, v) => { if (await p.page.locator("#setTabOther").isVisible()) await p.page.click("#setTabOther"); return setWidth0(p, v); };
+  const setWidth = async (p, v) => { if (await p.page.locator("#setTabTheme").isVisible()) await p.page.click("#setTabTheme"); return setWidth0(p, v); };
   const setWidth0 = (p, v) => p.page.evaluate((v) => { const el = document.getElementById("panelWidth"); el.value = String(v); el.dispatchEvent(new Event("input", { bubbles: true })); }, v);
 
   p = await open({ width: 380 });
@@ -2867,7 +2879,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.waitForSelector("#modal:not([hidden])");
   check("W2 the confirmation dialog sits over the column, not in the middle of the wide panel", within(await spans(p), 14, 366), JSON.stringify(await spans(p)));
   await p.page.locator("#modalButtons button").last().click(); await p.idle();
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme");
   check("W2 settings stay in the column", within(await spans(p), 14, 366) && (await p.page.inputValue("#panelWidth")) === "380" && (await p.page.locator("#panelWidthVal").innerText()) === "380 px", JSON.stringify(await spans(p)));
 
   await setWidth(p, 520);
@@ -2880,7 +2892,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.screenshot({ path: path.join(SHOTS, "09c-wide-panel-520.png") });
   await p.restart();
   check("W3 the width survives a restart", (await box(p, ".composer")).split(",")[2] === "492" && p.errors.length === 0, p.errors.join(" | "));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme");
   check("W3 settings show the saved width", (await p.page.inputValue("#panelWidth")) === "520" && (await p.page.locator("#panelWidthVal").innerText()) === "520 px");
   await p.page.focus("#panelWidth"); await p.page.keyboard.press("ArrowRight");
   check("W3 the slider works from the keyboard in steps of 10", (await p.page.locator("#panelWidthVal").innerText()) === "530 px" && (await box(p, ".sheet-card")).split(",")[2] === "502");
@@ -2913,9 +2925,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("FW1 a wide panel puts the request on the left and «Выражения» on the right", t[0][0] === 14 && t[1][0] > t[0][0] + t[0][2] && t[1][1] === t[0][1] && t[1][0] + t[1][2] === 986, JSON.stringify(t));
   await p.page.click("#tabBrand");
   check("FW1 «Проекты» uses the whole width too", (await box(p, "#brandEmpty")).split(",")[2] === "972", await box(p, "#brandEmpty"));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme");
   t = (await box(p, ".sheet-card")).split(",").map(Number);
-  check("FW2 settings sit in the middle, not stretched", t[2] === 560 && Math.abs(t[0] + t[2] / 2 - 500) <= 8 && (await p.page.isChecked("#panelFit")) && (await p.page.locator("#widthRow").isHidden()), JSON.stringify(t));
+  check("FW2 settings sit in the middle, at most 900 wide, with the sections in a column on the left", t[2] === 900 && Math.abs(t[0] + t[2] / 2 - 500) <= 8 && (await p.page.evaluate(() => document.querySelector(".sheet-card").classList.contains("set-wide"))) && (await p.page.isChecked("#panelFit")) && (await p.page.locator("#widthRow").isHidden()), JSON.stringify(t));
   await p.page.locator("#panelFit").evaluate((el) => el.click());
   check("FW2 switching it off shows the width slider at once", (await p.page.locator("#panelWidth").isVisible()) && (await p.page.getAttribute("html", "data-fit")) === "off");
   await p.page.click("#settingsClose"); await p.page.click("#tabClaude");
@@ -2948,13 +2960,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 380 });
   t = () => p.page.evaluate(() => [document.documentElement.getAttribute("data-design"), getComputedStyle(document.body).backgroundColor, getComputedStyle(document.querySelector(".glow")).display]);
   check("DS1 a panel that chose glass keeps its glass look", JSON.stringify(await t()) === JSON.stringify(["glass", "rgb(11, 12, 18)", "block"]), JSON.stringify(await t()));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
-  check("DS1 settings offer «Стекло», «After Effects» and «Студия», glass chosen", (await p.page.locator("#designPick button").allInnerTexts()).join() === "Стекло,After Effects,Студия" && (await p.page.getAttribute('#designPick [data-value="glass"]', "aria-pressed")) === "true");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme");
+  check("DS1 settings offer «Стекло», «After Effects» and «Студия», glass chosen", (await p.page.locator("#designPick button b").allInnerTexts()).join() === "Стекло,After Effects,Студия" && (await p.page.getAttribute('#designPick [data-value="glass"]', "aria-pressed")) === "true");
   await p.page.click('#designPick [data-value="ae"]');
   check("DS2 picking «After Effects» shows at once: grey, no glow", JSON.stringify(await t()) === JSON.stringify(["ae", "rgb(35, 35, 35)", "none"]), JSON.stringify(await t()));
   await p.page.click("#settingsClose");
   check("DS2 closing keeps «After Effects»", (await t())[0] === "ae");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="ae"]'); await p.page.click("#settingsClose");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme"); await p.page.click('#designPick [data-value="ae"]'); await p.page.click("#settingsClose");
   await p.restart();
   check("DS3 the design survives a restart and the layout stays the same", (await t())[0] === "ae" && (await p.page.locator("#tabs .tab").count()) === 5 && (await p.page.locator("#runBtn").isVisible()) && p.errors.length === 0, p.errors.join(" | "));
   await p.page.click("#tabMotion");
@@ -2968,7 +2980,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("DS7 «After Effects» uses After Effects' own panel colour and highlight colour", JSON.stringify(await t()) === JSON.stringify(["rgb(50, 50, 50)", "rgb(55, 55, 55)", "rgb(230, 120, 20)", "rgb(214, 214, 214)"]), JSON.stringify(await t()));
   await p.page.evaluate(() => { window.__skin = { bg: [184, 184, 184], hi: [45, 140, 235] }; window.__cepListeners["com.adobe.csxs.events.ThemeColorChanged"]({}); });
   check("DS7 After Effects made lighter: the panel follows at once, with dark text", JSON.stringify(await t()) === JSON.stringify(["rgb(184, 184, 184)", "rgb(179, 179, 179)", "rgb(45, 140, 235)", "rgb(30, 30, 30)"]), JSON.stringify(await t()));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="glass"]');
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme"); await p.page.click('#designPick [data-value="glass"]');
   check("DS7 the other designs keep their own colours", (await p.page.evaluate(() => getComputedStyle(document.body).backgroundColor)) === "rgb(11, 12, 18)" && p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
@@ -2976,7 +2988,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ width: 380 });
   t = () => p.page.evaluate(() => [document.documentElement.getAttribute("data-design"), getComputedStyle(document.documentElement).backgroundColor, getComputedStyle(document.querySelector(".glow")).display,
     getComputedStyle(document.body, "::before").backgroundImage.indexOf("radial-gradient") >= 0]);
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme");
   await p.page.click('#designPick [data-value="studio"]');
   check("DS4 picking «Студия» shows at once: dark, dotted background, no glow", JSON.stringify(await t()) === JSON.stringify(["studio", "rgb(17, 18, 21)", "none", true]), JSON.stringify(await t()));
   check("DS4 the settings window stays on top in «Студия»", await p.page.evaluate(() => { document.querySelector("#settingsSaved").scrollIntoView({ block: "center" }); const b = document.querySelector("#settingsSaved").getBoundingClientRect(); const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !!el && !!el.closest("#settingsSaved"); }));
@@ -3649,7 +3661,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsBtn"); await setWidth(p, 640); await p.page.click("#settingsClose");
   check("E2 the width setting is for fields and buttons: it changes neither the blocks nor the tab bar", (await box(p, "#tabs")).split(",")[2] === "352" && (await sizesNow(p)) === c && (await firstRow(p)) === 2);
   await resizeTo(p, 1000);
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTools"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   c = await sizesNow(p);
   t = await p.page.evaluate(() => { const g = document.getElementById("motionTools"), cs = getComputedStyle(g); return [cs.gridAutoRows, cs.columnGap].join("|"); });
   check("E3 at 60%: a finer grid (9px cells, 5px gaps), blocks 8 cells = 107px wide, all in a row", t === "9px|5px" && (await firstRow(p)) === 5 && c.split(",").every((x) => x.indexOf("107x") === 0), t + " " + c);
@@ -3816,7 +3828,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await pinOf(p, "organize").click();
   check("PN6 nothing pinned: no line, the usual layout is back", (await pinLine(p)) === null && (await cellsNow(p)) === c, await cellsNow(p));
   await pinOf(p, "align").click();
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTools"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   await motionTab(p);
   t = await p.page.evaluate(() => { const c = document.querySelector('.tool-card[data-tool="align"]'), a = c.querySelector(".tool-pin").getBoundingClientRect(), r = c.getBoundingClientRect(); return a.left > r.left && a.right < r.right && a.top >= r.top; });
   check("PN7 small blocks: the pin fits too, the pinned block stays on top", t && (await toolOrder(p)).split(",")[0] === "align" && (await pinLine(p)) !== null && p.errors.length === 0, p.errors.join(" | "));
@@ -3832,13 +3844,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({});
   await motionTab(p);
   check("Z1 blocks are large unless chosen otherwise", (await toolsAttr(p)) === "100" && (await gridBox(p, "anchorGrid")) === "122,122,38,38" && (await rowShape(p, "alignGrid")) === "6 30 20" && (await rowShape(p, "distGrid")) === "6 30 20", await gridBox(p, "anchorGrid") + " | " + await rowShape(p, "alignGrid"));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTools");
   check("Z1 settings offer six sizes in percent, 100% is marked", (await p.page.locator("#toolSize button").count()) === 6 && (await pressedSize(p)) === "100" && (await p.page.locator("#toolSize button").allInnerTexts()).join() === "100%,90%,80%,70%,60%,50%");
   await p.page.click('#toolSize button[data-value="60"]');
   check("Z2 choosing small shows at once", (await toolsAttr(p)) === "60" && (await pressedSize(p)) === "60");
   await p.page.click("#settingsClose");
   check("Z2 closing keeps small", (await toolsAttr(p)) === "60");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTools"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   check("Z3 saved: the buttons are small now", (await toolsAttr(p)) === "60" && (await gridBox(p, "anchorGrid")) === "73,73,23,23" && (await rowShape(p, "alignGrid")) === "6 18 12" && (await rowShape(p, "distGrid")) === "6 18 12" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).toolSize)) === "60", await gridBox(p, "anchorGrid") + " " + await rowShape(p, "alignGrid"));
   t = await toolRects(p);
   check("Z3 at 380px three blocks at 60% stand in one row", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && t.ease.l === 14 && t.align.r === 345 && Math.abs(t.ease.w - t.anchor.w) <= 1, JSON.stringify(t));
@@ -3862,7 +3874,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("Z5 and grows by its cells", (await toolRects(p)).anchor.w === 135 && (await savedSizes(p)) === "anchor=10x0", (await toolRects(p)).anchor.w + " " + await savedSizes(p));
   await p.restart();
   check("Z5 the size and the widths survive a restart", (await toolsAttr(p)) === "60" && (await toolRects(p)).anchor.w === 135 && (await gridBox(p, "anchorGrid")) === "73,73,23,23");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTools");
   check("Z5 settings show the saved size", (await pressedSize(p)) === "60");
   await p.page.click('#toolSize button[data-value="100"]'); await p.page.click("#settingsClose");
   t = await toolRects(p);
@@ -3942,7 +3954,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await motionTab(p);
   check("F5 titles are shown unless switched off, one short word each", (await titlesAttr(p)) === "on" && (await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join())) === "Плавность,Якорь,Выровнять,Копия,Лесенка", await p.page.locator("#motionTools .tool-head b").evaluateAll((l) => l.filter((b) => b.getBoundingClientRect().height > 0).map((b) => b.textContent).join()));
   c = [await cardH(p, "ease"), await cardH(p, "anchor"), await cardH(p, "align")];
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTools");
   check("F5 settings have the switch, on", await p.page.isChecked("#toolTitles"));
   await p.page.locator("#toolTitles").evaluate((el) => el.click());
   check("F5 switching it off shows at once", (await titlesAttr(p)) === "off");
@@ -3956,12 +3968,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("F6 everything folded, no titles: just the buttons, and the tools work", (await togglesClear(p)) && (await allInside(p)) && (await cardH(p, "anchor")) < 170);
   await p.page.click("#easeBothBtn"); await p.idle();
   check("F6 easing still runs", (await p.status()) === "Выделите ключевые кадры на таймлайне и нажмите ещё раз.");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTools"); await p.page.click('#toolSize button[data-value="60"]'); await p.page.click("#settingsClose");
   t = await toolRects(p);
   check("F7 small, no titles, folded: three blocks in a row, nothing overlaps", t.ease.t === t.anchor.t && t.anchor.t === t.align.t && (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0 && (await cardH(p, "anchor")) <= 134, JSON.stringify(t) + " h=" + await cardH(p, "anchor"));
   await p.page.screenshot({ path: path.join(SHOTS, "29-tools-small-bare.png") });
   await p.page.click("#anchorOptsToggle"); await p.page.click("#alignOptsToggle"); await p.page.click("#easeCurveToggle");
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.locator("#toolTitles").evaluate((el) => el.click()); await p.page.click("#settingsClose");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTools"); await p.page.locator("#toolTitles").evaluate((el) => el.click()); await p.page.click("#settingsClose");
   check("F7 small with titles and everything open: titles do not run under the corner buttons", (await titlesAttr(p)) === "on" && (await togglesClear(p)) && (await allInside(p)) && (await overflow(p)) <= 0);
   await p.page.screenshot({ path: path.join(SHOTS, "26-tools-small.png") });
   await p.restart();
@@ -4453,14 +4465,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = await flowState(p);
   check("FL4 a very wide panel: three columns, all tiles in one row", t.n === "3" && (await p.page.evaluate(() => new Set(Array.prototype.map.call(document.querySelectorAll("#motionTools .flow-tiles .tool-card"), (c) => Math.round(c.getBoundingClientRect().top))).size)) === 1 && (await overflow(p)) <= 0, JSON.stringify(t) + " " + (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll(".flow-tiles .tool-card"), (c) => Math.round(c.getBoundingClientRect().top)).join())));
   await p.page.setViewportSize({ width: 420, height: 1200 }); await p.page.waitForTimeout(150);
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="glass"]'); await p.page.click("#settingsClose");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme"); await p.page.click('#designPick [data-value="glass"]'); await p.page.click("#settingsClose");
   await motionTab(p);
   t = await flowState(p);
   check("FL5 another design: the usual grid is back, every block in its cell", !t.flow && t.direct === 12 && /^\d+ \/ span \d+$/.test(await p.page.evaluate(() => document.querySelector('#motionTools > [data-tool="ease"]').style.gridRow)) && (await vis(p, '#motionTools [data-tool="ease"] .tool-grip')) && (await p.page.locator("#motionTools .flow-part:visible").count()) === 0, JSON.stringify(t));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#designPick [data-value="studio"]'); await p.page.click("#settingsClose");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme"); await p.page.click('#designPick [data-value="studio"]'); await p.page.click("#settingsClose");
   await motionTab(p);
   check("FL5 and back to «Студия»", (await flowState(p)).flow && (await flowState(p)).cols === "ease,easecopy,stagger,anchor,align" && p.errors.length === 0, p.errors.join(" | "));
-  await p.page.click("#settingsBtn"); await p.page.click("#setTabOther"); await p.page.click('#toolPicker button[data-tool="cache"]'); await p.page.click('#toolPicker button[data-tool="anchor"]'); await p.page.click("#settingsClose");
+  await p.page.click("#settingsBtn"); await p.page.click("#setTabTools"); await p.page.click('#toolPicker button[data-tool="cache"]'); await p.page.click('#toolPicker button[data-tool="anchor"]'); await p.page.click("#settingsClose");
   await motionTab(p);
   t = await flowState(p);
   check("FL6 hidden tools are hidden here too", t.tiles === "paste,organize,unused,nullp,decompose,cutout" && t.cols === "ease,easecopy,stagger,align", JSON.stringify(t));
@@ -4947,7 +4959,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("IT3 tabs explain what they hold", /^Анимация\|Готовые пресеты/.test(await tip()), await tip());
     await p.page.mouse.down(); await p.page.mouse.up();
     check("IT4 a click hides it at once", (await tip()) === "");
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabMore");
     check("IT5 Settings → General has a switch for it, on", await p.page.locator("#infoTipsOn").isChecked());
     await p.page.locator("label.switch", { has: p.page.locator("#infoTipsOn") }).click(); await p.page.click("#settingsClose");
     await p.page.mouse.move(b3.x + 20, b3.y + 10); await p.page.waitForTimeout(1300);
@@ -5865,7 +5877,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     for (const id of ["tabClaude", "tabTools", "tabMotion", "tabShape"]) { await p.page.click("#" + id); seen.push(await bgNow()); acc.push(await css("--accent")); }
     check("SC1 every section paints the panel background in its own colour", seen.join() === "#0b0c12,#17110b,#0b1510,#0b1219", seen.join());
     check("SC1 the accent colour stays the same in every section", acc.every((c) => c === "#9d7bff"), acc.join());
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme");
     check("SC2 Settings → General → «Фон разделов»: five section rows, each with ready colours, a palette for any colour and a hex field", (await p.page.locator(".sec-color").count()) === 5 && (await p.page.locator(".sec-color .color-pick").count()) === 5 && (await p.page.locator(".sec-color .hex").count()) === 5 && (await p.page.locator(".sec-color .sec-name").allInnerTexts()).join() === "AI,Анимация,Инструменты,Шейп,Проекты");
     check("SC2 the accent colour also has a palette", (await p.page.locator("#accentSwatches .color-pick").count()) === 1);
     await p.page.fill("#bgShapeHex", "#12ab34");
@@ -5879,7 +5891,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.restart();
     check("SC3 the backgrounds survive a restart", (await bgNow()) === "#12ab34" && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.settings.v1"))).bgMotion === "#a1b2c3" && p.errors.length === 0, (await bgNow()) + " " + p.errors.join(" | "));
     await p.page.screenshot({ path: path.join(SHOTS, "44-section-colours.png") });
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme");
     await p.page.locator(".sec-color").first().scrollIntoViewIfNeeded();
     await p.page.screenshot({ path: path.join(SHOTS, "45-section-colours-settings.png") });
     await p.close();
@@ -5907,7 +5919,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await waitStats(p, 2);
     check("ST3 on a new day it sends one 'day' with the same id", statsN(p) === 2 && p.net.stats[1].body.ev === "day" && p.net.stats[1].body.id === s1.body.id, JSON.stringify(p.net.stats));
     await p.page.click("#settingsBtn");
-    await p.page.click("#setTabOther");
+    await p.page.click("#setTabMore");
     check("ST4 Settings → General has the 'Анонимная статистика' switch, on by default", (await p.page.locator("#statsOn").isChecked()) && /Анонимная статистика/.test(await p.page.locator("#setPaneOther").innerText()));
     await p.page.locator("label.switch", { has: p.page.locator("#statsOn") }).click();
     await p.page.click("#settingsClose");
@@ -5938,7 +5950,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   {
     const shown = (p) => p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll("#motionTools .tool-card, #shapeTools .tool-card"), (c) => getComputedStyle(c).display !== "none").map((c) => c.getAttribute("data-tool")).sort().join());
     p = await open({});
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabTools");
     t = await p.page.locator("#toolPicker button").evaluateAll((l) => l.map((b) => b.getAttribute("data-tool") + ":" + b.getAttribute("aria-pressed")));
     check("TP1 settings list every tool of both tabs, all shown", t.length === 14 && t.every((x) => /:true$/.test(x)) && t.indexOf("split:true") >= 0 && (await p.page.locator(".tool-picker-head").evaluateAll((l) => l.map((x) => x.textContent))).join() === "Инструменты,Шейп", t.join());
     const before = await shown(p);
@@ -5949,7 +5961,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("TP2 the rest of the grid closes up: no overlap, nothing outside", (await p.page.locator('#motionTools [data-tool="cache"]').isHidden()) && (await p.page.locator('#motionTools [data-tool="ease"]').isVisible()) && (await overflow(p)) <= 0);
     await p.restart();
     check("TP3 hidden stays hidden after a restart", (await shown(p)).split(",").indexOf("cache") < 0 && p.errors.length === 0, p.errors.join(" | "));
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabTools");
     await p.page.click('#toolPicker button[data-tool="cache"]'); await p.page.click('#toolPicker button[data-tool="split"]');
     await p.page.click("#settingsClose");
     check("TP3 a second click brings every block back", (await shown(p)) === before && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).hiddenTools)) === "");

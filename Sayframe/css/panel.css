@@ -934,6 +934,7 @@ pre {
   overflow-y: auto;
   padding: 14px;
   background: var(--bg);
+  z-index: 40;
 }
 .sheet .glow { position: absolute; }
 
@@ -1190,9 +1191,53 @@ button:focus-visible, summary:focus-visible { outline: 2px solid rgba(var(--acce
 .hotkey-btn.recording { border-color: rgba(var(--accent-rgb), 0.85); color: var(--accent-hi); background: rgba(var(--accent-rgb), 0.15); }
 #hotkeyNote:empty { display: none; }
 
-/* Разделы настроек: AI и «Общие» */
-.set-tabs button { flex: 1 1 0; height: 32px; font: 700 13px/1 var(--round); }
-.set-pane { display: flex; flex-direction: column; gap: 18px; }
+/* Разделы настроек: AI, Темы, Инструменты, Клавиши, Прочее — иконки сверху (в широком окне — столбиком слева) */
+.set-body { display: flex; flex-direction: column; gap: 12px; }
+.set-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.set-tabs button { appearance: none; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px; min-width: 0;
+  border: 0; border-radius: 10px; background: transparent; color: var(--muted); font: 600 10.5px/1.1 var(--round); letter-spacing: -.01em; cursor: pointer; }
+.set-tabs button span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-tabs button svg { width: 20px; height: 20px; flex: none; }
+.set-tabs button:hover { color: var(--text); background: rgba(255, 255, 255, .04); }
+.set-tabs button[aria-selected="true"] { background: rgba(var(--accent-rgb), .16); color: var(--text); }
+.set-tabs button[aria-selected="true"] svg { color: var(--accent-hi, var(--accent)); }
+.set-pane { display: flex; flex-direction: column; gap: 10px; }
+.set-pane[hidden] { display: none; }
+.set-pane > .group { padding: 12px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); gap: 10px; }
+.set-pane > .group[hidden] { display: none; }
+.set-pane > .group > .label { font: 600 10.5px/1.2 var(--round); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.set-pane .switch small { font-size: 11px; }
+.theme-note { margin: 0; padding: 0 4px; color: var(--muted); font-size: 11.5px; }
+.theme-note[hidden] { display: none; }
+.sheet-card.set-wide .set-body { display: grid; grid-template-columns: 170px 1fr; gap: 16px; align-items: start; }
+.sheet-card.set-wide .set-tabs { grid-template-columns: 1fr; position: sticky; top: 0; }
+.sheet-card.set-wide .set-tabs button { flex-direction: row; justify-content: flex-start; gap: 10px; padding: 9px 10px; font-size: 13px; }
+[data-fit="on"] .sheet-card { max-width: min(900px, calc(100vw - 28px)); }
+/* Карточки тем: маленький вид каждой темы */
+.theme-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.theme-cards button { appearance: none; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px; min-width: 0; text-align: left;
+  border: 1.5px solid var(--line); border-radius: 12px; background: transparent; color: var(--text); cursor: pointer; font: inherit; }
+.theme-cards button b { font: 600 12px/1.2 var(--round); padding: 2px 2px 0; }
+.theme-cards button small { font-size: 10.5px; line-height: 1.25; color: var(--muted); padding: 0 2px 2px; }
+.theme-cards button[aria-pressed="true"] { border-color: var(--accent); background: rgba(var(--accent-rgb), .1); }
+.theme-cards button[aria-pressed="true"] b::after { content: " ✓"; color: var(--accent-hi, var(--accent)); }
+.theme-mini { position: relative; display: flex; flex-direction: column; gap: 6px; height: 66px; padding: 9px; border-radius: 8px; overflow: hidden; pointer-events: none; }
+.theme-mini i { display: block; height: 9px; width: 85%; }
+.theme-mini i:nth-child(2) { width: 42%; }
+.theme-mini i:nth-child(3) { height: 20px; }
+.mini-glass { background: radial-gradient(circle at 75% 0, rgba(155, 123, 255, .55), transparent 60%), linear-gradient(160deg, #2a2150, #0f0f1c 60%); }
+.mini-glass i { background: rgba(255, 255, 255, .13); border-radius: 5px; }
+.mini-glass i:nth-child(2) { background: rgba(155, 123, 255, .6); }
+.mini-ae { background: #232323; border: 1px solid #333; }
+.mini-ae i { background: #343434; border-radius: 2px; }
+.mini-ae i:nth-child(2) { background: #2d8ceb; }
+.mini-ae i:nth-child(3) { background: #2b2b2b; border: 1px solid #3d3d3d; }
+.mini-studio { background: #111114 radial-gradient(rgba(255, 255, 255, .13) 1px, transparent 1px) 0 0 / 8px 8px; }
+.mini-studio i { background: #1e1e25; border-radius: 5px; }
+.mini-studio i:nth-child(2) { background: #9b7bff; }
+.mini-studio i:nth-child(3) { background: #1a1a20; border: 1px solid #2c2c35; }
+html[data-design="ae"] .set-tabs button, html[data-design="ae"] .set-pane > .group, html[data-design="ae"] .theme-cards button { border-radius: 4px; }
+html[data-design="ae"] .set-tabs button[aria-selected="true"] { background: rgba(45, 140, 235, .2) !important; border: 0 !important; color: #fff !important; }
 
 /* Редактор сочетания: можно нажать клавиши или собрать сочетание мышью */
 .hotkey-edit {
@@ -1870,7 +1915,7 @@ html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:
 .stagger-card .shift-go { width: 100%; }
 
 /* Настройки сохраняются сами: вместо кнопки «Сохранить» — тихая строка, которая на миг говорит «Сохранено ✓». */
-.settings-saved { text-align: center; margin: 4px 0 2px; transition: color 0.2s; }
+.settings-saved { text-align: center; margin: 4px 0 2px; color: var(--muted); font-size: 11.5px; transition: color 0.2s; }
 .settings-saved.ok { color: var(--ok, #4ade80); }
 
 /* Настройки → какие инструменты показывать: кнопки-«галочки», спрятанный блок пропадает из сетки. */

@@ -823,11 +823,14 @@
         <button id="settingsClose" class="icon-btn" aria-label="Закрыть настройки" title="Закрыть">&times;</button>
       </div>
 
-      <div id="setTabs" class="frames set-tabs" role="tablist" aria-label="Разделы настроек">
-        <button id="setTabAI" role="tab" data-pane="ai" aria-selected="true" aria-pressed="true">AI</button>
-        <button id="setTabOther" role="tab" data-pane="other" aria-selected="false" aria-pressed="false">Общие</button>
+      <div class="set-body">
+      <div id="setTabs" class="set-tabs" role="tablist" aria-label="Разделы настроек">
+        <button id="setTabAI" role="tab" data-pane="ai" aria-selected="true" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z"/></svg><span>AI</span></button>
+        <button id="setTabTheme" role="tab" data-pane="theme" aria-selected="false" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor"/></svg><span>Темы</span></button>
+        <button id="setTabTools" role="tab" data-pane="tools" aria-selected="false" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span>Инструменты</span></button>
+        <button id="setTabKeys" role="tab" data-pane="keys" aria-selected="false" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></svg><span>Клавиши</span></button>
+        <button id="setTabMore" role="tab" data-pane="more" aria-selected="false" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg><span>Прочее</span></button>
       </div>
-
       <div id="setPaneAI" class="set-pane" role="tabpanel" aria-labelledby="setTabAI">
         <div class="group">
           <span class="label">Нейросеть</span>
@@ -856,21 +859,21 @@
             <input id="selfCheck" type="checkbox">
             <span class="track"></span>
             <span class="text">Claude проверяет результат по кадрам
-              <small>После запуска видит композицию и сам вносит правки. Дольше и дороже.</small>
+              <small>Сам смотрит кадры и правит. Дольше и дороже.</small>
             </span>
           </label>
           <label class="switch">
             <input id="brandPics" type="checkbox">
             <span class="track"></span>
             <span class="text">AI видит упомянутые логотипы и иконки
-              <small>Вместе с запросом уходят их маленькие картинки (только тех, что упомянуты). Немного дороже.</small>
+              <small>Немного дороже.</small>
             </span>
           </label>
           <label class="switch">
             <input id="alwaysAsk" type="checkbox">
             <span class="track"></span>
             <span class="text">Спрашивать перед каждым запуском
-              <small>Показывает скрипт и ждёт подтверждения.</small>
+              <small>Показывает скрипт и ждёт «Да».</small>
             </span>
           </label>
         </div>
@@ -881,25 +884,24 @@
         </div>
       </div>
 
-      <div id="setPaneOther" class="set-pane" role="tabpanel" aria-labelledby="setTabOther" hidden>
+      <div id="setPaneTheme" class="set-pane" role="tabpanel" aria-labelledby="setTabTheme" hidden>
         <div class="group">
-          <span class="label">Дизайн</span>
-          <div id="designPick" class="frames">
-            <button data-value="glass">Стекло</button>
-            <button data-value="ae">After Effects</button>
-            <button data-value="studio">Студия</button>
+          <span class="label">Тема</span>
+          <div id="designPick" class="theme-cards" role="group" aria-label="Тема панели">
+            <button data-value="glass"><span class="theme-mini mini-glass" aria-hidden="true"><i></i><i></i><i></i></span><b>Стекло</b><small>Прозрачность и свечение</small></button>
+            <button data-value="ae"><span class="theme-mini mini-ae" aria-hidden="true"><i></i><i></i><i></i></span><b>After Effects</b><small>Серый и плоский, как Adobe</small></button>
+            <button data-value="studio"><span class="theme-mini mini-studio" aria-hidden="true"><i></i><i></i><i></i></span><b>Студия</b><small>Тёмная, с точками</small></button>
           </div>
-          <p class="hint">«After Effects» — серый и плоский, как родные панели Adobe, с синим акцентом. «Студия» — тёмная, с точками на фоне и иконками в цветных квадратиках. Цвета ниже работают в «Стекле» и «Студии».</p>
         </div>
-        <div class="group">
+        <p id="themeNote" class="hint theme-note" hidden></p>
+        <div id="accentGroup" class="group">
           <span class="label">Акцентный цвет</span>
           <div class="swatches" id="accentSwatches">
             <input id="accentPick" class="color-pick" type="color" aria-label="Акцентный цвет: любой цвет из палитры" title="Любой цвет">
             <input id="accentHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Акцентный цвет, hex">
           </div>
         </div>
-
-        <div class="group">
+        <div id="bgGroup" class="group">
           <span class="label">Фон разделов</span>
           <div class="sec-color">
             <span class="sec-name">AI</span>
@@ -936,15 +938,14 @@
               <input id="bgBrandHex" class="field hex" maxlength="7" spellcheck="false" aria-label="Фон раздела «Проекты», hex">
             </div>
           </div>
-          <p class="hint">У каждого раздела свой фон: открытый раздел красит им панель. Кружок с радугой — палитра, в ней любой цвет; можно и ввести hex-код.</p>
         </div>
-
         <div class="group">
+          <span class="label">Ширина</span>
           <label class="switch">
             <input id="panelFit" type="checkbox">
             <span class="track"></span>
             <span class="text">На всю ширину панели
-              <small>Поля и кнопки тянутся вместе с панелью After Effects. В широкой панели раздел AI встаёт в две колонки.</small>
+              <small>Поля и кнопки тянутся вместе с панелью.</small>
             </span>
           </label>
           <div id="widthRow" class="width-pick">
@@ -953,12 +954,12 @@
               <input id="panelWidth" class="range" type="range" min="280" max="640" step="10" value="380">
               <output id="panelWidthVal" for="panelWidth">380 px</output>
             </div>
-            <p class="hint">Поля и кнопки в разделах AI и «Проекты» остаются такой ширины у левого края, даже если растянуть панель в After Effects.</p>
           </div>
         </div>
-
+      </div>
+      <div id="setPaneTools" class="set-pane" role="tabpanel" aria-labelledby="setTabTools" hidden>
         <div class="group">
-          <span class="label">Блоки в разделе «Инструменты»</span>
+          <span class="label">Размер блоков</span>
           <div id="toolSize" class="frames tool-size">
             <button data-value="100">100%</button>
             <button data-value="90">90%</button>
@@ -967,49 +968,28 @@
             <button data-value="60">60%</button>
             <button data-value="50">50%</button>
           </div>
-          <p class="hint">Блоки уменьшаются целиком — кнопки, подписи и ползунки: чем меньше, тем больше блоков помещается в ряд.</p>
           <label class="switch">
             <input id="toolTitles" type="checkbox">
             <span class="track"></span>
             <span class="text">Показывать названия блоков
-              <small>«Плавность ключей», «Точка привязки», «Выравнивание».</small>
+              <small>Над каждым блоком.</small>
             </span>
           </label>
           <span class="label">Какие инструменты показывать</span>
           <div id="toolPicker" class="tool-picker"></div>
-          <p class="hint">Щёлкните по инструменту, чтобы спрятать его или вернуть. Спрятанный блок пропадает из раздела, но его горячая клавиша продолжает работать.</p>
         </div>
-
         <div class="group">
+          <span class="label">Вставка</span>
           <label class="switch">
             <input id="pasteAnywhere" type="checkbox">
             <span class="track"></span>
             <span class="text">Вставка картинки по Cmd/Ctrl+V во всём After Effects
-              <small>Если в буфере картинка или снимок экрана, панель спросит: прекомпозить или оставить как есть.</small>
+              <small>Картинку из буфера — сразу в проект.</small>
             </span>
           </label>
         </div>
-
-        <div class="group">
-          <label class="switch">
-            <input id="infoTipsOn" type="checkbox">
-            <span class="track"></span>
-            <span class="text">Подсказки при наведении
-              <small>Задержите курсор на блоке или кнопке на секунду — появится окошко с объяснением.</small>
-            </span>
-          </label>
-        </div>
-
-        <div class="group">
-          <label class="switch">
-            <input id="statsOn" type="checkbox">
-            <span class="track"></span>
-            <span class="text">Анонимная статистика
-              <small>Один раз сообщает автору, что Sayframe установлен, и раз в день — что панель открывали: версию, систему и версию After Effects. Без имени, проектов и ключей.</small>
-            </span>
-          </label>
-        </div>
-
+      </div>
+      <div id="setPaneKeys" class="set-pane" role="tabpanel" aria-labelledby="setTabKeys" hidden>
         <div class="group">
           <span class="label">Горячие клавиши</span>
           <div id="hotkeys" class="hotkeys"></div>
@@ -1020,13 +1000,33 @@
             <button data-value="panel">В панели Sayframe</button>
             <button data-value="cursor">У курсора</button>
           </div>
-          <p class="hint">«У курсора» — маленькое окно поиска прямо там, где мышь, как в FX Console. Если сочетание нажато в самой панели, поиск откроется в ней.</p>
           <p id="fxWhereState" class="hint" hidden></p>
           <button id="hotkeysReset" class="ghost">Вернуть стандартные</button>
-          <p class="hint">Нажмите на сочетание, чтобы изменить его: нажмите новое на клавиатуре или выберите клавиши мышью. Сохраняется сразу. Сочетания работают во всём After Effects — чуть подержите их, как в FX Console. Панель Sayframe должна быть открыта и видна на экране.</p>
         </div>
       </div>
-
+      <div id="setPaneMore" class="set-pane" role="tabpanel" aria-labelledby="setTabMore" hidden>
+        <div class="group">
+          <span class="label">Подсказки</span>
+          <label class="switch">
+            <input id="infoTipsOn" type="checkbox">
+            <span class="track"></span>
+            <span class="text">Подсказки при наведении
+              <small>Через секунду на блоке или кнопке.</small>
+            </span>
+          </label>
+        </div>
+        <div class="group">
+          <span class="label">Статистика</span>
+          <label class="switch">
+            <input id="statsOn" type="checkbox">
+            <span class="track"></span>
+            <span class="text">Анонимная статистика
+              <small>Версия и система, раз в день. Без файлов и текстов.</small>
+            </span>
+          </label>
+        </div>
+      </div>
+      </div>
       <p id="settingsSaved" class="hint settings-saved" aria-live="polite">Изменения сохраняются сами.</p>
 
       <div class="group about">

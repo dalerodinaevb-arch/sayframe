@@ -1012,7 +1012,7 @@
         acDurRow: el("acDurRow"), acDur: el("acDur"), acDurVal: el("acDurVal"), acColorRow: el("acColorRow"), acColor: el("acColor"),
         acGrid: el("acGrid"), acHint: el("acHint"), acSize: el("acSize"), acFoot: el("acFoot"),
         fxKeys: el("fxKeys"), fxKeysCombo: el("fxKeysCombo"),
-        setTabAI: el("setTabAI"), setTabOther: el("setTabOther"), setPaneAI: el("setPaneAI"), setPaneOther: el("setPaneOther"),
+        setTabs: el("setTabs"), themeNote: el("themeNote"), accentGroup: el("accentGroup"), bgGroup: el("bgGroup"),
         hotkeys: el("hotkeys"), hotkeysReset: el("hotkeysReset"), hotkeyNote: el("hotkeyNote"),
         organizeBtn: el("organizeBtn"), organizeOptsToggle: el("organizeOptsToggle"), organizeHint: el("organizeHint"),
         decomposeBtn: el("decomposeBtn"), decomposeOptsToggle: el("decomposeOptsToggle"), decomposeHint: el("decomposeHint"),
@@ -3303,10 +3303,12 @@
 
         // Дизайн меняется сразу и сразу сохраняется.
         ui.designPick.addEventListener("click", function (e) {
-            var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
+            var b = e.target && e.target.closest ? e.target.closest("button[data-value]") : null;
+            var v = b ? b.getAttribute("data-value") : null;
             if (!draft || DESIGNS.indexOf(v) < 0) { return; }
             draft.design = v;
             pressGroup(ui.designPick, v);
+            showThemeOpts(v);
             applyTheme(draft);
         });
         ui.fxWhere.addEventListener("click", function (e) {
@@ -3345,18 +3347,36 @@
         });
     }
 
-    // Настройки разбиты на два раздела: всё про нейросеть (AI) и остальное («Общие»).
+    // Настройки разбиты на пять разделов: AI, Темы, Инструменты, Клавиши, Прочее.
+    var SET_PANES = ["ai", "theme", "tools", "keys", "more"];
     var setPane = "ai";
 
     function showSetPane(name) {
-        setPane = name === "other" ? "other" : "ai";
-        ui.setPaneAI.hidden = setPane !== "ai";
-        ui.setPaneOther.hidden = setPane !== "other";
-        ui.setTabAI.setAttribute("aria-selected", String(setPane === "ai"));
-        ui.setTabAI.setAttribute("aria-pressed", String(setPane === "ai"));
-        ui.setTabOther.setAttribute("aria-selected", String(setPane === "other"));
-        ui.setTabOther.setAttribute("aria-pressed", String(setPane === "other"));
-        if (setPane !== "other") { stopHotkeyEdit(); }
+        setPane = SET_PANES.indexOf(name) >= 0 ? name : "ai";
+        SET_PANES.forEach(function (k) {
+            var id = k.charAt(0).toUpperCase() + k.slice(1), on = k === setPane;
+            el("setPane" + (k === "ai" ? "AI" : id)).hidden = !on;
+            el("setTab" + (k === "ai" ? "AI" : id)).setAttribute("aria-selected", String(on));
+            el("setTab" + (k === "ai" ? "AI" : id)).setAttribute("aria-pressed", String(on));
+        });
+        if (setPane !== "keys") { stopHotkeyEdit(); }
+    }
+
+    // Акцент и фон разделов есть только у «Стекла»: у «After Effects» и «Студии» свои цвета, их настройки прячутся.
+    var DESIGN_NOTES = { ae: "У темы «After Effects» свои цвета: акцент и фон разделов у неё не меняются.", studio: "У «Студии» свои цвета: акцент и фон разделов у неё не меняются." };
+
+    function showThemeOpts(design) {
+        var own = !!DESIGN_NOTES[design];
+        ui.accentGroup.hidden = own;
+        ui.bgGroup.hidden = own;
+        ui.themeNote.hidden = !own;
+        ui.themeNote.textContent = DESIGN_NOTES[design] || "";
+    }
+
+    // Широкие настройки (панель растянута, «На всю ширину»): разделы встают слева столбиком.
+    function fitSettings() {
+        var card = ui.sheet ? ui.sheet.querySelector(".sheet-card") : null;
+        if (card) { card.classList.toggle("set-wide", card.getBoundingClientRect().width >= 680); }
     }
 
     function openSettings() {
@@ -3389,6 +3409,7 @@
         ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
         pressGroup(ui.fxWhere, draft.fxWhere === "cursor" ? "cursor" : "panel");
         pressGroup(ui.designPick, DESIGNS.indexOf(draft.design) >= 0 ? draft.design : "studio");
+        showThemeOpts(DESIGNS.indexOf(draft.design) >= 0 ? draft.design : "studio");
         ui.statsOn.checked = draft.stats !== false;
         ui.infoTipsOn.checked = draft.infoTips !== false;
         closeFxConsole();
@@ -3400,6 +3421,7 @@
         ui.settingsSaved.className = "hint settings-saved";
         settingsChanged = false;
         ui.sheet.hidden = false;
+        fitSettings();
         ui.sheet.scrollTop = 0;
     }
 
@@ -7390,7 +7412,7 @@
         closeFxConsole();
         openSettings();
         if (ui.sheet.hidden) { return; }
-        showSetPane("other");
+        showSetPane("keys");
         startHotkeyEdit("console");
         ui.hotkeys.scrollIntoView({ block: "center" });
     }
@@ -10904,8 +10926,10 @@
         hotkeyHint();
         renderHotkeys();
     });
-    ui.setTabAI.addEventListener("click", function () { showSetPane("ai"); });
-    ui.setTabOther.addEventListener("click", function () { showSetPane("other"); });
+    Array.prototype.forEach.call(ui.setTabs.querySelectorAll("button[data-pane]"), function (b) {
+        b.addEventListener("click", function () { showSetPane(b.getAttribute("data-pane")); });
+    });
+    window.addEventListener("resize", fitSettings);
     document.addEventListener("keydown", onHotkeyDown, true);
     enableAc();
     enableOrbit();
