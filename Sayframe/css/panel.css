@@ -1967,7 +1967,9 @@ html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:
 .tool-flow > .grid-cells, .tool-flow > .pin-line { display: none !important; }
 .tool-flow > .flow-cap:not([hidden]) { display: block; margin: 2px 2px 8px; font: 600 10.5px/1.2 var(--plain); text-transform: uppercase; letter-spacing: .12em; color: #6c6e79; }
 .tool-flow > .flow-tiles:not([hidden]) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
-.tool-flow > .flow-tiles[data-wide="true"] { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+/* Плитки одного размера (не тянутся за панелью): в широкой панели их просто больше в ряду. */
+.tool-flow > .flow-tiles:not([hidden]), .tool-flow > .flow-tiles[data-wide="true"] { grid-template-columns: repeat(auto-fill, 88px); }
+.tool-flow .flow-tiles .tool-card { width: 88px; height: 84px; box-sizing: border-box; }
 .tool-flow > .flow-cols:not([hidden]) { display: block; column-gap: 12px; }
 .tool-flow > .flow-cols[data-cols="2"] { -webkit-columns: 2; columns: 2; }
 .tool-flow > .flow-cols[data-cols="3"] { -webkit-columns: 3; columns: 3; }
