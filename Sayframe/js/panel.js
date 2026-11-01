@@ -6542,6 +6542,8 @@
             b.setAttribute("role", "tab");
             b.setAttribute("data-sec", s.id);
             b.textContent = s.label;
+            // В «Студии» подсказки под карточками нет — она всплывает при наведении на название раздела.
+            if (s.id !== "orbit") { b.setAttribute("data-info", s.label + "|" + acHintText(s.id)); }
             b.addEventListener("click", function () {
                 acState.sec = s.id;
                 acState.favOnly = false;
