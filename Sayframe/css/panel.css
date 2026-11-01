@@ -63,6 +63,14 @@ button { cursor: pointer; }
 /* Поля и кнопки разделов Claude и «Инструменты» не тянутся за панелью: держат свою ширину
    (настройка «Ширина панели») и остаются слева. В узкой панели сжимаются. */
 #app > * { flex: none; align-self: flex-start; width: 100%; max-width: calc(var(--panel-w) - 28px); }
+/* Шапка и вкладки прилипают к верху, когда раздел прокручивают. Под ними — подложка #topShade цвета фона
+   (видна только после прокрутки), чтобы прокрученное не просвечивало в промежутках. */
+#app { --app-pad: 14px; --app-gap: 12px; }
+#app > .top { position: sticky; top: 0; z-index: 7; }
+#app > #tabs { position: sticky; top: calc(var(--top-h, 30px) + var(--app-gap)); z-index: 6; }
+#app > #topShade { position: sticky; top: calc(-1 * var(--app-pad)); z-index: 5; display: block; width: auto; max-width: none; align-self: stretch; pointer-events: none;
+  background: var(--bg); opacity: 0; transition: opacity .12s; }
+#app.app-scrolled > #topShade { opacity: 1; }
 /* Шапка, вкладки и плашки растягиваются вместе с панелью After Effects. */
 #app > .top, #app > #tabs, #app > #updateBar, #app > #arrangeBar { max-width: none; }
 /* Раздел «Анимация» свободный: блоки занимают всю ширину панели. Сами блоки при этом
@@ -1766,7 +1774,7 @@ html[data-design="ae"] {
 }
 html[data-design="ae"], html[data-design="ae"] body { font-size: 12px; background: var(--ae-bg) !important; }
 html[data-design="ae"] .glow { display: none !important; }
-html[data-design="ae"] #app { gap: 8px; padding: 8px 8px 16px; }
+html[data-design="ae"] #app { gap: 8px; padding: 8px 8px 16px; --app-pad: 8px; --app-gap: 8px; }
 /* шапка — как заголовок панели */
 html[data-design="ae"] .top { background: var(--ae-top) !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; border-bottom: 1px solid var(--ae-deep); padding: 6px 10px !important; margin: -8px -8px 0; }
 html[data-design="ae"] .top .brand, html[data-design="ae"] .top b, html[data-design="ae"] .top h1 { font-size: 12.5px !important; font-weight: 600 !important; letter-spacing: 0 !important; color: var(--ae-text); }

@@ -924,7 +924,32 @@
             c.classList.toggle("tool-off", toolsHidden.indexOf(c.getAttribute("data-tool")) >= 0);
         });
         relayoutTools();
+        stickTop();
     }
+
+    // Шапка и вкладки стоят на месте, когда раздел прокручивают: вкладки прилипают сразу под шапкой.
+    function stickTop() {
+        var top = document.querySelector("#app > .top"), app = document.getElementById("app"), tabs = document.getElementById("tabs");
+        var shade, cs, pad, gap, h;
+        if (!top || !app || !tabs) { return; }
+        shade = document.getElementById("topShade");
+        if (!shade) {
+            shade = document.createElement("div");
+            shade.id = "topShade";
+            shade.setAttribute("aria-hidden", "true");
+            app.insertBefore(shade, app.firstChild);
+            app.addEventListener("scroll", function () { app.classList.toggle("app-scrolled", app.scrollTop > 2); });
+        }
+        cs = window.getComputedStyle(app);
+        pad = parseFloat(cs.paddingTop) || 0;
+        gap = parseFloat(cs.rowGap || cs.gap) || 0;
+        app.style.setProperty("--top-h", top.offsetHeight + "px");
+        // Подложка от самого верха панели до низа вкладок (и полпромежутка под ними); места в разделе не занимает.
+        h = pad + top.offsetHeight + gap + tabs.offsetHeight + gap / 2;
+        shade.style.height = h + "px";
+        shade.style.margin = (-pad) + "px " + (-pad) + "px " + (pad - h - gap) + "px";
+    }
+    window.addEventListener("resize", stickTop);
 
     // Дизайн «After Effects» берёт цвета у самого After Effects: фон панелей (его меняет ползунок
     // «Яркость» в настройках внешнего вида) и цвет выделения. Остальные оттенки — от фона, как у Adobe.
