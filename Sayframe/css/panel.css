@@ -672,8 +672,8 @@ textarea:focus, .field:focus {
 .align-to { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .align-to label, .align-label { flex: none; color: var(--muted); font: 600 12px/1.2 var(--round); }
 .align-to .select { flex: 1 1 110px; min-width: 0; width: auto; }
-.align-row { display: flex; flex-wrap: wrap; gap: 4px 6px; }
-.align-trio { flex: 1 1 0; min-width: 66px; max-width: 132px; display: flex; }
+.align-row { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.align-trio { flex: 1 1 0; min-width: 80px; max-width: 156px; display: flex; gap: 6px; }
 .align-btn {
   flex: 1 1 0;
   min-width: 0;

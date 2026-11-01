@@ -5971,7 +5971,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("ST3 on a new day it sends one 'day' with the same id", statsN(p) === 2 && p.net.stats[1].body.ev === "day" && p.net.stats[1].body.id === s1.body.id, JSON.stringify(p.net.stats));
     await p.page.click("#settingsBtn");
     await p.page.click("#setTabMore");
-    check("ST4 Settings → General has the 'Анонимная статистика' switch, on by default", (await p.page.locator("#statsOn").isChecked()) && /Анонимная статистика/.test(await p.page.locator("#setPaneOther").innerText()));
+    check("ST4 Settings → General has the 'Анонимная статистика' switch, on by default", (await p.page.locator("#statsOn").isChecked()) && /Анонимная статистика/.test(await p.page.locator("#setPaneMore").innerText()));
     await p.page.locator("label.switch", { has: p.page.locator("#statsOn") }).click();
     await p.page.click("#settingsClose");
     await p.page.evaluate(() => { const st = JSON.parse(localStorage.getItem("sayframe.stats.v1")); st.day = "2000-1-1"; localStorage.setItem("sayframe.stats.v1", JSON.stringify(st)); });
