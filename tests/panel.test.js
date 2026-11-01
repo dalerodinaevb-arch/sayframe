@@ -772,7 +772,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       throw new Error("unknown platform call " + name);
     });
 
-    const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false }, opts.settings || {});
+    const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false, design: "glass", designSet: 2 }, opts.settings || {});
     await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
       window.__SAYFRAME_TEST_UPDATE_KEY__ = updateKey;
@@ -2747,7 +2747,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.fill("#bgHex", "#101014");
   await p.page.click("#settingsClose");
   t = await p.page.evaluate(() => [getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(), getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(), JSON.parse(localStorage.getItem("sayframe.settings.v1")).accent]);
-  check("G2 closing without saving reverts the preview", t[0] === "#62c8ff" && t[1] === "#0b0c12" && t[2] === "#62c8ff", t.join());
+  check("G2 closing without saving reverts the preview (a new install is in «Студия», its background stays)", t[0] === "#62c8ff" && t[1] === "#111215" && t[2] === "#62c8ff", t.join());
   await p.page.click("#settingsBtn");
   await p.page.fill("#apiKey", "bad");
   p.net.replies.push({ type: "error", error: { message: "invalid x-api-key" } });
@@ -2866,10 +2866,26 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("FW3 a narrow panel keeps one column: «Выражения» under the request", t[1][0] === 14 && t[1][1] > t[0][1] + t[0][3] && t[0][2] === 352, JSON.stringify(t));
   await p.close();
 
-  // Design: «Стекло» (default) or «After Effects» — same layout, AE-like look.
+  // «Студия» is the main design: a new install gets it, and an update switches everyone to it once; after that the choice is theirs.
+  {
+    const des = (p) => p.page.evaluate(() => [document.documentElement.getAttribute("data-design"), (JSON.parse(localStorage.getItem("sayframe.settings.v1") || "{}")).designSet].join());
+    p = await open({ settings: null });
+    check("DS0 a new install opens in «Студия»", (await des(p)).split(",")[0] === "studio", await des(p));
+    await p.close();
+    p = await open({ settings: { design: "glass", designSet: undefined } });
+    check("DS0 an update moves a glass panel to «Студия» and remembers that it did", (await des(p)) === "studio,2", await des(p));
+    await p.restart();
+    check("DS0 …once: it stays «Студия» after a restart", (await des(p)) === "studio,2", await des(p));
+    await p.close();
+    p = await open({ settings: { design: "ae", designSet: 2 } });
+    check("DS0 a design picked after the switch is kept", (await des(p)) === "ae,2" && p.errors.length === 0, await des(p));
+    await p.close();
+  }
+
+  // Design: «Стекло», «After Effects» or «Студия» — same layout, another look. (Here a panel that chose glass.)
   p = await open({ width: 380 });
   t = () => p.page.evaluate(() => [document.documentElement.getAttribute("data-design"), getComputedStyle(document.body).backgroundColor, getComputedStyle(document.querySelector(".glow")).display]);
-  check("DS1 by default the panel keeps its glass look", JSON.stringify(await t()) === JSON.stringify(["glass", "rgb(11, 12, 18)", "block"]), JSON.stringify(await t()));
+  check("DS1 a panel that chose glass keeps its glass look", JSON.stringify(await t()) === JSON.stringify(["glass", "rgb(11, 12, 18)", "block"]), JSON.stringify(await t()));
   await p.page.click("#settingsBtn"); await p.page.click("#setTabOther");
   check("DS1 settings offer «Стекло», «After Effects» and «Студия», glass chosen", (await p.page.locator("#designPick button").allInnerTexts()).join() === "Стекло,After Effects,Студия" && (await p.page.getAttribute('#designPick [data-value="glass"]', "aria-pressed")) === "true");
   await p.page.click('#designPick [data-value="ae"]');

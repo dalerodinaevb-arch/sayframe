@@ -122,7 +122,8 @@
         brandPics: false,   // отправлять ли AI маленькие картинки упомянутых логотипов и иконок
         motionStyle: "normal",  // стиль анимации для AI: normal, smooth, energetic, minimal, corporate, playful
         refFrames: 8,
-        design: "glass",    // вид панели: "glass" (стекло), "ae" (как родные панели After Effects) или "studio" (Студия)
+        design: "studio",   // вид панели: "studio" (Студия, основной), "glass" (стекло) или "ae" (как родные панели After Effects)
+        designSet: 0,       // 2 — «Студия» уже поставлена основной (один раз, при обновлении); дальше выбор человека не трогаем
         panelFit: true,     // поля и кнопки тянутся на всю ширину панели; false — держат ширину panelWidth у левого края
         panelWidth: 380,    // ширина содержимого в пикселях, когда panelFit выключен
         toolSize: "100",    // масштаб блоков раздела «Инструменты» в процентах: "100", "90", "80", "70", "60" или "50"
@@ -824,6 +825,8 @@
 
     // ------------------------------------------------------------ settings
 
+    var DESIGN_SET = 2;
+
     function loadSettings() {
         var s = {};
         var saved, k;
@@ -841,6 +844,14 @@
         if (!PROVIDERS.hasOwnProperty(s.provider)) { s.provider = "claude"; }
         if (!knownModel(OPENAI_MODELS, s.openaiModel)) { s.openaiModel = OPENAI_MODELS[0].id; }
         if (!motionStyleOf(s.motionStyle)) { s.motionStyle = "normal"; }
+        // С этой версии основная тема — «Студия»: при обновлении она ставится всем один раз, потом выбор свой.
+        if (s.designSet !== DESIGN_SET) {
+            s.design = "studio";
+            s.designSet = DESIGN_SET;
+            // У того, кто уже пользовался панелью, это сразу сохраняется: дальше он выбирает тему сам.
+            if (saved && typeof saved === "object" && Object.keys(saved).length) { try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e2) {} }
+        }
+        if (DESIGNS.indexOf(s.design) < 0) { s.design = "studio"; }
         return s;
     }
 
@@ -897,7 +908,7 @@
         root.setProperty("--on-accent", lum > 0.5 ? "#0b0c12" : "#ffffff");
         root.setProperty("--bg", bg.hex);
         root.setProperty("--panel-w", clampPanelWidth(s.panelWidth) + "px");
-        document.documentElement.setAttribute("data-design", DESIGNS.indexOf(s.design) >= 0 ? s.design : "glass");
+        document.documentElement.setAttribute("data-design", DESIGNS.indexOf(s.design) >= 0 ? s.design : "studio");
         document.documentElement.setAttribute("data-fit", s.panelFit === false ? "off" : "on");
         document.documentElement.setAttribute("data-tools", cleanToolSize(s.toolSize));
         root.setProperty("--tz", String(Number(cleanToolSize(s.toolSize)) / 100));
@@ -3362,7 +3373,7 @@
         ui.toolTitles.checked = draft.toolTitles;
         ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
         pressGroup(ui.fxWhere, draft.fxWhere === "cursor" ? "cursor" : "panel");
-        pressGroup(ui.designPick, DESIGNS.indexOf(draft.design) >= 0 ? draft.design : "glass");
+        pressGroup(ui.designPick, DESIGNS.indexOf(draft.design) >= 0 ? draft.design : "studio");
         ui.statsOn.checked = draft.stats !== false;
         ui.infoTipsOn.checked = draft.infoTips !== false;
         closeFxConsole();
