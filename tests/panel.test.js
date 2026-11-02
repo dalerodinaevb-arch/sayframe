@@ -2208,6 +2208,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   W = p.ae.log.windows[0];
   t = W && W.find("statictext").text;
   check("FC9 no layer selected: the search window opens anyway, at the mouse, and says no layer is selected", !!W && W.shown && W.location[0] === 670 && W.location[1] === 380 && W.places.some((x) => x.shown) && /^Слой не выбран/.test(t), JSON.stringify([W && W.location, t]));
+  check("FC9 the note is made with its text (ScriptUI sizes it by that) and the title says «выберите слой» too", W.find("statictext").preferredSize[1] === 18 && W.find("statictext").visible === true && /выберите слой/.test(W.text), W.text);
   W.type_("blur");
   W.key("Enter");
   await forwardEvents(p);
@@ -2218,6 +2219,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   W.key("Enter");
   await forwardEvents(p);
   check("FC10 and Enter adds the effect", W.closed && SL9.effects.length === 1 && /^Эффект «.+» добавлен на 1 слой/.test(await p.status()) && p.errors.length === 0, await p.status());
+  await watcherSays(p, 0, "HIT console 700 400");
+  await p.page.waitForTimeout(200);
+  W = p.ae.log.windows[1];
+  check("FC11 a layer selected: plain title, no note line", !!W && W.text === "Sayframe FX" && W.find("statictext").visible === false, W && W.text);
+  W.onDeactivate();
+  check("FC11 a click outside the window (it loses the focus) closes it, like a menu", W.closed && p.ae.log.events.length === 0);
   await p.close();
 
   console.log("\n=== paste dialog on Cmd/Ctrl+V anywhere in After Effects ===");

@@ -2255,9 +2255,11 @@ var sayframeHost = (function () {
     }
 
     var FX_ROW = 22;
+    var FX_NO_LAYER = "\u0421\u043b\u043e\u0439 \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d \u2014 \u0432\u044b\u0434\u0435\u043b\u0438\u0442\u0435 \u0441\u043b\u043e\u0439, \u0447\u0442\u043e\u0431\u044b \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u044d\u0444\u0444\u0435\u043a\u0442.";
+    var FX_PICK_LAYER = "\u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u043b\u043e\u0439";
 
     function fxPopupShow(x, y, fav, recent) {
-        var g = $.global, items, byId = {}, favMap = {}, shown = [], w, q, list, note, i, scr, b, left, top;
+        var g = $.global, items, byId = {}, favMap = {}, shown = [], w, q, list, note, i, scr, b, left, top, up = false;
         if (g.__sayframeFxWin) {
             try { g.__sayframeFxWin.close(); } catch (e0) {}
             g.__sayframeFxWin = null;
@@ -2276,9 +2278,10 @@ var sayframeHost = (function () {
         q.preferredSize = [340, 24];
         list = w.add("listbox", undefined, [], { numberOfColumns: 2, showHeaders: false, columnWidths: [230, 100] });
         list.preferredSize = [340, FX_ROW * 3 + 4];
-        // One short line, only when there is something to say (no layer selected); otherwise it takes no room.
-        note = w.add("statictext", undefined, "");
-        note.preferredSize = [340, 0];
+        // One short line, only when no layer is selected; otherwise it takes no room. It is made with its text
+        // (ScriptUI sizes a static text by the text it is born with: an empty one stays invisible later).
+        note = w.add("statictext", undefined, FX_NO_LAYER);
+        note.preferredSize = [340, 18];
 
         // With no layers selected the window still opens: search works, and the note says no layer is selected.
         function layerCount() {
@@ -2294,8 +2297,10 @@ var sayframeHost = (function () {
         }
         function hint() {
             var none = !layerCount();
-            note.text = none ? "\u0421\u043b\u043e\u0439 \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d \u2014 \u0432\u044b\u0434\u0435\u043b\u0438\u0442\u0435 \u0441\u043b\u043e\u0439, \u0447\u0442\u043e\u0431\u044b \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u044d\u0444\u0444\u0435\u043a\u0442." : "";
+            note.text = none ? FX_NO_LAYER : "";
             note.preferredSize = [340, none ? 18 : 0];
+            try { note.visible = none; } catch (eV) {}
+            try { w.text = none ? "Sayframe FX \u2014 " + FX_PICK_LAYER : "Sayframe FX"; } catch (eT) {}
             fit();
         }
 
@@ -2355,6 +2360,9 @@ var sayframeHost = (function () {
         list.onDoubleClick = apply;
         w.onClose = function () { g.__sayframeFxWin = null; };
         w.onActivate = hint;
+        // A click anywhere outside (After Effects gets the focus back) closes the window, like a menu.
+        // Only once it is up: on macOS the palette can lose the focus for a moment while it is being shown.
+        w.onDeactivate = function () { if (up) { close(); } };
         fill();
         hint();
         w.layout.layout(true);
@@ -2380,6 +2388,7 @@ var sayframeHost = (function () {
         w.show();
         try { place(); } catch (e4) {}
         try { w.active = true; q.active = true; } catch (e3) {}
+        up = true;
         // For the panel's settings: where the window was asked to go and where it actually is.
         var real = null, scrList = [];
         try { real = [Math.round(w.location[0]), Math.round(w.location[1])]; } catch (e5) {}
