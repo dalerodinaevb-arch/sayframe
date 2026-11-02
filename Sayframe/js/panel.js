@@ -1334,6 +1334,8 @@
 
     function setStatus(text, kind) {
         ui.status.textContent = text;
+        // Внизу видна одна строка (кроме ошибок); весь текст — при наведении.
+        ui.status.title = text;
         ui.statusBox.className = "status" + (kind ? " " + kind : "");
     }
 

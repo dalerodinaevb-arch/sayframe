@@ -5186,8 +5186,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click("#gridBtn"); await p.idle();
     t = Lx(p, "Плитка 1");
     const comps = p.ae.log.orbitComps || [];
-    check("GR6 «Шейп + прекомп», spread 0: 20 tile comps (368×255) in a «Grid» folder, no numbers, no keys; tile 1 sits in the top-left cell", comps.length === 20 && comps.every((c) => c.width === 368 && c.height === 255 && c.list.length === 1) && p.ae.log.bins.indexOf("Grid") >= 0 &&
-      !!t && t.source && JSON.stringify(tf(t, "ADBE Position")) === "[184,127.5]" && !((acAt(t, "ADBE Transform Group", "ADBE Opacity") || {}).keys || []).length && !Lx(p, "Номер плитки 1") && JSON.stringify(rect(comps.find((c) => c.name === "Плитка 1").list[0]).property("ADBE Vector Rect Size").value) === "[368,255]" && p.errors.length === 0, JSON.stringify(t && tf(t, "ADBE Position")));
+    check("GR6 «Шейп + прекомп», spread 0: 20 tile comps of a standard size (wide tiles → 1920×1080) in a «Grid» folder, no numbers, no keys; tile 1 sits in the top-left cell", comps.length === 20 && comps.every((c) => c.width === 1920 && c.height === 1080 && c.list.length === 1) && p.ae.log.bins.indexOf("Grid") >= 0 &&
+      !!t && t.source && JSON.stringify(tf(t, "ADBE Position")) === "[184,127.5]" && !((acAt(t, "ADBE Transform Group", "ADBE Opacity") || {}).keys || []).length && !Lx(p, "Номер плитки 1") && JSON.stringify(rect(comps.find((c) => c.name === "Плитка 1").list[0]).property("ADBE Vector Rect Size").value) === "[1920,1080]" && p.errors.length === 0, JSON.stringify(t && tf(t, "ADBE Position")));
+    const mk = t && acAt(t, "ADBE Mask Parade", "ADBE Mask Atom"), ms = mk && acAt(mk, "ADBE Mask Shape").value, xs = ms ? ms.vertices.map((v) => v[0]) : [], ys = ms ? ms.vertices.map((v) => v[1]) : [];
+    check("GR6 the comp is scaled to cover the tile (23.6%) and cut by a mask in the tile's shape: 368×255 with 20 px corners, so a photo inside gets the same corners", !!ms && Math.abs(tf(t, "ADBE Scale")[0] - 2550 / 108) < 0.01 && ms.vertices.length === 8 && ms.closed &&
+      Math.abs((Math.max(...xs) - Math.min(...xs)) * 0.23611 - 368) < 0.5 && Math.abs((Math.max(...ys) - Math.min(...ys)) * 0.23611 - 255) < 0.5 && Math.abs(ms.vertices[0][0] - Math.min(...xs) - 20 * 108 / 25.5) < 0.01, JSON.stringify(ms && ms.vertices) + " " + JSON.stringify(tf(t, "ADBE Scale")));
     await p.close();
   }
 

@@ -2967,13 +2967,47 @@ var sayframeHost = (function () {
         acFill(l, gi, color);
     }
 
-    // Tiles come in one after another: opacity 0 -> 100 and scale 85 -> 100 over 10 frames, 2 frames apart.
-    function gridReveal(l, comp, k) {
+    // Tiles come in one after another: opacity 0 -> 100 and scale 85% -> 100% of their own size over 10 frames, 2 frames apart.
+    function gridReveal(l, comp, k, sc) {
         var f = comp.frameDuration || 1 / 30, t0 = comp.time + k * 2 * f, t1 = t0 + 10 * f;
+        sc = sc || 100;
         try {
             acKeys(acTransform(l, "ADBE Opacity"), [t0, t1], [0, 100], 70);
-            acKeys(acTransform(l, "ADBE Scale"), [t0, t1], [[85, 85, 100], [100, 100, 100]], 70);
+            acKeys(acTransform(l, "ADBE Scale"), [t0, t1], [[sc * 0.85, sc * 0.85, 100], [sc, sc, 100]], 70);
         } catch (e0) {}
+    }
+
+    // A tile comp has a standard size by the tile's shape: square-ish 1000x1000, wide 1920x1080, tall 1080x1920.
+    function gridStdSize(bw, bh) {
+        var a = bw / bh;
+        if (a > 1.25) { return [1920, 1080]; }
+        if (a < 0.8) { return [1080, 1920]; }
+        return [1000, 1000];
+    }
+
+    // A rounded rectangle as a mask path (centre cx,cy; corner radius r), clockwise from the top-left corner.
+    function gridMaskShape(cx, cy, w, h, r) {
+        var x0 = cx - w / 2, x1 = cx + w / 2, y0 = cy - h / 2, y1 = cy + h / 2, k = 0.5523, s = new Shape(), c;
+        r = Math.max(0, Math.min(r, w / 2, h / 2));
+        if (r < 0.01) {
+            s.vertices = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+            s.inTangents = s.outTangents = [[0, 0], [0, 0], [0, 0], [0, 0]];
+        } else {
+            c = r * k;
+            s.vertices = [[x0 + r, y0], [x1 - r, y0], [x1, y0 + r], [x1, y1 - r], [x1 - r, y1], [x0 + r, y1], [x0, y1 - r], [x0, y0 + r]];
+            s.inTangents = [[-c, 0], [0, 0], [0, -c], [0, 0], [c, 0], [0, 0], [0, c], [0, 0]];
+            s.outTangents = [[0, 0], [c, 0], [0, 0], [0, c], [0, 0], [-c, 0], [0, 0], [0, -c]];
+        }
+        s.closed = true;
+        return s;
+    }
+
+    // The tile's own shape cuts the precomp layer: whatever is put inside (a photo, a video) gets the tile's corners.
+    function gridMask(L, cw, ch, w, h, r) {
+        var m = acAdd(L, ["ADBE Mask Parade"], "ADBE Mask Atom");
+        try { acP(L, ["ADBE Mask Parade", m]).name = "Tile"; } catch (e0) {}
+        acP(L, ["ADBE Mask Parade", m, "ADBE Mask Shape"]).setValue(gridMaskShape(cw / 2, ch / 2, w, h, r));
+        return m;
     }
 
     function gridBuild(comp, o, labels) {
@@ -2982,7 +3016,7 @@ var sayframeHost = (function () {
         var gx = orbitNum(o.gap, 0, 1000, 20), gy = o.split ? orbitNum(o.gapV, 0, 1000, 20) : gx, round = orbitNum(o.round, 0, 2000, 20);
         var boxes = gridLayout(rows, cols, orbitNum(o.rand, 0, 100, 100), o.seed), pre = o.mode === "precomp";
         var cw = (W - gx * (cols - 1)) / cols, ch = (H - gy * (rows - 1)) / rows, ox = (comp.width - W) / 2, oy = (comp.height - H) / 2;
-        var tiles = [], nums = [], i, b, bw, bh, x, y, L, cc, inner, txt, folder = null, ctrl, fs, base = labels.tile || "Tile ";
+        var tiles = [], nums = [], scales = [], i, b, bw, bh, x, y, L, cc, inner, txt, folder = null, ctrl, fs, base = labels.tile || "Tile ", sc, std, k;
         if (cw < 1 || ch < 1) { throw new Error("GRID_TOO_TIGHT"); }
         if (pre) { try { folder = app.project.items.addFolder(labels.folder || "Grid"); } catch (eF) { folder = null; } }
         for (i = boxes.length - 1; i >= 0; i--) {
@@ -2990,18 +3024,26 @@ var sayframeHost = (function () {
             bw = Math.round(b.w * cw + (b.w - 1) * gx); bh = Math.round(b.h * ch + (b.h - 1) * gy);
             x = ox + b.c * (cw + gx) + bw / 2; y = oy + b.r * (ch + gy) + bh / 2;
             fs = Math.round(Math.max(12, Math.min(bw, bh) * 0.28));
+            sc = 100;
             if (pre) {
-                cc = app.project.items.addComp(base + (i + 1), Math.max(4, bw), Math.max(4, bh), comp.pixelAspect || 1, comp.duration, comp.frameRate);
+                // A standard-size comp (1000x1000, 1920x1080 or 1080x1920) scaled to cover the tile; a mask in the
+                // tile's shape cuts it, so a photo put inside gets the same rounded corners.
+                std = gridStdSize(bw, bh);
+                sc = Math.max(bw / std[0], bh / std[1]) * 100;
+                cc = app.project.items.addComp(base + (i + 1), std[0], std[1], comp.pixelAspect || 1, comp.duration, comp.frameRate);
                 if (folder) { try { cc.parentFolder = folder; } catch (eP) {} }
                 inner = cc.layers.addShape();
                 inner.name = labels.shape || "Shape";
-                gridTileShape(inner, bw, bh, round, gridColor(i));
-                orbitSet(inner, "ADBE Position", [bw / 2, bh / 2]);
+                gridTileShape(inner, std[0], std[1], 0, gridColor(i));
+                orbitSet(inner, "ADBE Position", [std[0] / 2, std[1] / 2]);
                 if (o.numbers) {
-                    txt = orbitNumber(cc, String(i + 1), fs);
-                    orbitSet(txt, "ADBE Position", [bw / 2, bh / 2 + fs * 0.35]);
+                    k = Math.round(Math.min(std[0], std[1]) * 0.28);
+                    txt = orbitNumber(cc, String(i + 1), k);
+                    orbitSet(txt, "ADBE Position", [std[0] / 2, std[1] / 2 + k * 0.35]);
                 }
                 L = comp.layers.add(cc);
+                orbitSet(L, "ADBE Scale", [sc, sc, 100]);
+                gridMask(L, std[0], std[1], bw * 100 / sc, bh * 100 / sc, round * 100 / sc);
             } else {
                 L = comp.layers.addShape();
                 gridTileShape(L, bw, bh, round, gridColor(i));
@@ -3009,6 +3051,7 @@ var sayframeHost = (function () {
             L.name = base + (i + 1);
             orbitSet(L, "ADBE Position", [x, y]);
             tiles.unshift(L);
+            scales.unshift(sc);
             if (o.numbers && !pre) {
                 txt = orbitNumber(comp, String(i + 1), fs);
                 txt.name = (labels.number || "Number ") + (i + 1);
@@ -3022,7 +3065,7 @@ var sayframeHost = (function () {
         for (i = 0; i < tiles.length; i++) {
             if (nums[i]) { nums[i].parent = tiles[i]; }
             tiles[i].parent = ctrl;
-            if (o.stagger) { gridReveal(tiles[i], comp, i); }
+            if (o.stagger) { gridReveal(tiles[i], comp, i, scales[i]); }
             try { tiles[i].selected = false; if (nums[i]) { nums[i].selected = false; } } catch (eS) {}
         }
         ctrl.selected = true;
