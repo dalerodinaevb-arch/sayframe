@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.65.0";
+    var VERSION = "1.66.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -1026,7 +1026,7 @@
         bgMotionSwatches: el("bgMotionSwatches"), bgMotionHex: el("bgMotionHex"), bgMotionPick: el("bgMotionPick"),
         bgShapeSwatches: el("bgShapeSwatches"), bgShapeHex: el("bgShapeHex"), bgShapePick: el("bgShapePick"),
         bgBrandSwatches: el("bgBrandSwatches"), bgBrandHex: el("bgBrandHex"), bgBrandPick: el("bgBrandPick"), selfCheck: el("selfCheck"), alwaysAsk: el("alwaysAsk"),
-        designPick: el("designPick"), panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), previewPlay: el("previewPlay"), toolTitles: el("toolTitles"), toolPicker: el("toolPicker"), fxWhere: el("fxWhere"), fxWhereState: el("fxWhereState"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
+        designPick: el("designPick"), panelFit: el("panelFit"), widthRow: el("widthRow"), panelWidth: el("panelWidth"), panelWidthVal: el("panelWidthVal"), toolSize: el("toolSize"), previewPlay: el("previewPlay"), toolTitles: el("toolTitles"), toolLook: el("toolLook"), toolPicker: el("toolPicker"), fxWhere: el("fxWhere"), fxWhereState: el("fxWhereState"), keyWatchState: el("keyWatchState"), pasteAnywhere: el("pasteAnywhere"), statsOn: el("statsOn"), infoTipsOn: el("infoTipsOn"),
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
@@ -1053,11 +1053,13 @@
         cacheBtn: el("cacheBtn"), cacheOptsToggle: el("cacheOptsToggle"), cacheHint: el("cacheHint"),
         nullpBtn: el("nullpBtn"), nullpOptsToggle: el("nullpOptsToggle"), nullpHint: el("nullpHint"),
         splitBtn: el("splitBtn"), splitOptsToggle: el("splitOptsToggle"), splitHint: el("splitHint"),
-        tbText: el("tbText"), tbPresets: el("tbPresets"), tbPer: el("tbPer"), tbLook: el("tbLook"), tbStyle: el("tbStyle"), tbAppear: el("tbAppear"),
+        tbText: el("tbText"), tbPresets: el("tbPresets"), tbPer: el("tbPer"), tbLook: el("tbLook"), tbStyle: el("tbStyle"),
         tbSwatches: el("tbSwatches"), tbColor: el("tbColor"), tbStrokeColor: el("tbStrokeColor"), tbStrokeRow: el("tbStrokeRow"), tbStrokeWRow: el("tbStrokeWRow"),
         tbPx: el("tbPx"), tbPxVal: el("tbPxVal"), tbPy: el("tbPy"), tbPyVal: el("tbPyVal"), tbRound: el("tbRound"), tbRoundVal: el("tbRoundVal"),
         tbStroke: el("tbStroke"), tbStrokeVal: el("tbStrokeVal"), tbSkew: el("tbSkew"), tbSkewVal: el("tbSkewVal"), tbOpacity: el("tbOpacity"), tbOpacityVal: el("tbOpacityVal"),
         tbShadow: el("tbShadow"), tbBtn: el("tbBtn"),
+        phPhone: el("phPhone"), phModel: el("phModel"), phColors: el("phColors"), phPose: el("phPose"), phSize: el("phSize"), phSizeVal: el("phSizeVal"),
+        phRound: el("phRound"), phRoundVal: el("phRoundVal"), phScreen: el("phScreen"), phShadow: el("phShadow"), phAppear: el("phAppear"), phBtn: el("phBtn"),
         pfModes: el("pfModes"), pfName: el("pfName"), pfSub: el("pfSub"), pfKeep: el("pfKeep"), pfOptsToggle: el("pfOptsToggle"), pfHint: el("pfHint"),
         unusedBtn: el("unusedBtn"), unusedOptsToggle: el("unusedOptsToggle"), unusedHint: el("unusedHint"),
         cutoutBtn: el("cutoutBtn"), cutoutOptsToggle: el("cutoutOptsToggle"), cutoutHint: el("cutoutHint"),
@@ -1365,6 +1367,7 @@
         if (ui.orbitBtn) { ui.orbitBtn.disabled = on; }
         if (ui.gridBtn) { ui.gridBtn.disabled = on; }
         if (ui.tbBtn) { ui.tbBtn.disabled = on; }
+        if (ui.phBtn) { ui.phBtn.disabled = on; }
         ui.unusedBtn.disabled = on;
         ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
@@ -3424,6 +3427,8 @@
         ui.bgGroup.hidden = own;
         ui.themeNote.hidden = !own;
         ui.themeNote.textContent = DESIGN_NOTES[design] || "";
+        // «Студия» раскладывает блоки сама (столбики, свёртка по названию): размер и названия блоков там не действуют.
+        ui.toolLook.hidden = design === "studio";
     }
 
     // Широкие настройки (панель растянута, «На всю ширину»): разделы встают слева столбиком.
@@ -6379,7 +6384,7 @@
             c.classList.toggle("mk-folded", on);
             if (b) { b.setAttribute("aria-expanded", String(!on)); b.setAttribute("aria-label", on ? "Развернуть" : "Свернуть"); }
         });
-        if (ui.orbitPane) { ui.orbitPane.classList.toggle("mk-wide", ui.orbitPane.clientWidth >= 836); }
+        if (ui.orbitPane) { ui.orbitPane.classList.toggle("mk-wide", ui.orbitPane.clientWidth >= 664); }
     }
 
     // Порядок блоков «Макетов»: блок перетаскивают за заголовок, порядок запоминается.
@@ -6417,9 +6422,8 @@
         function onUp() {
             var d = drag;
             drag = null;
-            document.removeEventListener("pointermove", onMove, true);
-            document.removeEventListener("pointerup", onUp, true);
-            document.removeEventListener("pointercancel", onUp, true);
+            document.removeEventListener("mousemove", onMove, true);
+            document.removeEventListener("mouseup", onUp, true);
             if (!d || !d.on) { return; }
             d.card.classList.remove("mk-drag");
             pane.classList.remove("mk-sorting");
@@ -6432,13 +6436,16 @@
             document.addEventListener("click", eat, true);
             setTimeout(function () { document.removeEventListener("click", eat, true); }, 0);
         }
-        pane.addEventListener("pointerdown", function (e) {
+        // Mouse events, not pointer events: pointer events pass the browser tests but do not fire in After Effects.
+        // The press is cancelled (preventDefault) so the browser does not start its own drag or text selection.
+        pane.addEventListener("dragstart", function (e) { e.preventDefault(); });
+        pane.addEventListener("mousedown", function (e) {
             var head = e.button === 0 && e.target.closest ? e.target.closest(".mk-head") : null;
             if (!head || e.target.closest(".mk-fold")) { return; }
+            e.preventDefault();
             drag = { card: head.parentNode, x: e.clientX, y: e.clientY, on: false };
-            document.addEventListener("pointermove", onMove, true);
-            document.addEventListener("pointerup", onUp, true);
-            document.addEventListener("pointercancel", onUp, true);
+            document.addEventListener("mousemove", onMove, true);
+            document.addEventListener("mouseup", onUp, true);
         });
     }
 
@@ -6639,20 +6646,23 @@
         ui.orbitCamera.addEventListener("change", function () { setOrbit("camera", ui.orbitCamera.checked); });
         ui.orbitBack.addEventListener("change", function () { setOrbit("back", ui.orbitBack.checked); });
         ui.orbitBtn.addEventListener("click", onOrbit);
-        // Крутить превью мышкой.
-        ui.orbitStage.addEventListener("pointerdown", function (e) {
+        // Крутить превью мышкой. События мыши, не указателя: указательные в After Effects не приходят.
+        ui.orbitStage.addEventListener("mousedown", function (e) {
+            if (e.button !== 0) { return; }
+            e.preventDefault();
             orbitDrag = { x: e.clientX, spin: orbitSpin };
             ui.orbitStage.classList.add("dragging");
-            try { ui.orbitStage.setPointerCapture(e.pointerId); } catch (e0) {}
         });
-        ui.orbitStage.addEventListener("pointermove", function (e) {
+        document.addEventListener("mousemove", function (e) {
             if (!orbitDrag) { return; }
             orbitSpin = orbitDrag.spin + (e.clientX - orbitDrag.x) * 0.6;
             drawOrbitPreview();
-        });
-        ["pointerup", "pointercancel"].forEach(function (t) {
-            ui.orbitStage.addEventListener(t, function () { orbitDrag = null; ui.orbitStage.classList.remove("dragging"); });
-        });
+        }, true);
+        document.addEventListener("mouseup", function () {
+            if (!orbitDrag) { return; }
+            orbitDrag = null;
+            ui.orbitStage.classList.remove("dragging");
+        }, true);
         drawOrbit();
     }
 
@@ -7855,7 +7865,7 @@
     // ---- «Плашка под текстом» (вкладка «Шейп»): шейп-слой под текстом, который подстраивается под текст.
     // Превью в блоке рисуется CSS и меняется сразу; в After Effects то же самое делают выражения (host textBox).
     var TB_KEY = "sayframe.textbox.v1";
-    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, appear: "none", shadow: false };
+    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, shadow: false };
     var TB_PRESETS = {
         news: { per: "line", look: "fill", style: "box", color: "#111111", px: 16, py: 4, round: 0, skew: 0, shadow: false },
         sport: { per: "line", look: "fill", style: "box", color: "#ff4f6d", px: 22, py: 6, round: 0, skew: 14, shadow: false },
@@ -7865,7 +7875,7 @@
         marker: { per: "line", look: "fill", style: "marker", color: "#ffcc33", px: 6, py: 0, round: 0, skew: 0, shadow: false }
     };
     var TB_RANGES = { px: [0, 120], py: [0, 80], round: [0, 100], stroke: [1, 30], skew: [-40, 40], opacity: [0, 100] };
-    var TB_CHOICES = { per: ["all", "line"], look: ["fill", "stroke", "both"], style: ["box", "marker"], appear: ["none", "left", "center", "lines"] };
+    var TB_CHOICES = { per: ["all", "line"], look: ["fill", "stroke", "both"], style: ["box", "marker"] };
 
     function tbClean(src) {
         var o = {}, k;
@@ -7904,7 +7914,7 @@
         // Светлая плашка — тёмный текст, чтобы его было видно.
         k = parseHex(tb.color);
         t.style.color = fill && tb.style === "box" && k && (0.299 * k.r + 0.587 * k.g + 0.114 * k.b) / 255 > 0.6 ? "#3a0f63" : "#fff";
-        ["per", "look", "style", "appear"].forEach(function (key) { pressGroupV(ui["tb" + key.charAt(0).toUpperCase() + key.slice(1)], tb[key]); });
+        ["per", "look", "style"].forEach(function (key) { pressGroupV(ui["tb" + key.charAt(0).toUpperCase() + key.slice(1)], tb[key]); });
         Array.prototype.forEach.call(ui.tbSwatches.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === tb.color ? "true" : "false"); });
         ui.tbColor.value = tb.color;
         ui.tbStrokeColor.value = tb.strokeColor;
@@ -7932,7 +7942,7 @@
         setBusy(true);
         try {
             res = await host("textBox", [{ per: tb.per, look: tb.look, style: tb.style, color: tbRgb(tb.color), strokeColor: tbRgb(tb.strokeColor),
-                px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, appear: tb.appear, shadow: tb.shadow },
+                px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, shadow: tb.shadow },
                 { box: "Плашка", helper: "Плашка: строка", part: "Плашка", side: "По бокам", vert: "Сверху/снизу", round: "Скругление", color: "Цвет",
                     fillOn: "Заливка", strokeOn: "Обводка", strokeW: "Толщина обводки", strokeColor: "Цвет обводки", skew: "Наклон", defaultText: "Ваш текст" }]);
             setBusy(false);
@@ -7948,7 +7958,7 @@
 
     function enableTextBox() {
         if (!ui.tbText) { return; }
-        ["per", "look", "style", "appear"].forEach(function (key) {
+        ["per", "look", "style"].forEach(function (key) {
             var box = ui["tb" + key.charAt(0).toUpperCase() + key.slice(1)];
             box.addEventListener("click", function (e) {
                 var b = e.target.closest ? e.target.closest("button[data-v]") : null, ch = {};
@@ -7973,6 +7983,94 @@
         ui.tbShadow.addEventListener("change", function () { setTb({ shadow: ui.tbShadow.checked }); });
         ui.tbBtn.addEventListener("click", onTextBox);
         drawTb();
+    }
+
+    // ---- Мокап телефона (Анимация › Макеты): iPhone или Android из шейпов, экран — прекомп настоящего размера или выделенный слой.
+    var PH_KEY = "sayframe.phone.v1";
+    var PH_DEFAULTS = { model: "iphone", color: "black", pose: "flat", size: 80, round: 100, screen: "precomp", shadow: true, appear: false };
+    var PH_CHOICES = { model: ["iphone", "android"], color: ["black", "silver", "gold", "blue", "pink"], pose: ["flat", "tilt", "lie"], screen: ["precomp", "layer"] };
+    var PH_BODY = { black: ["#222224", "#6d6d75"], silver: ["#d6d6d1", "#f0f0ec"], gold: ["#bda88c", "#dccbb0"], blue: ["#3d4a61", "#76839a"], pink: ["#e8c7cc", "#f6e2e5"] };
+
+    function phClean(src) {
+        var o = {}, k;
+        for (k in PH_DEFAULTS) { if (PH_DEFAULTS.hasOwnProperty(k)) { o[k] = src && typeof src === "object" && typeof src[k] === typeof PH_DEFAULTS[k] ? src[k] : PH_DEFAULTS[k]; } }
+        for (k in PH_CHOICES) { if (PH_CHOICES.hasOwnProperty(k) && PH_CHOICES[k].indexOf(o[k]) < 0) { o[k] = PH_DEFAULTS[k]; } }
+        o.size = Math.max(10, Math.min(100, Math.round(o.size) || 80));
+        o.round = Math.max(0, Math.min(150, Math.round(o.round)));
+        if (isNaN(o.round)) { o.round = 100; }
+        return o;
+    }
+
+    var phone = (function () { try { return phClean(JSON.parse(window.localStorage.getItem(PH_KEY) || "null")); } catch (e) { return phClean(null); } })();
+
+    function drawPhone() {
+        var p = ui.phPhone, rk = phone.round / 100;
+        if (!p) { return; }
+        p.classList.toggle("ph-android", phone.model === "android");
+        p.classList.toggle("ph-tilt", phone.pose === "tilt");
+        p.classList.toggle("ph-lie", phone.pose === "lie");
+        p.classList.toggle("ph-shadow", phone.shadow);
+        p.style.setProperty("--body", PH_BODY[phone.color][0]);
+        p.style.setProperty("--edge", PH_BODY[phone.color][1]);
+        p.style.setProperty("--r", String(Math.min(0.5, (phone.model === "android" ? 0.12 : 0.19) * rk)));
+        p.style.setProperty("--w", Math.round(40 + phone.size * 0.45) + "px");
+        ["model", "pose", "screen"].forEach(function (key) { pressGroupV(ui["ph" + key.charAt(0).toUpperCase() + key.slice(1)], phone[key]); });
+        Array.prototype.forEach.call(ui.phColors.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === phone.color ? "true" : "false"); });
+        ui.phSize.value = String(phone.size); ui.phSizeVal.textContent = phone.size + "%";
+        ui.phRound.value = String(phone.round); ui.phRoundVal.textContent = phone.round === 100 ? "Авто" : phone.round + "%";
+        ui.phShadow.checked = phone.shadow;
+        ui.phAppear.checked = phone.appear;
+    }
+
+    function setPhone(changes) {
+        var k;
+        for (k in changes) { if (changes.hasOwnProperty(k)) { phone[k] = changes[k]; } }
+        phone = phClean(phone);
+        try { window.localStorage.setItem(PH_KEY, JSON.stringify(phone)); } catch (e) {}
+        drawPhone();
+    }
+
+    async function onPhone() {
+        var res, r, name;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Собираю мокап…", "busy");
+        try {
+            res = await host("phoneMake", [{ model: phone.model, color: phone.color, pose: phone.pose, size: phone.size, round: phone.round,
+                shadow: phone.shadow, appear: phone.appear, screen: phone.screen },
+                { ctrl: "Телефон: управление", body: "Корпус", screen: "Экран", screenMask: "Экран", island: "Островок", camera: "Камера",
+                    iphone: "iPhone", android: "Android", bg: "Фон", video: "Ваше видео" }]);
+            setBusy(false);
+            r = res.phoneMake || res;
+            name = r.model === "android" ? "Android" : "iPhone";
+            setStatus("Мокап " + name + " готов. " + (r.screenComp ? "Экран — композиция «" + r.screenComp + "» (" + r.res.join("×") + "): откройте её и положите своё видео. " :
+                "На экран встал слой «" + r.used + "». ") + (r.fallback ? "Слой не был выделен, поэтому экран — композиция. " : "") +
+                "Двигайте и крутите телефон слоем «" + r.ctrl + "». Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function enablePhone() {
+        if (!ui.phPhone) { return; }
+        ["model", "pose", "screen"].forEach(function (key) {
+            ui["ph" + key.charAt(0).toUpperCase() + key.slice(1)].addEventListener("click", function (e) {
+                var b = e.target.closest ? e.target.closest("button[data-v]") : null, ch = {};
+                if (!b) { return; }
+                ch[key] = b.getAttribute("data-v");
+                setPhone(ch);
+            });
+        });
+        ui.phColors.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("button[data-v]") : null;
+            if (b) { setPhone({ color: b.getAttribute("data-v") }); }
+        });
+        ui.phSize.addEventListener("input", function () { setPhone({ size: Number(ui.phSize.value) }); });
+        ui.phRound.addEventListener("input", function () { setPhone({ round: Number(ui.phRound.value) }); });
+        ui.phShadow.addEventListener("change", function () { setPhone({ shadow: ui.phShadow.checked }); });
+        ui.phAppear.addEventListener("change", function () { setPhone({ appear: ui.phAppear.checked }); });
+        ui.phBtn.addEventListener("click", onPhone);
+        drawPhone();
     }
 
     // ---- Pathfinder (вкладка «Шейп»): как Shape Modes в Illustrator, через Merge Paths.
@@ -10388,9 +10486,8 @@
         function onUp() {
             var d = drag, names;
             drag = null;
-            document.removeEventListener("pointermove", onMove, true);
-            document.removeEventListener("pointerup", onUp, true);
-            document.removeEventListener("pointercancel", onUp, true);
+            document.removeEventListener("mousemove", onMove, true);
+            document.removeEventListener("mouseup", onUp, true);
             if (!d || !d.on) { return; }
             d.card.classList.remove("flow-drag");
             g.el.classList.remove("flow-sorting");
@@ -10403,17 +10500,18 @@
             document.addEventListener("click", eat, true);
             setTimeout(function () { document.removeEventListener("click", eat, true); }, 0);
         }
-        g.el.addEventListener("pointerdown", function (e) {
+        // Mouse events, not pointer events: pointer events pass the browser tests but do not fire in After Effects.
+        g.el.addEventListener("mousedown", function (e) {
             var card, tile;
             if (!g.flow || e.button !== 0 || !e.target.closest) { return; }
             card = e.target.closest(".tool-card");
             if (!card || !g.flowBox || (card.parentNode !== g.flowBox.tiles && card.parentNode !== g.flowBox.cols)) { return; }
             tile = card.parentNode === g.flowBox.tiles;
             if (!tile && (!e.target.closest(".tool-head") || e.target.closest(".flow-fold"))) { return; }
+            e.preventDefault();
             drag = { card: card, tile: tile, x: e.clientX, y: e.clientY, on: false };
-            document.addEventListener("pointermove", onMove, true);
-            document.addEventListener("pointerup", onUp, true);
-            document.addEventListener("pointercancel", onUp, true);
+            document.addEventListener("mousemove", onMove, true);
+            document.addEventListener("mouseup", onUp, true);
         });
     }
 
@@ -10866,6 +10964,8 @@
         var n, names;
         if (!ecClip) {
             ui.ecClip.textContent = "Буфер пуст: выделите ключи и нажмите «Копировать».";
+            ui.ecClip.setAttribute("data-short", "Буфер пуст");
+            ui.ecClip.title = ui.ecClip.textContent;
             ui.ecClip.classList.remove("has");
             return;
         }
@@ -10873,6 +10973,8 @@
         names = [];
         ecClip.groups.forEach(function (g) { n += g.keys.length; if (names.indexOf(g.name) < 0) { names.push(g.name); } });
         ui.ecClip.textContent = "В буфере: " + plural(n, "ключ", "ключа", "ключей") + " · " + names.slice(0, 3).join(", ") + (names.length > 3 ? "…" : "");
+        ui.ecClip.setAttribute("data-short", plural(n, "ключ", "ключа", "ключей") + " · " + names[0] + (names.length > 1 ? " +" + (names.length - 1) : ""));
+        ui.ecClip.title = ui.ecClip.textContent;
         ui.ecClip.classList.add("has");
     }
 
@@ -10937,6 +11039,7 @@
         if (!PF_MODES[shape.pfLast]) { shape.pfLast = "unite"; }
         enablePathfinder();
         enableTextBox();
+        enablePhone();
         ui.ecOptsToggle.addEventListener("click", function () {
             motion.ecOpts = motion.ecOpts === false;
             showEcFold();

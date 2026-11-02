@@ -2254,6 +2254,8 @@ var sayframeHost = (function () {
         return found;
     }
 
+    var FX_ROW = 22;
+
     function fxPopupShow(x, y, fav, recent) {
         var g = $.global, items, byId = {}, favMap = {}, shown = [], w, q, list, note, i, scr, b, left, top;
         if (g.__sayframeFxWin) {
@@ -2273,17 +2275,28 @@ var sayframeHost = (function () {
         q = w.add("edittext", undefined, "");
         q.preferredSize = [340, 24];
         list = w.add("listbox", undefined, [], { numberOfColumns: 2, showHeaders: false, columnWidths: [230, 100] });
-        list.preferredSize = [340, 260];
-        note = w.add("statictext", undefined, "", { multiline: true });
-        note.preferredSize = [340, 32];
+        list.preferredSize = [340, FX_ROW * 3 + 4];
+        // One short line, only when there is something to say (no layer selected); otherwise it takes no room.
+        note = w.add("statictext", undefined, "");
+        note.preferredSize = [340, 0];
 
         // With no layers selected the window still opens: search works, and the note says no layer is selected.
         function layerCount() {
             var c = app.project ? app.project.activeItem : null;
             return c instanceof CompItem && c.selectedLayers ? c.selectedLayers.length : 0;
         }
+        // The window is as tall as its results (up to 8 rows): no big empty box under a short list.
+        function fit() {
+            var n = Math.max(1, Math.min(8, list.items.length));
+            list.preferredSize = [340, FX_ROW * n + 4];
+            try { list.size = [340, FX_ROW * n + 4]; } catch (eS) {}
+            try { w.layout.layout(true); if (w.layout.resize) { w.layout.resize(); } } catch (eL) {}
+        }
         function hint() {
-            note.text = layerCount() ? "\u041f\u0435\u0447\u0430\u0442\u0430\u0439\u0442\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435, \u0441\u0442\u0440\u0435\u043b\u043a\u0438 \u2014 \u0432\u044b\u0431\u043e\u0440, Enter \u2014 \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043d\u0430 \u0432\u044b\u0434\u0435\u043b\u0435\u043d\u043d\u044b\u0435 \u0441\u043b\u043e\u0438, Esc \u2014 \u0437\u0430\u043a\u0440\u044b\u0442\u044c." : "\u0421\u043b\u043e\u0439 \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d. \u0412\u044b\u0434\u0435\u043b\u0438\u0442\u0435 \u0441\u043b\u043e\u0438 \u0432 \u043a\u043e\u043c\u043f\u043e\u0437\u0438\u0446\u0438\u0438 \u2014 \u0442\u043e\u0433\u0434\u0430 Enter \u0434\u043e\u0431\u0430\u0432\u0438\u0442 \u044d\u0444\u0444\u0435\u043a\u0442. \u0418\u0441\u043a\u0430\u0442\u044c \u043c\u043e\u0436\u043d\u043e \u0443\u0436\u0435 \u0441\u0435\u0439\u0447\u0430\u0441.";
+            var none = !layerCount();
+            note.text = none ? "\u0421\u043b\u043e\u0439 \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d \u2014 \u0432\u044b\u0434\u0435\u043b\u0438\u0442\u0435 \u0441\u043b\u043e\u0439, \u0447\u0442\u043e\u0431\u044b \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u044d\u0444\u0444\u0435\u043a\u0442." : "";
+            note.preferredSize = [340, none ? 18 : 0];
+            fit();
         }
 
         function fill() {
@@ -2303,6 +2316,7 @@ var sayframeHost = (function () {
                 row.subItems[0].text = it.kind === "effect" ? it.cat : "\u043f\u0440\u0435\u0441\u0435\u0442 \u00b7 " + it.cat;
             }
             if (list.items.length) { list.selection = 0; }
+            fit();
         }
         function move(d) {
             var n = list.items.length, at;
@@ -3072,6 +3086,128 @@ var sayframeHost = (function () {
         return { tiles: tiles.length, ctrl: ctrl.name, precomp: pre, folder: folder ? folder.name : "", w: W, h: H, stagger: !!o.stagger };
     }
 
+    // ---- Phone mockup (section "Layouts"): an iPhone-like or an Android-like phone drawn with shapes (no brand marks).
+    // The screen is a comp of the phone's real resolution (or the selected layer), cut to the screen's rounded corners.
+    // Everything hangs on one null: move, scale or turn the null to move the whole phone.
+    var PHONE_MODELS = {
+        iphone: { aspect: 0.488, bezel: 0.045, radius: 0.19, res: [1179, 2556] },
+        android: { aspect: 0.47, bezel: 0.035, radius: 0.12, res: [1080, 2340] }
+    };
+    var PHONE_COLORS = { black: [0.13, 0.13, 0.14], silver: [0.84, 0.84, 0.82], gold: [0.74, 0.66, 0.55], blue: [0.24, 0.29, 0.38], pink: [0.91, 0.78, 0.8] };
+
+    function phoneRect(l, name, w, h, r, color, stroke, sw, pos) {
+        var gi = acGroup(l), ri;
+        try { acP(l, ["ADBE Root Vectors Group", gi]).name = name; } catch (e0) {}
+        ri = acIn(l, gi, "ADBE Vector Shape - Rect");
+        acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Size"]).setValue([w, h]);
+        acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Roundness"]).setValue(Math.max(0, Math.min(r, w / 2, h / 2)));
+        if (pos) { acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Position"]).setValue(pos); }
+        if (stroke) { acStroke(l, gi, stroke, sw); }
+        acFill(l, gi, color);
+        return gi;
+    }
+
+    function phoneBuild(comp, o, labels) {
+        var model = PHONE_MODELS[o.model] ? o.model : "iphone", M = PHONE_MODELS[model];
+        var pose = o.pose === "tilt" || o.pose === "lie" ? o.pose : "flat", lie = pose === "lie", d3 = pose === "tilt";
+        var col = PHONE_COLORS[o.color] || PHONE_COLORS.black, rk = orbitNum(o.round, 0, 150, 100) / 100;
+        var refH = lie ? Math.min(comp.width, comp.height / M.aspect) : comp.height;
+        var H = Math.round(refH * orbitNum(o.size, 10, 100, 80) / 100), W = Math.round(H * M.aspect);
+        var b = W * M.bezel, R = Math.min(W / 2, W * M.radius * rk), f = b * 0.4, cx = comp.width / 2, cy = comp.height / 2;
+        var sW = W - 2 * b, sH = H - 2 * b, sR = Math.max(0, R - b), dark = acMix(col, [0, 0, 0], 0.18), light = acMix(col, [1, 1, 1], 0.3);
+        var body, scr, cc = null, isl, ctrl, sel = null, used = "", fallback = false, sc, lw, lh, t, k, fx, y0, list, i, tb = W * 0.018, bx;
+        var screenName = (labels.screen || "Screen") + " " + (labels[model] || model);
+        if (o.screen === "layer") {
+            list = comp.selectedLayers || [];
+            for (i = 0; i < list.length; i++) { if (typeof AVLayer !== "undefined" ? list[i] instanceof AVLayer : list[i].width > 0) { sel = list[i]; break; } }
+            if (!sel) { fallback = true; }
+        }
+        // Body: the coloured frame, the black glass border inside it, the side buttons.
+        body = comp.layers.addShape();
+        body.name = labels.body || "Body";
+        phoneRect(body, "Glass", W - 2 * f, H - 2 * f, R - f, [0.04, 0.04, 0.045]);
+        phoneRect(body, "Frame", W, H, R, col, light, Math.max(1, W * 0.006));
+        bx = W / 2 + tb * 0.2;
+        if (model === "iphone") {
+            phoneRect(body, "Button", tb, H * 0.035, tb / 2, dark, null, 0, [-bx, -H * 0.3]);
+            phoneRect(body, "Button", tb, H * 0.06, tb / 2, dark, null, 0, [-bx, -H * 0.22]);
+            phoneRect(body, "Button", tb, H * 0.06, tb / 2, dark, null, 0, [-bx, -H * 0.14]);
+            phoneRect(body, "Button", tb, H * 0.1, tb / 2, dark, null, 0, [bx, -H * 0.2]);
+        } else {
+            phoneRect(body, "Button", tb, H * 0.12, tb / 2, dark, null, 0, [bx, -H * 0.2]);
+            phoneRect(body, "Button", tb, H * 0.06, tb / 2, dark, null, 0, [bx, -H * 0.04]);
+        }
+        orbitSet(body, "ADBE Position", [cx, cy]);
+        if (o.shadow) {
+            fx = acAdd(body, ["ADBE Effect Parade"], "ADBE Drop Shadow");
+            kitSet(body, fx, "ADBE Drop Shadow-0003", 180);
+            kitSet(body, fx, "ADBE Drop Shadow-0004", Math.round(H * 0.02));
+            kitSet(body, fx, "ADBE Drop Shadow-0005", Math.round(H * 0.06));
+        }
+        // Screen: a comp of the real resolution (landscape when the phone lies), or the selected layer.
+        if (sel) {
+            scr = sel;
+            used = sel.name;
+            lw = sel.width; lh = sel.height;
+        } else {
+            lw = lie ? M.res[1] : M.res[0]; lh = lie ? M.res[0] : M.res[1];
+            cc = app.project.items.addComp(screenName, lw, lh, comp.pixelAspect || 1, comp.duration, comp.frameRate);
+            t = cc.layers.addSolid([0.29, 0.18, 0.6], labels.bg || "Background", lw, lh, 1);
+            k = Math.round(Math.min(lw, lh) * 0.09);
+            t = orbitNumber(cc, labels.video || "Video", k);
+            orbitSet(t, "ADBE Position", [lw / 2, lh / 2 + k * 0.35]);
+            scr = comp.layers.add(cc);
+        }
+        // Portrait screen: the layer's width runs across the phone; lying: the layer is turned back by 90 degrees.
+        var across = lie ? lh : lw, along = lie ? lw : lh;
+        sc = Math.max(sW / across, sH / along) * 100;
+        orbitSet(scr, "ADBE Scale", [sc, sc]);
+        orbitSet(scr, "ADBE Position", [cx, cy]);
+        if (lie) { orbitSet(scr, "ADBE Rotate Z", 90); }
+        k = acAdd(scr, ["ADBE Mask Parade"], "ADBE Mask Atom");
+        try { acP(scr, ["ADBE Mask Parade", k]).name = labels.screenMask || "Screen"; } catch (eN) {}
+        acP(scr, ["ADBE Mask Parade", k, "ADBE Mask Shape"]).setValue(gridMaskShape(lw / 2, lh / 2, (lie ? sH : sW) * 100 / sc, (lie ? sW : sH) * 100 / sc, sR * 100 / sc));
+        try { scr.moveBefore(body); } catch (eM) {}
+        // The island (iPhone) or the punch-hole camera (Android) on top of the screen.
+        isl = comp.layers.addShape();
+        if (model === "iphone") {
+            isl.name = labels.island || "Island";
+            phoneRect(isl, "Island", W * 0.32, W * 0.09, W * 0.045, [0, 0, 0]);
+            y0 = -H / 2 + b + W * 0.035 + W * 0.045;
+        } else {
+            isl.name = labels.camera || "Camera";
+            phoneRect(isl, "Camera", W * 0.065, W * 0.065, W * 0.0325, [0, 0, 0], [0.12, 0.12, 0.13], Math.max(1, W * 0.006));
+            y0 = -H / 2 + b + W * 0.05;
+        }
+        orbitSet(isl, "ADBE Position", [cx, cy + y0]);
+        try { isl.moveBefore(scr); } catch (eI) {}
+        ctrl = comp.layers.addNull(comp.duration);
+        ctrl.name = labels.ctrl || "Phone Control";
+        orbitSet(ctrl, "ADBE Position", [cx, cy]);
+        if (d3) {
+            ctrl.threeDLayer = true; body.threeDLayer = true; scr.threeDLayer = true; isl.threeDLayer = true;
+            orbitSet(scr, "ADBE Position", [cx, cy, -0.5]);
+            orbitSet(isl, "ADBE Position", [cx, cy + y0, -1]);
+            orbitSet(ctrl, "ADBE Position", [cx, cy, 0]);
+        }
+        body.parent = ctrl; scr.parent = ctrl; isl.parent = ctrl;
+        if (d3) {
+            orbitSet(ctrl, "ADBE Rotate X", 10);
+            orbitSet(ctrl, "ADBE Rotate Y", -24);
+            orbitSet(ctrl, "ADBE Rotate Z", 4);
+        } else if (lie) {
+            orbitSet(ctrl, "ADBE Rotate Z", -90);
+        }
+        if (o.appear) {
+            var f0 = comp.time, f1 = comp.time + Math.round(0.6 / (comp.frameDuration || 1 / 30)) * (comp.frameDuration || 1 / 30);
+            try { acKeys(acTransform(ctrl, "ADBE Position"), [f0, f1], d3 ? [[cx, comp.height + H * 0.6, 0], [cx, cy, 0]] : [[cx, comp.height + H * 0.6], [cx, cy]], 80); } catch (eA) {}
+        }
+        try { body.selected = false; scr.selected = false; isl.selected = false; } catch (eS) {}
+        ctrl.selected = true;
+        return { model: model, pose: pose, ctrl: ctrl.name, screen: scr.name, screenComp: cc ? cc.name : "", used: used, fallback: fallback,
+            w: Math.round(sW), h: Math.round(sH), res: cc ? [lw, lh] : [] };
+    }
+
     // ---- Text box (the Shape tab): a shape layer under a text layer that follows the text.
     // The box hangs on the text layer (parent) and reads its size with sourceRectAtTime, so it grows and
     // shrinks while the text is typed, edited or animated. Everything is set in Effect Controls of the box.
@@ -3110,8 +3246,7 @@ var sayframeHost = (function () {
     }
 
     function tbGroup(B, comp, lab, o, src, line, k) {
-        var gi = acGroup(B), ri, fi, si, code = tbRectCode(lab, src, line, o.style === "marker"), from = o.appear === "center" ? code.pos : code.left;
-        var f = comp.frameDuration || 1 / 30, t0, t1;
+        var gi = acGroup(B), ri, fi, si, code = tbRectCode(lab, src, line, o.style === "marker"), from = code.left;
         try { acP(B, ["ADBE Root Vectors Group", gi]).name = (lab.part || "Box") + " " + (line + 1); } catch (e0) {}
         ri = acIn(B, gi, "ADBE Vector Shape - Rect");
         acGP(B, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Size"]).expression = code.size;
@@ -3123,26 +3258,27 @@ var sayframeHost = (function () {
         fi = acIn(B, gi, "ADBE Vector Graphic - Fill");
         acGP(B, gi, ["ADBE Vectors Group", fi, "ADBE Vector Fill Color"]).expression = tbFx(lab, "color");
         acGP(B, gi, ["ADBE Vectors Group", fi, "ADBE Vector Fill Opacity"]).expression = tbFx(lab, "fillOn") + "?100:0";
-        // The group grows from the left edge (or the middle) of its box; the slant leans it like a sports title.
+        // The group's pivot is the left edge of its box; the slant leans it like a sports title. No animation.
         acGP(B, gi, ["ADBE Vector Transform Group", "ADBE Vector Anchor"]).expression = from;
         acGP(B, gi, ["ADBE Vector Transform Group", "ADBE Vector Position"]).expression = from;
         acGP(B, gi, ["ADBE Vector Transform Group", "ADBE Vector Skew"]).expression = "-" + tbFx(lab, "skew");
-        if (o.appear && o.appear !== "none") {
-            t0 = comp.time + (o.appear === "lines" ? k * 3 * f : 0);
-            t1 = t0 + 10 * f;
-            acKeys(acGP(B, gi, ["ADBE Vector Transform Group", "ADBE Vector Scale"]), [t0, t1],
-                [o.appear === "center" ? [0, 0] : [0, 100], [100, 100]], 75);
-        }
         return gi;
     }
 
-    function tbNewText(comp, text) {
+    // A light filled box gets dark text (the panel preview's purple), anything else white: the new text stays readable.
+    function tbTextColor(o) {
+        var c = o.color || [0.23, 0.06, 0.39];
+        if (o.look === "stroke" || o.style === "marker") { return [1, 1, 1]; }
+        return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2] > 0.6 ? [0.23, 0.06, 0.39] : [1, 1, 1];
+    }
+
+    function tbNewText(comp, text, color) {
         var t = comp.layers.addText(text), p, doc;
         try {
             p = acP(t, ["ADBE Text Properties", "ADBE Text Document"]);
             doc = p.value;
             doc.fontSize = Math.round(Math.min(comp.width, comp.height) * 0.08);
-            doc.fillColor = [1, 1, 1];
+            doc.fillColor = color || [1, 1, 1];
             try { doc.justification = ParagraphJustification.CENTER_JUSTIFY; } catch (e1) {}
             p.setValue(doc);
         } catch (e0) {}
@@ -6006,6 +6142,22 @@ var sayframeHost = (function () {
             });
         },
 
+        // Phone mockup: o = { model: "iphone"|"android", color, pose: "flat"|"tilt"|"lie", size, round, shadow, appear, screen: "precomp"|"layer" }.
+        phoneMake: function (o, labels) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (!o || typeof o !== "object") { throw new Error("BAD_PHONE"); }
+                app.beginUndoGroup("Sayframe: phone mockup");
+                try {
+                    res = phoneBuild(comp, o, labels || {});
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
         // Carousel: o = { count, layout, shape, corners, mode: "shape"|"precomp", radius, w, h, numbers, camera }; labels - layer names.
         orbitMake: function (o, labels) {
             return reply(function () {
@@ -6024,7 +6176,7 @@ var sayframeHost = (function () {
 
         // Pathfinder: mode "unite" | "front" | "intersect" | "exclude" | "back"; keep - hide the source layers instead of removing them.
         // Text box: o = { per: "all"|"line", look: "fill"|"stroke"|"both", style: "box"|"marker", color, strokeColor,
-        // px, py, round, stroke, skew, opacity, shadow, appear: "none"|"left"|"center"|"lines" }; lab - control and layer names.
+        // px, py, round, stroke, skew, opacity, shadow }; lab - control and layer names. The box is not animated.
         textBox: function (o, lab) {
             return reply(function () {
                 var comp = activeComp(), sel = comp.selectedLayers, texts = [], res = [], i, made = "";
@@ -6033,7 +6185,7 @@ var sayframeHost = (function () {
                 app.beginUndoGroup("Sayframe: text box");
                 try {
                     // No text selected: a new text in the middle of the comp gets the box.
-                    if (!texts.length) { texts.push(tbNewText(comp, lab.defaultText || "Text")); made = texts[0].name; }
+                    if (!texts.length) { texts.push(tbNewText(comp, lab.defaultText || "Text", tbTextColor(o))); made = texts[0].name; }
                     for (i = 0; i < texts.length; i++) { res.push(tbBuild(comp, texts[i], o, lab)); }
                 } finally {
                     app.endUndoGroup();
