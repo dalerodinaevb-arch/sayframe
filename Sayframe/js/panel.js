@@ -3577,7 +3577,7 @@
     var STAGGER_TARGETS = ["layer", "keys"];
     var MAX_STEP_FRAMES = 999;
     var TOOL_NAMES = ["ease", "anchor", "align", "stagger", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
-    var SHAPE_TOOL_NAMES = ["pathfinder", "split", "textbox"];
+    var SHAPE_TOOL_NAMES = ["pathfinder", "split"];
     // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
     // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
     var G = { names: TOOL_NAMES };
@@ -3666,8 +3666,8 @@
         return out.join(";");
     }
 
-    // Блоки, которым обычная ширина мала: пять кнопок Pathfinder в ряд, превью и ползунки плашки.
-    var TOOL_WIDE = { pathfinder: 14, textbox: 14 };
+    // Блоки, которым обычная ширина мала: пять кнопок Pathfinder в ряд.
+    var TOOL_WIDE = { pathfinder: 14 };
 
     function sizeOf(name) {
         return parseSizes(G.st.sizes)[name] || { w: TOOL_WIDE[name] || TOOL_DEFAULT_COLS, h: 0 };
@@ -10337,7 +10337,7 @@
     };
 
     var FLOW_ORDER = ["paste", "organize", "unused", "cache", "nullp", "decompose", "cutout", "ease", "easecopy", "stagger", "anchor", "align"];
-    var FLOW_SHAPE_ORDER = ["split", "pathfinder", "textbox"];
+    var FLOW_SHAPE_ORDER = ["split", "pathfinder"];
 
     function flowOn() { return document.documentElement.getAttribute("data-design") === "studio"; }
 
