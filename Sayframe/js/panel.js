@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.64.0";
+    var VERSION = "1.65.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -1035,7 +1035,7 @@
         orbitCornerRow: el("orbitCornerRow"), orbitCornerIco: el("orbitCornerIco"), orbitCorners: el("orbitCorners"), orbitCornersVal: el("orbitCornersVal"),
         orbitMode: el("orbitMode"), orbitLess: el("orbitLess"), orbitMore: el("orbitMore"), orbitCount: el("orbitCount"),
         orbitRadius: el("orbitRadius"), orbitRadiusVal: el("orbitRadiusVal"), orbitW: el("orbitW"), orbitWVal: el("orbitWVal"), orbitH: el("orbitH"), orbitHVal: el("orbitHVal"),
-        orbitNumbers: el("orbitNumbers"), orbitCamera: el("orbitCamera"), orbitBtn: el("orbitBtn"),
+        orbitNumbers: el("orbitNumbers"), orbitCamera: el("orbitCamera"), orbitBack: el("orbitBack"), orbitBackRow: el("orbitBackRow"), orbitBtn: el("orbitBtn"),
         gridStage: el("gridStage"), gridW: el("gridW"), gridH: el("gridH"), gridFit: el("gridFit"), gridRows: el("gridRows"), gridRowsLess: el("gridRowsLess"), gridRowsMore: el("gridRowsMore"),
         gridCols: el("gridCols"), gridColsLess: el("gridColsLess"), gridColsMore: el("gridColsMore"), gridGap: el("gridGap"), gridGapVal: el("gridGapVal"), gridGapName: el("gridGapName"),
         gridGapV: el("gridGapV"), gridGapVVal: el("gridGapVVal"), gridGapVRow: el("gridGapVRow"), gridRound: el("gridRound"), gridRoundVal: el("gridRoundVal"),
@@ -1334,6 +1334,8 @@
 
     function setStatus(text, kind) {
         ui.status.textContent = text;
+        // Внизу видна одна строка (кроме ошибок); весь текст — при наведении.
+        ui.status.title = text;
         ui.statusBox.className = "status" + (kind ? " " + kind : "");
     }
 
@@ -3577,7 +3579,7 @@
     var STAGGER_TARGETS = ["layer", "keys"];
     var MAX_STEP_FRAMES = 999;
     var TOOL_NAMES = ["ease", "anchor", "align", "stagger", "paste", "organize", "easecopy", "decompose", "cache", "nullp", "unused", "cutout"];
-    var SHAPE_TOOL_NAMES = ["pathfinder", "split", "textbox"];
+    var SHAPE_TOOL_NAMES = ["pathfinder", "split"];
     // Сетка блоков. Таких сеток две — «Инструменты» и «Шейп»; G — та, с которой сейчас работаем.
     // Пока панель не собрана, G знает только имена блоков «Инструментов» (нужно, чтобы прочитать сохранённое).
     var G = { names: TOOL_NAMES };
@@ -3666,8 +3668,8 @@
         return out.join(";");
     }
 
-    // Блоки, которым обычная ширина мала: пять кнопок Pathfinder в ряд, превью и ползунки плашки.
-    var TOOL_WIDE = { pathfinder: 14, textbox: 14 };
+    // Блоки, которым обычная ширина мала: пять кнопок Pathfinder в ряд.
+    var TOOL_WIDE = { pathfinder: 14 };
 
     function sizeOf(name) {
         return parseSizes(G.st.sizes)[name] || { w: TOOL_WIDE[name] || TOOL_DEFAULT_COLS, h: 0 };
@@ -6369,7 +6371,7 @@
         drawGrid();
     }
 
-    // Блоки раздела «Макеты» сворачиваются щелчком по заголовку; в широкой панели встают в две колонки.
+    // Блоки раздела «Макеты» сворачиваются щелчком по заголовку; ширина у них постоянная, в широкой панели они встают рядом.
     function drawMkFolds() {
         var folded = (orbit.fold || "").split(",");
         Array.prototype.forEach.call(document.querySelectorAll("#orbitPane .mk-card"), function (c) {
@@ -6377,10 +6379,72 @@
             c.classList.toggle("mk-folded", on);
             if (b) { b.setAttribute("aria-expanded", String(!on)); b.setAttribute("aria-label", on ? "Развернуть" : "Свернуть"); }
         });
-        if (ui.orbitPane) { ui.orbitPane.classList.toggle("mk-wide", ui.orbitPane.getBoundingClientRect().width >= 620); }
+        if (ui.orbitPane) { ui.orbitPane.classList.toggle("mk-wide", ui.orbitPane.clientWidth >= 836); }
+    }
+
+    // Порядок блоков «Макетов»: блок перетаскивают за заголовок, порядок запоминается.
+    function sortMkCards() {
+        var pane = ui.orbitPane;
+        if (!pane) { return; }
+        (orbit.sort || "").split(",").forEach(function (name) {
+            var c = name && pane.querySelector('.mk-card[data-mk="' + name + '"]');
+            if (c) { pane.appendChild(c); }
+        });
+    }
+
+    function enableMkDrag() {
+        var pane = ui.orbitPane, drag = null;
+        if (!pane) { return; }
+        function onMove(e) {
+            var over, r, before, side;
+            if (!drag) { return; }
+            if (!drag.on) {
+                if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 6) { return; }
+                drag.on = true;
+                drag.card.classList.add("mk-drag");
+                pane.classList.add("mk-sorting");
+            }
+            e.preventDefault();
+            over = document.elementFromPoint(e.clientX, e.clientY);
+            over = over && over.closest ? over.closest(".mk-card") : null;
+            if (!over || over === drag.card || over.parentNode !== pane) { return; }
+            r = over.getBoundingClientRect();
+            // Рядом (в одной строке) решает левая/правая половина, одна под другой — верхняя/нижняя.
+            side = Math.abs(r.top - drag.card.getBoundingClientRect().top) < 4;
+            before = side ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2;
+            pane.insertBefore(drag.card, before ? over : over.nextSibling);
+        }
+        function onUp() {
+            var d = drag;
+            drag = null;
+            document.removeEventListener("pointermove", onMove, true);
+            document.removeEventListener("pointerup", onUp, true);
+            document.removeEventListener("pointercancel", onUp, true);
+            if (!d || !d.on) { return; }
+            d.card.classList.remove("mk-drag");
+            pane.classList.remove("mk-sorting");
+            orbit.sort = Array.prototype.map.call(pane.querySelectorAll(".mk-card"), function (c) { return c.getAttribute("data-mk"); }).join(",");
+            storeOrbit();
+            drawOrbitPreview();
+            drawGridPreview();
+            // Отпустили — это не щелчок: блок не сворачивается.
+            function eat(ev) { ev.stopPropagation(); ev.preventDefault(); }
+            document.addEventListener("click", eat, true);
+            setTimeout(function () { document.removeEventListener("click", eat, true); }, 0);
+        }
+        pane.addEventListener("pointerdown", function (e) {
+            var head = e.button === 0 && e.target.closest ? e.target.closest(".mk-head") : null;
+            if (!head || e.target.closest(".mk-fold")) { return; }
+            drag = { card: head.parentNode, x: e.clientX, y: e.clientY, on: false };
+            document.addEventListener("pointermove", onMove, true);
+            document.addEventListener("pointerup", onUp, true);
+            document.addEventListener("pointercancel", onUp, true);
+        });
     }
 
     function enableMkFolds() {
+        sortMkCards();
+        enableMkDrag();
         Array.prototype.forEach.call(document.querySelectorAll("#orbitPane .mk-card"), function (c) {
             var name = c.getAttribute("data-mk");
             c.querySelector(".mk-head").addEventListener("click", function () {
@@ -6399,7 +6463,7 @@
 
     // ---- Раздел «Макеты»: карусель. Настройки хранятся отдельно; превью — те же карточки в CSS 3D, его можно крутить мышкой.
     var ORBIT_KEY = "sayframe.orbit.v1";
-    var ORBIT_DEFAULTS = { layout: "ring", shape: "rect", corners: 20, mode: "shape", count: 8, radius: 600, w: 400, h: 560, numbers: true, camera: true };
+    var ORBIT_DEFAULTS = { layout: "ring", shape: "rect", corners: 20, mode: "shape", count: 8, radius: 600, w: 400, h: 560, numbers: true, camera: true, back: true };
     var ORBIT_LAYOUT_NAMES = { ring: "кольцо", half: "полукруг", spiral: "спираль", wave: "волна" };
     var ORBIT_SIDES = { rect: 4, circle: 0, tri: 3, hex: 6 };
     var orbit = loadOrbit(), orbitSpin = -24, orbitDrag = null;
@@ -6420,6 +6484,7 @@
         out.w = Math.max(50, Math.min(2000, Math.round(out.w) || 400));
         out.h = Math.max(50, Math.min(2000, Math.round(out.h) || 560));
         out.fold = typeof s.fold === "string" ? s.fold : "";
+        out.sort = typeof s.sort === "string" ? s.sort : "";
         out.grid = {};
         var g = s.grid && typeof s.grid === "object" ? s.grid : {};
         for (k in GRID_DEFAULTS) {
@@ -6497,7 +6562,7 @@
             html += "<div class=\"kr-it\" style=\"width:" + w.toFixed(1) + "px;height:" + h.toFixed(1) + "px;left:" + (-w / 2).toFixed(1) + "px;top:" + (-h / 2).toFixed(1) +
                 "px;transform:translate3d(" + sp.x.toFixed(1) + "px," + sp.y.toFixed(1) + "px," + (-sp.z).toFixed(1) + "px) rotateY(" + sp.ry + "deg)\">" +
                 orbitShapeSvg(orbit.shape, t, Math.round(orbit.w), Math.round(orbit.h), "hsl(" + orbitHue(i) + ",80%,62%)") +
-                (orbit.numbers && front && h > 18 ? "<span style=\"font-size:" + Math.max(9, Math.round(Math.min(w, h) * 0.32)) + "px\">" + (i + 1) + "</span>" : "") + "</div>";
+                (orbit.numbers && (front || orbit.back) && h > 18 ? "<span style=\"font-size:" + Math.max(9, Math.round(Math.min(w, h) * 0.32)) + "px\">" + (i + 1) + "</span>" : "") + "</div>";
         }
         d = ring;
         d.innerHTML = html;
@@ -6519,6 +6584,8 @@
         ui.orbitH.value = String(orbit.h); ui.orbitHVal.textContent = String(orbit.h);
         ui.orbitNumbers.checked = orbit.numbers;
         ui.orbitCamera.checked = orbit.camera;
+        ui.orbitBack.checked = orbit.back;
+        ui.orbitBackRow.hidden = !orbit.numbers;
         drawOrbitPreview();
     }
 
@@ -6537,7 +6604,7 @@
         setStatus("Строю карусель…", "busy");
         try {
             res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: orbit.mode,
-                radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera },
+                radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera, back: orbit.back },
                 { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма" }]);
             setBusy(false);
             setStatus("Карусель готова: " + plural(res.cards, "карточка", "карточки", "карточек") + ", " + ORBIT_LAYOUT_NAMES[res.layout] + ". " +
@@ -6570,6 +6637,7 @@
         });
         ui.orbitNumbers.addEventListener("change", function () { setOrbit("numbers", ui.orbitNumbers.checked); });
         ui.orbitCamera.addEventListener("change", function () { setOrbit("camera", ui.orbitCamera.checked); });
+        ui.orbitBack.addEventListener("change", function () { setOrbit("back", ui.orbitBack.checked); });
         ui.orbitBtn.addEventListener("click", onOrbit);
         // Крутить превью мышкой.
         ui.orbitStage.addEventListener("pointerdown", function (e) {
@@ -7787,14 +7855,14 @@
     // ---- «Плашка под текстом» (вкладка «Шейп»): шейп-слой под текстом, который подстраивается под текст.
     // Превью в блоке рисуется CSS и меняется сразу; в After Effects то же самое делают выражения (host textBox).
     var TB_KEY = "sayframe.textbox.v1";
-    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, appear: "left", shadow: false };
+    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, appear: "none", shadow: false };
     var TB_PRESETS = {
-        news: { per: "line", look: "fill", style: "box", color: "#111111", px: 16, py: 4, round: 0, skew: 0, shadow: false, appear: "left" },
-        sport: { per: "line", look: "fill", style: "box", color: "#ff4f6d", px: 22, py: 6, round: 0, skew: 14, shadow: false, appear: "lines" },
-        sticker: { per: "all", look: "fill", style: "box", color: "#ffffff", px: 26, py: 12, round: 18, skew: 0, shadow: true, appear: "center" },
-        pill: { per: "all", look: "fill", style: "box", color: "#3a0f63", px: 34, py: 12, round: 100, skew: 0, shadow: false, appear: "center" },
-        frame: { per: "all", look: "stroke", style: "box", strokeColor: "#ffffff", stroke: 4, px: 28, py: 14, round: 40, skew: 0, shadow: false, appear: "center" },
-        marker: { per: "line", look: "fill", style: "marker", color: "#ffcc33", px: 6, py: 0, round: 0, skew: 0, shadow: false, appear: "left" }
+        news: { per: "line", look: "fill", style: "box", color: "#111111", px: 16, py: 4, round: 0, skew: 0, shadow: false },
+        sport: { per: "line", look: "fill", style: "box", color: "#ff4f6d", px: 22, py: 6, round: 0, skew: 14, shadow: false },
+        sticker: { per: "all", look: "fill", style: "box", color: "#ffffff", px: 26, py: 12, round: 18, skew: 0, shadow: true },
+        pill: { per: "all", look: "fill", style: "box", color: "#3a0f63", px: 34, py: 12, round: 100, skew: 0, shadow: false },
+        frame: { per: "all", look: "stroke", style: "box", strokeColor: "#ffffff", stroke: 4, px: 28, py: 14, round: 40, skew: 0, shadow: false },
+        marker: { per: "line", look: "fill", style: "marker", color: "#ffcc33", px: 6, py: 0, round: 0, skew: 0, shadow: false }
     };
     var TB_RANGES = { px: [0, 120], py: [0, 80], round: [0, 100], stroke: [1, 30], skew: [-40, 40], opacity: [0, 100] };
     var TB_CHOICES = { per: ["all", "line"], look: ["fill", "stroke", "both"], style: ["box", "marker"], appear: ["none", "left", "center", "lines"] };
@@ -7866,11 +7934,11 @@
             res = await host("textBox", [{ per: tb.per, look: tb.look, style: tb.style, color: tbRgb(tb.color), strokeColor: tbRgb(tb.strokeColor),
                 px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, appear: tb.appear, shadow: tb.shadow },
                 { box: "Плашка", helper: "Плашка: строка", part: "Плашка", side: "По бокам", vert: "Сверху/снизу", round: "Скругление", color: "Цвет",
-                    fillOn: "Заливка", strokeOn: "Обводка", strokeW: "Толщина обводки", strokeColor: "Цвет обводки", skew: "Наклон" }]);
+                    fillOn: "Заливка", strokeOn: "Обводка", strokeW: "Толщина обводки", strokeColor: "Цвет обводки", skew: "Наклон", defaultText: "Ваш текст" }]);
             setBusy(false);
             r = res.textBox.boxes;
             n = r.length;
-            setStatus("Плашка готова: " + (n === 1 ? "«" + r[0].box + "»" : plural(n, "слой", "слоя", "слоёв")) + ". Она подстраивается под текст сама; " +
+            setStatus((res.textBox.made ? "Текст не был выделен — создал «" + res.textBox.made + "». " : "") + "Плашка готова: " + (n === 1 ? "«" + r[0].box + "»" : plural(n, "слой", "слоя", "слоёв")) + ". Она подстраивается под текст сама; " +
                 "цвет, отступы, скругление, обводка и наклон — в Effect Controls плашки." + (r[0].lines ? " Под каждую строку своя плашка (и запас на две новые строки)." : "") +
                 " Отменить — Cmd/Ctrl+Z.", "done");
         } catch (e) {
@@ -10271,7 +10339,7 @@
     };
 
     var FLOW_ORDER = ["paste", "organize", "unused", "cache", "nullp", "decompose", "cutout", "ease", "easecopy", "stagger", "anchor", "align"];
-    var FLOW_SHAPE_ORDER = ["split", "pathfinder", "textbox"];
+    var FLOW_SHAPE_ORDER = ["split", "pathfinder"];
 
     function flowOn() { return document.documentElement.getAttribute("data-design") === "studio"; }
 

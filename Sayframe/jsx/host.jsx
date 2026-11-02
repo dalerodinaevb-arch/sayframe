@@ -2801,6 +2801,33 @@ var sayframeHost = (function () {
         acP(l, ["ADBE Transform Group", name]).setValue(v);
     }
 
+    // The camera steps back and a little up, like the panel's preview: the whole carousel in the frame with room
+    // around it. Zoom (px) and the comp size give how far the camera has to be for the widest part and the nearest card.
+    function orbitFrame(comp, camL, spots, w, h, cx, cy) {
+        var zoom = 0, ex = 0, ey = 0, near = 0, i, d, tilt = 18 * Math.PI / 180;
+        try { zoom = Number(acP(camL, ["ADBE Camera Options Group", "ADBE Camera Zoom"]).value); } catch (e0) { zoom = 0; }
+        if (!(zoom > 0)) { zoom = comp.width * 1.389; }
+        for (i = 0; i < spots.length; i++) {
+            ex = Math.max(ex, Math.abs(spots[i].x) + w / 2);
+            ey = Math.max(ey, Math.abs(spots[i].y) + h / 2);
+            near = Math.max(near, -spots[i].z);
+        }
+        d = Math.max(zoom * 1.6 * ex / (comp.width / 2), zoom * 2.2 * ey / (comp.height / 2) + near, zoom);
+        d = Math.round(d);
+        orbitSet(camL, "ADBE Position", [cx, Math.round(cy - d * Math.sin(tilt)), -Math.round(d * Math.cos(tilt))]);
+        try { orbitSet(camL, "ADBE Camera Point of Interest", [cx, cy, 0]); } catch (e1) {}
+        return d;
+    }
+
+    // The number shows only from the front of its card: from behind (the card turned away from the camera) it is hidden.
+    // Dan Ebberts' two-sided layer test: the layer's own Z axis in comp space points away from the camera when facing it.
+    function orbitHideBack(numLayer, cardRef) {
+        try {
+            acP(numLayer, ["ADBE Transform Group", "ADBE Opacity"]).expression =
+                "var L=" + cardRef + ";L.toCompVec([0,0,1])[2]>0?value:0";
+        } catch (e0) {}
+    }
+
     function orbitBuild(comp, o, labels) {
         var n = Math.round(orbitNum(o.count, 2, 36, 8)), layout = ORBIT_LAYOUTS[o.layout] ? o.layout : "ring";
         var kind = ORBIT_SIDES.hasOwnProperty(o.shape) ? o.shape : "rect", t = orbitNum(o.corners, 0, 100, 20) / 100;
@@ -2808,11 +2835,13 @@ var sayframeHost = (function () {
         var pre = o.mode === "precomp", cx = comp.width / 2, cy = comp.height / 2, fs = Math.round(Math.min(w, h) * 0.32);
         var ctrl, cam = "", had = false, cards = [], nums = [], i, j, sp, L, txt, cc, inner, folder = null, base, camL, rig = null;
         base = labels.card || "Card ";
+        var spots = [];
         if (pre) {
             try { folder = app.project.items.addFolder(labels.folder || "Carousel"); } catch (eF) { folder = null; }
         }
         for (i = n - 1; i >= 0; i--) {
             sp = orbitSpot(i, n, layout, radius, h);
+            spots.push(sp);
             if (pre) {
                 cc = app.project.items.addComp(base + (i + 1), w, h, comp.pixelAspect || 1, comp.duration, comp.frameRate);
                 if (folder) { try { cc.parentFolder = folder; } catch (eP) {} }
@@ -2825,6 +2854,8 @@ var sayframeHost = (function () {
                     orbitSet(txt, "ADBE Position", [w / 2, h / 2 + fs * 0.35]);
                 }
                 L = comp.layers.add(cc);
+                // Inside the card comp the number asks the card layer in the main comp which way it faces.
+                if (o.numbers && o.back === false) { orbitHideBack(txt, "comp(" + tbQ(comp.name) + ").layer(" + tbQ(base + (i + 1)) + ")"); }
             } else {
                 L = comp.layers.addShape();
                 orbitCardShape(L, kind, t, w, h, orbitColor(i));
@@ -2840,6 +2871,7 @@ var sayframeHost = (function () {
                 txt.threeDLayer = true;
                 orbitSet(txt, "ADBE Position", [cx + sp.x, cy + sp.y + fs * 0.35, sp.z]);
                 orbitSet(txt, "ADBE Rotate Y", sp.ry);
+                if (o.back === false) { orbitHideBack(txt, "thisLayer"); }
                 nums.unshift(txt);
             }
         }
@@ -2857,6 +2889,7 @@ var sayframeHost = (function () {
                 // The camera hangs on its own 3D null in the middle: turn or move the null to fly around the carousel.
                 camL = comp.layers.addCamera(labels.camera || "Carousel Camera", [cx, cy]);
                 cam = camL.name;
+                orbitFrame(comp, camL, spots, w, h, cx, cy);
                 rig = comp.layers.addNull(comp.duration);
                 rig.name = labels.camRig || "Camera Control";
                 rig.threeDLayer = true;
@@ -2934,13 +2967,47 @@ var sayframeHost = (function () {
         acFill(l, gi, color);
     }
 
-    // Tiles come in one after another: opacity 0 -> 100 and scale 85 -> 100 over 10 frames, 2 frames apart.
-    function gridReveal(l, comp, k) {
+    // Tiles come in one after another: opacity 0 -> 100 and scale 85% -> 100% of their own size over 10 frames, 2 frames apart.
+    function gridReveal(l, comp, k, sc) {
         var f = comp.frameDuration || 1 / 30, t0 = comp.time + k * 2 * f, t1 = t0 + 10 * f;
+        sc = sc || 100;
         try {
             acKeys(acTransform(l, "ADBE Opacity"), [t0, t1], [0, 100], 70);
-            acKeys(acTransform(l, "ADBE Scale"), [t0, t1], [[85, 85, 100], [100, 100, 100]], 70);
+            acKeys(acTransform(l, "ADBE Scale"), [t0, t1], [[sc * 0.85, sc * 0.85, 100], [sc, sc, 100]], 70);
         } catch (e0) {}
+    }
+
+    // A tile comp has a standard size by the tile's shape: square-ish 1000x1000, wide 1920x1080, tall 1080x1920.
+    function gridStdSize(bw, bh) {
+        var a = bw / bh;
+        if (a > 1.25) { return [1920, 1080]; }
+        if (a < 0.8) { return [1080, 1920]; }
+        return [1000, 1000];
+    }
+
+    // A rounded rectangle as a mask path (centre cx,cy; corner radius r), clockwise from the top-left corner.
+    function gridMaskShape(cx, cy, w, h, r) {
+        var x0 = cx - w / 2, x1 = cx + w / 2, y0 = cy - h / 2, y1 = cy + h / 2, k = 0.5523, s = new Shape(), c;
+        r = Math.max(0, Math.min(r, w / 2, h / 2));
+        if (r < 0.01) {
+            s.vertices = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+            s.inTangents = s.outTangents = [[0, 0], [0, 0], [0, 0], [0, 0]];
+        } else {
+            c = r * k;
+            s.vertices = [[x0 + r, y0], [x1 - r, y0], [x1, y0 + r], [x1, y1 - r], [x1 - r, y1], [x0 + r, y1], [x0, y1 - r], [x0, y0 + r]];
+            s.inTangents = [[-c, 0], [0, 0], [0, -c], [0, 0], [c, 0], [0, 0], [0, c], [0, 0]];
+            s.outTangents = [[0, 0], [c, 0], [0, 0], [0, c], [0, 0], [-c, 0], [0, 0], [0, -c]];
+        }
+        s.closed = true;
+        return s;
+    }
+
+    // The tile's own shape cuts the precomp layer: whatever is put inside (a photo, a video) gets the tile's corners.
+    function gridMask(L, cw, ch, w, h, r) {
+        var m = acAdd(L, ["ADBE Mask Parade"], "ADBE Mask Atom");
+        try { acP(L, ["ADBE Mask Parade", m]).name = "Tile"; } catch (e0) {}
+        acP(L, ["ADBE Mask Parade", m, "ADBE Mask Shape"]).setValue(gridMaskShape(cw / 2, ch / 2, w, h, r));
+        return m;
     }
 
     function gridBuild(comp, o, labels) {
@@ -2949,7 +3016,7 @@ var sayframeHost = (function () {
         var gx = orbitNum(o.gap, 0, 1000, 20), gy = o.split ? orbitNum(o.gapV, 0, 1000, 20) : gx, round = orbitNum(o.round, 0, 2000, 20);
         var boxes = gridLayout(rows, cols, orbitNum(o.rand, 0, 100, 100), o.seed), pre = o.mode === "precomp";
         var cw = (W - gx * (cols - 1)) / cols, ch = (H - gy * (rows - 1)) / rows, ox = (comp.width - W) / 2, oy = (comp.height - H) / 2;
-        var tiles = [], nums = [], i, b, bw, bh, x, y, L, cc, inner, txt, folder = null, ctrl, fs, base = labels.tile || "Tile ";
+        var tiles = [], nums = [], scales = [], i, b, bw, bh, x, y, L, cc, inner, txt, folder = null, ctrl, fs, base = labels.tile || "Tile ", sc, std, k;
         if (cw < 1 || ch < 1) { throw new Error("GRID_TOO_TIGHT"); }
         if (pre) { try { folder = app.project.items.addFolder(labels.folder || "Grid"); } catch (eF) { folder = null; } }
         for (i = boxes.length - 1; i >= 0; i--) {
@@ -2957,18 +3024,26 @@ var sayframeHost = (function () {
             bw = Math.round(b.w * cw + (b.w - 1) * gx); bh = Math.round(b.h * ch + (b.h - 1) * gy);
             x = ox + b.c * (cw + gx) + bw / 2; y = oy + b.r * (ch + gy) + bh / 2;
             fs = Math.round(Math.max(12, Math.min(bw, bh) * 0.28));
+            sc = 100;
             if (pre) {
-                cc = app.project.items.addComp(base + (i + 1), Math.max(4, bw), Math.max(4, bh), comp.pixelAspect || 1, comp.duration, comp.frameRate);
+                // A standard-size comp (1000x1000, 1920x1080 or 1080x1920) scaled to cover the tile; a mask in the
+                // tile's shape cuts it, so a photo put inside gets the same rounded corners.
+                std = gridStdSize(bw, bh);
+                sc = Math.max(bw / std[0], bh / std[1]) * 100;
+                cc = app.project.items.addComp(base + (i + 1), std[0], std[1], comp.pixelAspect || 1, comp.duration, comp.frameRate);
                 if (folder) { try { cc.parentFolder = folder; } catch (eP) {} }
                 inner = cc.layers.addShape();
                 inner.name = labels.shape || "Shape";
-                gridTileShape(inner, bw, bh, round, gridColor(i));
-                orbitSet(inner, "ADBE Position", [bw / 2, bh / 2]);
+                gridTileShape(inner, std[0], std[1], 0, gridColor(i));
+                orbitSet(inner, "ADBE Position", [std[0] / 2, std[1] / 2]);
                 if (o.numbers) {
-                    txt = orbitNumber(cc, String(i + 1), fs);
-                    orbitSet(txt, "ADBE Position", [bw / 2, bh / 2 + fs * 0.35]);
+                    k = Math.round(Math.min(std[0], std[1]) * 0.28);
+                    txt = orbitNumber(cc, String(i + 1), k);
+                    orbitSet(txt, "ADBE Position", [std[0] / 2, std[1] / 2 + k * 0.35]);
                 }
                 L = comp.layers.add(cc);
+                orbitSet(L, "ADBE Scale", [sc, sc, 100]);
+                gridMask(L, std[0], std[1], bw * 100 / sc, bh * 100 / sc, round * 100 / sc);
             } else {
                 L = comp.layers.addShape();
                 gridTileShape(L, bw, bh, round, gridColor(i));
@@ -2976,6 +3051,7 @@ var sayframeHost = (function () {
             L.name = base + (i + 1);
             orbitSet(L, "ADBE Position", [x, y]);
             tiles.unshift(L);
+            scales.unshift(sc);
             if (o.numbers && !pre) {
                 txt = orbitNumber(comp, String(i + 1), fs);
                 txt.name = (labels.number || "Number ") + (i + 1);
@@ -2989,7 +3065,7 @@ var sayframeHost = (function () {
         for (i = 0; i < tiles.length; i++) {
             if (nums[i]) { nums[i].parent = tiles[i]; }
             tiles[i].parent = ctrl;
-            if (o.stagger) { gridReveal(tiles[i], comp, i); }
+            if (o.stagger) { gridReveal(tiles[i], comp, i, scales[i]); }
             try { tiles[i].selected = false; if (nums[i]) { nums[i].selected = false; } } catch (eS) {}
         }
         ctrl.selected = true;
@@ -3060,6 +3136,20 @@ var sayframeHost = (function () {
         return gi;
     }
 
+    function tbNewText(comp, text) {
+        var t = comp.layers.addText(text), p, doc;
+        try {
+            p = acP(t, ["ADBE Text Properties", "ADBE Text Document"]);
+            doc = p.value;
+            doc.fontSize = Math.round(Math.min(comp.width, comp.height) * 0.08);
+            doc.fillColor = [1, 1, 1];
+            try { doc.justification = ParagraphJustification.CENTER_JUSTIFY; } catch (e1) {}
+            p.setValue(doc);
+        } catch (e0) {}
+        orbitSet(t, "ADBE Position", [comp.width / 2, comp.height / 2]);
+        return t;
+    }
+
     function tbBuild(comp, t, o, lab) {
         var B = comp.layers.addShape(), per = o.per === "line", n = per ? Math.min(16, tbLines(t) + 2) : 1;
         var c = o.color || [0.23, 0.06, 0.39], sc = o.strokeColor || [1, 1, 1], look = o.look || "fill", helpers = [], H, i, fx, base;
@@ -3102,6 +3192,8 @@ var sayframeHost = (function () {
                 orbitSet(H, "ADBE Position", [0, 0]);
                 orbitSet(H, "ADBE Opacity", 0);
                 try { H.shy = true; } catch (eS) {}
+                // Helpers are shy and the comp hides shy layers: the timeline shows only the text and its box.
+                try { comp.hideShyLayers = true; } catch (eY) {}
                 helpers.push(H);
                 tbGroup(B, comp, lab, o, "thisComp.layer(" + tbQ(H.name) + ")", i, i);
             }
@@ -5935,17 +6027,18 @@ var sayframeHost = (function () {
         // px, py, round, stroke, skew, opacity, shadow, appear: "none"|"left"|"center"|"lines" }; lab - control and layer names.
         textBox: function (o, lab) {
             return reply(function () {
-                var comp = activeComp(), sel = comp.selectedLayers, texts = [], res = [], i;
+                var comp = activeComp(), sel = comp.selectedLayers, texts = [], res = [], i, made = "";
                 if (!o || typeof o !== "object" || !lab) { throw new Error("BAD_TEXTBOX"); }
                 for (i = 0; i < sel.length; i++) { if (sel[i] instanceof TextLayer) { texts.push(sel[i]); } }
-                if (!texts.length) { throw new Error("NO_TEXT_LAYER"); }
                 app.beginUndoGroup("Sayframe: text box");
                 try {
+                    // No text selected: a new text in the middle of the comp gets the box.
+                    if (!texts.length) { texts.push(tbNewText(comp, lab.defaultText || "Text")); made = texts[0].name; }
                     for (i = 0; i < texts.length; i++) { res.push(tbBuild(comp, texts[i], o, lab)); }
                 } finally {
                     app.endUndoGroup();
                 }
-                return { textBox: { boxes: res } };
+                return { textBox: { boxes: res, made: made } };
             });
         },
 

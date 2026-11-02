@@ -258,6 +258,7 @@
             <div class="kr-sw">
               <label class="switch"><input id="orbitNumbers" type="checkbox"><span class="track"></span><span class="text">Номера</span></label>
               <label class="switch"><input id="orbitCamera" type="checkbox"><span class="track"></span><span class="text">Камера</span></label>
+              <label id="orbitBackRow" class="switch kr-back"><input id="orbitBack" type="checkbox"><span class="track"></span><span class="text">Цифра видна сзади</span></label>
             </div>
             <button id="orbitBtn" class="shift-do shift-go">Создать карусель</button>
           </div>
@@ -320,6 +321,68 @@
               <label class="switch"><input id="gridStagger" type="checkbox"><span class="track"></span><span class="text">По очереди</span></label>
             </div>
             <button id="gridBtn" class="shift-do shift-go">Создать сетку</button>
+          </div>
+        </section>
+        <section class="card mk-card" data-mk="textbox">
+          <div class="mk-head"><span class="mk-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 12h10"/></svg></span><b>Плашка под текстом</b><button type="button" class="mk-fold" aria-expanded="true" aria-label="Свернуть"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button></div>
+          <div class="mk-body tb-pane">
+            <div id="tbStage" class="tb-stage" aria-hidden="true"><div id="tbText" class="tb-text"><span>TEXT BOX</span><br><span>BOUNDING</span></div></div>
+            <div id="tbPresets" class="tb-presets" role="group" aria-label="Готовые стили">
+              <button type="button" class="gr-chip" data-v="news">Новости</button>
+              <button type="button" class="gr-chip" data-v="sport">Спорт</button>
+              <button type="button" class="gr-chip" data-v="sticker">Стикер</button>
+              <button type="button" class="gr-chip" data-v="pill">Таблетка</button>
+              <button type="button" class="gr-chip" data-v="frame">Рамка</button>
+              <button type="button" class="gr-chip" data-v="marker">Маркер</button>
+            </div>
+            <div id="tbPer" class="kr-seg" role="group" aria-label="Одна плашка или под каждой строкой">
+              <button type="button" class="kr-b" data-v="all"><span>Вся плашка</span></button>
+              <button type="button" class="kr-b" data-v="line"><span>Каждая строка</span></button>
+            </div>
+            <div id="tbLook" class="kr-seg tb-three" role="group" aria-label="Заливка или обводка">
+              <button type="button" class="kr-b" data-v="fill"><span>Заливка</span></button>
+              <button type="button" class="kr-b" data-v="stroke"><span>Обводка</span></button>
+              <button type="button" class="kr-b" data-v="both"><span>Оба</span></button>
+            </div>
+            <div id="tbStyle" class="kr-seg" role="group" aria-label="Форма плашки">
+              <button type="button" class="kr-b" data-v="box"><span>Плашка</span></button>
+              <button type="button" class="kr-b" data-v="marker"><span>Маркер (полоса снизу)</span></button>
+            </div>
+            <div class="tb-colors">
+              <span class="tb-cl">Цвет</span>
+              <div id="tbSwatches" class="tb-swatches" role="group" aria-label="Цвет плашки">
+                <button type="button" data-v="#3a0f63" style="--c:#3a0f63" aria-label="Тёмно-фиолетовый"></button>
+                <button type="button" data-v="#111111" style="--c:#111111" aria-label="Чёрный"></button>
+                <button type="button" data-v="#ffffff" style="--c:#ffffff" aria-label="Белый"></button>
+                <button type="button" data-v="#ff4f6d" style="--c:#ff4f6d" aria-label="Красный"></button>
+                <button type="button" data-v="#ffcc33" style="--c:#ffcc33" aria-label="Жёлтый"></button>
+                <button type="button" data-v="#2bd38a" style="--c:#2bd38a" aria-label="Зелёный"></button>
+              </div>
+              <input id="tbColor" class="color-pick" type="color" aria-label="Цвет плашки: любой" title="Любой цвет">
+            </div>
+            <div id="tbStrokeRow" class="tb-colors">
+              <span class="tb-cl">Обводка</span>
+              <input id="tbStrokeColor" class="color-pick" type="color" aria-label="Цвет обводки" title="Цвет обводки">
+            </div>
+            <div class="kr-sliders">
+              <label class="ac-row ac-slider kr-sl"><span>По бокам</span><input id="tbPx" class="range" type="range" min="0" max="120" step="1"><output id="tbPxVal" for="tbPx"></output></label>
+              <label class="ac-row ac-slider kr-sl"><span>Сверху/снизу</span><input id="tbPy" class="range" type="range" min="0" max="80" step="1"><output id="tbPyVal" for="tbPy"></output></label>
+              <label class="ac-row ac-slider kr-sl"><span>Скругление</span><input id="tbRound" class="range" type="range" min="0" max="100" step="1"><output id="tbRoundVal" for="tbRound"></output></label>
+              <label id="tbStrokeWRow" class="ac-row ac-slider kr-sl"><span>Толщина</span><input id="tbStroke" class="range" type="range" min="1" max="30" step="1"><output id="tbStrokeVal" for="tbStroke"></output></label>
+              <label class="ac-row ac-slider kr-sl"><span>Наклон</span><input id="tbSkew" class="range" type="range" min="-40" max="40" step="1"><output id="tbSkewVal" for="tbSkew"></output></label>
+              <label class="ac-row ac-slider kr-sl"><span>Прозрачность</span><input id="tbOpacity" class="range" type="range" min="0" max="100" step="1"><output id="tbOpacityVal" for="tbOpacity"></output></label>
+            </div>
+            <span class="tb-cl">Анимация</span>
+            <div id="tbAppear" class="kr-seg tb-four" role="group" aria-label="Как плашка появляется">
+              <button type="button" class="kr-b" data-v="none"><span>Без</span></button>
+              <button type="button" class="kr-b" data-v="left"><span>Слева</span></button>
+              <button type="button" class="kr-b" data-v="center"><span>Центр</span></button>
+              <button type="button" class="kr-b" data-v="lines"><span>Строки</span></button>
+            </div>
+            <div class="kr-sw">
+              <label class="switch"><input id="tbShadow" type="checkbox"><span class="track"></span><span class="text">Тень</span></label>
+            </div>
+            <button id="tbBtn" class="shift-do shift-go">Добавить плашку</button>
           </div>
         </section>
       </div>
@@ -721,72 +784,6 @@
       </label>
       <small id="pfHint" class="paste-hint">Выделите 2 и больше шейп-слоя и нажмите кнопку. Фигуры останутся «живыми»: их можно двигать и анимировать. Отменить — Cmd/Ctrl+Z</small>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Pathfinder»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
-    </section>
-    <section class="card tool-card tb-card" data-tool="textbox" data-info="Плашка под текстом|Выделите текстовый слой и нажмите «Добавить плашку»: под текстом появится шейп-слой, который сам растёт и сжимается вместе с текстом — пока вы печатаете, меняете шрифт или анимируете текст. Плашка висит на тексте и двигается вместе с ним. «Каждая строка» — своя плашка под каждой строкой (и запас на две новые). Цвет, отступы, скругление, обводку и наклон потом можно менять в Effect Controls слоя плашки. Отменить — Cmd/Ctrl+Z." aria-label="Плашка под текстом" title="Двойной щелчок по свободному месту — поменять блоки местами">
-      <button class="tool-grip" aria-label="Переместить блок «Плашка под текстом»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
-      <div class="tool-head" title="Плашка под текстом, которая подстраивается под текст">
-        <b>Плашка под текстом</b>
-      </div>
-      <div class="mk-pane tb-pane">
-        <div id="tbStage" class="tb-stage" aria-hidden="true"><div id="tbText" class="tb-text"><span>TEXT BOX</span><br><span>BOUNDING</span></div></div>
-        <div id="tbPresets" class="tb-presets" role="group" aria-label="Готовые стили">
-          <button type="button" class="gr-chip" data-v="news">Новости</button>
-          <button type="button" class="gr-chip" data-v="sport">Спорт</button>
-          <button type="button" class="gr-chip" data-v="sticker">Стикер</button>
-          <button type="button" class="gr-chip" data-v="pill">Таблетка</button>
-          <button type="button" class="gr-chip" data-v="frame">Рамка</button>
-          <button type="button" class="gr-chip" data-v="marker">Маркер</button>
-        </div>
-        <div id="tbPer" class="kr-seg" role="group" aria-label="Одна плашка или под каждой строкой">
-          <button type="button" class="kr-b" data-v="all"><span>Вся плашка</span></button>
-          <button type="button" class="kr-b" data-v="line"><span>Каждая строка</span></button>
-        </div>
-        <div id="tbLook" class="kr-seg tb-three" role="group" aria-label="Заливка или обводка">
-          <button type="button" class="kr-b" data-v="fill"><span>Заливка</span></button>
-          <button type="button" class="kr-b" data-v="stroke"><span>Обводка</span></button>
-          <button type="button" class="kr-b" data-v="both"><span>Оба</span></button>
-        </div>
-        <div id="tbStyle" class="kr-seg" role="group" aria-label="Форма плашки">
-          <button type="button" class="kr-b" data-v="box"><span>Плашка</span></button>
-          <button type="button" class="kr-b" data-v="marker"><span>Маркер (полоса снизу)</span></button>
-        </div>
-        <div class="tb-colors">
-          <span class="tb-cl">Цвет</span>
-          <div id="tbSwatches" class="tb-swatches" role="group" aria-label="Цвет плашки">
-            <button type="button" data-v="#3a0f63" style="--c:#3a0f63" aria-label="Тёмно-фиолетовый"></button>
-            <button type="button" data-v="#111111" style="--c:#111111" aria-label="Чёрный"></button>
-            <button type="button" data-v="#ffffff" style="--c:#ffffff" aria-label="Белый"></button>
-            <button type="button" data-v="#ff4f6d" style="--c:#ff4f6d" aria-label="Красный"></button>
-            <button type="button" data-v="#ffcc33" style="--c:#ffcc33" aria-label="Жёлтый"></button>
-            <button type="button" data-v="#2bd38a" style="--c:#2bd38a" aria-label="Зелёный"></button>
-          </div>
-          <input id="tbColor" class="color-pick" type="color" aria-label="Цвет плашки: любой" title="Любой цвет">
-        </div>
-        <div id="tbStrokeRow" class="tb-colors">
-          <span class="tb-cl">Обводка</span>
-          <input id="tbStrokeColor" class="color-pick" type="color" aria-label="Цвет обводки" title="Цвет обводки">
-        </div>
-        <div class="kr-sliders">
-          <label class="ac-row ac-slider kr-sl"><span>По бокам</span><input id="tbPx" class="range" type="range" min="0" max="120" step="1"><output id="tbPxVal" for="tbPx"></output></label>
-          <label class="ac-row ac-slider kr-sl"><span>Сверху/снизу</span><input id="tbPy" class="range" type="range" min="0" max="80" step="1"><output id="tbPyVal" for="tbPy"></output></label>
-          <label class="ac-row ac-slider kr-sl"><span>Скругление</span><input id="tbRound" class="range" type="range" min="0" max="100" step="1"><output id="tbRoundVal" for="tbRound"></output></label>
-          <label id="tbStrokeWRow" class="ac-row ac-slider kr-sl"><span>Толщина</span><input id="tbStroke" class="range" type="range" min="1" max="30" step="1"><output id="tbStrokeVal" for="tbStroke"></output></label>
-          <label class="ac-row ac-slider kr-sl"><span>Наклон</span><input id="tbSkew" class="range" type="range" min="-40" max="40" step="1"><output id="tbSkewVal" for="tbSkew"></output></label>
-          <label class="ac-row ac-slider kr-sl"><span>Прозрачность</span><input id="tbOpacity" class="range" type="range" min="0" max="100" step="1"><output id="tbOpacityVal" for="tbOpacity"></output></label>
-        </div>
-        <span class="tb-cl">Появление</span>
-        <div id="tbAppear" class="kr-seg tb-four" role="group" aria-label="Как плашка появляется">
-          <button type="button" class="kr-b" data-v="none"><span>Сразу</span></button>
-          <button type="button" class="kr-b" data-v="left"><span>Слева</span></button>
-          <button type="button" class="kr-b" data-v="center"><span>Центр</span></button>
-          <button type="button" class="kr-b" data-v="lines"><span>Строки</span></button>
-        </div>
-        <div class="kr-sw">
-          <label class="switch"><input id="tbShadow" type="checkbox"><span class="track"></span><span class="text">Тень</span></label>
-        </div>
-        <button id="tbBtn" class="shift-do shift-go">Добавить плашку</button>
-      </div>
-      <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Плашка под текстом»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
     <section class="card tool-card split-card solo" data-tool="split" data-info="Разделить / объединить|Одна кнопка, действие зависит от выделения. Выделен один шейп-слой — каждая группа из его Contents становится отдельным слоем: на том же месте, с теми же эффектами, ключами и выражениями. Если в шейпе одна группа, а в ней несколько, делятся они. Слой с несколькими масками делится по маскам. Выделено несколько шейп-слоёв — они собираются в один шейп-слой: каждый слой становится группой с тем же положением, размером, поворотом и прозрачностью. Отменить — Cmd/Ctrl+Z." aria-label="Разделить / объединить" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Разделить / объединить»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>

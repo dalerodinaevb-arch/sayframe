@@ -474,6 +474,7 @@ function mkOrbitComp(log, name, w, h, layers) {
     addText(t) { const l = mkAcLayer(String(t), "text", log); acInit(l.property("ADBE Text Properties").property("ADBE Text Document"), "ADBE Text Document", { text: t, fontSize: 40 }, log); return put(l); },
     addNull(dur) { const l = mkAcLayer("Null 1", "null", log); l.nullLayer = true; l.outPoint = dur; return put(l); },
     addCamera(nm, pt) { const l = mkAcLayer(nm, "camera", log); l.camPoint = pt; return put(l); },
+    addSolid(color, nm, sw, sh) { const l = mkAcLayer(nm, "solid", log); l.solid = { color, w: sw, h: sh }; put(l); l.moveToEnd = () => { c.list.splice(c.list.indexOf(l), 1); c.list.push(l); }; return l; },
     add(item) { const l = mkAcLayer(item.name, "av", log); l.source = item; return put(l); }
   };
   return c;
@@ -2331,7 +2332,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   mkr.keys[0].v.duration = 1.5;
   check("AC3 stretching the marker in After Effects changes the duration", posOf(AL, 0.6)[1] !== 540 && JSON.stringify(posOf(AL, 1.5)) === "[960,540,0]");
   await acClick(p, "Снизу · с перелётом");
-  check("AC4 clicking the marked card again takes the preset off: marker, effects and expressions go, the user's key stays", mkr.keys.length === 0 && layerFx(AL).length === 0 && acAt(AL, "ADBE Transform Group", "ADBE Position").expression === "" && acAt(AL, "ADBE Transform Group", "ADBE Opacity").expression === "" && acAt(AL, "ADBE Transform Group", "ADBE Position").keys.length === 1 && /^«Снизу · с перелётом» снят: 1 слой\./.test(await p.status()) && (await p.page.locator("#acGrid .ac-card.applied").count()) === 0, await p.status());
+  check("AC4 clicking the marked card again takes the preset off: marker, effects and expressions go, the user's key stays", mkr.keys.length === 0 && layerFx(AL).length === 0 && acAt(AL, "ADBE Transform Group", "ADBE Position").expression === "" && (acAt(AL, "ADBE Transform Group", "ADBE Opacity") || {}).expression === "" && acAt(AL, "ADBE Transform Group", "ADBE Position").keys.length === 1 && /^«Снизу · с перелётом» снят: 1 слой\./.test(await p.status()) && (await p.page.locator("#acGrid .ac-card.applied").count()) === 0, await p.status());
   await p.page.click('#acMode button[data-value="both"]');
   await p.page.evaluate(() => { const r = document.getElementById("acDur"); r.value = "1"; r.dispatchEvent(new Event("input", { bubbles: true })); });
   AL = mkAcLayer("C"); p.ae.comp.selectedLayers = [AL];
@@ -4506,7 +4507,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("FL6 hidden tools are hidden here too", t.tiles === "paste,organize,unused,nullp,decompose,cutout" && t.cols === "ease,easecopy,stagger,align", JSON.stringify(t));
   await p.page.click("#tabShape");
   t = await p.page.evaluate(() => { const g = document.getElementById("shapeTools"); const n = (sel) => Array.prototype.map.call(g.querySelectorAll(sel + " > .tool-card"), (c) => c.getAttribute("data-tool")).join(); return [g.classList.contains("tool-flow"), n(".flow-tiles"), n(".flow-cols"), document.getElementById("splitBtn").getAttribute("data-short")].join("|"); });
-  check("FL7 the Shape tab too: «Разделить» is a tile, «Pathfinder» and «Плашка» blocks below, open", t === "true|split|pathfinder,textbox|Разделить" && (await vis(p, "#pfModes")) && (await overflow(p)) <= 0, t);
+  check("FL7 the Shape tab too: «Разделить» is a tile, «Pathfinder» a block below, open", t === "true|split|pathfinder|Разделить" && (await vis(p, "#pfModes")) && (await overflow(p)) <= 0, t);
   await p.close();
   // Tiles and blocks can be dragged to another place (a block by its title); the order is kept.
   p = await open({ width: 420, height: 1200, settings: { design: "studio" } });
@@ -4878,7 +4879,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     sel(SRC, [1, 2]); sel(DST, []);
     p = await open({ selectedProperties: [SRC] });
     await p.page.click("#tabMotion");
-    check("EC1 the 'Копия плавности' block is in Tools, on the grid with the other blocks, with its pin; the Shape tab has only its own block", (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin").count()) === 1 && (await p.page.locator("#viewShape .tool-card").count()) === 3 && (await p.page.locator("#viewShape .tool-card[data-tool='split']").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
+    check("EC1 the 'Копия плавности' block is in Tools, on the grid with the other blocks, with its pin; the Shape tab has only its own block", (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy']").isVisible()) && /^\d+x\d+$/.test(await p.page.getAttribute("#viewMotion .tool-card[data-tool='easecopy']", "data-cells") || "") && (await p.page.locator("#viewMotion .tool-card[data-tool='easecopy'] .tool-pin").count()) === 1 && (await p.page.locator("#viewShape .tool-card").count()) === 2 && (await p.page.locator("#viewShape .tool-card[data-tool='split']").count()) === 1 && /Буфер пуст/.test(await p.page.locator("#ecClip").innerText()));
     const ecInside = () => p.page.evaluate(() => { const card = document.querySelector("#motionTools .tool-card[data-tool='easecopy']"), c = card.getBoundingClientRect();
       return Array.prototype.every.call(card.querySelectorAll("button:not(.tool-pin):not(.tool-toggle):not(.tool-grip), label, small, b"), (el) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= c.left - 1 && r.right <= c.right + 1 && r.top >= c.top - 1 && r.bottom <= c.bottom + 1); }); });
     check("EC1 nothing sticks out of the block (large blocks)", await ecInside());
@@ -5113,6 +5114,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const ctrl = Lx(p, "Карусель: управление"), c1 = Lx(p, "Карточка 1"), c3 = Lx(p, "Карточка 3"), n1 = Lx(p, "Номер 1");
     check("OR2 «Создать карусель»: a camera on its own 3D null, the controller null, 8 cards with their numbers, one undo step", names(p) === "Карусель: управление камерой,Карусель: камера,Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8].map((i) => "Номер " + i + ",Карточка " + i).join(",") + ",BG" &&
       p.ae.log.undo.join() === "begin:Sayframe: carousel,end", names(p));
+    check("OR2 the camera stands back and a little above, looking at the middle: the whole ring fits (3642 px away, 18° up); numbers show from behind too (default)", near(tf(Lx(p, "Карусель: камера"), "ADBE Position"), [960, -585, -3464]) && near(tf(Lx(p, "Карусель: камера"), "ADBE Camera Point of Interest"), [960, 540, 0]) &&
+      !(acAt(Lx(p, "Номер 1"), "ADBE Transform Group", "ADBE Opacity") || {}).expression && (await p.page.isChecked("#orbitBack")), JSON.stringify(tf(Lx(p, "Карусель: камера"), "ADBE Position")) + " " + await p.status());
     check("OR2 the cards are 3D, on a ring of 600 around the middle, turned to face out, hanging on the null", c1.threeDLayer && ctrl.threeDLayer && ctrl.nullLayer && c1.parent === ctrl && c3.parent === ctrl && near(tf(ctrl, "ADBE Position"), [960, 540, 0]) &&
       near(tf(c1, "ADBE Position"), [960, 540, -600]) && tf(c1, "ADBE Rotate Y") === 0 && near(tf(c3, "ADBE Position"), [1560, 540, 0]) && tf(c3, "ADBE Rotate Y") === -90 &&
       Lx(p, "Карусель: камера").parent === Lx(p, "Карусель: управление камерой") && Lx(p, "Карусель: управление камерой").threeDLayer && near(tf(Lx(p, "Карусель: управление камерой"), "ADBE Position"), [960, 540, 0]), JSON.stringify(tf(c3, "ADBE Position")));
@@ -5133,7 +5136,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     t = Lx(p, "Карточка 1");
     check("OR3 «Шейп + прекомп»: 3 card comps in a «Карусель» folder, each with the shape (a rounded triangle path) and no number", comps.map((c) => c.name).sort().join() === "Карточка 1,Карточка 2,Карточка 3" && p.ae.log.bins.indexOf("Карусель") >= 0 &&
       comps.every((c) => c.list.length === 1 && c.list[0].name === "Форма" && acAt(c.list[0], "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length === 6), comps.map((c) => c.name + ":" + c.list.map((l) => l.name)).join(" "));
-    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one", !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление,Карточка 1,Карточка 2,Карточка 3,Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
+    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one; numbers off — no «Цифра видна сзади» switch", !(await vis(p, "#orbitBackRow")) && !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление,Карточка 1,Карточка 2,Карточка 3,Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
     await p.close();
   }
 
@@ -5148,7 +5151,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const rect = (l) => acAt(l, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect");
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
-    check("GR1 «Макеты»: two blocks, «Карусель» and «Grid», open; the grid preview shows numbered tiles", (await p.page.locator("#orbitPane .mk-card").evaluateAll((l) => l.map((c) => c.getAttribute("data-mk")).join())) === "carousel,grid" &&
+    check("GR1 «Макеты»: three blocks, «Карусель», «Grid» and «Плашка под текстом», open; the grid preview shows numbered tiles", (await p.page.locator("#orbitPane .mk-card").evaluateAll((l) => l.map((c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox" &&
       (await p.page.isVisible("#orbitStage")) && (await p.page.isVisible("#gridStage")) && (await tiles(p)) > 4 && (await tiles(p)) < 20 && (await p.page.locator("#gridStage .gr-box span").first().innerText()) === "1" && (await overflow(p)) <= 0);
     check("GR1 defaults: 4 rows, 5 columns, gap 20, roundness 20, spread 100%, variant 12345, the comp size, numbers and one-by-one on", (await p.page.inputValue("#gridRows")) === "4" && (await p.page.inputValue("#gridCols")) === "5" && (await p.page.locator("#gridGapVal").innerText()) === "20" &&
       (await p.page.locator("#gridRandVal").innerText()) === "100%" && (await p.page.inputValue("#gridSeed")) === "12345" && (await p.page.getAttribute("#gridFit", "aria-pressed")) === "true" && (await p.page.isDisabled("#gridW")) && (await p.page.isChecked("#gridNumbers")) && (await p.page.isChecked("#gridStagger")));
@@ -5183,8 +5186,53 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click("#gridBtn"); await p.idle();
     t = Lx(p, "Плитка 1");
     const comps = p.ae.log.orbitComps || [];
-    check("GR6 «Шейп + прекомп», spread 0: 20 tile comps (368×255) in a «Grid» folder, no numbers, no keys; tile 1 sits in the top-left cell", comps.length === 20 && comps.every((c) => c.width === 368 && c.height === 255 && c.list.length === 1) && p.ae.log.bins.indexOf("Grid") >= 0 &&
-      !!t && t.source && JSON.stringify(tf(t, "ADBE Position")) === "[184,127.5]" && !((acAt(t, "ADBE Transform Group", "ADBE Opacity") || {}).keys || []).length && !Lx(p, "Номер плитки 1") && JSON.stringify(rect(comps.find((c) => c.name === "Плитка 1").list[0]).property("ADBE Vector Rect Size").value) === "[368,255]" && p.errors.length === 0, JSON.stringify(t && tf(t, "ADBE Position")));
+    check("GR6 «Шейп + прекомп», spread 0: 20 tile comps of a standard size (wide tiles → 1920×1080) in a «Grid» folder, no numbers, no keys; tile 1 sits in the top-left cell", comps.length === 20 && comps.every((c) => c.width === 1920 && c.height === 1080 && c.list.length === 1) && p.ae.log.bins.indexOf("Grid") >= 0 &&
+      !!t && t.source && JSON.stringify(tf(t, "ADBE Position")) === "[184,127.5]" && !((acAt(t, "ADBE Transform Group", "ADBE Opacity") || {}).keys || []).length && !Lx(p, "Номер плитки 1") && JSON.stringify(rect(comps.find((c) => c.name === "Плитка 1").list[0]).property("ADBE Vector Rect Size").value) === "[1920,1080]" && p.errors.length === 0, JSON.stringify(t && tf(t, "ADBE Position")));
+    const mk = t && acAt(t, "ADBE Mask Parade", "ADBE Mask Atom"), ms = mk && acAt(mk, "ADBE Mask Shape").value, xs = ms ? ms.vertices.map((v) => v[0]) : [], ys = ms ? ms.vertices.map((v) => v[1]) : [];
+    check("GR6 the comp is scaled to cover the tile (23.6%) and cut by a mask in the tile's shape: 368×255 with 20 px corners, so a photo inside gets the same corners", !!ms && Math.abs(tf(t, "ADBE Scale")[0] - 2550 / 108) < 0.01 && ms.vertices.length === 8 && ms.closed &&
+      Math.abs((Math.max(...xs) - Math.min(...xs)) * 0.23611 - 368) < 0.5 && Math.abs((Math.max(...ys) - Math.min(...ys)) * 0.23611 - 255) < 0.5 && Math.abs(ms.vertices[0][0] - Math.min(...xs) - 20 * 108 / 25.5) < 0.01, JSON.stringify(ms && ms.vertices) + " " + JSON.stringify(tf(t, "ADBE Scale")));
+    await p.close();
+  }
+
+  // Carousel: «Цифра видна сзади» off — a number hides when its card turns away from the camera.
+  {
+    const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    p = await open({ orbit: { layers: [{ name: "BG" }] } });
+    await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]');
+    const spans0 = await p.page.locator("#orbitRing .kr-it span").count();
+    await p.page.locator("label.switch", { has: p.page.locator("#orbitBack") }).locator(".track").click();
+    const spans1 = await p.page.locator("#orbitRing .kr-it span").count();
+    await p.page.click("#orbitBtn"); await p.idle();
+    const ex = (acAt(Lx(p, "Номер 3"), "ADBE Transform Group", "ADBE Opacity") || {}).expression;
+    check("OR4 «Цифра видна сзади» off: the preview drops the numbers of the back cards; each number layer hides when its card faces away", spans0 === 8 && spans1 < 8 && spans1 > 0 && ex === "var L=thisLayer;L.toCompVec([0,0,1])[2]>0?value:0" && /toCompVec/.test((acAt(Lx(p, "Номер 1"), "ADBE Transform Group", "ADBE Opacity") || {}).expression), spans0 + " " + spans1 + " " + ex);
+    await p.page.click('#orbitMode [data-v="precomp"]'); await p.page.click("#orbitBtn"); await p.idle();
+    const inner = (p.ae.log.orbitComps || []).find((c) => c.name === "Карточка 2");
+    const num = inner && inner.list.find((l) => /^2$/.test(l.name));
+    check("OR4 …in «Шейп + прекомп» the number inside the card comp asks its card layer in the main comp", !!num && (acAt(num, "ADBE Transform Group", "ADBE Opacity") || {}).expression === 'var L=comp("Main").layer("Карточка 2");L.toCompVec([0,0,1])[2]>0?value:0', num ? (acAt(num, "ADBE Transform Group", "ADBE Opacity") || {}).expression : "no number");
+    await p.restart(); await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]');
+    check("OR4 the switch survives a restart", !(await p.page.isChecked("#orbitBack")));
+    await p.close();
+  }
+
+  // «Макеты»: the blocks keep a standard width; in a wide panel they stand side by side and swap by dragging the title.
+  {
+    const mkTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); await p.page.waitForTimeout(200); };
+    const cards = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => { const r = c.getBoundingClientRect(); return c.getAttribute("data-mk") + "@" + Math.round(r.top) + "w" + Math.round(r.width); }));
+    p = await open({ width: 1300, orbit: { layers: [{ name: "BG" }] } });
+    await mkTab(p);
+    let c1 = await cards(p);
+    check("MK1 a wide panel: all three blocks 400 wide, side by side", c1.length === 3 && c1.every((x) => /w400$/.test(x)) && c1.every((x) => x.split("@")[1].split("w")[0] === c1[0].split("@")[1].split("w")[0]) && /^carousel/.test(c1[0]), c1.join());
+    const a = await p.page.locator('.mk-card[data-mk="grid"] .mk-head b').boundingBox(), b = await p.page.locator('.mk-card[data-mk="carousel"] .mk-head b').boundingBox();
+    await p.page.mouse.move(a.x + 10, a.y + 5); await p.page.mouse.down(); await p.page.mouse.move(a.x - 40, a.y + 5, { steps: 4 }); await p.page.mouse.move(b.x + 10, b.y + 5, { steps: 6 }); await p.page.mouse.up();
+    c1 = await cards(p);
+    check("MK2 dragging Grid by its title puts it first; neither block folds", /^grid/.test(c1[0]) && (await p.page.locator("#orbitPane .mk-folded").count()) === 0, c1.join());
+    await p.restart(); await mkTab(p);
+    check("MK2 the order survives a restart", /^grid/.test((await cards(p))[0]));
+    await p.close();
+    p = await open({ width: 420, orbit: { layers: [{ name: "BG" }] } });
+    await mkTab(p);
+    c1 = await cards(p);
+    check("MK3 a narrow panel: the blocks one under the other, full width", c1[0].split("w")[1] === c1[1].split("w")[1] && Number(c1[0].split("w")[1]) > 300 && (await overflow(p)) <= 0, c1.join());
     await p.close();
   }
 
@@ -5296,7 +5344,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   {
     const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
     const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
-    const tbTab = async (p) => { await p.page.click("#tabShape"); };
+    const tbTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
     const setRange = (p, sel, v) => p.page.evaluate(([s, x]) => { const r = document.querySelector(s); r.value = String(x); r.dispatchEvent(new Event("input", { bubbles: true })); }, [sel, v]);
     const fxNames = (l) => acAt(l, "ADBE Effect Parade").children.map((e) => e.name).join(",");
     const fxVal = (l, n) => acAt(l, "ADBE Effect Parade").children.find((e) => e.name === n).children[0].value;
@@ -5308,18 +5356,20 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const parentOf = (s) => ({ sourceRectAtTime: () => ({ left: -100, top: -32, width: 200, height: 88 }), text: { sourceText: txt(s) } });
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hello\rworld" }, { name: "BG", selected: false }] } });
     await tbTab(p);
-    check("TB1 a «Плашка под текстом» block on the Shape tab: preview, ready styles, «Добавить плашку»", (await vis(p, '#viewShape .tool-card[data-tool="textbox"]')) && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
-    check("TB1 defaults: each line, fill, dark purple, no stroke row", (await p.page.getAttribute('#tbPer [data-v="line"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbLook [data-v="fill"]', "aria-pressed")) === "true" && !(await vis(p, "#tbStrokeRow")) && (await p.page.inputValue("#tbColor")) === "#3a0f63");
+    check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
+    check("TB1 defaults: each line, fill, dark purple, no stroke row, no animation", (await p.page.getAttribute('#tbAppear [data-v="none"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbPer [data-v="line"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbLook [data-v="fill"]', "aria-pressed")) === "true" && !(await vis(p, "#tbStrokeRow")) && (await p.page.inputValue("#tbColor")) === "#3a0f63");
     await p.page.click('#tbLook [data-v="both"]');
     await setRange(p, "#tbRound", 30);
     check("TB2 the preview follows the settings: stroke row appears, roundness on the preview", (await vis(p, "#tbStrokeRow")) && (await p.page.locator("#tbRoundVal").innerText()) === "30" && (await p.page.evaluate(() => document.getElementById("tbText").style.getPropertyValue("--r"))) === "30px");
     await p.page.click('#tbPresets [data-v="pill"]');
     check("TB2 a ready style sets everything at once («Таблетка»: one box, round)", (await p.page.getAttribute('#tbPer [data-v="all"]', "aria-pressed")) === "true" && (await p.page.locator("#tbRoundVal").innerText()) === "100" && (await p.page.evaluate(() => document.getElementById("tbText").classList.contains("tb-all"))));
     await p.page.click('#tbPresets [data-v="sport"]');
+    check("TB2 a ready style keeps the animation choice (none)", (await p.page.getAttribute('#tbAppear [data-v="none"]', "aria-pressed")) === "true");
+    await p.page.click('#tbAppear [data-v="lines"]');
     await p.page.click("#tbBtn"); await p.idle();
     let B = L(p, "Плашка: Title"), T = L(p, "Title");
     check("TB3 «Добавить плашку» (each line): the box under the text, 4 hidden line helpers (2 lines + 2 spare), one undo step", names(p) === "Title,Плашка: Title,Плашка: строка Title 4,Плашка: строка Title 3,Плашка: строка Title 2,Плашка: строка Title 1,BG" && p.ae.log.undo.join() === "begin:Sayframe: text box,end" && /Плашка готова/.test(await p.status()), names(p) + " | " + p.ae.log.undo.join() + " | " + await p.status());
-    check("TB3 the box and the helpers hang on the text; helpers invisible and shy; each helper shows its own line", B.parent === T && [1, 2, 3, 4].every((i) => { const H = L(p, "Плашка: строка Title " + i); return H.parent === T && acAt(H, "ADBE Transform Group", "ADBE Opacity").value === 0 && H.shy === true; }) &&
+    check("TB3 the box and the helpers hang on the text; helpers invisible and shy, the comp hides shy layers (the timeline shows the text and one shape); each helper shows its own line", B.parent === T && [1, 2, 3, 4].every((i) => { const H = L(p, "Плашка: строка Title " + i); return H.parent === T && acAt(H, "ADBE Transform Group", "ADBE Opacity").value === 0 && H.shy === true; }) && p.ae.log.dcMain.hideShyLayers === true &&
       sfEval(L(p, "Плашка: строка Title 2"), acAt(L(p, "Плашка: строка Title 2"), "ADBE Text Properties", "ADBE Text Document"), 0, { parent: parentOf("Hello\rworld") }) === "world" && sfEval(L(p, "Плашка: строка Title 4"), acAt(L(p, "Плашка: строка Title 4"), "ADBE Text Properties", "ADBE Text Document"), 0, { parent: parentOf("Hello\rworld") }) === "");
     check("TB3 its settings live in Effect Controls", fxNames(B) === "По бокам,Сверху/снизу,Скругление,Цвет,Заливка,Обводка,Толщина обводки,Цвет обводки,Наклон" && fxVal(B, "По бокам") === 22 && fxVal(B, "Наклон") === 14 && fxVal(B, "Заливка") === 1 && fxVal(B, "Обводка") === 0, fxNames(B));
     const lay = (n, w) => ({ layer: (x) => (x === n ? { sourceRectAtTime: rectOf(w) } : null), frameDuration: 1 / 30 });
@@ -5337,7 +5387,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await tbTab(p); await p.page.click("#tbBtn"); await p.idle();
-    check("TB6 no text layer selected: a hint, nothing changes", names(p) === "BG" && /текстов/.test(await p.status()) && p.ae.log.undo.length === 0, await p.status());
+    check("TB6 no text layer selected: a new text «Ваш текст» in the middle gets the box, one undo step", /^Ваш текст,Плашка: Ваш текст,Плашка: строка Ваш текст 3,/.test(names(p)) && JSON.stringify(acAt(L(p, "Ваш текст"), "ADBE Transform Group", "ADBE Position").value) === "[960,540]" && L(p, "Плашка: Ваш текст").parent === L(p, "Ваш текст") && p.ae.log.undo.join() === "begin:Sayframe: text box,end" && /Текст не был выделен — создал «Ваш текст»/.test(await p.status()), names(p) + " | " + await p.status());
     await p.close();
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text" }] } });
     await tbTab(p); await p.page.click('#tbPresets [data-v="marker"]');
@@ -6110,7 +6160,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({});
     await p.page.click("#settingsBtn"); await p.page.click("#setTabTools");
     t = await p.page.locator("#toolPicker button").evaluateAll((l) => l.map((b) => b.getAttribute("data-tool") + ":" + b.getAttribute("aria-pressed")));
-    check("TP1 settings list every tool of both tabs, all shown", t.length === 15 && t.every((x) => /:true$/.test(x)) && t.indexOf("split:true") >= 0 && (await p.page.locator(".tool-picker-head").evaluateAll((l) => l.map((x) => x.textContent))).join() === "Инструменты,Шейп", t.join());
+    check("TP1 settings list every tool of both tabs, all shown", t.length === 14 && t.every((x) => /:true$/.test(x)) && t.indexOf("split:true") >= 0 && (await p.page.locator(".tool-picker-head").evaluateAll((l) => l.map((x) => x.textContent))).join() === "Инструменты,Шейп", t.join());
     const before = await shown(p);
     await p.page.click('#toolPicker button[data-tool="cache"]'); await p.page.click('#toolPicker button[data-tool="split"]');
     await p.page.waitForTimeout(100);
