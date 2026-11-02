@@ -2801,6 +2801,32 @@ var sayframeHost = (function () {
         acP(l, ["ADBE Transform Group", name]).setValue(v);
     }
 
+    // The camera steps back and a little up, like the panel's preview: the whole carousel in the frame with room
+    // around it. Zoom (px) and the comp size give how far the camera has to be for the widest part and the nearest card.
+    function orbitFrame(comp, camL, spots, w, h, cx, cy) {
+        var zoom = 0, ex = 0, ey = 0, near = 0, i, d, tilt = 18 * Math.PI / 180;
+        try { zoom = Number(acP(camL, ["ADBE Camera Options Group", "ADBE Camera Zoom"]).value); } catch (e0) { zoom = 0; }
+        if (!(zoom > 0)) { zoom = comp.width * 1.389; }
+        for (i = 0; i < spots.length; i++) {
+            ex = Math.max(ex, Math.abs(spots[i].x) + w / 2);
+            ey = Math.max(ey, Math.abs(spots[i].y) + h / 2);
+            near = Math.max(near, -spots[i].z);
+        }
+        d = Math.max(zoom * 1.6 * ex / (comp.width / 2), zoom * 2.2 * ey / (comp.height / 2) + near, zoom);
+        d = Math.round(d);
+        orbitSet(camL, "ADBE Position", [cx, Math.round(cy - d * Math.sin(tilt)), -Math.round(d * Math.cos(tilt))]);
+        try { orbitSet(camL, "ADBE Camera Point of Interest", [cx, cy, 0]); } catch (e1) {}
+        return d;
+    }
+
+    // An optional dark background under the carousel, as in the preview.
+    function orbitBackground(comp, name) {
+        var bg = comp.layers.addSolid([0.08, 0.08, 0.09], name || "Carousel Background", comp.width, comp.height, comp.pixelAspect || 1, comp.duration);
+        try { bg.moveToEnd(); } catch (e0) {}
+        try { bg.selected = false; } catch (e1) {}
+        return bg;
+    }
+
     function orbitBuild(comp, o, labels) {
         var n = Math.round(orbitNum(o.count, 2, 36, 8)), layout = ORBIT_LAYOUTS[o.layout] ? o.layout : "ring";
         var kind = ORBIT_SIDES.hasOwnProperty(o.shape) ? o.shape : "rect", t = orbitNum(o.corners, 0, 100, 20) / 100;
@@ -2808,11 +2834,13 @@ var sayframeHost = (function () {
         var pre = o.mode === "precomp", cx = comp.width / 2, cy = comp.height / 2, fs = Math.round(Math.min(w, h) * 0.32);
         var ctrl, cam = "", had = false, cards = [], nums = [], i, j, sp, L, txt, cc, inner, folder = null, base, camL, rig = null;
         base = labels.card || "Card ";
+        var spots = [], bg = null;
         if (pre) {
             try { folder = app.project.items.addFolder(labels.folder || "Carousel"); } catch (eF) { folder = null; }
         }
         for (i = n - 1; i >= 0; i--) {
             sp = orbitSpot(i, n, layout, radius, h);
+            spots.push(sp);
             if (pre) {
                 cc = app.project.items.addComp(base + (i + 1), w, h, comp.pixelAspect || 1, comp.duration, comp.frameRate);
                 if (folder) { try { cc.parentFolder = folder; } catch (eP) {} }
@@ -2857,6 +2885,7 @@ var sayframeHost = (function () {
                 // The camera hangs on its own 3D null in the middle: turn or move the null to fly around the carousel.
                 camL = comp.layers.addCamera(labels.camera || "Carousel Camera", [cx, cy]);
                 cam = camL.name;
+                orbitFrame(comp, camL, spots, w, h, cx, cy);
                 rig = comp.layers.addNull(comp.duration);
                 rig.name = labels.camRig || "Camera Control";
                 rig.threeDLayer = true;
@@ -2865,10 +2894,11 @@ var sayframeHost = (function () {
                 try { rig.selected = false; camL.selected = false; } catch (eC) {}
             }
         }
+        if (o.bg) { bg = orbitBackground(comp, labels.bg); }
         for (i = 0; i < cards.length; i++) { try { cards[i].selected = false; } catch (eS) {} }
         for (i = 0; i < nums.length; i++) { try { nums[i].selected = false; } catch (eT) {} }
         ctrl.selected = true;
-        return { cards: n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, camRig: rig ? rig.name : "", hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
+        return { cards: n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, camRig: rig ? rig.name : "", hadCamera: had, precomp: pre, folder: folder ? folder.name : "", bg: bg ? bg.name : "" };
     }
 
     // ---- Grid (section "Layouts"): a bento grid of rounded tiles. rows x cols cells; with "rand" some

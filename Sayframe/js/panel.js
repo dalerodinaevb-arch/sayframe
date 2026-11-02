@@ -1035,7 +1035,7 @@
         orbitCornerRow: el("orbitCornerRow"), orbitCornerIco: el("orbitCornerIco"), orbitCorners: el("orbitCorners"), orbitCornersVal: el("orbitCornersVal"),
         orbitMode: el("orbitMode"), orbitLess: el("orbitLess"), orbitMore: el("orbitMore"), orbitCount: el("orbitCount"),
         orbitRadius: el("orbitRadius"), orbitRadiusVal: el("orbitRadiusVal"), orbitW: el("orbitW"), orbitWVal: el("orbitWVal"), orbitH: el("orbitH"), orbitHVal: el("orbitHVal"),
-        orbitNumbers: el("orbitNumbers"), orbitCamera: el("orbitCamera"), orbitBtn: el("orbitBtn"),
+        orbitNumbers: el("orbitNumbers"), orbitCamera: el("orbitCamera"), orbitBg: el("orbitBg"), orbitBtn: el("orbitBtn"),
         gridStage: el("gridStage"), gridW: el("gridW"), gridH: el("gridH"), gridFit: el("gridFit"), gridRows: el("gridRows"), gridRowsLess: el("gridRowsLess"), gridRowsMore: el("gridRowsMore"),
         gridCols: el("gridCols"), gridColsLess: el("gridColsLess"), gridColsMore: el("gridColsMore"), gridGap: el("gridGap"), gridGapVal: el("gridGapVal"), gridGapName: el("gridGapName"),
         gridGapV: el("gridGapV"), gridGapVVal: el("gridGapVVal"), gridGapVRow: el("gridGapVRow"), gridRound: el("gridRound"), gridRoundVal: el("gridRoundVal"),
@@ -6461,7 +6461,7 @@
 
     // ---- Раздел «Макеты»: карусель. Настройки хранятся отдельно; превью — те же карточки в CSS 3D, его можно крутить мышкой.
     var ORBIT_KEY = "sayframe.orbit.v1";
-    var ORBIT_DEFAULTS = { layout: "ring", shape: "rect", corners: 20, mode: "shape", count: 8, radius: 600, w: 400, h: 560, numbers: true, camera: true };
+    var ORBIT_DEFAULTS = { layout: "ring", shape: "rect", corners: 20, mode: "shape", count: 8, radius: 600, w: 400, h: 560, numbers: true, camera: true, bg: true };
     var ORBIT_LAYOUT_NAMES = { ring: "кольцо", half: "полукруг", spiral: "спираль", wave: "волна" };
     var ORBIT_SIDES = { rect: 4, circle: 0, tri: 3, hex: 6 };
     var orbit = loadOrbit(), orbitSpin = -24, orbitDrag = null;
@@ -6582,6 +6582,9 @@
         ui.orbitH.value = String(orbit.h); ui.orbitHVal.textContent = String(orbit.h);
         ui.orbitNumbers.checked = orbit.numbers;
         ui.orbitCamera.checked = orbit.camera;
+        ui.orbitBg.checked = orbit.bg;
+        // Без фона превью показывает шахматку — как прозрачность в After Effects.
+        ui.orbitStage.classList.toggle("kr-nobg", !orbit.bg);
         drawOrbitPreview();
     }
 
@@ -6600,13 +6603,14 @@
         setStatus("Строю карусель…", "busy");
         try {
             res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: orbit.mode,
-                radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera },
-                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма" }]);
+                radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera, bg: orbit.bg },
+                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", bg: "Карусель: фон", folder: "Карусель", shape: "Форма" }]);
             setBusy(false);
             setStatus("Карусель готова: " + plural(res.cards, "карточка", "карточки", "карточек") + ", " + ORBIT_LAYOUT_NAMES[res.layout] + ". " +
                 "Крутите её слоем «" + res.ctrl + "» (Y Rotation)." +
                 (res.precomp ? " Каждая карточка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео." : "") +
                 (res.camera ? " Добавлена камера «" + res.camera + "»" + (res.camRig ? " на 3D-нуле «" + res.camRig + "»: крутите или двигайте его, чтобы облететь карусель." : ".") : (res.hadCamera ? " Камера в композиции уже была." : "")) +
+                (res.bg ? " Снизу тёмный фон «" + res.bg + "»." : "") +
                 " Отменить — Cmd/Ctrl+Z.", "done");
         } catch (e) {
             toolFailed(e);
@@ -6633,6 +6637,7 @@
         });
         ui.orbitNumbers.addEventListener("change", function () { setOrbit("numbers", ui.orbitNumbers.checked); });
         ui.orbitCamera.addEventListener("change", function () { setOrbit("camera", ui.orbitCamera.checked); });
+        ui.orbitBg.addEventListener("change", function () { setOrbit("bg", ui.orbitBg.checked); });
         ui.orbitBtn.addEventListener("click", onOrbit);
         // Крутить превью мышкой.
         ui.orbitStage.addEventListener("pointerdown", function (e) {
