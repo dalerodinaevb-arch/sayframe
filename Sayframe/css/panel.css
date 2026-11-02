@@ -1696,6 +1696,17 @@ html[data-design="ae"] .set-tabs button[aria-selected="true"] { background: rgba
 .brand-cap { min-height: 14px; text-align: center; color: var(--muted); font: 600 11px/1.2 var(--round); }
 .brand-cap:empty { display: none; }
 
+/* «Текст по ленте»: случайная линия, направление, куда бежит текст */
+.rb-seed { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.rb-seed[hidden], .rb-dir[hidden], .rb-rundir[hidden] { display: none; }
+.rb-seed-l { display: flex; align-items: center; gap: 8px; color: var(--muted); font: 600 12px/1 var(--round); }
+.rb-seed-l .field { width: 80px; height: 30px; }
+.rb-dice { margin-left: auto; }
+.rb-dir { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.kr-seg.rb-dirs { grid-template-columns: repeat(4, 1fr); }
+.rb-dirs .kr-b { font-size: 16px; }
+.rb-rundir { margin-top: 6px; }
+
 /* ------------------------------------------------------- Без фона */
 
 /* Окно на всю панель: фото крупно, сверху — чем отмечать, снизу — край, куда положить и «Готово». */

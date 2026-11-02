@@ -432,6 +432,21 @@
                 <button type="button" class="gr-chip" data-v="loops">Петли</button>
                 <button type="button" class="gr-chip" data-v="circle">Круг</button>
                 <button type="button" class="gr-chip" data-v="spiral">Спираль</button>
+                <button type="button" class="gr-chip" data-v="random" title="Каждый раз новая линия: петли, волны и изгибы">🎲 Случайная</button>
+              </div>
+              <div id="rbSeedRow" class="rb-seed">
+                <label class="rb-seed-l" title="Номер линии: понравилась — запомните номер и вернитесь к ней">Вариант<input id="rbSeed" class="field" type="number" min="1" max="99999" step="1" aria-label="Вариант линии"></label>
+                <button id="rbDice" type="button" class="gr-chip rb-dice">🎲 Другая линия</button>
+              </div>
+              <div id="rbDirRow" class="rb-dir">
+                <span class="kr-lab">Направление линии</span>
+                <div id="rbDir" class="kr-seg rb-dirs" role="group" aria-label="Направление линии">
+                  <button type="button" class="kr-b" data-v="0" title="Слева направо" aria-label="Слева направо">→</button>
+                  <button type="button" class="kr-b" data-v="-30" title="Вверх вправо" aria-label="Вверх вправо">↗</button>
+                  <button type="button" class="kr-b" data-v="-90" title="Снизу вверх" aria-label="Снизу вверх">↑</button>
+                  <button type="button" class="kr-b" data-v="30" title="Вниз вправо" aria-label="Вниз вправо">↘</button>
+                </div>
+                <label class="ac-row ac-slider kr-sl"><span>Угол</span><input id="rbAngle" class="range" type="range" min="-90" max="90" step="1"><output id="rbAngleVal" for="rbAngle"></output></label>
               </div>
             </div>
             <div class="rb-text">
@@ -455,6 +470,10 @@
             </div>
             <div id="rbRibbonSw" class="kr-sw">
               <label class="switch"><input id="rbRun" type="checkbox"><span class="track"></span><span class="text">Бежит по ленте</span></label>
+              <div id="rbRunDir" class="kr-seg rb-rundir" role="group" aria-label="Куда бежит текст">
+                <button type="button" class="kr-b" data-v="fwd"><span>Вперёд →</span></button>
+                <button type="button" class="kr-b" data-v="back"><span>← Назад</span></button>
+              </div>
             </div>
             <div id="rbRingSw" class="kr-sw">
               <label class="switch"><input id="rbBack" type="checkbox"><span class="track"></span><span class="text">Сзади бледнее</span></label>

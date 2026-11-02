@@ -1060,7 +1060,7 @@
         tbStroke: el("tbStroke"), tbStrokeVal: el("tbStrokeVal"), tbSkew: el("tbSkew"), tbSkewVal: el("tbSkewVal"), tbOpacity: el("tbOpacity"), tbOpacityVal: el("tbOpacityVal"),
         tbShadow: el("tbShadow"), tbBtn: el("tbBtn"),
         phPhone: el("phPhone"), phModel: el("phModel"), phColors: el("phColors"), phPose: el("phPose"), phSize: el("phSize"), phSizeVal: el("phSizeVal"),
-        rbStage: el("rbStage"), rbMode: el("rbMode"), rbRibbonOpts: el("rbRibbonOpts"), rbForm: el("rbForm"), rbText: el("rbText"), rbSep: el("rbSep"),
+        rbStage: el("rbStage"), rbSeedRow: el("rbSeedRow"), rbSeed: el("rbSeed"), rbDice: el("rbDice"), rbDirRow: el("rbDirRow"), rbDir: el("rbDir"), rbAngle: el("rbAngle"), rbAngleVal: el("rbAngleVal"), rbRunDir: el("rbRunDir"), rbMode: el("rbMode"), rbRibbonOpts: el("rbRibbonOpts"), rbForm: el("rbForm"), rbText: el("rbText"), rbSep: el("rbSep"),
         rbRibColorRow: el("rbRibColorRow"), rbRibColors: el("rbRibColors"), rbTextColors: el("rbTextColors"), rbRibbonSl: el("rbRibbonSl"), rbRingSl: el("rbRingSl"),
         rbRibbonSw: el("rbRibbonSw"), rbRingSw: el("rbRingSw"), rbRun: el("rbRun"), rbBack: el("rbBack"), rbCamera: el("rbCamera"), rbBtn: el("rbBtn"),
         rbWidth: el("rbWidth"), rbWidthVal: el("rbWidthVal"), rbSize: el("rbSize"), rbSizeVal: el("rbSizeVal"), rbSpeed: el("rbSpeed"), rbSpeedVal: el("rbSpeedVal"),
@@ -8084,9 +8084,9 @@
     // ---- Текст по ленте (Анимация › Макеты): лента с бегущим текстом по линии или 3D-кольцо из букв.
     var RB_KEY = "sayframe.ribbon.v1";
     var RB_DEFAULTS = { mode: "ribbon", form: "loops", text: "WEST LOOP", sep: "•", ribbonColor: "#3aa0e8", textColor: "#e8672c", ringColor: "#ffffff",
-        width: 120, size: 60, speed: 35, run: true, rings: 2, radius: 560, tilt: 12, ringSpeed: 40, back: true, camera: true };
-    var RB_RANGES = { width: [10, 400], size: [20, 100], speed: [0, 100], rings: [1, 5], radius: [100, 1500], tilt: [0, 60], ringSpeed: [0, 100] };
-    var RB_CHOICES = { mode: ["ribbon", "ring"], form: ["path", "wave", "loops", "circle", "spiral"] };
+        width: 120, size: 60, speed: 35, run: true, rings: 2, radius: 560, tilt: 12, ringSpeed: 40, back: true, camera: true, seed: 4127, angle: 0, dir: "fwd" };
+    var RB_RANGES = { width: [10, 400], size: [20, 100], speed: [0, 100], rings: [1, 5], radius: [100, 1500], tilt: [0, 60], ringSpeed: [0, 100], seed: [1, 99999], angle: [-90, 90] };
+    var RB_CHOICES = { mode: ["ribbon", "ring"], form: ["path", "wave", "loops", "circle", "spiral", "random"], dir: ["fwd", "back"] };
 
     function rbClean(src) {
         var o = {}, k;
@@ -8102,8 +8102,44 @@
     var rb = (function () { try { return rbClean(JSON.parse(window.localStorage.getItem(RB_KEY) || "null")); } catch (e) { return rbClean(null); } })();
 
     // Те же формы, что в host.jsx (ribSample + плавные кривые ribShape): превью совпадает с композицией.
-    function rbSample(form, W, H) {
+    function rbRng(seed) {
+        var s = Math.floor(Math.abs(Number(seed) || 1)) % 2147483646 + 1;
+        return function () { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+    }
+
+    // «Случайная»: 4–6 изгибов, на части — петля. Тот же номер варианта — та же линия (как ribRandom в host.jsx).
+    function rbRandom(seed, W, H) {
+        var r = rbRng(seed), pts = [], n = 4 + Math.floor(r() * 3), i, k, x, y, rad, dir, cy, t, step = W * 1.1 / n;
+        for (i = 0; i <= n; i++) {
+            x = -W * 0.55 + i * step;
+            y = (r() - 0.5) * H * 0.5;
+            pts.push([x, y]);
+            if (i > 0 && i < n && r() < 0.5) {
+                rad = H * (0.08 + r() * 0.07);
+                dir = r() < 0.5 ? 1 : -1;
+                cy = y - dir * rad;
+                for (k = 1; k < 8; k++) { t = k / 8 * 2 * Math.PI; pts.push([x + rad * Math.sin(t) + k / 8 * step * 0.12, cy + dir * rad * Math.cos(t)]); }
+                pts.push([x + step * 0.14, y]);
+            }
+        }
+        return pts;
+    }
+
+    // Направление линии: форма строится для повёрнутого кадра и поворачивается (как ribSample в host.jsx).
+    function rbSample(form, W, H, o) {
+        var a = (o && Number(o.angle)) || 0, sm, c, sn, rw, rh;
+        if (form === "circle" || form === "path" || !a) { return rbSample0(form, W, H, o); }
+        c = Math.cos(a * Math.PI / 180); sn = Math.sin(a * Math.PI / 180);
+        rw = Math.min(Math.abs(c) * W + Math.abs(sn) * H, Math.sqrt(W * W + H * H));
+        rh = H + Math.abs(sn) * (W - H);
+        sm = rbSample0(form, rw, rh, o);
+        sm.pts = sm.pts.map(function (p) { return [p[0] * c - p[1] * sn, p[0] * sn + p[1] * c]; });
+        return sm;
+    }
+
+    function rbSample0(form, W, H, o) {
         var pts = [], i, n, t, u, m = Math.min(W, H), r, xs = [], ys = [], s, x0, x1, y0, y1;
+        if (form === "random") { return { pts: rbRandom(o && o.seed, W, H), closed: false }; }
         if (form === "circle") { r = m * 0.3; for (i = 0; i < 24; i++) { t = i / 24 * 2 * Math.PI; pts.push([r * Math.sin(t), -r * Math.cos(t)]); } return { pts: pts, closed: true }; }
         if (form === "spiral") { n = 44; for (i = 0; i <= n; i++) { t = i / n * 5 * Math.PI; r = m * 0.4 * (0.12 + 0.88 * i / n); pts.push([r * Math.cos(t), r * Math.sin(t)]); } return { pts: pts, closed: false }; }
         if (form === "loops" || form === "path") {
@@ -8143,7 +8179,7 @@
         if (rb.mode === "ribbon") {
             for (i = 0; i < 60; i++) { txt += unit; }
             fs = Math.max(6, Math.round(rb.width * rb.size / 100));
-            st.innerHTML = "<svg viewBox=\"-1100 -560 2200 1120\" preserveAspectRatio=\"xMidYMid meet\"><path id=\"rbPrevPath\" d=\"" + rbSvgPath(rbSample(rb.form, 1920, 1080)) + "\" fill=\"none\" stroke=\"" + rb.ribbonColor +
+            st.innerHTML = "<svg viewBox=\"-1100 -560 2200 1120\" preserveAspectRatio=\"xMidYMid meet\"><path id=\"rbPrevPath\" d=\"" + rbSvgPath(rbSample(rb.form, 1920, 1080, { seed: rb.seed, angle: rb.angle })) + "\" fill=\"none\" stroke=\"" + rb.ribbonColor +
                 "\" stroke-width=\"" + rb.width + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><text fill=\"" + rb.textColor + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + rbEsc(txt) + "</textPath></text></svg>";
             return;
         }
@@ -8182,6 +8218,14 @@
             ui["rb" + d[0] + "Val"].textContent = rb[d[1]] + d[2];
         });
         ui.rbRun.checked = rb.run; ui.rbBack.checked = rb.back; ui.rbCamera.checked = rb.camera;
+        ui.rbSeedRow.hidden = ring || rb.form !== "random";
+        ui.rbDirRow.hidden = ring || rb.form === "path" || rb.form === "circle";
+        ui.rbRunDir.hidden = ring || !rb.run;
+        if (document.activeElement !== ui.rbSeed) { ui.rbSeed.value = String(rb.seed); }
+        ui.rbAngle.value = String(rb.angle);
+        ui.rbAngleVal.textContent = rb.angle + "°";
+        Array.prototype.forEach.call(ui.rbDir.querySelectorAll("button[data-v]"), function (b) { b.setAttribute("aria-pressed", Number(b.getAttribute("data-v")) === rb.angle ? "true" : "false"); });
+        pressGroupV(ui.rbRunDir, rb.dir);
         ui.rbBtn.textContent = ring ? "Создать кольцо" : "Создать ленту";
         drawRibbonPreview();
     }
@@ -8200,7 +8244,7 @@
         setBusy(true);
         setStatus(ring ? "Собираю кольцо…" : "Собираю ленту…", "busy");
         try {
-            res = await host("ribbonMake", [{ mode: rb.mode, form: rb.form, text: rb.text || "TEXT", sep: rb.sep, width: rb.width, textSize: rb.size, speed: ring ? rb.ringSpeed : rb.speed, run: rb.run,
+            res = await host("ribbonMake", [{ mode: rb.mode, form: rb.form, text: rb.text || "TEXT", sep: rb.sep, width: rb.width, textSize: rb.size, speed: ring ? rb.ringSpeed : rb.speed, run: rb.run, seed: rb.seed, angle: rb.angle, dir: rb.dir,
                 ribbonColor: tbRgb(rb.ribbonColor), textColor: tbRgb(ring ? rb.ringColor : rb.textColor), rings: rb.rings, radius: rb.radius, tilt: rb.tilt,
                 backDark: rb.back, camera: rb.camera },
                 { ribbon: "Лента", path: "Линия", text: "Текст ленты", width: "Толщина ленты", speed: "Скорость", color: "Цвет ленты",
@@ -8235,6 +8279,15 @@
         ui.rbRun.addEventListener("change", function () { setRibbon({ run: ui.rbRun.checked }); });
         ui.rbBack.addEventListener("change", function () { setRibbon({ back: ui.rbBack.checked }); });
         ui.rbCamera.addEventListener("change", function () { setRibbon({ camera: ui.rbCamera.checked }); });
+        ui.rbDice.addEventListener("click", function () {
+            var v = rb.seed;
+            while (v === rb.seed) { v = 1 + Math.floor(Math.random() * 99999); }
+            setRibbon({ form: "random", seed: v });
+        });
+        ui.rbSeed.addEventListener("change", function () { setRibbon({ seed: Number(ui.rbSeed.value) || 1 }); });
+        ui.rbDir.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ angle: Number(b.getAttribute("data-v")) }); } });
+        ui.rbAngle.addEventListener("input", function () { setRibbon({ angle: Number(ui.rbAngle.value) }); });
+        ui.rbRunDir.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ dir: b.getAttribute("data-v") }); } });
         ui.rbBtn.addEventListener("click", onRibbon);
         drawRibbon();
     }

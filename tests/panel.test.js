@@ -5502,7 +5502,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
     await rbTab(p);
     check("RB1 a «Текст по ленте» block in «Макеты» after the phone: preview of the ribbon with the text on it, forms, «Создать ленту»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" &&
-      (await p.page.locator("#rbStage svg path").count()) === 1 && /WEST LOOP • WEST LOOP/.test(await p.page.locator("#rbStage textPath").textContent()) && (await p.page.locator("#rbForm button").count()) === 5 && (await p.page.getAttribute('#rbForm [data-v="loops"]', "aria-pressed")) === "true" && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать ленту" && (await overflow(p)) <= 0);
+      (await p.page.locator("#rbStage svg path").count()) === 1 && /WEST LOOP • WEST LOOP/.test(await p.page.locator("#rbStage textPath").textContent()) && (await p.page.locator("#rbForm > button").count()) === 6 && (await p.page.getAttribute('#rbForm [data-v="loops"]', "aria-pressed")) === "true" && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать ленту" && (await overflow(p)) <= 0);
     await p.page.click('#rbMode [data-v="ring"]');
     check("RB1 «3D-кольцо»: the ring's own settings, the ribbon's ones hide; letters in the preview, the far ones dimmer", (await vis(p, "#rbRingSl")) && !(await vis(p, "#rbRibbonSl")) && !(await vis(p, "#rbForm")) && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать кольцо" &&
       (await p.page.locator("#rbStage .rb-ringrow").count()) === 2 && (await p.page.locator('#rbStage .rb-ringrow span[style*="opacity"]').count()) > 5);
@@ -5556,6 +5556,52 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("RB5 the settings survive a restart", (await p.page.getAttribute('#rbMode [data-v="ring"]', "aria-pressed")) === "true" && p.errors.length === 0, p.errors.join("|"));
     await p.close();
   }
+  // «Текст по ленте»: a random line by number, the line's direction, the text running forward or back.
+  {
+    const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const rbTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    const verts = (R) => acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices;
+    const spread = (v, k) => Math.max(...v.map((q) => q[k])) - Math.min(...v.map((q) => q[k]));
+    const fm = (T) => acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin");
+    const d = (p) => p.page.getAttribute("#rbStage svg path", "d");
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    check("RN1 the seed row shows only for «Случайная»", !(await vis(p, "#rbSeedRow")) && (await vis(p, "#rbDirRow")));
+    await p.page.click('#rbForm [data-v="random"]');
+    const d1 = await d(p);
+    check("RN1 «🎲 Случайная»: a number and «Другая линия»", (await vis(p, "#rbSeedRow")) && (await p.page.inputValue("#rbSeed")) === "4127");
+    await p.page.click("#rbDice");
+    const s2 = await p.page.inputValue("#rbSeed"), d2 = await d(p);
+    check("RN2 «Другая линия» gives a new number and a new line", s2 !== "4127" && d2 !== d1, s2);
+    await p.page.fill("#rbSeed", "4127"); await p.page.press("#rbSeed", "Enter");
+    check("RN2 the same number brings the same line back", (await d(p)) === d1);
+    await p.page.click("#rbBtn"); await p.idle();
+    const v1 = JSON.stringify(verts(L(p, "Лента")));
+    check("RN3 the comp gets that random line", verts(L(p, "Лента")).length >= 5 && spread(verts(L(p, "Лента")), 0) > 1500 && /Лента готова/.test(await p.status()), await p.status());
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    await p.page.click('#rbForm [data-v="random"]'); await p.page.fill("#rbSeed", "4127"); await p.page.press("#rbSeed", "Enter");
+    await p.page.click("#rbBtn"); await p.idle();
+    check("RN3 the same number makes the same line again", JSON.stringify(verts(L(p, "Лента"))) === v1);
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    await p.page.click('#rbForm [data-v="wave"]');
+    await p.page.click('#rbDir [data-v="-90"]');
+    check("RN4 ↑ sets the angle to -90°, the slider follows", (await p.page.inputValue("#rbAngle")) === "-90" && (await p.page.innerText("#rbAngleVal")) === "-90°" && (await p.page.getAttribute('#rbDir [data-v="-90"]', "aria-pressed")) === "true");
+    await p.page.click('#rbRunDir [data-v="back"]');
+    await p.page.click("#rbBtn"); await p.idle();
+    let v = verts(L(p, "Лента")), T = L(p, "Текст ленты");
+    check("RN4 a wave from bottom to top runs the whole height", spread(v, 1) > 1000 && spread(v, 0) < 900 && v[0][1] > v[v.length - 1][1], spread(v, 0) + "x" + spread(v, 1));
+    check("RN5 «← Назад»: the text runs the other way and starts far back, so no gap opens", /^value\+time\*effect/.test(fm(T).expression) && fm(T).value < 0, fm(T).expression + " " + fm(T).value);
+    await p.page.click('#rbForm [data-v="circle"]');
+    check("RN6 a circle and a drawn line have no direction row", !(await vis(p, "#rbDirRow")) && (await p.page.click('#rbForm [data-v="path"]'), !(await vis(p, "#rbDirRow"))));
+    await p.page.click('#rbForm [data-v="wave"]'); await p.page.click("label:has(#rbRun)");
+    check("RN6 «Вперёд / Назад» only while the text runs", !(await vis(p, "#rbRunDir")) && p.errors.length === 0, p.errors.join("|"));
+    await p.close();
+  }
+
   // Decompose: the layers of a selected precomp come out into the open comp, in its place.
   {
     const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");

@@ -3220,8 +3220,46 @@ var sayframeHost = (function () {
     // ---- Text on a ribbon (section "Layouts"). "ribbon": a thick stroke along a line with a text running on it
     // (the line is the selected mask/shape path, or a ready form); "ring": letters stand on a circle in 3D and turn.
     // The forms are sampled points joined by smooth curves (Catmull-Rom); the panel draws its preview the same way.
-    function ribSample(form, W, H) {
+    // Same numbers in the panel's preview and here: a Park-Miller generator (exact in doubles, no Math.imul in ES3).
+    function ribRng(seed) {
+        var s = Math.floor(Math.abs(Number(seed) || 1)) % 2147483646 + 1;
+        return function () { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+    }
+
+    // A random line across the frame: 4-6 bends, some of them with a loop. The same number gives the same line.
+    function ribRandom(seed, W, H) {
+        var r = ribRng(seed), pts = [], n = 4 + Math.floor(r() * 3), i, k, x, y, rad, dir, cy, t, step = W * 1.1 / n;
+        for (i = 0; i <= n; i++) {
+            x = -W * 0.55 + i * step;
+            y = (r() - 0.5) * H * 0.5;
+            pts.push([x, y]);
+            if (i > 0 && i < n && r() < 0.5) {
+                rad = H * (0.08 + r() * 0.07);
+                dir = r() < 0.5 ? 1 : -1;
+                cy = y - dir * rad;
+                for (k = 1; k < 8; k++) { t = k / 8 * 2 * Math.PI; pts.push([x + rad * Math.sin(t) + k / 8 * step * 0.12, cy + dir * rad * Math.cos(t)]); }
+                pts.push([x + step * 0.14, y]);
+            }
+        }
+        return pts;
+    }
+
+    // Line forms, turned by angle (degrees, 0 = left to right, -90 = bottom to top). A turned line is drawn
+    // for the frame turned with it, so a vertical wave still runs the whole height.
+    function ribSample(form, W, H, o) {
+        var a = (o && Number(o.angle)) || 0, sm, i, c, sn, rw, rh, p;
+        if (form === "circle" || !a) { return ribSample0(form, W, H, o); }
+        c = Math.cos(a * Math.PI / 180); sn = Math.sin(a * Math.PI / 180);
+        rw = Math.abs(c) * W + Math.abs(sn) * H; rh = H + Math.abs(sn) * (W - H);
+        rw = Math.min(rw, Math.sqrt(W * W + H * H));
+        sm = ribSample0(form, rw, rh, o);
+        for (i = 0; i < sm.pts.length; i++) { p = sm.pts[i]; sm.pts[i] = [p[0] * c - p[1] * sn, p[0] * sn + p[1] * c]; }
+        return sm;
+    }
+
+    function ribSample0(form, W, H, o) {
         var pts = [], i, n, t, u, m = Math.min(W, H), x, y, r, xs = [], ys = [], s, x0, x1, y0, y1;
+        if (form === "random") { return { pts: ribRandom(o && o.seed, W, H), closed: false }; }
         if (form === "circle") {
             r = m * 0.3;
             for (i = 0; i < 24; i++) { t = i / 24 * 2 * Math.PI; pts.push([r * Math.sin(t), -r * Math.cos(t)]); }
@@ -3346,7 +3384,7 @@ var sayframeHost = (function () {
             if (!sh) { throw new Error("RB_NO_PATH"); }
             try { pos = acTransform(src, "ADBE Position").value; anc = acTransform(src, "ADBE Anchor Point").value; sc = acTransform(src, "ADBE Scale").value; rot = acTransform(src, "ADBE Rotate Z").value; } catch (eT) {}
         } else {
-            sh = ribShape(ribSample(form, W, H));
+            sh = ribShape(ribSample(form, W, H, { seed: o.seed, angle: o.angle }));
         }
         len = ribLength(sh);
         R = comp.layers.addShape();
@@ -3389,9 +3427,12 @@ var sayframeHost = (function () {
         acGP(R, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Color"]).expression = "thisComp.layer(" + tbQ(T.name) + ").effect(" + tbQ(labels.color || "Ribbon colour") + ")(1)";
         if (o.run) {
             // On a circle the text goes round and round: the margin wraps at the circle's length.
-            acP(T, ["ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin"]).expression = sh.closed ?
-                "var L=" + Math.round(len * 10) / 10 + ", m=value-time*effect(" + tbQ(labels.speed || "Speed") + ")(1)*10; ((m%L)+L)%L" :
-                "value-time*effect(" + tbQ(labels.speed || "Speed") + ")(1)*10";
+            // Backward runs the other way; on an open line it starts as far back as it will travel, so no gap opens.
+            var back = o.dir === "back", sg = back ? "+" : "-", fm = acP(T, ["ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin"]);
+            if (back && !sh.closed) { try { fm.setValue(-speed * 10 * comp.duration); } catch (eB) {} }
+            fm.expression = sh.closed ?
+                "var L=" + Math.round(len * 10) / 10 + ", m=value" + sg + "time*effect(" + tbQ(labels.speed || "Speed") + ")(1)*10; ((m%L)+L)%L" :
+                "value" + sg + "time*effect(" + tbQ(labels.speed || "Speed") + ")(1)*10";
         }
         T.moveBefore(R);
         if (src) {
@@ -3418,7 +3459,7 @@ var sayframeHost = (function () {
         }
         try { R.selected = false; } catch (eS) {}
         T.selected = true;
-        return { mode: "ribbon", form: form, ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j, matte: Mt ? Mt.name : "" };
+        return { mode: "ribbon", form: form, seed: form === "random" ? Math.floor(Number(o.seed) || 1) : 0, angle: form === "path" ? 0 : Number(o.angle) || 0, dir: o.dir === "back" ? "back" : "fwd", ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j, matte: Mt ? Mt.name : "" };
     }
 
     function ringBuild(comp, o, labels) {
