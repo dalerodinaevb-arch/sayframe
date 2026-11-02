@@ -2876,26 +2876,92 @@ var sayframeHost = (function () {
         } catch (e0) {}
     }
 
+
+    // ---- Live carousel: settings in Effect Controls of the controller null. Expressions read them, so after
+    // "Create carousel" the count, ring radius, card size, corners and the back side still change.
+    // Expressions are plain JavaScript run by After Effects (not this ES3 file), so they may use createPath.
+    function orbitFx(ctrlName, labels) {
+        var c = "thisComp.layer(" + tbQ(ctrlName) + ")";
+        return { c: c, n: c + ".effect(" + tbQ(labels.fxCount || "Cards") + ")(1)", r: c + ".effect(" + tbQ(labels.fxRadius || "Radius") + ")(1)",
+            w: c + ".effect(" + tbQ(labels.fxW || "Width") + ")(1)", h: c + ".effect(" + tbQ(labels.fxH || "Height") + ")(1)",
+            t: c + ".effect(" + tbQ(labels.fxCorners || "Corners %") + ")(1)/100", b: c + ".effect(" + tbQ(labels.fxBack || "Back visible") + ")(1)" };
+    }
+
+    // The angle (and height) of card i on the ring, the same as orbitSpot.
+    function orbitSpotExpr(F, i, layout) {
+        var e = "var n=Math.max(1,Math.round(" + F.n + ")),R=" + F.r + ",H=" + F.h + ",i=" + i + ",a,y=0;";
+        if (layout === "half") { e += "a=n>1?-90+180*i/(n-1):0;"; }
+        else if (layout === "spiral") { e += "a=i*540/n;y=(i-(n-1)/2)*H*0.3;"; }
+        else { e += "a=i*360/n;"; if (layout === "wave") { e += "y=Math.sin(a*2*Math.PI/180)*H*0.25;"; } }
+        return e;
+    }
+
+    // A card's outline as an expression path: rounded rect, ellipse or rounded polygon (orbitPoly), w x h, centred on ox, oy.
+    function orbitPathExpr(kind, wE, hE, tE, ox, oy) {
+        if (kind === "rect") {
+            return "var w=" + wE + ",h=" + hE + ",r=Math.max(0,Math.min(1," + tE + "))*Math.min(w,h)/2,c=r*0.5523,x0=" + ox + "-w/2,x1=" + ox + "+w/2,y0=" + oy + "-h/2,y1=" + oy + "+h/2;" +
+                "r<0.01?createPath([[x0,y0],[x1,y0],[x1,y1],[x0,y1]],[],[],true):createPath([[x0+r,y0],[x1-r,y0],[x1,y0+r],[x1,y1-r],[x1-r,y1],[x0+r,y1],[x0,y1-r],[x0,y0+r]]," +
+                "[[-c,0],[0,0],[0,-c],[0,0],[c,0],[0,0],[0,c],[0,0]],[[0,0],[c,0],[0,0],[0,c],[0,0],[-c,0],[0,0],[0,-c]],true)";
+        }
+        if (kind === "circle") {
+            return "var w=" + wE + ",h=" + hE + ",k=0.5523;createPath([[" + ox + "," + oy + "-h/2],[" + ox + "+w/2," + oy + "],[" + ox + "," + oy + "+h/2],[" + ox + "-w/2," + oy + "]]," +
+                "[[-w/2*k,0],[0,-h/2*k],[w/2*k,0],[0,h/2*k]],[[w/2*k,0],[0,h/2*k],[-w/2*k,0],[0,-h/2*k]],true)";
+        }
+        return "var S=" + ORBIT_SIDES[kind] + ",w=" + wE + ",h=" + hE + ",t=Math.max(0,Math.min(1," + tE + ")),V=[],i,mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;" +
+            "for(i=0;i<S;i++){var q=-Math.PI/2+i*2*Math.PI/S;V.push([Math.cos(q),Math.sin(q)]);mnx=Math.min(mnx,V[i][0]);mxx=Math.max(mxx,V[i][0]);mny=Math.min(mny,V[i][1]);mxy=Math.max(mxy,V[i][1]);}" +
+            "var sx=w/(mxx-mnx),sy=h/(mxy-mny),cx=(mnx+mxx)/2,cy=(mny+mxy)/2,r=t*Math.cos(Math.PI/S),d=r*Math.tan(Math.PI/S),k=4/3*Math.tan(Math.PI/S/2)*r,P=[],I=[],O=[];" +
+            "function pt(p){return [(p[0]-cx)*sx+" + ox + ",(p[1]-cy)*sy+" + oy + "];}function vc(p){return [p[0]*sx,p[1]*sy];}" +
+            "for(i=0;i<S;i++){var A=V[(i+S-1)%S],B=V[i],N=V[(i+1)%S],L=Math.sqrt((A[0]-B[0])*(A[0]-B[0])+(A[1]-B[1])*(A[1]-B[1])),ua=[(A[0]-B[0])/L,(A[1]-B[1])/L],ub=[(N[0]-B[0])/L,(N[1]-B[1])/L];" +
+            "if(r<=0){P.push(pt(B));I.push([0,0]);O.push([0,0]);continue;}" +
+            "P.push(pt([B[0]+ua[0]*d,B[1]+ua[1]*d]));I.push([0,0]);O.push(vc([-ua[0]*k,-ua[1]*k]));" +
+            "P.push(pt([B[0]+ub[0]*d,B[1]+ub[1]*d]));I.push(vc([-ub[0]*k,-ub[1]*k]));O.push([0,0]);}createPath(P,I,O,true)";
+    }
+
+    // The card group's outline in a shape layer follows the controls: rect size and roundness, ellipse size or the polygon path.
+    function orbitLiveShape(l, kind, F, wE, hE) {
+        var g = acP(l, ["ADBE Root Vectors Group", 1, "ADBE Vectors Group"]), p;
+        try {
+            if (kind === "rect") {
+                g.property("ADBE Vector Shape - Rect").property("ADBE Vector Rect Size").expression = "[" + wE + "," + hE + "]";
+                g.property("ADBE Vector Shape - Rect").property("ADBE Vector Rect Roundness").expression = "Math.max(0,Math.min(1," + F.t + "))*Math.min(" + wE + "," + hE + ")/2";
+            } else if (kind === "circle") {
+                g.property("ADBE Vector Shape - Ellipse").property("ADBE Vector Ellipse Size").expression = "[" + wE + "," + hE + "]";
+            } else {
+                p = g.property("ADBE Vector Shape - Group").property("ADBE Vector Shape");
+                p.expression = orbitPathExpr(kind, wE, hE, F.t, 0, 0);
+            }
+        } catch (e0) {}
+    }
+
+    function orbitExpr(l, name, e) { try { acP(l, ["ADBE Transform Group", name]).expression = e; } catch (e0) {} }
+
     function orbitBuild(comp, o, labels) {
         var n = Math.round(orbitNum(o.count, 2, 36, 8)), layout = ORBIT_LAYOUTS[o.layout] ? o.layout : "ring";
         var kind = ORBIT_SIDES.hasOwnProperty(o.shape) ? o.shape : "rect", t = orbitNum(o.corners, 0, 100, 20) / 100;
         var radius = orbitNum(o.radius, 0, 10000, 600), w = Math.round(orbitNum(o.w, 4, 8000, 400)), h = Math.round(orbitNum(o.h, 4, 8000, 560));
         var pre = o.mode === "precomp", cx = comp.width / 2, cy = comp.height / 2, fs = Math.round(Math.min(w, h) * 0.32);
         var ctrl, cam = "", had = false, cards = [], nums = [], backs = [], bk, i, j, sp, L, txt, cc, inner, folder = null, base, camL, rig = null;
+        var showBack = o.back !== false, ctrlName = labels.ctrl || "Carousel Control", F, Fin, an, sx, face, k;
+        // A few spare cards past the chosen count, hidden: the "Cards" control can show them later without building again.
+        var nAll = Math.min(36, Math.max(n, 12));
         base = labels.card || "Card ";
         var spots = [];
         if (pre) {
             try { folder = app.project.items.addFolder(labels.folder || "Carousel"); } catch (eF) { folder = null; }
         }
-        for (i = n - 1; i >= 0; i--) {
-            sp = orbitSpot(i, n, layout, radius, h);
-            spots.push(sp);
+        F = orbitFx(ctrlName, labels);
+        Fin = orbitFx(ctrlName, labels);
+        for (k in Fin) { if (Fin.hasOwnProperty(k)) { Fin[k] = Fin[k].replace("thisComp.layer(", "comp(" + tbQ(comp.name) + ").layer("); } }
+        for (i = nAll - 1; i >= 0; i--) {
+            sp = orbitSpot(i, i < n ? n : nAll, layout, radius, h);
+            if (i < n) { spots.push(sp); }
             if (pre) {
                 cc = app.project.items.addComp(base + (i + 1), w, h, comp.pixelAspect || 1, comp.duration, comp.frameRate);
                 if (folder) { try { cc.parentFolder = folder; } catch (eP) {} }
                 inner = cc.layers.addShape();
                 inner.name = labels.shape || "Shape";
                 orbitCardShape(inner, kind, t, w, h, orbitColor(i));
+                orbitLiveShape(inner, kind, Fin, String(w), String(h));
                 orbitSet(inner, "ADBE Position", [w / 2, h / 2]);
                 if (o.numbers) {
                     txt = orbitNumber(cc, String(i + 1), fs);
@@ -2904,29 +2970,32 @@ var sayframeHost = (function () {
                 L = comp.layers.add(cc);
                 // Whatever is put inside the card comp (a photo, a video) gets the card's own shape and corners.
                 orbitCardMask(L, kind, t, w, h);
+                try { acP(L, ["ADBE Mask Parade", 1, "ADBE Mask Shape"]).expression = orbitPathExpr(kind, w, h, F.t, w / 2, h / 2); } catch (eMx) {}
             } else {
                 L = comp.layers.addShape();
                 orbitCardShape(L, kind, t, w, h, orbitColor(i));
+                orbitLiveShape(L, kind, F, F.w, F.h);
             }
             L.name = base + (i + 1);
             L.threeDLayer = true;
             orbitSet(L, "ADBE Position", [cx + sp.x, cy + sp.y, sp.z]);
             orbitSet(L, "ADBE Rotate Y", sp.ry);
             cards.unshift(L);
-            if (pre && o.back === false) {
-                // From behind a card shows only its back: the card comp (number, picture) hides when it faces away,
-                // and a plain back of the same shape and colour shows instead.
-                orbitHideBack(L, "thisLayer");
+            if (pre) {
+                // From behind a card can show only its back: the card comp (number, picture) hides when it faces away,
+                // and a plain back of the same shape and colour shows instead (the "Back visible" checkbox decides).
                 bk = comp.layers.addShape();
                 orbitCardShape(bk, kind, t, w, h, orbitColor(i));
+                orbitLiveShape(bk, kind, F, String(w), String(h));
                 bk.name = base + (i + 1) + ": " + (labels.back || "back");
                 bk.threeDLayer = true;
                 bk.parent = L;
                 orbitSet(bk, "ADBE Position", [w / 2, h / 2, 0]);
                 orbitSet(bk, "ADBE Rotate Y", 0);
-                try { acP(bk, ["ADBE Transform Group", "ADBE Opacity"]).expression = "var L=thisLayer;L.toCompVec([0,0,1])[2]>0?0:value"; } catch (eBk) {}
                 bk.moveAfter(L);
-                backs.push(bk);
+                backs.unshift(bk);
+            } else {
+                backs.unshift(null);
             }
             if (o.numbers && !pre) {
                 txt = orbitNumber(comp, String(i + 1), fs);
@@ -2934,17 +3003,37 @@ var sayframeHost = (function () {
                 txt.threeDLayer = true;
                 orbitSet(txt, "ADBE Position", [cx + sp.x, cy + sp.y + fs * 0.35, sp.z]);
                 orbitSet(txt, "ADBE Rotate Y", sp.ry);
-                if (o.back === false) { orbitHideBack(txt, "thisLayer"); }
                 nums.unshift(txt);
             }
         }
         ctrl = comp.layers.addNull(comp.duration);
-        ctrl.name = labels.ctrl || "Carousel Control";
+        ctrl.name = ctrlName;
         ctrl.threeDLayer = true;
         orbitSet(ctrl, "ADBE Position", [cx, cy, 0]);
+        kitControl(ctrl, "ADBE Slider Control", labels.fxCount || "Cards", n);
+        kitControl(ctrl, "ADBE Slider Control", labels.fxRadius || "Radius", radius);
+        kitControl(ctrl, "ADBE Slider Control", labels.fxW || "Width", w);
+        kitControl(ctrl, "ADBE Slider Control", labels.fxH || "Height", h);
+        kitControl(ctrl, "ADBE Slider Control", labels.fxCorners || "Corners %", Math.round(t * 100));
+        kitControl(ctrl, "ADBE Checkbox Control", labels.fxBack || "Back visible", showBack ? 1 : 0);
+        an = [0, 0, 0];
+        try { an = acP(ctrl, ["ADBE Transform Group", "ADBE Anchor Point"]).value; } catch (eA) {}
+        an = [Number(an && an[0]) || 0, Number(an && an[1]) || 0, Number(an && an[2]) || 0];
+        face = "thisLayer.toCompVec([0,0,1])[2]>0";
         for (i = 0; i < cards.length; i++) {
             if (nums[i]) { nums[i].parent = cards[i]; }
             cards[i].parent = ctrl;
+            sx = orbitSpotExpr(F, i, layout);
+            orbitExpr(cards[i], "ADBE Position", sx + "var q=degreesToRadians(a);[R*Math.sin(q)+" + an[0] + ",y+" + an[1] + ",-R*Math.cos(q)+" + an[2] + "]");
+            orbitExpr(cards[i], "ADBE Rotate Y", sx + "a===0?0:-a");
+            if (pre) {
+                orbitExpr(cards[i], "ADBE Scale", "[" + F.w + "/" + w + "*100," + F.h + "/" + h + "*100,100]");
+                orbitExpr(cards[i], "ADBE Opacity", sx + "i<n&&(" + F.b + "==1||" + face + ")?value:0");
+                orbitExpr(backs[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n&&" + F.b + "!=1&&!(" + face + ")?value:0");
+            } else {
+                orbitExpr(cards[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n?value:0");
+            }
+            if (nums[i]) { orbitExpr(nums[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n&&(" + F.b + "==1||" + face + ")?value:0"); }
         }
         if (o.camera) {
             for (j = 1; j <= comp.numLayers; j++) { if (comp.layer(j) instanceof CameraLayer) { had = true; break; } }
@@ -2963,9 +3052,9 @@ var sayframeHost = (function () {
         }
         for (i = 0; i < cards.length; i++) { try { cards[i].selected = false; } catch (eS) {} }
         for (i = 0; i < nums.length; i++) { try { nums[i].selected = false; } catch (eT) {} }
-        for (i = 0; i < backs.length; i++) { try { backs[i].selected = false; } catch (eB) {} }
+        for (i = 0; i < backs.length; i++) { try { if (backs[i]) { backs[i].selected = false; } } catch (eB) {} }
         ctrl.selected = true;
-        return { cards: n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, camRig: rig ? rig.name : "", hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
+        return { cards: n, spare: nAll - n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, camRig: rig ? rig.name : "", hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
     }
 
     // ---- Grid (section "Layouts"): a bento grid of rounded tiles. rows x cols cells; with "rand" some
