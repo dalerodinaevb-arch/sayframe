@@ -5176,7 +5176,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const rect = (l) => acAt(l, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect");
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
-    check("GR1 «Макеты»: four blocks, «Карусель», «Grid», «Плашка под текстом» and «Мокап телефона», open; the grid preview shows numbered tiles", (await p.page.locator("#orbitPane .mk-card").evaluateAll((l) => l.map((c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone" &&
+    check("GR1 «Макеты»: five blocks, «Карусель», «Grid», «Плашка под текстом», «Мокап телефона» and «Текст по ленте», open; the grid preview shows numbered tiles", (await p.page.locator("#orbitPane .mk-card").evaluateAll((l) => l.map((c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" &&
       (await p.page.isVisible("#orbitStage")) && (await p.page.isVisible("#gridStage")) && (await tiles(p)) > 4 && (await tiles(p)) < 20 && (await p.page.locator("#gridStage .gr-box span").first().innerText()) === "1" && (await overflow(p)) <= 0);
     check("GR1 defaults: 4 rows, 5 columns, gap 20, roundness 20, spread 100%, variant 12345, the comp size, numbers and one-by-one on", (await p.page.inputValue("#gridRows")) === "4" && (await p.page.inputValue("#gridCols")) === "5" && (await p.page.locator("#gridGapVal").innerText()) === "20" &&
       (await p.page.locator("#gridRandVal").innerText()) === "100%" && (await p.page.inputValue("#gridSeed")) === "12345" && (await p.page.getAttribute("#gridFit", "aria-pressed")) === "true" && (await p.page.isDisabled("#gridW")) && (await p.page.isChecked("#gridNumbers")) && (await p.page.isChecked("#gridStagger")));
@@ -5246,7 +5246,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ width: 1300, orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
     let c1 = await cards(p);
-    check("MK1 a wide panel: the blocks side by side (three in a row), a standard width (320–420), not stretched", c1.length === 4 && c1.every((x) => { const w = Number(x.split("w")[1]); return w >= 320 && w <= 420; }) && c1.slice(0, 3).every((x) => x.split("@")[1].split("w")[0] === c1[0].split("@")[1].split("w")[0]) && /^carousel/.test(c1[0]), c1.join());
+    check("MK1 a wide panel: the blocks side by side (three in a row), a standard width (320–420), not stretched", c1.length === 5 && c1.every((x) => { const w = Number(x.split("w")[1]); return w >= 320 && w <= 420; }) && c1.slice(0, 3).every((x) => x.split("@")[1].split("w")[0] === c1[0].split("@")[1].split("w")[0]) && /^carousel/.test(c1[0]), c1.join());
     const a = await p.page.locator('.mk-card[data-mk="grid"] .mk-head b').boundingBox(), b = await p.page.locator('.mk-card[data-mk="carousel"] .mk-head b').boundingBox();
     await p.page.mouse.move(a.x + 10, a.y + 5); await p.page.mouse.down(); await p.page.mouse.move(a.x - 40, a.y + 5, { steps: 4 }); await p.page.mouse.move(b.x + 10, b.y + 5, { steps: 6 }); await p.page.mouse.up();
     c1 = await cards(p);
@@ -5257,7 +5257,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ width: 740, orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
     c1 = await cards(p);
-    check("MK4 a middle panel (740): two blocks side by side, neither wider than 420", c1[0].split("@")[1].split("w")[0] === c1[1].split("@")[1].split("w")[0] && c1.every((x) => Number(x.split("w")[1]) <= 420) && (await p.page.locator("#orbitPane .mk-grip").count()) === 4, c1.join());
+    check("MK4 a middle panel (740): two blocks side by side, neither wider than 420", c1[0].split("@")[1].split("w")[0] === c1[1].split("@")[1].split("w")[0] && c1.every((x) => Number(x.split("w")[1]) <= 420) && (await p.page.locator("#orbitPane .mk-grip").count()) === 5, c1.join());
     await p.close();
     p = await open({ width: 420, orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
@@ -5398,7 +5398,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const parentOf = (s) => ({ sourceRectAtTime: () => ({ left: -100, top: -32, width: 200, height: 88 }), text: { sourceText: txt(s) } });
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hello\rworld" }, { name: "BG", selected: false }] } });
     await tbTab(p);
-    check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
+    check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
     check("TB1 defaults: each line, fill, dark purple, no stroke row; no animation choice", (await p.page.locator("#tbAppear").count()) === 0 && (await p.page.getAttribute('#tbPer [data-v="line"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbLook [data-v="fill"]', "aria-pressed")) === "true" && !(await vis(p, "#tbStrokeRow")) && (await p.page.inputValue("#tbColor")) === "#3a0f63");
     await p.page.click('#tbLook [data-v="both"]');
     await setRange(p, "#tbRound", 30);
@@ -5448,7 +5448,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const phTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
     await phTab(p);
-    check("PH1 a «Мокап телефона» block in «Макеты» after the text box: preview, iPhone / Android (no «Samsung»), «Создать мокап»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone" && (await vis(p, "#phStage")) &&
+    check("PH1 a «Мокап телефона» block in «Макеты» after the text box: preview, iPhone / Android (no «Samsung»), «Создать мокап»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" && (await vis(p, "#phStage")) &&
       (await p.page.locator("#phModel button").allInnerTexts()).map((t) => t.split("\n")[0].trim()).join() === "iPhone,Android" && !/Samsung/i.test(await p.page.locator('.mk-card[data-mk="phone"]').innerText()) && (await p.page.locator("#phBtn").innerText()).trim() === "Создать мокап" && (await overflow(p)) <= 0);
     check("PH1 defaults: iPhone, black, upright, screen is a precomp, shadow on, no animation; roundness «Авто»", (await p.page.getAttribute('#phModel [data-v="iphone"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#phColors [data-v="black"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#phPose [data-v="flat"]', "aria-pressed")) === "true" &&
       (await p.page.getAttribute('#phScreen [data-v="precomp"]', "aria-pressed")) === "true" && (await p.page.isChecked("#phShadow")) && !(await p.page.isChecked("#phAppear")) && (await p.page.locator("#phRoundVal").innerText()) === "Авто");
@@ -5480,6 +5480,58 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       tf(C4, "ADBE Rotate X").value === 10 && tf(C4, "ADBE Rotate Y").value === -24 && (tf(C4, "ADBE Position").keys || []).length === 2 && /Слой не был выделен/.test(await p.status()), names(p) + " | " + await p.status());
     await p.restart(); await phTab(p);
     check("PH5 the settings survive a restart", (await p.page.getAttribute('#phPose [data-v="tilt"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#phColors [data-v="pink"]', "aria-pressed")) === "true" && (await p.page.isChecked("#phAppear")) && p.errors.length === 0, p.errors.join("|"));
+    await p.close();
+  }
+  // Text on a ribbon (Animation › «Макеты»): a thick line with a running text, or letters on a 3D ring.
+  {
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const tf = (l, n) => acAt(l, "ADBE Transform Group", n);
+    const fxNames = (l) => acAt(l, "ADBE Effect Parade").children.map((e) => e.name).join(",");
+    const rbTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    const docText = (l) => String(acAt(l, "ADBE Text Properties", "ADBE Text Document").value.text);
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    check("RB1 a «Текст по ленте» block in «Макеты» after the phone: preview of the ribbon with the text on it, forms, «Создать ленту»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" &&
+      (await p.page.locator("#rbStage svg path").count()) === 1 && /WEST LOOP • WEST LOOP/.test(await p.page.locator("#rbStage textPath").textContent()) && (await p.page.locator("#rbForm button").count()) === 5 && (await p.page.getAttribute('#rbForm [data-v="loops"]', "aria-pressed")) === "true" && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать ленту" && (await overflow(p)) <= 0);
+    await p.page.click('#rbMode [data-v="ring"]');
+    check("RB1 «3D-кольцо»: the ring's own settings, the ribbon's ones hide; letters in the preview, the far ones dimmer", (await vis(p, "#rbRingSl")) && !(await vis(p, "#rbRibbonSl")) && !(await vis(p, "#rbForm")) && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать кольцо" &&
+      (await p.page.locator("#rbStage .rb-ringrow").count()) === 2 && (await p.page.locator('#rbStage .rb-ringrow span[style*="opacity"]').count()) > 5);
+    await p.page.click('#rbMode [data-v="ribbon"]');
+    await p.page.click("#rbBtn"); await p.idle();
+    let T = L(p, "Текст ленты"), R = L(p, "Лента");
+    check("RB2 «Создать ленту»: the text above the ribbon, one undo step; the text repeats with its separator", names(p) === "Текст ленты,Лента,BG" && p.ae.log.undo.join() === "begin:Sayframe: text ribbon,end" && /^(WEST LOOP • ){5,}/.test(docText(T)) && /Лента готова/.test(await p.status()), names(p) + " | " + p.ae.log.undo.join() + " | " + await p.status());
+    check("RB2 the text runs on its own mask (the same line) and is centred on it; the ribbon is a thick round stroke", acAt(T, "ADBE Mask Parade").children.length === 1 && acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text Path").value === 1 &&
+      acAt(T, "ADBE Text Properties", "ADBE Text Animators").children.length === 1 && JSON.stringify(acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length) === "55");
+    check("RB2 settings in Effect Controls of the text; the ribbon reads width and colour from there; the text runs with time", fxNames(T) === "Толщина ленты,Скорость,Цвет ленты" &&
+      /effect\("Толщина ленты"\)/.test(acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Width").expression) &&
+      /time\*effect\("Скорость"\)/.test(acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin").expression), fxNames(T));
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "Линия" }, { name: "BG", selected: false }] } });
+    await rbTab(p);
+    await p.page.click('#rbForm [data-v="path"]');
+    await p.page.click("#rbBtn"); await p.idle();
+    check("RB3 «Выделенная линия» on a layer without a line: a plain hint, nothing made", names(p) === "Линия,BG" && /Не нашёл линию/.test(await p.status()), await p.status());
+    const line = p.ae.log.dcMain.list[0], mp = line.property("ADBE Mask Parade"), mi = mp.addProperty("ADBE Mask Atom");
+    mi.property("ADBE Mask Shape").setValue({ vertices: [[0, 0], [400, 0], [800, 200]], inTangents: [[0, 0], [0, 0], [0, 0]], outTangents: [[0, 0], [0, 0], [0, 0]], closed: false });
+    line.property("ADBE Transform Group").property("ADBE Position").setValue([300, 400]);
+    await p.page.fill("#rbText", "HELLO");
+    await p.page.click("#rbBtn"); await p.idle();
+    T = L(p, "Текст ленты");
+    check("RB3 with a drawn line (a mask): the ribbon follows it, sits where it is, the line itself is switched off; the new words", JSON.stringify(acAt(T, "ADBE Mask Parade").children[0].children.find((c) => c.matchName === "ADBE Mask Shape").value.vertices) === "[[0,0],[400,0],[800,200]]" &&
+      JSON.stringify(tf(T, "ADBE Position").value) === "[300,400]" && line.enabled === false && /^HELLO • HELLO/.test(docText(T)) && /по линии «Линия»/.test(await p.status()), await p.status());
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    await p.page.click('#rbMode [data-v="ring"]');
+    await p.page.click("#rbBtn"); await p.idle();
+    const r1 = L(p, "Кольцо 1"), sp = L(p, "Кольцо: вращение"), tl = L(p, "Кольцо: наклон");
+    check("RB4 «Создать кольцо»: two rings of 3D letters on a spinning null inside a tilting one, a camera; one undo step", ["Кольцо 1", "Кольцо 2"].every((n) => L(p, n) && L(p, n).threeDLayer && L(p, n).threeDPerChar && L(p, n).parent === sp) && sp.parent === tl &&
+      L(p, "Камера кольца") && p.ae.log.undo.join() === "begin:Sayframe: text ring,end" && tf(tl, "ADBE Rotate X").value === -12 && /time\*effect\("Скорость"\)/.test(tf(sp, "ADBE Rotate Y").expression) && /Кольцо готово/.test(await p.status()), names(p) + " | " + await p.status());
+    check("RB4 the ring lies flat, letters stand up, far letters dimmer (an expression selector); the text fills the circle", tf(r1, "ADBE Rotate X").value === 90 && acAt(r1, "ADBE Text Properties", "ADBE Text Animators").children.map((a) => a.name).join() === "Centre,Stand up,Back side" &&
+      acAt(r1, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text Force Align Path").value === 1 && /WEST LOOP/.test(docText(r1)), acAt(r1, "ADBE Text Properties", "ADBE Text Animators").children.map((a) => a.name).join());
+    await p.restart(); await rbTab(p);
+    check("RB5 the settings survive a restart", (await p.page.getAttribute('#rbMode [data-v="ring"]', "aria-pressed")) === "true" && p.errors.length === 0, p.errors.join("|"));
     await p.close();
   }
   // Decompose: the layers of a selected precomp come out into the open comp, in its place.

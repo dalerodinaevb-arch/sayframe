@@ -3208,6 +3208,237 @@ var sayframeHost = (function () {
             w: Math.round(sW), h: Math.round(sH), res: cc ? [lw, lh] : [] };
     }
 
+    // ---- Text on a ribbon (section "Layouts"). "ribbon": a thick stroke along a line with a text running on it
+    // (the line is the selected mask/shape path, or a ready form); "ring": letters stand on a circle in 3D and turn.
+    // The forms are sampled points joined by smooth curves (Catmull-Rom); the panel draws its preview the same way.
+    function ribSample(form, W, H) {
+        var pts = [], i, n, t, u, m = Math.min(W, H), x, y, r, xs = [], ys = [], s, x0, x1, y0, y1;
+        if (form === "circle") {
+            r = m * 0.3;
+            for (i = 0; i < 24; i++) { t = i / 24 * 2 * Math.PI; pts.push([r * Math.sin(t), -r * Math.cos(t)]); }
+            return { pts: pts, closed: true };
+        }
+        if (form === "spiral") {
+            n = 44;
+            for (i = 0; i <= n; i++) { t = i / n * 5 * Math.PI; r = m * 0.4 * (0.12 + 0.88 * i / n); pts.push([r * Math.cos(t), r * Math.sin(t)]); }
+            return { pts: pts, closed: false };
+        }
+        if (form === "loops") {
+            // A prolate cycloid: three loops in a row.
+            n = 54;
+            for (i = 0; i <= n; i++) { t = -0.5 * Math.PI + i / n * 7 * Math.PI; xs.push(t - 3.2 * Math.sin(t)); ys.push(3.2 * Math.cos(t)); }
+            x0 = x1 = xs[0]; y0 = y1 = ys[0];
+            for (i = 0; i <= n; i++) { x0 = Math.min(x0, xs[i]); x1 = Math.max(x1, xs[i]); y0 = Math.min(y0, ys[i]); y1 = Math.max(y1, ys[i]); }
+            s = Math.min(W * 0.9 / (x1 - x0), H * 0.62 / (y1 - y0));
+            for (i = 0; i <= n; i++) { pts.push([(xs[i] - (x0 + x1) / 2) * s, (ys[i] - (y0 + y1) / 2) * s]); }
+            return { pts: pts, closed: false };
+        }
+        // wave: two full waves across the frame
+        n = 32;
+        for (i = 0; i <= n; i++) { u = i / n; x = (u - 0.5) * W * 1.1; y = -Math.sin(u * 4 * Math.PI) * H * 0.18; pts.push([x, y]); }
+        return { pts: pts, closed: false };
+    }
+
+    function ribShape(sm) {
+        var p = sm.pts, n = p.length, s = new Shape(), ins = [], outs = [], i, a, b, tx, ty;
+        for (i = 0; i < n; i++) {
+            a = sm.closed ? p[(i - 1 + n) % n] : p[Math.max(0, i - 1)];
+            b = sm.closed ? p[(i + 1) % n] : p[Math.min(n - 1, i + 1)];
+            tx = (b[0] - a[0]) / 6; ty = (b[1] - a[1]) / 6;
+            ins.push([-tx, -ty]); outs.push([tx, ty]);
+        }
+        s.vertices = p; s.inTangents = ins; s.outTangents = outs; s.closed = sm.closed;
+        return s;
+    }
+
+    // Length of a bezier path, 10 steps a segment: enough to know how many times the text must repeat.
+    function ribLength(sh) {
+        var v = sh.vertices, n = v.length, segs = sh.closed ? n : n - 1, len = 0, i, j, a, b, c1, c2, px, py, t, q, x, y;
+        for (i = 0; i < segs; i++) {
+            a = v[i]; b = v[(i + 1) % n];
+            c1 = [a[0] + sh.outTangents[i][0], a[1] + sh.outTangents[i][1]];
+            c2 = [b[0] + sh.inTangents[(i + 1) % n][0], b[1] + sh.inTangents[(i + 1) % n][1]];
+            px = a[0]; py = a[1];
+            for (j = 1; j <= 10; j++) {
+                t = j / 10; q = 1 - t;
+                x = q * q * q * a[0] + 3 * q * q * t * c1[0] + 3 * q * t * t * c2[0] + t * t * t * b[0];
+                y = q * q * q * a[1] + 3 * q * q * t * c1[1] + 3 * q * t * t * c2[1] + t * t * t * b[1];
+                len += Math.sqrt((x - px) * (x - px) + (y - py) * (y - py));
+                px = x; py = y;
+            }
+        }
+        return len;
+    }
+
+    // The line the user drew: the first mask of the selected layer, or the first path inside a selected shape layer.
+    function ribFindPath(L) {
+        var m, found = null;
+        try { m = L.property("ADBE Mask Parade"); if (m && m.numProperties > 0) { return m.property(1).property("ADBE Mask Shape"); } } catch (e0) {}
+        function walk(g) {
+            var i, p;
+            if (!g || found) { return; }
+            for (i = 1; i <= g.numProperties; i++) {
+                p = g.property(i);
+                if (!p) { continue; }
+                if (p.matchName === "ADBE Vector Shape - Group") { found = p.property("ADBE Vector Shape"); return; }
+                if (p.numProperties) { walk(p); }
+                if (found) { return; }
+            }
+        }
+        try { walk(L.property("ADBE Root Vectors Group")); } catch (e1) {}
+        return found;
+    }
+
+    function ribText(comp, str, size, color, name) {
+        var t = comp.layers.addText(str), p, doc;
+        t.name = name;
+        try {
+            p = acP(t, ["ADBE Text Properties", "ADBE Text Document"]);
+            doc = p.value;
+            doc.fontSize = size;
+            try { doc.font = "Arial-BoldMT"; } catch (eF) {}
+            doc.applyFill = true;
+            doc.fillColor = color;
+            try { doc.applyStroke = false; } catch (eS) {}
+            try { doc.tracking = 40; } catch (eT) {}
+            try { doc.justification = ParagraphJustification.LEFT_JUSTIFY; } catch (eJ) {}
+            p.setValue(doc);
+        } catch (e0) {}
+        return t;
+    }
+
+    // Puts the text on its own mask (the same line), centred on the line: an animator moves the letters down by
+    // a third of their size, so the line runs through their middle instead of under them.
+    function ribOnPath(t, sh, size, force) {
+        var mi = acAdd(t, ["ADBE Mask Parade"], "ADBE Mask Atom"), ai, pi, base = ["ADBE Text Properties", "ADBE Text Animators"];
+        acP(t, ["ADBE Mask Parade", mi, "ADBE Mask Shape"]).setValue(sh);
+        try { acP(t, ["ADBE Mask Parade", mi, "ADBE Mask Mode"]).setValue(MaskMode.NONE); } catch (eM) {}
+        acP(t, ["ADBE Text Properties", "ADBE Text Path Options", "ADBE Text Path"]).setValue(mi);
+        if (force) { try { acP(t, ["ADBE Text Properties", "ADBE Text Path Options", "ADBE Text Force Align Path"]).setValue(1); } catch (eA) {} }
+        ai = acAdd(t, base, "ADBE Text Animator");
+        try { acP(t, base.concat([ai])).name = "Centre"; } catch (eN) {}
+        pi = acAdd(t, base.concat([ai, "ADBE Text Animator Properties"]), "ADBE Text Position 3D");
+        acP(t, base.concat([ai, "ADBE Text Animator Properties", pi])).setValue([0, Math.round(size * 0.34), 0]);
+        return mi;
+    }
+
+    function ribBuild(comp, o, labels) {
+        var W = comp.width, H = comp.height, cx = W / 2, cy = H / 2, src = null, srcName = "", sh, len, list, i, j;
+        var width = orbitNum(o.width, 4, 1000, 120), fs = Math.max(6, Math.round(width * orbitNum(o.textSize, 10, 100, 65) / 100));
+        var speed = orbitNum(o.speed, 0, 100, 35), word = String(o.text || "TEXT"), sep = String(o.sep === undefined ? "\u2022" : o.sep);
+        var unit = word + " " + (sep ? sep + " " : ""), cw = fs * 0.66 + 40 * fs / 1000, need, str = "", R, T, gi, si, fx, tr, pos = null, anc = null, sc = null, rot = 0;
+        var rc = o.ribbonColor || [0.23, 0.63, 0.91], tc = o.textColor || [0.91, 0.4, 0.17], form = o.form || "wave";
+        if (form === "path") {
+            list = comp.selectedLayers || [];
+            for (i = 0; i < list.length && !sh; i++) {
+                var pp = ribFindPath(list[i]);
+                if (pp) { sh = pp.value; src = list[i]; srcName = src.name; }
+            }
+            if (!sh) { throw new Error("RB_NO_PATH"); }
+            try { pos = acTransform(src, "ADBE Position").value; anc = acTransform(src, "ADBE Anchor Point").value; sc = acTransform(src, "ADBE Scale").value; rot = acTransform(src, "ADBE Rotate Z").value; } catch (eT) {}
+        } else {
+            sh = ribShape(ribSample(form, W, H));
+        }
+        len = ribLength(sh);
+        // Enough text for the whole line and for everything that runs past during the comp.
+        need = len + (o.run ? speed * 10 * comp.duration : 0);
+        for (j = 0; j < 400 && str.length * cw < need; j++) { str += unit; }
+        R = comp.layers.addShape();
+        R.name = labels.ribbon || "Ribbon";
+        gi = acGroup(R);
+        try { acP(R, ["ADBE Root Vectors Group", gi]).name = labels.path || "Line"; } catch (eG) {}
+        i = acIn(R, gi, "ADBE Vector Shape - Group");
+        acGP(R, gi, ["ADBE Vectors Group", i, "ADBE Vector Shape"]).setValue(sh);
+        si = acStroke(R, gi, rc, width);
+        try { acGP(R, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Line Join"]).setValue(2); } catch (eJ) {}
+        T = ribText(comp, str, fs, tc, labels.text || "Ribbon text");
+        ribOnPath(T, sh, fs, false);
+        // Settings in Effect Controls of the text: the ribbon reads its width and colour from there.
+        kitControl(T, "ADBE Slider Control", labels.width || "Width", width);
+        kitControl(T, "ADBE Slider Control", labels.speed || "Speed", speed);
+        kitControl(T, "ADBE Color Control", labels.color || "Ribbon colour", [rc[0], rc[1], rc[2], 1]);
+        acGP(R, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Width"]).expression = "thisComp.layer(" + tbQ(T.name) + ").effect(" + tbQ(labels.width || "Width") + ")(1)";
+        acGP(R, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Color"]).expression = "thisComp.layer(" + tbQ(T.name) + ").effect(" + tbQ(labels.color || "Ribbon colour") + ")(1)";
+        if (o.run) {
+            acP(T, ["ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin"]).expression = "value-time*effect(" + tbQ(labels.speed || "Speed") + ")(1)*10";
+        }
+        T.moveBefore(R);
+        if (src) {
+            // The new layers sit exactly where the drawn line is; the line itself is switched off.
+            for (i = 0; i < 2; i++) {
+                tr = i ? T : R;
+                try { if (anc) { orbitSet(tr, "ADBE Anchor Point", anc); } if (pos) { orbitSet(tr, "ADBE Position", pos); } if (sc) { orbitSet(tr, "ADBE Scale", sc); } orbitSet(tr, "ADBE Rotate Z", rot); } catch (eP) {}
+            }
+            try { src.enabled = false; } catch (eE) {}
+        } else {
+            orbitSet(R, "ADBE Position", [cx, cy]);
+            orbitSet(T, "ADBE Position", [cx, cy]);
+        }
+        try { R.selected = false; } catch (eS) {}
+        T.selected = true;
+        return { mode: "ribbon", form: form, ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j };
+    }
+
+    function ringBuild(comp, o, labels) {
+        var cx = comp.width / 2, cy = comp.height / 2, n = Math.round(orbitNum(o.rings, 1, 5, 2)), R = orbitNum(o.radius, 50, 5000, 560);
+        var fs = Math.max(8, Math.round(R * 0.2)), word = String(o.text || "TEXT"), sep = String(o.sep === undefined ? "\u2022" : o.sep);
+        var unit = word + " " + (sep ? sep + " " : ""), cw = fs * 0.66, str = "", reps, tilt, spin, rings = [], i, T, k, base, ai, pi, si, cam = "", had = false, gap = fs * 1.35;
+        var tc = o.textColor || [1, 1, 1], circle = new Shape(), c = R * 0.5523;
+        // A circle starting at the top, clockwise: on the flat ring "top" is the far side.
+        circle.vertices = [[0, -R], [R, 0], [0, R], [-R, 0]];
+        circle.inTangents = [[-c, 0], [0, -c], [c, 0], [0, c]];
+        circle.outTangents = [[c, 0], [0, c], [-c, 0], [0, -c]];
+        circle.closed = true;
+        reps = Math.max(1, Math.round(2 * Math.PI * R / (unit.length * cw)));
+        for (i = 0; i < reps; i++) { str += unit; }
+        tilt = comp.layers.addNull(comp.duration);
+        tilt.name = labels.tilt || "Ring tilt";
+        tilt.threeDLayer = true;
+        orbitSet(tilt, "ADBE Position", [cx, cy, 0]);
+        spin = comp.layers.addNull(comp.duration);
+        spin.name = labels.spin || "Ring spin";
+        spin.threeDLayer = true;
+        orbitSet(spin, "ADBE Position", [cx, cy, 0]);
+        kitControl(spin, "ADBE Slider Control", labels.speed || "Speed", orbitNum(o.speed, 0, 100, 40));
+        acTransform(spin, "ADBE Rotate Y").expression = "value+time*effect(" + tbQ(labels.speed || "Speed") + ")(1)";
+        for (i = 0; i < n; i++) {
+            T = ribText(comp, str, fs, tc, (labels.ring || "Ring") + " " + (i + 1));
+            ribOnPath(T, circle, fs, true);
+            T.threeDLayer = true;
+            try { T.threeDPerChar = true; } catch (e3) {}
+            base = ["ADBE Text Properties", "ADBE Text Animators"];
+            // The ring lies flat; each letter stands up again and faces outward.
+            ai = acAdd(T, base, "ADBE Text Animator");
+            try { acP(T, base.concat([ai])).name = "Stand up"; } catch (eN) {}
+            pi = acAdd(T, base.concat([ai, "ADBE Text Animator Properties"]), "ADBE Text Rotation X");
+            acP(T, base.concat([ai, "ADBE Text Animator Properties", pi])).setValue(-90);
+            if (o.backDark) {
+                // Letters on the far half are dimmer: an expression selector picks them by where they are on the ring now.
+                ai = acAdd(T, base, "ADBE Text Animator");
+                try { acP(T, base.concat([ai])).name = "Back side"; } catch (eB) {}
+                pi = acAdd(T, base.concat([ai, "ADBE Text Animator Properties"]), "ADBE Text Opacity");
+                acP(T, base.concat([ai, "ADBE Text Animator Properties", pi])).setValue(35);
+                si = acAdd(T, base.concat([ai, "ADBE Text Selectors"]), "ADBE Text Expressible Selector");
+                acP(T, base.concat([ai, "ADBE Text Selectors", si, "ADBE Text Expressible Amount"])).expression =
+                    "var a=degreesToRadians((textIndex-0.5)/textTotal*360+thisComp.layer(" + tbQ(spin.name) + ").transform.yRotation);Math.cos(a)>0?[100,100,100]:[0,0,0]";
+            }
+            orbitSet(T, "ADBE Position", [cx, cy + (i - (n - 1) / 2) * gap, 0]);
+            orbitSet(T, "ADBE Rotate X", 90);
+            rings.push(T);
+        }
+        spin.parent = tilt;
+        for (i = 0; i < rings.length; i++) { rings[i].parent = spin; }
+        orbitSet(tilt, "ADBE Rotate X", -orbitNum(o.tilt, -80, 80, 12));
+        if (o.camera) {
+            for (k = 1; k <= comp.numLayers; k++) { if (comp.layer(k) instanceof CameraLayer) { had = true; break; } }
+            if (!had) { cam = comp.layers.addCamera(labels.camera || "Ring camera", [cx, cy]).name; }
+        }
+        for (i = 0; i < rings.length; i++) { try { rings[i].selected = false; } catch (eS) {} }
+        try { spin.selected = false; } catch (eS2) {}
+        tilt.selected = true;
+        return { mode: "ring", rings: rings.length, ctrl: tilt.name, spin: spin.name, camera: cam, hadCamera: had, repeats: reps };
+    }
+
     // ---- Text box (the Shape tab): a shape layer under a text layer that follows the text.
     // The box hangs on the text layer (parent) and reads its size with sourceRectAtTime, so it grows and
     // shrinks while the text is typed, edited or animated. Everything is set in Effect Controls of the box.
@@ -6135,6 +6366,22 @@ var sayframeHost = (function () {
                 app.beginUndoGroup("Sayframe: grid");
                 try {
                     res = gridBuild(comp, o, labels || {});
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Text on a ribbon / 3D ring: o = { mode: "ribbon"|"ring", form, text, sep, width, textSize, speed, run, ribbonColor, textColor, rings, radius, tilt, backDark, camera }.
+        ribbonMake: function (o, labels) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (!o || typeof o !== "object") { throw new Error("BAD_RIBBON"); }
+                app.beginUndoGroup(o.mode === "ring" ? "Sayframe: text ring" : "Sayframe: text ribbon");
+                try {
+                    res = o.mode === "ring" ? ringBuild(comp, o, labels || {}) : ribBuild(comp, o, labels || {});
                 } finally {
                     app.endUndoGroup();
                 }

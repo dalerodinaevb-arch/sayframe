@@ -812,6 +812,7 @@
         if (m === "SM_NEED_SHAPES") { return "Чтобы собрать в один, выделите хотя бы два шейп-слоя."; }
         if (m === "PF_NEED_SHAPES") { return "Для Pathfinder выделите хотя бы два шейп-слоя."; }
         if (m === "NO_TEXT_LAYER") { return "Выделите текстовый слой — плашка встанет под ним."; }
+        if (m === "RB_NO_PATH") { return "Не нашёл линию: нарисуйте её пером (маска или путь шейпа), выделите этот слой и нажмите ещё раз. Или выберите готовую форму."; }
         if (m === "GRID_TOO_TIGHT") { return "Отступы больше самой сетки: уменьшите отступ или число строк и столбцов."; }
         if (m === "SM_LOCKED") { return "Слой заблокирован (замок на таймлайне). Снимите замок и нажмите ещё раз."; }
         if (m === "DC_NO_PRECOMP") { return "Выделите слой-прекомпозицию (слой, внутри которого другая композиция) и нажмите ещё раз."; }
@@ -1059,6 +1060,12 @@
         tbStroke: el("tbStroke"), tbStrokeVal: el("tbStrokeVal"), tbSkew: el("tbSkew"), tbSkewVal: el("tbSkewVal"), tbOpacity: el("tbOpacity"), tbOpacityVal: el("tbOpacityVal"),
         tbShadow: el("tbShadow"), tbBtn: el("tbBtn"),
         phPhone: el("phPhone"), phModel: el("phModel"), phColors: el("phColors"), phPose: el("phPose"), phSize: el("phSize"), phSizeVal: el("phSizeVal"),
+        rbStage: el("rbStage"), rbMode: el("rbMode"), rbRibbonOpts: el("rbRibbonOpts"), rbForm: el("rbForm"), rbText: el("rbText"), rbSep: el("rbSep"),
+        rbRibColorRow: el("rbRibColorRow"), rbRibColors: el("rbRibColors"), rbTextColors: el("rbTextColors"), rbRibbonSl: el("rbRibbonSl"), rbRingSl: el("rbRingSl"),
+        rbRibbonSw: el("rbRibbonSw"), rbRingSw: el("rbRingSw"), rbRun: el("rbRun"), rbBack: el("rbBack"), rbCamera: el("rbCamera"), rbBtn: el("rbBtn"),
+        rbWidth: el("rbWidth"), rbWidthVal: el("rbWidthVal"), rbSize: el("rbSize"), rbSizeVal: el("rbSizeVal"), rbSpeed: el("rbSpeed"), rbSpeedVal: el("rbSpeedVal"),
+        rbRings: el("rbRings"), rbRingsVal: el("rbRingsVal"), rbRadius: el("rbRadius"), rbRadiusVal: el("rbRadiusVal"), rbTilt: el("rbTilt"), rbTiltVal: el("rbTiltVal"),
+        rbRingSpeed: el("rbRingSpeed"), rbRingSpeedVal: el("rbRingSpeedVal"),
         phRound: el("phRound"), phRoundVal: el("phRoundVal"), phScreen: el("phScreen"), phShadow: el("phShadow"), phAppear: el("phAppear"), phBtn: el("phBtn"),
         pfModes: el("pfModes"), pfName: el("pfName"), pfSub: el("pfSub"), pfKeep: el("pfKeep"), pfOptsToggle: el("pfOptsToggle"), pfHint: el("pfHint"),
         unusedBtn: el("unusedBtn"), unusedOptsToggle: el("unusedOptsToggle"), unusedHint: el("unusedHint"),
@@ -1368,6 +1375,7 @@
         if (ui.gridBtn) { ui.gridBtn.disabled = on; }
         if (ui.tbBtn) { ui.tbBtn.disabled = on; }
         if (ui.phBtn) { ui.phBtn.disabled = on; }
+        if (ui.rbBtn) { ui.rbBtn.disabled = on; }
         ui.unusedBtn.disabled = on;
         ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
@@ -8073,6 +8081,164 @@
         drawPhone();
     }
 
+    // ---- Текст по ленте (Анимация › Макеты): лента с бегущим текстом по линии или 3D-кольцо из букв.
+    var RB_KEY = "sayframe.ribbon.v1";
+    var RB_DEFAULTS = { mode: "ribbon", form: "loops", text: "WEST LOOP", sep: "•", ribbonColor: "#3aa0e8", textColor: "#e8672c", ringColor: "#ffffff",
+        width: 120, size: 60, speed: 35, run: true, rings: 2, radius: 560, tilt: 12, ringSpeed: 40, back: true, camera: true };
+    var RB_RANGES = { width: [10, 400], size: [20, 100], speed: [0, 100], rings: [1, 5], radius: [100, 1500], tilt: [0, 60], ringSpeed: [0, 100] };
+    var RB_CHOICES = { mode: ["ribbon", "ring"], form: ["path", "wave", "loops", "circle", "spiral"] };
+
+    function rbClean(src) {
+        var o = {}, k;
+        for (k in RB_DEFAULTS) { if (RB_DEFAULTS.hasOwnProperty(k)) { o[k] = src && typeof src === "object" && typeof src[k] === typeof RB_DEFAULTS[k] ? src[k] : RB_DEFAULTS[k]; } }
+        for (k in RB_RANGES) { if (RB_RANGES.hasOwnProperty(k)) { o[k] = Math.max(RB_RANGES[k][0], Math.min(RB_RANGES[k][1], Math.round(Number(o[k]) || 0))); } }
+        for (k in RB_CHOICES) { if (RB_CHOICES.hasOwnProperty(k) && RB_CHOICES[k].indexOf(o[k]) < 0) { o[k] = RB_DEFAULTS[k]; } }
+        ["ribbonColor", "textColor", "ringColor"].forEach(function (c) { o[c] = parseHex(o[c]) ? parseHex(o[c]).hex : RB_DEFAULTS[c]; });
+        o.text = String(o.text).slice(0, 60);
+        o.sep = String(o.sep).slice(0, 2);
+        return o;
+    }
+
+    var rb = (function () { try { return rbClean(JSON.parse(window.localStorage.getItem(RB_KEY) || "null")); } catch (e) { return rbClean(null); } })();
+
+    // Те же формы, что в host.jsx (ribSample + плавные кривые ribShape): превью совпадает с композицией.
+    function rbSample(form, W, H) {
+        var pts = [], i, n, t, u, m = Math.min(W, H), r, xs = [], ys = [], s, x0, x1, y0, y1;
+        if (form === "circle") { r = m * 0.3; for (i = 0; i < 24; i++) { t = i / 24 * 2 * Math.PI; pts.push([r * Math.sin(t), -r * Math.cos(t)]); } return { pts: pts, closed: true }; }
+        if (form === "spiral") { n = 44; for (i = 0; i <= n; i++) { t = i / n * 5 * Math.PI; r = m * 0.4 * (0.12 + 0.88 * i / n); pts.push([r * Math.cos(t), r * Math.sin(t)]); } return { pts: pts, closed: false }; }
+        if (form === "loops" || form === "path") {
+            n = 54;
+            for (i = 0; i <= n; i++) { t = -0.5 * Math.PI + i / n * 7 * Math.PI; xs.push(t - 3.2 * Math.sin(t)); ys.push(3.2 * Math.cos(t)); }
+            x0 = Math.min.apply(null, xs); x1 = Math.max.apply(null, xs); y0 = Math.min.apply(null, ys); y1 = Math.max.apply(null, ys);
+            s = Math.min(W * 0.9 / (x1 - x0), H * 0.62 / (y1 - y0));
+            for (i = 0; i <= n; i++) { pts.push([(xs[i] - (x0 + x1) / 2) * s, (ys[i] - (y0 + y1) / 2) * s]); }
+            return { pts: pts, closed: false };
+        }
+        n = 32;
+        for (i = 0; i <= n; i++) { u = i / n; pts.push([(u - 0.5) * W * 1.1, -Math.sin(u * 4 * Math.PI) * H * 0.18]); }
+        return { pts: pts, closed: false };
+    }
+
+    function rbSvgPath(sm) {
+        var p = sm.pts, n = p.length, d = "M" + p[0][0].toFixed(1) + " " + p[0][1].toFixed(1), i, segs = sm.closed ? n : n - 1;
+        function tan(i) {
+            var a = sm.closed ? p[(i - 1 + n) % n] : p[Math.max(0, i - 1)], b = sm.closed ? p[(i + 1) % n] : p[Math.min(n - 1, i + 1)];
+            return [(b[0] - a[0]) / 6, (b[1] - a[1]) / 6];
+        }
+        for (i = 0; i < segs; i++) {
+            var a = p[i], b = p[(i + 1) % n], ta = tan(i), tb = tan((i + 1) % n);
+            d += " C" + (a[0] + ta[0]).toFixed(1) + " " + (a[1] + ta[1]).toFixed(1) + " " + (b[0] - tb[0]).toFixed(1) + " " + (b[1] - tb[1]).toFixed(1) + " " + b[0].toFixed(1) + " " + b[1].toFixed(1);
+        }
+        return d + (sm.closed ? " Z" : "");
+    }
+
+    function rbEsc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+    function rbUnit() { return rb.text + " " + (rb.sep ? rb.sep + " " : ""); }
+
+    function drawRibbonPreview() {
+        var st = ui.rbStage, unit = rbUnit(), txt = "", i, fs, html = "", n, R, rows, j, k, a, back;
+        if (!st) { return; }
+        st.classList.toggle("rb-ring", rb.mode === "ring");
+        if (rb.mode === "ribbon") {
+            for (i = 0; i < 60; i++) { txt += unit; }
+            fs = Math.max(6, Math.round(rb.width * rb.size / 100));
+            st.innerHTML = "<svg viewBox=\"-1100 -560 2200 1120\" preserveAspectRatio=\"xMidYMid meet\"><path id=\"rbPrevPath\" d=\"" + rbSvgPath(rbSample(rb.form, 1920, 1080)) + "\" fill=\"none\" stroke=\"" + rb.ribbonColor +
+                "\" stroke-width=\"" + rb.width + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><text fill=\"" + rb.textColor + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + rbEsc(txt) + "</textPath></text></svg>";
+            return;
+        }
+        // Кольцо: буквы по кругу в CSS 3D, задняя сторона — зеркально и бледнее.
+        R = Math.round(60 + rb.radius / 1500 * 70);
+        n = Math.max(12, Math.round(2 * Math.PI * R / 15));
+        rows = rb.rings;
+        html = "<div class=\"rb-ringbox\" style=\"--c:" + rb.ringColor + ";transform:rotateX(" + (-rb.tilt) + "deg)\">";
+        for (j = 0; j < rows; j++) {
+            html += "<div class=\"rb-ringrow\" style=\"transform:translateY(" + ((j - (rows - 1) / 2) * 26 - 11) + "px)\">";
+            txt = ""; while (txt.length < n) { txt += unit; }
+            txt = txt.slice(0, n);
+            for (k = 0; k < n; k++) {
+                a = k * 360 / n - 50;
+                back = Math.cos(a * Math.PI / 180) < 0;
+                html += "<span style=\"transform:rotateY(" + a.toFixed(1) + "deg) translateZ(" + R + "px)" + (back && rb.back ? ";opacity:.32" : "") + "\">" + rbEsc(txt.charAt(k)) + "</span>";
+            }
+            html += "</div>";
+        }
+        st.innerHTML = html + "</div>";
+    }
+
+    function drawRibbon() {
+        var ring = rb.mode === "ring";
+        if (!ui.rbStage) { return; }
+        pressGroupV(ui.rbMode, rb.mode);
+        Array.prototype.forEach.call(ui.rbForm.querySelectorAll("button[data-v]"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === rb.form ? "true" : "false"); });
+        ui.rbRibbonOpts.hidden = ui.rbRibbonSl.hidden = ui.rbRibbonSw.hidden = ui.rbRibColorRow.hidden = ring;
+        ui.rbRingSl.hidden = ui.rbRingSw.hidden = !ring;
+        if (document.activeElement !== ui.rbText) { ui.rbText.value = rb.text; }
+        if (document.activeElement !== ui.rbSep) { ui.rbSep.value = rb.sep; }
+        Array.prototype.forEach.call(ui.rbRibColors.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === rb.ribbonColor ? "true" : "false"); });
+        Array.prototype.forEach.call(ui.rbTextColors.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === (ring ? rb.ringColor : rb.textColor) ? "true" : "false"); });
+        [["Width", "width", ""], ["Size", "size", "%"], ["Speed", "speed", ""], ["Rings", "rings", ""], ["Radius", "radius", ""], ["Tilt", "tilt", "°"], ["RingSpeed", "ringSpeed", ""]].forEach(function (d) {
+            ui["rb" + d[0]].value = String(rb[d[1]]);
+            ui["rb" + d[0] + "Val"].textContent = rb[d[1]] + d[2];
+        });
+        ui.rbRun.checked = rb.run; ui.rbBack.checked = rb.back; ui.rbCamera.checked = rb.camera;
+        ui.rbBtn.textContent = ring ? "Создать кольцо" : "Создать ленту";
+        drawRibbonPreview();
+    }
+
+    function setRibbon(changes) {
+        var k;
+        for (k in changes) { if (changes.hasOwnProperty(k)) { rb[k] = changes[k]; } }
+        rb = rbClean(rb);
+        try { window.localStorage.setItem(RB_KEY, JSON.stringify(rb)); } catch (e) {}
+        drawRibbon();
+    }
+
+    async function onRibbon() {
+        var res, r, ring = rb.mode === "ring";
+        if (busy) { return; }
+        setBusy(true);
+        setStatus(ring ? "Собираю кольцо…" : "Собираю ленту…", "busy");
+        try {
+            res = await host("ribbonMake", [{ mode: rb.mode, form: rb.form, text: rb.text || "TEXT", sep: rb.sep, width: rb.width, textSize: rb.size, speed: ring ? rb.ringSpeed : rb.speed, run: rb.run,
+                ribbonColor: tbRgb(rb.ribbonColor), textColor: tbRgb(ring ? rb.ringColor : rb.textColor), rings: rb.rings, radius: rb.radius, tilt: rb.tilt,
+                backDark: rb.back, camera: rb.camera },
+                { ribbon: "Лента", path: "Линия", text: "Текст ленты", width: "Толщина ленты", speed: "Скорость", color: "Цвет ленты",
+                    ring: "Кольцо", tilt: "Кольцо: наклон", spin: "Кольцо: вращение", camera: "Камера кольца" }]);
+            setBusy(false);
+            r = res.ribbonMake || res;
+            if (r.mode === "ring") {
+                setStatus("Кольцо готово: " + plural(r.rings, "кольцо", "кольца", "колец") + ". Наклон — слоем «" + r.ctrl + "», скорость вращения — в Effect Controls слоя «" + r.spin + "»." +
+                    (r.camera ? " Добавлена камера «" + r.camera + "»." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
+            } else {
+                setStatus("Лента готова" + (r.from ? " по линии «" + r.from + "» (сама линия выключена)" : "") + ". Текст — слой «" + r.text + "»: поменяйте слова прямо в нём. Толщина, цвет ленты и скорость — в Effect Controls текста. Отменить — Cmd/Ctrl+Z.", "done");
+            }
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function enableRibbon() {
+        if (!ui.rbStage) { return; }
+        ui.rbMode.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ mode: b.getAttribute("data-v") }); } });
+        ui.rbForm.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ form: b.getAttribute("data-v") }); } });
+        ui.rbRibColors.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ ribbonColor: b.getAttribute("data-v") }); } });
+        ui.rbTextColors.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("button[data-v]") : null;
+            if (b) { setRibbon(rb.mode === "ring" ? { ringColor: b.getAttribute("data-v") } : { textColor: b.getAttribute("data-v") }); }
+        });
+        ui.rbText.addEventListener("input", function () { setRibbon({ text: ui.rbText.value }); });
+        ui.rbSep.addEventListener("input", function () { setRibbon({ sep: ui.rbSep.value }); });
+        [["Width", "width"], ["Size", "size"], ["Speed", "speed"], ["Rings", "rings"], ["Radius", "radius"], ["Tilt", "tilt"], ["RingSpeed", "ringSpeed"]].forEach(function (d) {
+            ui["rb" + d[0]].addEventListener("input", function () { var ch = {}; ch[d[1]] = Number(ui["rb" + d[0]].value); setRibbon(ch); });
+        });
+        ui.rbRun.addEventListener("change", function () { setRibbon({ run: ui.rbRun.checked }); });
+        ui.rbBack.addEventListener("change", function () { setRibbon({ back: ui.rbBack.checked }); });
+        ui.rbCamera.addEventListener("change", function () { setRibbon({ camera: ui.rbCamera.checked }); });
+        ui.rbBtn.addEventListener("click", onRibbon);
+        drawRibbon();
+    }
+
     // ---- Pathfinder (вкладка «Шейп»): как Shape Modes в Illustrator, через Merge Paths.
     var PF_MODES = { unite: ["Объединить", "Все фигуры сливаются в одну"], front: ["Вычесть верхнюю", "Верхние фигуры вырезаются из нижней"],
         intersect: ["Пересечение", "Остаётся только общая часть"], exclude: ["Исключить", "Общая часть вырезается, остальное остаётся"],
@@ -9899,7 +10065,7 @@
 
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT" || m === "NO_TEXT_LAYER";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT" || m === "RB_NO_PATH" || m === "NO_TEXT_LAYER";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -11040,6 +11206,7 @@
         enablePathfinder();
         enableTextBox();
         enablePhone();
+        enableRibbon();
         ui.ecOptsToggle.addEventListener("click", function () {
             motion.ecOpts = motion.ecOpts === false;
             showEcFold();
