@@ -2844,6 +2844,31 @@ var sayframeHost = (function () {
 
     // The number shows only from the front of its card: from behind (the card turned away from the camera) it is hidden.
     // Dan Ebberts' two-sided layer test: the layer's own Z axis in comp space points away from the camera when facing it.
+    // A mask of the card's shape on the card comp layer, in the layer's own pixels (the comp is w x h).
+    function orbitCardMask(L, kind, t, w, h) {
+        var m, s, pl, i, k = 0.5523;
+        try {
+            if (kind === "rect") {
+                s = gridMaskShape(w / 2, h / 2, w, h, t * Math.min(w, h) / 2);
+            } else if (kind === "circle") {
+                s = new Shape();
+                s.vertices = [[w / 2, 0], [w, h / 2], [w / 2, h], [0, h / 2]];
+                s.inTangents = [[-w / 2 * k, 0], [0, -h / 2 * k], [w / 2 * k, 0], [0, h / 2 * k]];
+                s.outTangents = [[w / 2 * k, 0], [0, h / 2 * k], [-w / 2 * k, 0], [0, -h / 2 * k]];
+                s.closed = true;
+            } else {
+                pl = orbitPoly(ORBIT_SIDES[kind], t, w, h);
+                s = new Shape();
+                s.vertices = [];
+                for (i = 0; i < pl.vertices.length; i++) { s.vertices.push([pl.vertices[i][0] + w / 2, pl.vertices[i][1] + h / 2]); }
+                s.inTangents = pl.inTangents; s.outTangents = pl.outTangents; s.closed = true;
+            }
+            m = acAdd(L, ["ADBE Mask Parade"], "ADBE Mask Atom");
+            try { acP(L, ["ADBE Mask Parade", m]).name = "Card"; } catch (e0) {}
+            acP(L, ["ADBE Mask Parade", m, "ADBE Mask Shape"]).setValue(s);
+        } catch (eM) {}
+    }
+
     function orbitHideBack(numLayer, cardRef) {
         try {
             acP(numLayer, ["ADBE Transform Group", "ADBE Opacity"]).expression =
@@ -2856,7 +2881,7 @@ var sayframeHost = (function () {
         var kind = ORBIT_SIDES.hasOwnProperty(o.shape) ? o.shape : "rect", t = orbitNum(o.corners, 0, 100, 20) / 100;
         var radius = orbitNum(o.radius, 0, 10000, 600), w = Math.round(orbitNum(o.w, 4, 8000, 400)), h = Math.round(orbitNum(o.h, 4, 8000, 560));
         var pre = o.mode === "precomp", cx = comp.width / 2, cy = comp.height / 2, fs = Math.round(Math.min(w, h) * 0.32);
-        var ctrl, cam = "", had = false, cards = [], nums = [], i, j, sp, L, txt, cc, inner, folder = null, base, camL, rig = null;
+        var ctrl, cam = "", had = false, cards = [], nums = [], backs = [], bk, i, j, sp, L, txt, cc, inner, folder = null, base, camL, rig = null;
         base = labels.card || "Card ";
         var spots = [];
         if (pre) {
@@ -2877,8 +2902,8 @@ var sayframeHost = (function () {
                     orbitSet(txt, "ADBE Position", [w / 2, h / 2 + fs * 0.35]);
                 }
                 L = comp.layers.add(cc);
-                // Inside the card comp the number asks the card layer in the main comp which way it faces.
-                if (o.numbers && o.back === false) { orbitHideBack(txt, "comp(" + tbQ(comp.name) + ").layer(" + tbQ(base + (i + 1)) + ")"); }
+                // Whatever is put inside the card comp (a photo, a video) gets the card's own shape and corners.
+                orbitCardMask(L, kind, t, w, h);
             } else {
                 L = comp.layers.addShape();
                 orbitCardShape(L, kind, t, w, h, orbitColor(i));
@@ -2888,6 +2913,21 @@ var sayframeHost = (function () {
             orbitSet(L, "ADBE Position", [cx + sp.x, cy + sp.y, sp.z]);
             orbitSet(L, "ADBE Rotate Y", sp.ry);
             cards.unshift(L);
+            if (pre && o.back === false) {
+                // From behind a card shows only its back: the card comp (number, picture) hides when it faces away,
+                // and a plain back of the same shape and colour shows instead.
+                orbitHideBack(L, "thisLayer");
+                bk = comp.layers.addShape();
+                orbitCardShape(bk, kind, t, w, h, orbitColor(i));
+                bk.name = base + (i + 1) + ": " + (labels.back || "back");
+                bk.threeDLayer = true;
+                bk.parent = L;
+                orbitSet(bk, "ADBE Position", [w / 2, h / 2, 0]);
+                orbitSet(bk, "ADBE Rotate Y", 0);
+                try { acP(bk, ["ADBE Transform Group", "ADBE Opacity"]).expression = "var L=thisLayer;L.toCompVec([0,0,1])[2]>0?0:value"; } catch (eBk) {}
+                bk.moveAfter(L);
+                backs.push(bk);
+            }
             if (o.numbers && !pre) {
                 txt = orbitNumber(comp, String(i + 1), fs);
                 txt.name = (labels.number || "Number ") + (i + 1);
@@ -2923,6 +2963,7 @@ var sayframeHost = (function () {
         }
         for (i = 0; i < cards.length; i++) { try { cards[i].selected = false; } catch (eS) {} }
         for (i = 0; i < nums.length; i++) { try { nums[i].selected = false; } catch (eT) {} }
+        for (i = 0; i < backs.length; i++) { try { backs[i].selected = false; } catch (eB) {} }
         ctrl.selected = true;
         return { cards: n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, camRig: rig ? rig.name : "", hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
     }

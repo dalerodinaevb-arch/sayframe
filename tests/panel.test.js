@@ -5170,7 +5170,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     t = Lx(p, "Карточка 1");
     check("OR3 «Шейп + прекомп»: 3 card comps in a «Карусель» folder, each with the shape (a rounded triangle path) and no number", comps.map((c) => c.name).sort().join() === "Карточка 1,Карточка 2,Карточка 3" && p.ae.log.bins.indexOf("Карусель") >= 0 &&
       comps.every((c) => c.list.length === 1 && c.list[0].name === "Форма" && acAt(c.list[0], "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length === 6), comps.map((c) => c.name + ":" + c.list.map((l) => l.name)).join(" "));
-    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one; numbers off — no «Цифра видна сзади» switch", !(await vis(p, "#orbitBackRow")) && !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление,Карточка 1,Карточка 2,Карточка 3,Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
+    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one; numbers off — the back switch still shows, a picture can be inside", (await vis(p, "#orbitBackRow")) && !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление,Карточка 1,Карточка 2,Карточка 3,Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
     await p.close();
   }
 
@@ -5228,7 +5228,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
-  // Carousel: «Цифра видна сзади» off — a number hides when its card turns away from the camera.
+  // Carousel: «Сзади видно цифру и картинку» off — a number (or the whole card comp) hides when its card turns away from the camera.
   {
     const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
@@ -5240,9 +5240,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const ex = (acAt(Lx(p, "Номер 3"), "ADBE Transform Group", "ADBE Opacity") || {}).expression;
     check("OR4 «Цифра видна сзади» off: the preview drops the numbers of the back cards; each number layer hides when its card faces away", spans0 === 8 && spans1 < 8 && spans1 > 0 && ex === "var L=thisLayer;L.toCompVec([0,0,1])[2]>0?value:0" && /toCompVec/.test((acAt(Lx(p, "Номер 1"), "ADBE Transform Group", "ADBE Opacity") || {}).expression), spans0 + " " + spans1 + " " + ex);
     await p.page.click('#orbitMode [data-v="precomp"]'); await p.page.click("#orbitBtn"); await p.idle();
-    const inner = (p.ae.log.orbitComps || []).find((c) => c.name === "Карточка 2");
-    const num = inner && inner.list.find((l) => /^2$/.test(l.name));
-    check("OR4 …in «Шейп + прекомп» the number inside the card comp asks its card layer in the main comp", !!num && (acAt(num, "ADBE Transform Group", "ADBE Opacity") || {}).expression === 'var L=comp("Main").layer("Карточка 2");L.toCompVec([0,0,1])[2]>0?value:0', num ? (acAt(num, "ADBE Transform Group", "ADBE Opacity") || {}).expression : "no number");
+    const cardL = p.ae.log.dcMain.list.find((l) => l.name === "Карточка 2" && l.source), backL = Lx(p, "Карточка 2: обратная сторона");
+    const op = (l) => (acAt(l, "ADBE Transform Group", "ADBE Opacity") || {}).expression;
+    check("OR4 …in «Шейп + прекомп» the whole card comp (number, picture) hides when it faces away; a plain back of the same shape shows instead", !!cardL && op(cardL) === "var L=thisLayer;L.toCompVec([0,0,1])[2]>0?value:0" &&
+      !!backL && backL.parent === cardL && op(backL) === "var L=thisLayer;L.toCompVec([0,0,1])[2]>0?0:value" && backL.threeDLayer, (cardL ? op(cardL) : "no card") + " | " + (backL ? op(backL) : "no back"));
+    const mk = cardL && acAt(cardL, "ADBE Mask Parade").children[0];
+    check("OR4 …and a picture put inside gets the card's shape: a mask of the rounded card on the card comp layer", !!mk && mk.name === "Card" && mk.children.find((c) => c.matchName === "ADBE Mask Shape").value.vertices.length === 8, mk ? JSON.stringify(mk.children.find((c) => c.matchName === "ADBE Mask Shape").value.vertices) : "no mask");
+    check("OR4 the switch is named «Сзади видно цифру и картинку»", (await p.page.innerText("#orbitBackRow")).trim() === "Сзади видно цифру и картинку");
     await p.restart(); await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]');
     check("OR4 the switch survives a restart", !(await p.page.isChecked("#orbitBack")));
     await p.close();
