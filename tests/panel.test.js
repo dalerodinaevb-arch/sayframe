@@ -5537,6 +5537,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       L(p, "Камера кольца") && p.ae.log.undo.join() === "begin:Sayframe: text ring,end" && tf(tl, "ADBE Rotate X").value === -12 && /time\*effect\("Скорость"\)/.test(tf(sp, "ADBE Rotate Y").expression) && /Кольцо готово/.test(await p.status()), names(p) + " | " + await p.status());
     check("RB4 the ring lies flat, letters stand up, far letters dimmer (an expression selector); the text fills the circle", tf(r1, "ADBE Rotate X").value === 90 && acAt(r1, "ADBE Text Properties", "ADBE Text Animators").children.map((a) => a.name).join() === "Centre,Stand up,Back side" &&
       acAt(r1, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text Force Align Path").value === 1 && /WEST LOOP/.test(docText(r1)), acAt(r1, "ADBE Text Properties", "ADBE Text Animators").children.map((a) => a.name).join());
+    const back = acAt(r1, "ADBE Text Properties", "ADBE Text Animators").children[2], camP = tf(L(p, "Камера кольца"), "ADBE Position").value;
+    const amt = (idx, total, rot) => { const e = acAt(back, "ADBE Text Selectors").children[0].children.find((c) => c.matchName === "ADBE Text Expressible Amount").expression;
+      return vm.runInNewContext("var textIndex=" + idx + ",textTotal=" + total + ";function degreesToRadians(d){return d*Math.PI/180}var thisComp={layer:function(){return {transform:{yRotation:" + rot + "}}}};" + e)[0]; };
+    check("RB6 the dim letters are the far half and stay far while the ring turns (the path starts at the near side)", amt(1, 40, 0) === 0 && amt(20, 40, 0) === 100 && amt(20, 40, 180) === 0 && amt(1, 40, 180) === 100 && amt(10, 40, 90) === 0 && amt(30, 40, 90) === 100, [amt(1, 40, 0), amt(20, 40, 0), amt(20, 40, 180), amt(10, 40, 90)].join());
+    check("RB6 the camera stands far enough back for the whole ring, level with it", camP[2] < -2500 && camP[1] === 540 && camP[0] === 960, JSON.stringify(camP));
     await p.restart(); await rbTab(p);
     check("RB5 the settings survive a restart", (await p.page.getAttribute('#rbMode [data-v="ring"]', "aria-pressed")) === "true" && p.errors.length === 0, p.errors.join("|"));
     await p.close();

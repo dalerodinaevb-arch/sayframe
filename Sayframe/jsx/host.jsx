@@ -2826,8 +2826,8 @@ var sayframeHost = (function () {
 
     // The camera steps back and a little up, like the panel's preview: the whole carousel in the frame with room
     // around it. Zoom (px) and the comp size give how far the camera has to be for the widest part and the nearest card.
-    function orbitFrame(comp, camL, spots, w, h, cx, cy) {
-        var zoom = 0, ex = 0, ey = 0, near = 0, i, d, tilt = 18 * Math.PI / 180;
+    function orbitFrame(comp, camL, spots, w, h, cx, cy, tiltDeg) {
+        var zoom = 0, ex = 0, ey = 0, near = 0, i, d, tilt = (tiltDeg === undefined ? 18 : tiltDeg) * Math.PI / 180;
         try { zoom = Number(acP(camL, ["ADBE Camera Options Group", "ADBE Camera Zoom"]).value); } catch (e0) { zoom = 0; }
         if (!(zoom > 0)) { zoom = comp.width * 1.389; }
         for (i = 0; i < spots.length; i++) {
@@ -3392,7 +3392,7 @@ var sayframeHost = (function () {
         var cx = comp.width / 2, cy = comp.height / 2, n = Math.round(orbitNum(o.rings, 1, 5, 2)), R = orbitNum(o.radius, 50, 5000, 560);
         var fs = Math.max(8, Math.round(R * 0.2)), word = String(o.text || "TEXT"), sep = String(o.sep === undefined ? "\u2022" : o.sep);
         var unit = word + " " + (sep ? sep + " " : ""), cw = fs * 0.66, str = "", reps, tilt, spin, rings = [], i, T, k, base, ai, pi, si, cam = "", had = false, gap = fs * 1.35;
-        var tc = o.textColor || [1, 1, 1], circle = new Shape(), c = R * 0.5523;
+        var tc = o.textColor || [1, 1, 1], circle = new Shape(), c = R * 0.5523, spots = [], camL;
         // A circle starting at the top, clockwise: on the flat ring "top" is the far side.
         circle.vertices = [[0, -R], [R, 0], [0, R], [-R, 0]];
         circle.inTangents = [[-c, 0], [0, -c], [c, 0], [0, c]];
@@ -3423,13 +3423,15 @@ var sayframeHost = (function () {
             acP(T, base.concat([ai, "ADBE Text Animator Properties", pi])).setValue(-90);
             if (o.backDark) {
                 // Letters on the far half are dimmer: an expression selector picks them by where they are on the ring now.
+                // The path starts at the near side (the ring lies flat: layer y becomes depth), so a letter at angle
+                // a on the path, with the ring turned by r, is at depth -R*cos(a - r): far when cos(a - r) < 0.
                 ai = acAdd(T, base, "ADBE Text Animator");
                 try { acP(T, base.concat([ai])).name = "Back side"; } catch (eB) {}
                 pi = acAdd(T, base.concat([ai, "ADBE Text Animator Properties"]), "ADBE Text Opacity");
                 acP(T, base.concat([ai, "ADBE Text Animator Properties", pi])).setValue(35);
                 si = acAdd(T, base.concat([ai, "ADBE Text Selectors"]), "ADBE Text Expressible Selector");
                 acP(T, base.concat([ai, "ADBE Text Selectors", si, "ADBE Text Expressible Amount"])).expression =
-                    "var a=degreesToRadians((textIndex-0.5)/textTotal*360+thisComp.layer(" + tbQ(spin.name) + ").transform.yRotation);Math.cos(a)>0?[100,100,100]:[0,0,0]";
+                    "var a=degreesToRadians((textIndex-0.5)/textTotal*360-thisComp.layer(" + tbQ(spin.name) + ").transform.yRotation);Math.cos(a)<0?[100,100,100]:[0,0,0]";
             }
             orbitSet(T, "ADBE Position", [cx, cy + (i - (n - 1) / 2) * gap, 0]);
             orbitSet(T, "ADBE Rotate X", 90);
@@ -3440,7 +3442,14 @@ var sayframeHost = (function () {
         orbitSet(tilt, "ADBE Rotate X", -orbitNum(o.tilt, -80, 80, 12));
         if (o.camera) {
             for (k = 1; k <= comp.numLayers; k++) { if (comp.layer(k) instanceof CameraLayer) { had = true; break; } }
-            if (!had) { cam = comp.layers.addCamera(labels.camera || "Ring camera", [cx, cy]).name; }
+            if (!had) {
+                // Far enough back that the whole ring (its near side too) is in the frame with room around it.
+                camL = comp.layers.addCamera(labels.camera || "Ring camera", [cx, cy]);
+                cam = camL.name;
+                for (k = 0; k < 16; k++) { spots.push({ x: R * Math.sin(k * Math.PI / 8), y: 0, z: -R * Math.cos(k * Math.PI / 8) }); }
+                orbitFrame(comp, camL, spots, fs * 1.2, (n - 1) * gap + fs * 1.4, cx, cy, 0);
+                try { camL.selected = false; } catch (eC) {}
+            }
         }
         for (i = 0; i < rings.length; i++) { try { rings[i].selected = false; } catch (eS) {} }
         try { spin.selected = false; } catch (eS2) {}
