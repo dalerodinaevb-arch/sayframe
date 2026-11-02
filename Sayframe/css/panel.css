@@ -1698,7 +1698,7 @@ html[data-design="ae"] .set-tabs button[aria-selected="true"] { background: rgba
 
 /* «Текст по ленте»: случайная линия, направление, куда бежит текст */
 .rb-seed { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.rb-seed[hidden], .rb-dir[hidden], .rb-rundir[hidden] { display: none; }
+.rb-seed[hidden], .rb-dir[hidden], .rb-rundir[hidden], #rbShadowRow[hidden] { display: none; }
 .rb-seed-l { display: flex; align-items: center; gap: 8px; color: var(--muted); font: 600 12px/1 var(--round); }
 .rb-seed-l .field { width: 80px; height: 30px; }
 .rb-dice { margin-left: auto; }

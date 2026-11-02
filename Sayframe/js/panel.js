@@ -1062,7 +1062,7 @@
         phPhone: el("phPhone"), phModel: el("phModel"), phColors: el("phColors"), phPose: el("phPose"), phSize: el("phSize"), phSizeVal: el("phSizeVal"),
         rbStage: el("rbStage"), rbSeedRow: el("rbSeedRow"), rbSeed: el("rbSeed"), rbDice: el("rbDice"), rbDirRow: el("rbDirRow"), rbDir: el("rbDir"), rbAngle: el("rbAngle"), rbAngleVal: el("rbAngleVal"), rbRunDir: el("rbRunDir"), rbMode: el("rbMode"), rbRibbonOpts: el("rbRibbonOpts"), rbForm: el("rbForm"), rbText: el("rbText"), rbSep: el("rbSep"),
         rbRibColorRow: el("rbRibColorRow"), rbRibColors: el("rbRibColors"), rbTextColors: el("rbTextColors"), rbRibbonSl: el("rbRibbonSl"), rbRingSl: el("rbRingSl"),
-        rbRibbonSw: el("rbRibbonSw"), rbRingSw: el("rbRingSw"), rbRun: el("rbRun"), rbBack: el("rbBack"), rbCamera: el("rbCamera"), rbBtn: el("rbBtn"),
+        rbRibbonSw: el("rbRibbonSw"), rbRingSw: el("rbRingSw"), rbRun: el("rbRun"), rbOverlap: el("rbOverlap"), rbShadow: el("rbShadow"), rbShadowRow: el("rbShadowRow"), rbBack: el("rbBack"), rbCamera: el("rbCamera"), rbBtn: el("rbBtn"),
         rbWidth: el("rbWidth"), rbWidthVal: el("rbWidthVal"), rbSize: el("rbSize"), rbSizeVal: el("rbSizeVal"), rbSpeed: el("rbSpeed"), rbSpeedVal: el("rbSpeedVal"),
         rbRings: el("rbRings"), rbRingsVal: el("rbRingsVal"), rbRadius: el("rbRadius"), rbRadiusVal: el("rbRadiusVal"), rbTilt: el("rbTilt"), rbTiltVal: el("rbTiltVal"),
         rbRingSpeed: el("rbRingSpeed"), rbRingSpeedVal: el("rbRingSpeedVal"),
@@ -8138,7 +8138,7 @@
     // ---- Текст по ленте (Анимация › Макеты): лента с бегущим текстом по линии или 3D-кольцо из букв.
     var RB_KEY = "sayframe.ribbon.v1";
     var RB_DEFAULTS = { mode: "ribbon", form: "loops", text: "WEST LOOP", sep: "•", ribbonColor: "#3aa0e8", textColor: "#e8672c", ringColor: "#ffffff",
-        width: 120, size: 60, speed: 35, run: true, rings: 2, radius: 560, tilt: 12, ringSpeed: 40, back: true, camera: true, seed: 4127, angle: 0, dir: "fwd" };
+        width: 120, size: 60, speed: 35, run: true, rings: 2, radius: 560, tilt: 12, ringSpeed: 40, back: true, camera: true, seed: 4127, angle: 0, dir: "fwd", overlap: false, shadow: true };
     var RB_RANGES = { width: [10, 400], size: [20, 100], speed: [0, 100], rings: [1, 5], radius: [100, 1500], tilt: [0, 60], ringSpeed: [0, 100], seed: [1, 99999], angle: [-90, 90] };
     var RB_CHOICES = { mode: ["ribbon", "ring"], form: ["path", "wave", "loops", "circle", "spiral", "random"], dir: ["fwd", "back"] };
 
@@ -8226,6 +8226,57 @@
 
     function rbUnit() { return rb.text + " " + (rb.sep ? rb.sep + " " : ""); }
 
+    // «Перекрытия 3D» в превью: лента режется по словам, каждый кусок рисуется поверх предыдущих вместе со своими буквами.
+    function rbOverlapPreview(svg, txt, fs) {
+        var NS = "http://www.w3.org/2000/svg", P = svg.querySelector("path"), W = rb.width, L, tmp, n, adv = [], x = 0, j, w, cuts = [0], groups = [], g, defs, sh;
+        try { L = P.getTotalLength(); } catch (e) { return; }
+        if (!(L > 0)) { return; }
+        txt = txt.replace(/\s+$/, "");
+        tmp = document.createElementNS(NS, "text");
+        tmp.setAttribute("style", "font-size:" + fs + "px");
+        tmp.textContent = txt;
+        svg.appendChild(tmp);
+        try { n = Math.min(txt.length, tmp.getNumberOfChars()); for (j = 0; j < n; j++) { w = tmp.getSubStringLength(j, 1); adv.push([x, w]); x += w; } } catch (e2) { n = 0; }
+        svg.removeChild(tmp);
+        if (!n) { return; }
+        for (j = 1; j < n; j++) { if (txt.charAt(j - 1) === " ") { cuts.push(j); } }
+        for (j = 0; j < cuts.length; j++) {
+            var s0 = cuts[j], e0 = j + 1 < cuts.length ? cuts[j + 1] : n, a = s0 ? adv[s0][0] - adv[s0 - 1][1] / 2 : 0, b = e0 < n ? adv[e0][0] - adv[e0 - 1][1] / 2 : x;
+            if (a >= L) { break; }
+            groups.push([s0, e0, a, Math.min(b, L)]);
+        }
+        if (groups.length) { groups[groups.length - 1][3] = L; }
+        ["stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"].forEach(function (a) { P.removeAttribute(a); });
+        svg.querySelector("text").remove();
+        defs = document.createElementNS(NS, "defs");
+        defs.innerHTML = "<filter id=\"rbSh\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\"><feGaussianBlur stdDeviation=\"" + Math.round(W * 0.18) + "\"/></filter>";
+        svg.appendChild(defs);
+        g = document.createElementNS(NS, "g");
+        g.setAttribute("class", "rb-pieces");
+        svg.appendChild(g);
+        groups.forEach(function (G, k) {
+            var len = G[3] - G[2], sp = "", q, el;
+            if (rb.shadow && k > 0) {
+                // Тень только на ленте под куском: маска — вся лента минус сам кусок с запасом.
+                sh = document.createElementNS(NS, "mask");
+                sh.setAttribute("id", "rbM" + k); sh.setAttribute("maskUnits", "userSpaceOnUse");
+                sh.setAttribute("x", "-1200"); sh.setAttribute("y", "-700"); sh.setAttribute("width", "2400"); sh.setAttribute("height", "1400");
+                sh.innerHTML = "<use href=\"#rbPrevPath\" fill=\"none\" stroke=\"#fff\" stroke-width=\"" + W + "\"/><use href=\"#rbPrevPath\" fill=\"none\" stroke=\"#000\" stroke-width=\"" + (W + 8) + "\" stroke-dasharray=\"0 " + Math.max(0, G[2] - W * 1.6) + " " + (len + W * 3.2) + " " + L * 3 + "\"/>";
+                defs.appendChild(sh);
+                el = document.createElementNS(NS, "g");
+                el.setAttribute("mask", "url(#rbM" + k + ")");
+                el.innerHTML = "<use href=\"#rbPrevPath\" fill=\"none\" stroke=\"#000\" stroke-opacity=\".55\" stroke-width=\"" + (W + 10) + "\" stroke-dasharray=\"0 " + G[2] + " " + len + " " + L * 3 + "\" filter=\"url(#rbSh)\"/>";
+                g.appendChild(el);
+            }
+            for (q = 0; q < n; q++) { sp += q >= G[0] && q < G[1] ? rbEsc(txt.charAt(q)) : "<tspan fill-opacity=\"0\">" + rbEsc(txt.charAt(q)) + "</tspan>"; }
+            el = document.createElementNS(NS, "g");
+            el.setAttribute("class", "rb-piece");
+            el.innerHTML = "<use href=\"#rbPrevPath\" fill=\"none\" stroke=\"" + rb.ribbonColor + "\" stroke-width=\"" + W + "\" stroke-linecap=\"" + (k === 0 || k === groups.length - 1 ? "round" : "butt") + "\" stroke-dasharray=\"0 " + G[2] + " " + (len + 0.8) + " " + L * 3 + "\"/>" +
+                "<text fill=\"" + rb.textColor + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + sp + "</textPath></text>";
+            g.appendChild(el);
+        });
+    }
+
     function drawRibbonPreview() {
         var st = ui.rbStage, unit = rbUnit(), txt = "", i, fs, html = "", n, R, rows, j, k, a, back;
         if (!st) { return; }
@@ -8235,6 +8286,7 @@
             fs = Math.max(6, Math.round(rb.width * rb.size / 100));
             st.innerHTML = "<svg viewBox=\"-1100 -560 2200 1120\" preserveAspectRatio=\"xMidYMid meet\"><path id=\"rbPrevPath\" d=\"" + rbSvgPath(rbSample(rb.form, 1920, 1080, { seed: rb.seed, angle: rb.angle })) + "\" fill=\"none\" stroke=\"" + rb.ribbonColor +
                 "\" stroke-width=\"" + rb.width + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><text fill=\"" + rb.textColor + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + rbEsc(txt) + "</textPath></text></svg>";
+            if (rb.overlap) { rbOverlapPreview(st.querySelector("svg"), txt, fs); }
             return;
         }
         // Кольцо: буквы по кругу в CSS 3D, задняя сторона — зеркально и бледнее.
@@ -8271,7 +8323,7 @@
             ui["rb" + d[0]].value = String(rb[d[1]]);
             ui["rb" + d[0] + "Val"].textContent = rb[d[1]] + d[2];
         });
-        ui.rbRun.checked = rb.run; ui.rbBack.checked = rb.back; ui.rbCamera.checked = rb.camera;
+        ui.rbRun.checked = rb.run; ui.rbOverlap.checked = rb.overlap; ui.rbShadow.checked = rb.shadow; ui.rbShadowRow.hidden = !rb.overlap; ui.rbBack.checked = rb.back; ui.rbCamera.checked = rb.camera;
         ui.rbSeedRow.hidden = ring || rb.form !== "random";
         ui.rbDirRow.hidden = ring || rb.form === "path" || rb.form === "circle";
         ui.rbRunDir.hidden = ring || !rb.run;
@@ -8298,18 +8350,18 @@
         setBusy(true);
         setStatus(ring ? "Собираю кольцо…" : "Собираю ленту…", "busy");
         try {
-            res = await host("ribbonMake", [{ mode: rb.mode, form: rb.form, text: rb.text || "TEXT", sep: rb.sep, width: rb.width, textSize: rb.size, speed: ring ? rb.ringSpeed : rb.speed, run: rb.run, seed: rb.seed, angle: rb.angle, dir: rb.dir,
+            res = await host("ribbonMake", [{ mode: rb.mode, form: rb.form, text: rb.text || "TEXT", sep: rb.sep, width: rb.width, textSize: rb.size, speed: ring ? rb.ringSpeed : rb.speed, run: rb.run, seed: rb.seed, angle: rb.angle, dir: rb.dir, overlap: rb.overlap, shadow: rb.shadow,
                 ribbonColor: tbRgb(rb.ribbonColor), textColor: tbRgb(ring ? rb.ringColor : rb.textColor), rings: rb.rings, radius: rb.radius, tilt: rb.tilt,
                 backDark: rb.back, camera: rb.camera },
                 { ribbon: "Лента", path: "Линия", text: "Текст ленты", width: "Толщина ленты", speed: "Скорость", color: "Цвет ленты",
-                    ring: "Кольцо", tilt: "Кольцо: наклон", spin: "Кольцо: вращение", camera: "Камера кольца" }]);
+                    piece: "кусок", shadow: "тень", ring: "Кольцо", tilt: "Кольцо: наклон", spin: "Кольцо: вращение", camera: "Камера кольца" }]);
             setBusy(false);
             r = res.ribbonMake || res;
             if (r.mode === "ring") {
                 setStatus("Кольцо готово: " + plural(r.rings, "кольцо", "кольца", "колец") + ". Наклон — слоем «" + r.ctrl + "», скорость вращения — в Effect Controls слоя «" + r.spin + "»." +
                     (r.camera ? " Добавлена камера «" + r.camera + "»." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
             } else {
-                setStatus("Лента готова" + (r.from ? " по линии «" + r.from + "» (сама линия выключена)" : "") + ". Текст — слой «" + r.text + "»: поменяйте слова прямо в нём. Толщина, цвет ленты и скорость — в Effect Controls текста. Отменить — Cmd/Ctrl+Z.", "done");
+                setStatus("Лента готова" + (r.from ? " по линии «" + r.from + "» (сама линия выключена)" : "") + (rb.overlap ? (r.pieces > 1 ? ", " + plural(r.pieces, "кусок", "куска", "кусков") + " для перекрытий" : ", перекрёстков нет — перекрытия не понадобились") : "") + ". Текст — слой «" + r.text + "»: поменяйте слова прямо в нём. Толщина, цвет ленты и скорость — в Effect Controls текста. Отменить — Cmd/Ctrl+Z.", "done");
             }
         } catch (e) {
             toolFailed(e);
@@ -8332,6 +8384,8 @@
         });
         ui.rbRun.addEventListener("change", function () { setRibbon({ run: ui.rbRun.checked }); });
         ui.rbBack.addEventListener("change", function () { setRibbon({ back: ui.rbBack.checked }); });
+        ui.rbOverlap.addEventListener("change", function () { setRibbon({ overlap: ui.rbOverlap.checked }); });
+        ui.rbShadow.addEventListener("change", function () { setRibbon({ shadow: ui.rbShadow.checked }); });
         ui.rbCamera.addEventListener("change", function () { setRibbon({ camera: ui.rbCamera.checked }); });
         ui.rbDice.addEventListener("click", function () {
             var v = rb.seed;

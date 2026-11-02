@@ -3499,12 +3499,207 @@ var sayframeHost = (function () {
         return mi;
     }
 
+    // ---- Overlaps for the text ribbon: where the ribbon passes over itself, the later pass covers the earlier
+    // one with its letters. The line is cut into pieces between the crossings; each piece is its own ribbon and
+    // its own copy of the text that shows only the letters on that piece, stacked in order along the line.
+
+    // Points along a bezier path with the distance travelled to each one.
+    function ribPolyline(sh, steps) {
+        var v = sh.vertices, n = v.length, segs = sh.closed ? n : n - 1, pts = [], arc = [], len = 0, i, j, a, b, c1, c2, t, q, x, y;
+        if (!n) { return { pts: pts, arc: arc, len: 0 }; }
+        pts.push([v[0][0], v[0][1]]); arc.push(0);
+        for (i = 0; i < segs; i++) {
+            a = v[i]; b = v[(i + 1) % n];
+            c1 = [a[0] + sh.outTangents[i][0], a[1] + sh.outTangents[i][1]];
+            c2 = [b[0] + sh.inTangents[(i + 1) % n][0], b[1] + sh.inTangents[(i + 1) % n][1]];
+            for (j = 1; j <= steps; j++) {
+                t = j / steps; q = 1 - t;
+                x = q * q * q * a[0] + 3 * q * q * t * c1[0] + 3 * q * t * t * c2[0] + t * t * t * b[0];
+                y = q * q * q * a[1] + 3 * q * q * t * c1[1] + 3 * q * t * t * c2[1] + t * t * t * b[1];
+                len += Math.sqrt((x - pts[pts.length - 1][0]) * (x - pts[pts.length - 1][0]) + (y - pts[pts.length - 1][1]) * (y - pts[pts.length - 1][1]));
+                pts.push([x, y]); arc.push(len);
+            }
+        }
+        return { pts: pts, arc: arc, len: len };
+    }
+
+    // Where the ribbon (width W) runs over itself: pairs of places far apart along the line but close on screen.
+    // Returns the cut points along the line: one between every two neighbouring overlap places, so the two passes
+    // of every crossing end up in different pieces. Empty when the ribbon never meets itself.
+    function ribCuts(sh, W) {
+        var pl = ribPolyline(sh, 12), L = pl.len, step = Math.max(W / 4, L / 500), sp = [], i, j, k, d, dx, dy, far = W * 2.5, near = W * 0.85;
+        var pairs = [], cl = [], c, pos = [], cuts = [], m, closed = !!sh.closed;
+        if (!(L > 0)) { return { cuts: [], len: 0 }; }
+        // Even steps along the line.
+        for (i = 0, k = 0; i * step <= L; i++) {
+            d = i * step;
+            while (k < pl.arc.length - 2 && pl.arc[k + 1] < d) { k++; }
+            m = pl.arc[k + 1] - pl.arc[k];
+            m = m > 0 ? (d - pl.arc[k]) / m : 0;
+            sp.push({ x: pl.pts[k][0] + (pl.pts[k + 1][0] - pl.pts[k][0]) * m, y: pl.pts[k][1] + (pl.pts[k + 1][1] - pl.pts[k][1]) * m, s: d });
+        }
+        for (i = 0; i < sp.length; i++) {
+            for (j = i + 1; j < sp.length; j++) {
+                d = sp[j].s - sp[i].s;
+                if (closed) { d = Math.min(d, L - d); }
+                if (d < far) { continue; }
+                dx = sp[i].x - sp[j].x; dy = sp[i].y - sp[j].y;
+                if (dx * dx + dy * dy < near * near) { pairs.push([sp[i].s, sp[j].s]); }
+            }
+        }
+        // Neighbouring close pairs are one crossing: its middle on each pass.
+        for (i = 0; i < pairs.length; i++) {
+            for (k = 0; k < cl.length; k++) {
+                c = cl[k];
+                if (Math.abs(c.a / c.n - pairs[i][0]) < W * 1.5 && Math.abs(c.b / c.n - pairs[i][1]) < W * 1.5) { c.a += pairs[i][0]; c.b += pairs[i][1]; c.n++; break; }
+            }
+            if (k === cl.length) { cl.push({ a: pairs[i][0], b: pairs[i][1], n: 1 }); }
+        }
+        for (k = 0; k < cl.length; k++) { pos.push(cl[k].a / cl[k].n); pos.push(cl[k].b / cl[k].n); }
+        pos.sort(function (p, q) { return p - q; });
+        // Places close together along the line are the same spot; a cut goes halfway to the next one.
+        for (i = 1; i < pos.length; i++) {
+            if (pos[i] - pos[i - 1] > W) { cuts.push(Math.round((pos[i] + pos[i - 1]) / 2 * 10) / 10); }
+        }
+        return { cuts: cuts, len: L, crossings: cl.length };
+    }
+
+    // Where each letter of one repeat (unit) sits along the line, from the start of the repeat: measured with a
+    // helper text (each prefix plus a bar), falling back to even spacing when the sizes can't be read.
+    function ribAdvances(comp, unit, fs, tc, guess) {
+        var n = unit.length, A = [], off = [], i, t = null, bar = 0, ok = true, p, doc;
+        function w(s) {
+            doc = p.value; doc.text = s; p.setValue(doc);
+            return Number(t.sourceRectAtTime(comp.time, false).width) || 0;
+        }
+        try {
+            t = ribText(comp, "|", fs, tc, "measure");
+            p = acP(t, ["ADBE Text Properties", "ADBE Text Document"]);
+            bar = w("|");
+            A.push(0);
+            for (i = 1; i <= n; i++) { A.push(w(unit.substring(0, i) + "|") - bar); }
+        } catch (e0) { ok = false; }
+        try { if (t) { t.remove(); } } catch (eR) {}
+        for (i = 1; ok && i <= n; i++) { if (!(A[i] > A[i - 1])) { ok = false; } }
+        if (!ok || !(bar > 0)) {
+            A = [];
+            for (i = 0; i <= n; i++) { A.push(guess * i / n); }
+        }
+        for (i = 0; i < n; i++) { off.push(Math.round((A[i] + A[i + 1]) / 2 * 10) / 10); }
+        return { off: off, period: A[n] };
+    }
+
+    // The expression that shows only the letters whose middle is on [a, b) of the line (cut points; -1 / -1 for open ends).
+    function ribPieceExpr(adv, a, b, L, closed, hideOff) {
+        var e = "var m=text.pathOption.firstMargin, P=" + adv.period + ", O=[" + adv.off.join(",") + "], n=O.length, i=textIndex-1, s=m+Math.floor(i/n)*P+O[i%n], L=" + Math.round(L * 10) / 10 + ";";
+        if (closed) { e += "s=((s%L)+L)%L;"; }
+        e += "var on=" + (a < 0 ? "true" : "s>=" + a) + "&&" + (b < 0 ? "true" : "s<" + b) + (hideOff ? "&&s>=0&&s<=L" : "") + ";on?[0,0,0]:[100,100,100]";
+        return e;
+    }
+
+    function ribPieceSel(T, expr) {
+        var base = ["ADBE Text Properties", "ADBE Text Animators"], ai = acAdd(T, base, "ADBE Text Animator"), pi, si;
+        try { acP(T, base.concat([ai])).name = "Piece"; } catch (eN) {}
+        pi = acAdd(T, base.concat([ai, "ADBE Text Animator Properties"]), "ADBE Text Opacity");
+        acP(T, base.concat([ai, "ADBE Text Animator Properties", pi])).setValue(0);
+        si = acAdd(T, base.concat([ai, "ADBE Text Selectors"]), "ADBE Text Expressible Selector");
+        acP(T, base.concat([ai, "ADBE Text Selectors", si, "ADBE Text Expressible Amount"])).expression = expr;
+    }
+
+    function ribTrim(R, startPct, endPct) {
+        var gi = 1, ti = acIn(R, gi, "ADBE Vector Filter - Trim");
+        acGP(R, gi, ["ADBE Vectors Group", ti, "ADBE Vector Trim Start"]).setValue(Math.max(0, Math.min(100, startPct)));
+        acGP(R, gi, ["ADBE Vectors Group", ti, "ADBE Vector Trim End"]).setValue(Math.max(0, Math.min(100, endPct)));
+    }
+
+    // One more ribbon on the same line, reading width and colour from the text's Effect Controls like the first.
+    function ribRibbonLayer(comp, name, sh, rc, width, labels, Tname) {
+        var l = comp.layers.addShape(), gi = acGroup(l), i, si;
+        l.name = name;
+        try { acP(l, ["ADBE Root Vectors Group", gi]).name = labels.path || "Line"; } catch (eG) {}
+        i = acIn(l, gi, "ADBE Vector Shape - Group");
+        acGP(l, gi, ["ADBE Vectors Group", i, "ADBE Vector Shape"]).setValue(sh);
+        si = acStroke(l, gi, rc, width);
+        try { acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Line Join"]).setValue(2); } catch (eJ) {}
+        acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Width"]).expression = "thisComp.layer(" + tbQ(Tname) + ").effect(" + tbQ(labels.width || "Width") + ")(1)";
+        return { layer: l, stroke: si };
+    }
+
+    // R and T are the ribbon and its text, already made; top is the highest layer of the ribbon so far.
+    function ribOverlap(comp, o, labels, R, T, Mt, sh, ctx) {
+        var W = ctx.width, fs = ctx.fs, L = ctx.len, cut = ribCuts(sh, W), cuts = cut.cuts, n = cuts.length + 1, i, a, b, Rk, Tk, Sk, top = Mt || T;
+        var adv, d = W / 2 + fs / 2, sTo, s0, s1, pieces = [], shadows = [], tf, k, gi = 1, matte = Mt && typeof Mt.enabled !== "undefined" && !Mt.enabled && typeof T.setTrackMatte === "function";
+        if (n < 2) { return { pieces: 1, crossings: 0 }; }
+        adv = ribAdvances(comp, ctx.unit, fs, ctx.tc, ctx.uw);
+        if (ctx.closed && adv.period > 0) {
+            // Around a circle the repeats are spread by tracking to fill exactly one lap.
+            k = (L / ctx.reps) / adv.period;
+            for (i = 0; i < adv.off.length; i++) { adv.off[i] = Math.round(adv.off[i] * k * 10) / 10; }
+            adv.period = Math.round(L / ctx.reps * 100) / 100;
+        }
+        // Copies of the ribbon first, before the first piece is trimmed.
+        for (i = 1; i < n; i++) {
+            k = ribRibbonLayer(comp, (labels.ribbon || "Ribbon") + ": " + (labels.piece || "piece") + " " + (i + 1), sh, ctx.rc, W, labels, T.name);
+            acGP(k.layer, gi, ["ADBE Vectors Group", k.stroke, "ADBE Vector Stroke Color"]).expression = "thisComp.layer(" + tbQ(T.name) + ").effect(" + tbQ(labels.color || "Ribbon colour") + ")(1)";
+            pieces.push(k.layer);
+            if (o.shadow) {
+                k = ribRibbonLayer(comp, (labels.ribbon || "Ribbon") + ": " + (labels.shadow || "shadow") + " " + (i + 1), sh, [0, 0, 0], W, labels, T.name);
+                shadows[i - 1] = k.layer;
+            }
+            for (k = 0; k < ctx.tr.length; k++) {
+                try { orbitSet(pieces[i - 1], ctx.tr[k][0], ctx.tr[k][1]); if (shadows[i - 1]) { orbitSet(shadows[i - 1], ctx.tr[k][0], ctx.tr[k][1]); } } catch (eP) {}
+            }
+        }
+        // The text of the first piece is the main text; the copies follow its words and its run.
+        ribPieceSel(T, ribPieceExpr(adv, -1, cuts[0], L, ctx.closed, false));
+        ribTrim(R, 0, (cuts[0] + d) / L * 100);
+        for (i = 1; i < n; i++) {
+            a = cuts[i - 1]; b = i < n - 1 ? cuts[i] : -1;
+            Rk = pieces[i - 1];
+            s0 = (a + d) / L * 100; s1 = b < 0 ? 100 : (b + d) / L * 100;
+            ribTrim(Rk, s0, s1);
+            Sk = shadows[i - 1] || null;
+            if (Sk) {
+                // A soft dark copy under the piece, kept away from the piece's own ends so no band shows at the seams;
+                // the full ribbon is its matte, so the shadow falls only on the ribbon under it.
+                sTo = (b < 0 ? L : b + d) - W;
+                if (sTo - (a + d + W) > W * 0.5) {
+                    ribTrim(Sk, (a + d + W) / L * 100, sTo / L * 100);
+                    k = acAdd(Sk, ["ADBE Effect Parade"], "ADBE Gaussian Blur 2");
+                    try { acP(Sk, ["ADBE Effect Parade", k, "ADBE Gaussian Blur 2-0001"]).setValue(Math.round(W * 0.3)); } catch (eB) {}
+                    try { acP(Sk, ["ADBE Transform Group", "ADBE Opacity"]).setValue(55); } catch (eO) {}
+                    Sk.moveBefore(top);
+                    top = Sk;
+                    if (matte) { try { Sk.setTrackMatte(Mt, TrackMatteType.ALPHA); } catch (eM) {} }
+                } else {
+                    try { Sk.remove(); } catch (eX) {}
+                }
+            }
+            Rk.moveBefore(top);
+            top = Rk;
+            Tk = ribText(comp, ctx.str, fs, ctx.tc, (labels.text || "Ribbon text") + ": " + (labels.piece || "piece") + " " + (i + 1));
+            try {
+                tf = acP(Tk, ["ADBE Text Properties", "ADBE Text Document"]);
+                var dc = tf.value; dc.tracking = ctx.track; tf.setValue(dc);
+                tf.expression = "thisComp.layer(" + tbQ(T.name) + ").text.sourceText";
+            } catch (eD) {}
+            ribOnPath(Tk, sh, fs, false);
+            acP(Tk, ["ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin"]).expression = "thisComp.layer(" + tbQ(T.name) + ").text.pathOption.firstMargin";
+            ribPieceSel(Tk, ribPieceExpr(adv, a, b, L, ctx.closed, !ctx.closed));
+            for (k = 0; k < ctx.tr.length; k++) { try { orbitSet(Tk, ctx.tr[k][0], ctx.tr[k][1]); } catch (eP) {} }
+            Tk.moveBefore(top);
+            top = Tk;
+            try { Tk.selected = false; Rk.selected = false; } catch (eS) {}
+        }
+        return { pieces: n, crossings: cut.crossings };
+    }
+
     function ribBuild(comp, o, labels) {
         var W = comp.width, H = comp.height, cx = W / 2, cy = H / 2, src = null, srcName = "", sh, len, list, i, j;
         var width = orbitNum(o.width, 4, 1000, 120), fs = Math.max(6, Math.round(width * orbitNum(o.textSize, 10, 100, 65) / 100));
         var speed = orbitNum(o.speed, 0, 100, 35), word = String(o.text || "TEXT"), sep = String(o.sep === undefined ? "\u2022" : o.sep);
         var unit = word + " " + (sep ? sep + " " : ""), cw = fs * 0.66 + 40 * fs / 1000, need, str = "", R, T, gi, si, fx, tr, pos = null, anc = null, sc = null, rot = 0, uw, track, Mt = null;
-        var rc = o.ribbonColor || [0.23, 0.63, 0.91], tc = o.textColor || [0.91, 0.4, 0.17], form = o.form || "wave";
+        var rc = o.ribbonColor || [0.23, 0.63, 0.91], tc = o.textColor || [0.91, 0.4, 0.17], form = o.form || "wave", ov = null;
         if (form === "path") {
             list = comp.selectedLayers || [];
             for (i = 0; i < list.length && !sh; i++) {
@@ -3587,9 +3782,14 @@ var sayframeHost = (function () {
                 else { T.trackMatteType = TrackMatteType.ALPHA; }
             } catch (eMt) { Mt = null; }
         }
+        if (o.overlap) {
+            var trs = [];
+            try { trs = [["ADBE Anchor Point", acTransform(T, "ADBE Anchor Point").value], ["ADBE Position", acTransform(T, "ADBE Position").value], ["ADBE Scale", acTransform(T, "ADBE Scale").value], ["ADBE Rotate Z", acTransform(T, "ADBE Rotate Z").value]]; } catch (eTr) {}
+            ov = ribOverlap(comp, o, labels, R, T, Mt, sh, { width: width, fs: fs, len: len, unit: unit, uw: uw, tc: tc, rc: rc, str: str, track: Math.round(track * 10) / 10, closed: !!sh.closed, reps: j, tr: trs });
+        }
         try { R.selected = false; } catch (eS) {}
         T.selected = true;
-        return { mode: "ribbon", form: form, seed: form === "random" ? Math.floor(Number(o.seed) || 1) : 0, angle: form === "path" ? 0 : Number(o.angle) || 0, dir: o.dir === "back" ? "back" : "fwd", ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j, matte: Mt ? Mt.name : "" };
+        return { mode: "ribbon", pieces: ov ? ov.pieces : 0, form: form, seed: form === "random" ? Math.floor(Number(o.seed) || 1) : 0, angle: form === "path" ? 0 : Number(o.angle) || 0, dir: o.dir === "back" ? "back" : "fwd", ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j, matte: Mt ? Mt.name : "" };
     }
 
     function ringBuild(comp, o, labels) {

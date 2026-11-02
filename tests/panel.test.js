@@ -5633,6 +5633,46 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
+  // «Текст по ленте»: «Перекрытия 3D» — the ribbon is cut between its crossings, later pieces cover earlier ones with their letters.
+  {
+    const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const rbTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    const anims = (T) => acAt(T, "ADBE Text Properties", "ADBE Text Animators").children;
+    const pieceExpr = (T) => { const a = anims(T).find((x) => x.name === "Piece"); return a && acAt(a, "ADBE Text Selectors").children[0].children.find((c) => c.matchName === "ADBE Text Expressible Amount").expression; };
+    const trim = (R) => { const g = acAt(R, "ADBE Root Vectors Group").children[0], t = acAt(g, "ADBE Vectors Group").children.find((c) => c.matchName === "ADBE Vector Filter - Trim"); return t ? [t.children.find((c) => c.matchName === "ADBE Vector Trim Start").value, t.children.find((c) => c.matchName === "ADBE Vector Trim End").value] : null; };
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    check("OV1 «Перекрытия 3D» is off at first; «Тень» shows only when it is on", !(await p.page.isChecked("#rbOverlap")) && !(await vis(p, "#rbShadowRow")) &&
+      (await p.page.click("label:has(#rbOverlap)"), await vis(p, "#rbShadowRow")) && (await p.page.isChecked("#rbShadow")));
+    const pc = await p.page.locator("#rbStage .rb-piece").count();
+    check("OV1 the preview draws the ribbon in pieces, a soft shadow under the later ones", pc > 3 && (await p.page.locator("#rbStage [mask]").count()) === pc - 1, String(pc));
+    await p.page.click("#rbBtn"); await p.idle();
+    const T = L(p, "Текст ленты"), R = L(p, "Лента"), T2 = L(p, "Текст ленты: кусок 2"), R2 = L(p, "Лента: кусок 2"), S2 = L(p, "Лента: тень 2");
+    const nm = names(p).split(","), last = nm.filter((n) => /^Текст ленты: кусок \d+$/.test(n)).length + 1;
+    check("OV2 «Создать ленту» with overlaps: pieces stacked along the line, later on top: shadow, ribbon, text for each", T2 && R2 && S2 && nm.indexOf("Текст ленты: кусок 2") < nm.indexOf("Лента: кусок 2") && nm.indexOf("Лента: кусок 2") < nm.indexOf("Лента: тень 2") && nm.indexOf("Лента: тень 2") < nm.indexOf("Текст ленты") &&
+      nm.indexOf("Текст ленты: кусок " + last) === 0 && p.ae.log.undo.join() === "begin:Sayframe: text ribbon,end" && /куска|кусков/.test(await p.status()) && !L(p, "measure"), names(p) + " | " + await p.status());
+    check("OV2 each ribbon piece is a trimmed copy; the pieces follow each other along the line", trim(R)[0] === 0 && trim(R)[1] > 0 && trim(R2)[0] > 0 && Math.abs(trim(R2)[0] - trim(R)[1]) < 0.01 && trim(L(p, "Лента: кусок " + last))[1] === 100, JSON.stringify([trim(R), trim(R2)]));
+    check("OV2 the copies follow the main text: its words and its run", /thisComp\.layer\("Текст ленты"\)\.text\.sourceText/.test(acAt(T2, "ADBE Text Properties", "ADBE Text Document").expression) &&
+      /thisComp\.layer\("Текст ленты"\)\.text\.pathOption\.firstMargin/.test(acAt(T2, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin").expression));
+    check("OV2 the shadow is a dark blurred copy, softer", /Gaussian Blur/.test(acAt(S2, "ADBE Effect Parade").children.map((c) => c.matchName).join()) && acAt(S2, "ADBE Transform Group", "ADBE Opacity").value === 55 && /blur|Blur/.test(acAt(S2, "ADBE Effect Parade").children.map((c) => c.matchName).join()), acAt(S2, "ADBE Effect Parade").children.map((c) => c.matchName).join());
+    // Every letter on the line shows in exactly one piece, wherever the text has run to.
+    const exprs = [T].concat(nm.filter((n) => /^Текст ленты: кусок/.test(n)).map((n) => L(p, n))).map(pieceExpr);
+    const shows = (e, i, m) => vm.runInNewContext("var textIndex=" + i + ",text={pathOption:{firstMargin:" + m + "}};" + e)[0] === 0;
+    let bad = 0, seen = 0;
+    for (const m of [0, -333, -2500]) for (let i = 1; i <= 400; i++) { const k = exprs.filter((e) => shows(e, i, m)).length; if (k > 1) bad++; if (k === 1) seen++; }
+    check("OV3 every letter shows in one piece only, while the text runs", exprs.every(Boolean) && bad === 0 && seen > 300, bad + " doubled, " + seen + " shown");
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    await p.page.click('#rbForm [data-v="wave"]'); await p.page.click("label:has(#rbOverlap)"); await p.page.click("label:has(#rbShadow)");
+    await p.page.click("#rbBtn"); await p.idle();
+    check("OV4 a line that never meets itself: no pieces, said plainly", !/кусок|тень/.test(names(p)) && /перекрёстков нет/.test(await p.status()), names(p) + " | " + await p.status());
+    await p.restart(); await rbTab(p);
+    check("OV4 the switches survive a restart", (await p.page.isChecked("#rbOverlap")) && !(await p.page.isChecked("#rbShadow")) && p.errors.length === 0, p.errors.join("|"));
+    await p.close();
+  }
+
   // Decompose: the layers of a selected precomp come out into the open comp, in its place.
   {
     const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
