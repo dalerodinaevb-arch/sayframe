@@ -5188,6 +5188,28 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
+  // «Макеты»: the blocks keep a standard width; in a wide panel they stand side by side and swap by dragging the title.
+  {
+    const mkTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); await p.page.waitForTimeout(200); };
+    const cards = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => { const r = c.getBoundingClientRect(); return c.getAttribute("data-mk") + "@" + Math.round(r.top) + "w" + Math.round(r.width); }));
+    p = await open({ width: 1300, orbit: { layers: [{ name: "BG" }] } });
+    await mkTab(p);
+    let c1 = await cards(p);
+    check("MK1 a wide panel: both blocks 400 wide, side by side", c1.length === 2 && c1.every((x) => /w400$/.test(x)) && c1[0].split("@")[1].split("w")[0] === c1[1].split("@")[1].split("w")[0] && /^carousel/.test(c1[0]), c1.join());
+    const a = await p.page.locator('.mk-card[data-mk="grid"] .mk-head b').boundingBox(), b = await p.page.locator('.mk-card[data-mk="carousel"] .mk-head b').boundingBox();
+    await p.page.mouse.move(a.x + 10, a.y + 5); await p.page.mouse.down(); await p.page.mouse.move(a.x - 40, a.y + 5, { steps: 4 }); await p.page.mouse.move(b.x + 10, b.y + 5, { steps: 6 }); await p.page.mouse.up();
+    c1 = await cards(p);
+    check("MK2 dragging Grid by its title puts it first; neither block folds", /^grid/.test(c1[0]) && (await p.page.locator("#orbitPane .mk-folded").count()) === 0, c1.join());
+    await p.restart(); await mkTab(p);
+    check("MK2 the order survives a restart", /^grid/.test((await cards(p))[0]));
+    await p.close();
+    p = await open({ width: 420, orbit: { layers: [{ name: "BG" }] } });
+    await mkTab(p);
+    c1 = await cards(p);
+    check("MK3 a narrow panel: the blocks one under the other, full width", c1[0].split("w")[1] === c1[1].split("w")[1] && Number(c1[0].split("w")[1]) > 300 && (await overflow(p)) <= 0, c1.join());
+    await p.close();
+  }
+
   // Split / merge on the Shape tab: one shape layer splits into its groups (or a layer into its masks), several merge into one.
   {
     const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");

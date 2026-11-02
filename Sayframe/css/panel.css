@@ -2052,7 +2052,13 @@ html[data-design="ae"] .kr-b, html[data-design="ae"] .kr-stage, html[data-design
 /* ---- Раздел «Макеты»: блоки сворачиваются по заголовку; в широкой панели — две колонки */
 .mk-pane { display: block; padding-top: 2px; }
 .mk-pane[hidden] { display: none; }
-.mk-pane.mk-wide { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; align-items: start; }
+/* Блоки «Макетов» постоянной ширины: в узкой панели на всю ширину, в широкой — рядом, по порядку. */
+.mk-pane { display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; column-gap: 12px; }
+.mk-pane > .mk-card { flex: 0 1 400px; min-width: 0; max-width: 100%; }
+.mk-pane:not(.mk-wide) > .mk-card { flex-basis: 100%; }
+.mk-head { touch-action: none; }
+.mk-sorting, .mk-sorting * { cursor: grabbing !important; user-select: none; }
+.mk-card.mk-drag { opacity: .55; outline: 1px dashed var(--accent-hi, var(--accent)); outline-offset: 2px; }
 .mk-pane .mk-card { break-inside: avoid; margin: 0 0 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
   border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); box-shadow: none; }
 .mk-head { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; min-height: 26px; }

@@ -6369,7 +6369,7 @@
         drawGrid();
     }
 
-    // Блоки раздела «Макеты» сворачиваются щелчком по заголовку; в широкой панели встают в две колонки.
+    // Блоки раздела «Макеты» сворачиваются щелчком по заголовку; ширина у них постоянная, в широкой панели они встают рядом.
     function drawMkFolds() {
         var folded = (orbit.fold || "").split(",");
         Array.prototype.forEach.call(document.querySelectorAll("#orbitPane .mk-card"), function (c) {
@@ -6377,10 +6377,72 @@
             c.classList.toggle("mk-folded", on);
             if (b) { b.setAttribute("aria-expanded", String(!on)); b.setAttribute("aria-label", on ? "Развернуть" : "Свернуть"); }
         });
-        if (ui.orbitPane) { ui.orbitPane.classList.toggle("mk-wide", ui.orbitPane.getBoundingClientRect().width >= 620); }
+        if (ui.orbitPane) { ui.orbitPane.classList.toggle("mk-wide", ui.orbitPane.clientWidth >= 836); }
+    }
+
+    // Порядок блоков «Макетов»: блок перетаскивают за заголовок, порядок запоминается.
+    function sortMkCards() {
+        var pane = ui.orbitPane;
+        if (!pane) { return; }
+        (orbit.sort || "").split(",").forEach(function (name) {
+            var c = name && pane.querySelector('.mk-card[data-mk="' + name + '"]');
+            if (c) { pane.appendChild(c); }
+        });
+    }
+
+    function enableMkDrag() {
+        var pane = ui.orbitPane, drag = null;
+        if (!pane) { return; }
+        function onMove(e) {
+            var over, r, before, side;
+            if (!drag) { return; }
+            if (!drag.on) {
+                if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 6) { return; }
+                drag.on = true;
+                drag.card.classList.add("mk-drag");
+                pane.classList.add("mk-sorting");
+            }
+            e.preventDefault();
+            over = document.elementFromPoint(e.clientX, e.clientY);
+            over = over && over.closest ? over.closest(".mk-card") : null;
+            if (!over || over === drag.card || over.parentNode !== pane) { return; }
+            r = over.getBoundingClientRect();
+            // Рядом (в одной строке) решает левая/правая половина, одна под другой — верхняя/нижняя.
+            side = Math.abs(r.top - drag.card.getBoundingClientRect().top) < 4;
+            before = side ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2;
+            pane.insertBefore(drag.card, before ? over : over.nextSibling);
+        }
+        function onUp() {
+            var d = drag;
+            drag = null;
+            document.removeEventListener("pointermove", onMove, true);
+            document.removeEventListener("pointerup", onUp, true);
+            document.removeEventListener("pointercancel", onUp, true);
+            if (!d || !d.on) { return; }
+            d.card.classList.remove("mk-drag");
+            pane.classList.remove("mk-sorting");
+            orbit.sort = Array.prototype.map.call(pane.querySelectorAll(".mk-card"), function (c) { return c.getAttribute("data-mk"); }).join(",");
+            storeOrbit();
+            drawOrbitPreview();
+            drawGridPreview();
+            // Отпустили — это не щелчок: блок не сворачивается.
+            function eat(ev) { ev.stopPropagation(); ev.preventDefault(); }
+            document.addEventListener("click", eat, true);
+            setTimeout(function () { document.removeEventListener("click", eat, true); }, 0);
+        }
+        pane.addEventListener("pointerdown", function (e) {
+            var head = e.button === 0 && e.target.closest ? e.target.closest(".mk-head") : null;
+            if (!head || e.target.closest(".mk-fold")) { return; }
+            drag = { card: head.parentNode, x: e.clientX, y: e.clientY, on: false };
+            document.addEventListener("pointermove", onMove, true);
+            document.addEventListener("pointerup", onUp, true);
+            document.addEventListener("pointercancel", onUp, true);
+        });
     }
 
     function enableMkFolds() {
+        sortMkCards();
+        enableMkDrag();
         Array.prototype.forEach.call(document.querySelectorAll("#orbitPane .mk-card"), function (c) {
             var name = c.getAttribute("data-mk");
             c.querySelector(".mk-head").addEventListener("click", function () {
@@ -6420,6 +6482,7 @@
         out.w = Math.max(50, Math.min(2000, Math.round(out.w) || 400));
         out.h = Math.max(50, Math.min(2000, Math.round(out.h) || 560));
         out.fold = typeof s.fold === "string" ? s.fold : "";
+        out.sort = typeof s.sort === "string" ? s.sort : "";
         out.grid = {};
         var g = s.grid && typeof s.grid === "object" ? s.grid : {};
         for (k in GRID_DEFAULTS) {
