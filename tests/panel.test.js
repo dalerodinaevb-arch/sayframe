@@ -2134,6 +2134,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = W.rows();
   check("FC3 typing searches effects like the panel does", t[0] === "Fast Box Blur | Blur & Sharpen" && t.indexOf("Gaussian Blur | Blur & Sharpen") > 0 && t.length >= 3 && W.find("listbox").selection === W.find("listbox").items[0], JSON.stringify(t));
   W.key("Down");
+  check("FC3 the list is as tall as its results, at most 8 rows (22 px each)", W.find("listbox").preferredSize[1] === 22 * Math.min(8, W.rows().length) + 4, JSON.stringify(W.find("listbox").preferredSize) + " " + W.rows().length);
   check("FC3 arrows move the choice", W.find("listbox").selection.index === 1);
   t = W.rows()[1].split(" | ")[0];
   W.key("Enter");
@@ -2212,7 +2213,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("FC9 Enter without a layer keeps the window open and adds nothing", !W.closed && p.ae.log.events.length === 0 && /^Слой не выбран/.test(W.find("statictext").text));
   p.ae.comp.selectedLayers.push(SL9);
   W.onActivate();
-  check("FC10 once a layer is selected, the note goes back to the usual hint", /^Печатайте название/.test(W.find("statictext").text), W.find("statictext").text);
+  check("FC10 once a layer is selected, the note goes away and takes no room", W.find("statictext").text === "" && W.find("statictext").preferredSize[1] === 0, W.find("statictext").text);
   W.key("Enter");
   await forwardEvents(p);
   check("FC10 and Enter adds the effect", W.closed && SL9.effects.length === 1 && /^Эффект «.+» добавлен на 1 слой/.test(await p.status()) && p.errors.length === 0, await p.status());

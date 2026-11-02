@@ -2254,6 +2254,8 @@ var sayframeHost = (function () {
         return found;
     }
 
+    var FX_ROW = 22;
+
     function fxPopupShow(x, y, fav, recent) {
         var g = $.global, items, byId = {}, favMap = {}, shown = [], w, q, list, note, i, scr, b, left, top;
         if (g.__sayframeFxWin) {
@@ -2273,17 +2275,28 @@ var sayframeHost = (function () {
         q = w.add("edittext", undefined, "");
         q.preferredSize = [340, 24];
         list = w.add("listbox", undefined, [], { numberOfColumns: 2, showHeaders: false, columnWidths: [230, 100] });
-        list.preferredSize = [340, 260];
-        note = w.add("statictext", undefined, "", { multiline: true });
-        note.preferredSize = [340, 32];
+        list.preferredSize = [340, FX_ROW * 3 + 4];
+        // One short line, only when there is something to say (no layer selected); otherwise it takes no room.
+        note = w.add("statictext", undefined, "");
+        note.preferredSize = [340, 0];
 
         // With no layers selected the window still opens: search works, and the note says no layer is selected.
         function layerCount() {
             var c = app.project ? app.project.activeItem : null;
             return c instanceof CompItem && c.selectedLayers ? c.selectedLayers.length : 0;
         }
+        // The window is as tall as its results (up to 8 rows): no big empty box under a short list.
+        function fit() {
+            var n = Math.max(1, Math.min(8, list.items.length));
+            list.preferredSize = [340, FX_ROW * n + 4];
+            try { list.size = [340, FX_ROW * n + 4]; } catch (eS) {}
+            try { w.layout.layout(true); if (w.layout.resize) { w.layout.resize(); } } catch (eL) {}
+        }
         function hint() {
-            note.text = layerCount() ? "\u041f\u0435\u0447\u0430\u0442\u0430\u0439\u0442\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435, \u0441\u0442\u0440\u0435\u043b\u043a\u0438 \u2014 \u0432\u044b\u0431\u043e\u0440, Enter \u2014 \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043d\u0430 \u0432\u044b\u0434\u0435\u043b\u0435\u043d\u043d\u044b\u0435 \u0441\u043b\u043e\u0438, Esc \u2014 \u0437\u0430\u043a\u0440\u044b\u0442\u044c." : "\u0421\u043b\u043e\u0439 \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d. \u0412\u044b\u0434\u0435\u043b\u0438\u0442\u0435 \u0441\u043b\u043e\u0438 \u0432 \u043a\u043e\u043c\u043f\u043e\u0437\u0438\u0446\u0438\u0438 \u2014 \u0442\u043e\u0433\u0434\u0430 Enter \u0434\u043e\u0431\u0430\u0432\u0438\u0442 \u044d\u0444\u0444\u0435\u043a\u0442. \u0418\u0441\u043a\u0430\u0442\u044c \u043c\u043e\u0436\u043d\u043e \u0443\u0436\u0435 \u0441\u0435\u0439\u0447\u0430\u0441.";
+            var none = !layerCount();
+            note.text = none ? "\u0421\u043b\u043e\u0439 \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d \u2014 \u0432\u044b\u0434\u0435\u043b\u0438\u0442\u0435 \u0441\u043b\u043e\u0439, \u0447\u0442\u043e\u0431\u044b \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u044d\u0444\u0444\u0435\u043a\u0442." : "";
+            note.preferredSize = [340, none ? 18 : 0];
+            fit();
         }
 
         function fill() {
@@ -2303,6 +2316,7 @@ var sayframeHost = (function () {
                 row.subItems[0].text = it.kind === "effect" ? it.cat : "\u043f\u0440\u0435\u0441\u0435\u0442 \u00b7 " + it.cat;
             }
             if (list.items.length) { list.selection = 0; }
+            fit();
         }
         function move(d) {
             var n = list.items.length, at;
