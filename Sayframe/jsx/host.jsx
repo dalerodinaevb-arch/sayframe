@@ -3335,7 +3335,7 @@ var sayframeHost = (function () {
         var W = comp.width, H = comp.height, cx = W / 2, cy = H / 2, src = null, srcName = "", sh, len, list, i, j;
         var width = orbitNum(o.width, 4, 1000, 120), fs = Math.max(6, Math.round(width * orbitNum(o.textSize, 10, 100, 65) / 100));
         var speed = orbitNum(o.speed, 0, 100, 35), word = String(o.text || "TEXT"), sep = String(o.sep === undefined ? "\u2022" : o.sep);
-        var unit = word + " " + (sep ? sep + " " : ""), cw = fs * 0.66 + 40 * fs / 1000, need, str = "", R, T, gi, si, fx, tr, pos = null, anc = null, sc = null, rot = 0;
+        var unit = word + " " + (sep ? sep + " " : ""), cw = fs * 0.66 + 40 * fs / 1000, need, str = "", R, T, gi, si, fx, tr, pos = null, anc = null, sc = null, rot = 0, uw, track, Mt = null;
         var rc = o.ribbonColor || [0.23, 0.63, 0.91], tc = o.textColor || [0.91, 0.4, 0.17], form = o.form || "wave";
         if (form === "path") {
             list = comp.selectedLayers || [];
@@ -3349,9 +3349,6 @@ var sayframeHost = (function () {
             sh = ribShape(ribSample(form, W, H));
         }
         len = ribLength(sh);
-        // Enough text for the whole line and for everything that runs past during the comp.
-        need = len + (o.run ? speed * 10 * comp.duration : 0);
-        for (j = 0; j < 400 && str.length * cw < need; j++) { str += unit; }
         R = comp.layers.addShape();
         R.name = labels.ribbon || "Ribbon";
         gi = acGroup(R);
@@ -3360,7 +3357,29 @@ var sayframeHost = (function () {
         acGP(R, gi, ["ADBE Vectors Group", i, "ADBE Vector Shape"]).setValue(sh);
         si = acStroke(R, gi, rc, width);
         try { acGP(R, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Line Join"]).setValue(2); } catch (eJ) {}
-        T = ribText(comp, str, fs, tc, labels.text || "Ribbon text");
+        // The text is measured first (one word with its separator), so the repeats fit the line.
+        T = ribText(comp, unit, fs, tc, labels.text || "Ribbon text");
+        uw = 0;
+        try { uw = T.sourceRectAtTime(comp.time, false).width; } catch (eW) { uw = 0; }
+        if (!(uw > 0)) { uw = unit.length * cw; }
+        if (sh.closed) {
+            // A closed line (a circle): exactly as many repeats as fit once around, the rest spread by tracking.
+            // More text would go round a second time and pile up on the first.
+            j = Math.max(1, Math.floor(len / uw));
+            for (i = 0; i < j; i++) { str += unit; }
+            track = 40 + (len - j * uw) / (j * unit.length) / fs * 1000;
+        } else {
+            // An open line: enough for the whole line and for everything that runs past during the comp.
+            need = len + (o.run ? speed * 10 * comp.duration : 0) + uw;
+            for (j = 0; j < 400 && j * uw < need; j++) { str += unit; }
+            track = 40;
+        }
+        try {
+            var tp = acP(T, ["ADBE Text Properties", "ADBE Text Document"]), doc = tp.value;
+            doc.text = str;
+            try { doc.tracking = Math.round(track * 10) / 10; } catch (eT2) {}
+            tp.setValue(doc);
+        } catch (eD) {}
         ribOnPath(T, sh, fs, false);
         // Settings in Effect Controls of the text: the ribbon reads its width and colour from there.
         kitControl(T, "ADBE Slider Control", labels.width || "Width", width);
@@ -3369,7 +3388,10 @@ var sayframeHost = (function () {
         acGP(R, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Width"]).expression = "thisComp.layer(" + tbQ(T.name) + ").effect(" + tbQ(labels.width || "Width") + ")(1)";
         acGP(R, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Color"]).expression = "thisComp.layer(" + tbQ(T.name) + ").effect(" + tbQ(labels.color || "Ribbon colour") + ")(1)";
         if (o.run) {
-            acP(T, ["ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin"]).expression = "value-time*effect(" + tbQ(labels.speed || "Speed") + ")(1)*10";
+            // On a circle the text goes round and round: the margin wraps at the circle's length.
+            acP(T, ["ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin"]).expression = sh.closed ?
+                "var L=" + Math.round(len * 10) / 10 + ", m=value-time*effect(" + tbQ(labels.speed || "Speed") + ")(1)*10; ((m%L)+L)%L" :
+                "value-time*effect(" + tbQ(labels.speed || "Speed") + ")(1)*10";
         }
         T.moveBefore(R);
         if (src) {
@@ -3383,9 +3405,20 @@ var sayframeHost = (function () {
             orbitSet(R, "ADBE Position", [cx, cy]);
             orbitSet(T, "ADBE Position", [cx, cy]);
         }
+        // Letters that run past the ends of an open line would stick out of the ribbon: a copy of the ribbon
+        // above the text is its alpha matte, so the text shows only on the ribbon.
+        if (!sh.closed) {
+            try {
+                Mt = R.duplicate();
+                Mt.name = (labels.ribbon || "Ribbon") + ": " + (labels.matte || "matte");
+                Mt.moveBefore(T);
+                if (typeof T.setTrackMatte === "function") { T.setTrackMatte(Mt, TrackMatteType.ALPHA); try { Mt.enabled = false; } catch (eH) {} }
+                else { T.trackMatteType = TrackMatteType.ALPHA; }
+            } catch (eMt) { Mt = null; }
+        }
         try { R.selected = false; } catch (eS) {}
         T.selected = true;
-        return { mode: "ribbon", form: form, ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j };
+        return { mode: "ribbon", form: form, ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j, matte: Mt ? Mt.name : "" };
     }
 
     function ringBuild(comp, o, labels) {
@@ -3398,7 +3431,12 @@ var sayframeHost = (function () {
         circle.inTangents = [[-c, 0], [0, -c], [c, 0], [0, c]];
         circle.outTangents = [[c, 0], [0, c], [-c, 0], [0, -c]];
         circle.closed = true;
-        reps = Math.max(1, Math.round(2 * Math.PI * R / (unit.length * cw)));
+        // Measured, not guessed: as many words as fit once around (forced alignment spreads them evenly; too many would squeeze together).
+        var uw = 0, tmp = ribText(comp, unit, fs, tc, "measure");
+        try { uw = tmp.sourceRectAtTime(comp.time, false).width; } catch (eW) { uw = 0; }
+        try { tmp.remove(); } catch (eR) {}
+        if (!(uw > 0)) { uw = unit.length * cw; }
+        reps = Math.max(1, Math.floor(2 * Math.PI * R / uw));
         for (i = 0; i < reps; i++) { str += unit; }
         tilt = comp.layers.addNull(comp.duration);
         tilt.name = labels.tilt || "Ring tilt";

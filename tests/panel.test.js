@@ -462,7 +462,7 @@ function mkOrbitComp(log, name, w, h, layers) {
   Object.defineProperty(c, "numLayers", { get: () => c.list.length });
   c.layer = (i) => c.list[i - 1] || null;
   Object.defineProperty(c, "selectedLayers", { get: () => c.list.filter((l) => l.selected) });
-  const put = (l) => { c.list.unshift(l); l.containingComp = c; return moveAfter(l); };
+  const put = (l) => { c.list.unshift(l); l.containingComp = c; l.remove = () => { const i = c.list.indexOf(l); if (i >= 0) c.list.splice(i, 1); }; return moveAfter(l); };
   const moveAfter = (l) => { l.moveAfter = (o) => { const a = c.list.indexOf(l), b = c.list.indexOf(o); if (a < 0 || b < 0) return; c.list.splice(a, 1); c.list.splice(c.list.indexOf(o) + 1, 0, l); };
     l.moveBefore = (o) => { const a = c.list.indexOf(l), b = c.list.indexOf(o); if (a < 0 || b < 0) return; c.list.splice(a, 1); c.list.splice(c.list.indexOf(o), 0, l); }; return l; };
   (layers || []).forEach((l) => {
@@ -5514,6 +5514,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       /effect\("Толщина ленты"\)/.test(acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Width").expression) &&
       /time\*effect\("Скорость"\)/.test(acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin").expression), fxNames(T));
     await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    await p.page.click('#rbForm [data-v="circle"]'); await p.page.fill("#rbText", "Didor"); await p.page.fill("#rbSep", ".");
+    await p.page.click("#rbBtn"); await p.idle();
+    T = L(p, "Текст ленты");
+    const circ = 2 * Math.PI * 1080 * 0.3, unitW = "Didor . ".length * (72 * 0.66 + 40 * 72 / 1000), reps = docText(T).split("Didor").length - 1;
+    check("RB7 a circle: the text goes round exactly once (no second lap piling on the first), spread by tracking; running wraps at the circle's length", reps === Math.floor(circ / unitW) && reps * unitW <= circ + 1 &&
+      acAt(T, "ADBE Text Properties", "ADBE Text Document").value.tracking > 40 && /%L\)\+L\)%L$/.test(acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin").expression), reps + " vs " + Math.floor(circ / unitW) + " | " + acAt(T, "ADBE Text Properties", "ADBE Text Document").value.tracking);
     p = await open({ orbit: { layers: [{ name: "Линия" }, { name: "BG", selected: false }] } });
     await rbTab(p);
     await p.page.click('#rbForm [data-v="path"]');
@@ -5533,7 +5541,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click('#rbMode [data-v="ring"]');
     await p.page.click("#rbBtn"); await p.idle();
     const r1 = L(p, "Кольцо 1"), sp = L(p, "Кольцо: вращение"), tl = L(p, "Кольцо: наклон");
-    check("RB4 «Создать кольцо»: two rings of 3D letters on a spinning null inside a tilting one, a camera; one undo step", ["Кольцо 1", "Кольцо 2"].every((n) => L(p, n) && L(p, n).threeDLayer && L(p, n).threeDPerChar && L(p, n).parent === sp) && sp.parent === tl &&
+    check("RB4 «Создать кольцо»: two rings of 3D letters on a spinning null inside a tilting one, a camera; one undo step (the measuring text is gone)", !L(p, "measure") && ["Кольцо 1", "Кольцо 2"].every((n) => L(p, n) && L(p, n).threeDLayer && L(p, n).threeDPerChar && L(p, n).parent === sp) && sp.parent === tl &&
       L(p, "Камера кольца") && p.ae.log.undo.join() === "begin:Sayframe: text ring,end" && tf(tl, "ADBE Rotate X").value === -12 && /time\*effect\("Скорость"\)/.test(tf(sp, "ADBE Rotate Y").expression) && /Кольцо готово/.test(await p.status()), names(p) + " | " + await p.status());
     check("RB4 the ring lies flat, letters stand up, far letters dimmer (an expression selector); the text fills the circle", tf(r1, "ADBE Rotate X").value === 90 && acAt(r1, "ADBE Text Properties", "ADBE Text Animators").children.map((a) => a.name).join() === "Centre,Stand up,Back side" &&
       acAt(r1, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text Force Align Path").value === 1 && /WEST LOOP/.test(docText(r1)), acAt(r1, "ADBE Text Properties", "ADBE Text Animators").children.map((a) => a.name).join());
