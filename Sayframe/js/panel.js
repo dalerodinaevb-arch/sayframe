@@ -6393,6 +6393,52 @@
             if (b) { b.setAttribute("aria-expanded", String(!on)); b.setAttribute("aria-label", on ? "Развернуть" : "Свернуть"); }
         });
         if (ui.orbitPane) { ui.orbitPane.classList.toggle("mk-wide", ui.orbitPane.clientWidth >= 664); }
+        mkMasonry();
+    }
+
+    // Несколько колонок «Макетов» — как кирпичная кладка: каждый блок встаёт в самую короткую колонку,
+    // так под свёрнутым блоком не остаётся пустого места рядом с высоким. В одну колонку — обычный порядок.
+    var mkLaying = false;
+    function mkMasonry() {
+        var pane = ui.orbitPane, cards, cs, padL, padT, W, gap = 12, n, cw, hs, i;
+        if (!pane || pane.hidden || mkLaying) { return; }
+        cards = Array.prototype.slice.call(pane.querySelectorAll(":scope > .mk-card"));
+        cs = getComputedStyle(pane);
+        padL = parseFloat(cs.paddingLeft) || 0; padT = parseFloat(cs.paddingTop) || 0;
+        W = pane.clientWidth - padL - (parseFloat(cs.paddingRight) || 0);
+        if (!(W > 0)) { return; }
+        n = Math.max(1, Math.floor((W + gap) / (320 + gap)));
+        mkLaying = true;
+        if (n === 1) {
+            pane.classList.remove("mk-masonry");
+            if (pane.mkSpacer) { pane.mkSpacer.style.height = "0px"; }
+            cards.forEach(function (c) { c.style.position = c.style.left = c.style.top = c.style.width = ""; });
+            mkLaying = false;
+            return;
+        }
+        pane.classList.add("mk-masonry");
+        cw = Math.min(420, (W - gap * (n - 1)) / n);
+        hs = [];
+        for (i = 0; i < n; i++) { hs.push(0); }
+        cards.forEach(function (c) {
+            var k = 0, j;
+            for (j = 1; j < n; j++) { if (hs[j] < hs[k] - 1) { k = j; } }
+            c.style.position = "absolute";
+            c.style.width = cw + "px";
+            c.style.left = (padL + k * (cw + gap)) + "px";
+            c.style.top = (padT + hs[k]) + "px";
+            hs[k] += c.offsetHeight + gap;
+        });
+        // Блоки стоят поверх потока; распорка внизу держит высоту раздела (и прокрутку).
+        if (!pane.mkSpacer) { pane.mkSpacer = document.createElement("div"); pane.mkSpacer.className = "mk-spacer"; pane.mkSpacer.setAttribute("aria-hidden", "true"); }
+        pane.appendChild(pane.mkSpacer);
+        pane.mkSpacer.style.height = Math.max(0, Math.max.apply(null, hs) - gap) + "px";
+        mkLaying = false;
+    }
+    var mkLayAt = 0;
+    function mkMasonrySoon() {
+        if (mkLayAt) { return; }
+        mkLayAt = requestAnimationFrame(function () { mkLayAt = 0; mkMasonry(); });
     }
 
     // Порядок блоков «Макетов»: блок перетаскивают за заголовок, порядок запоминается.
@@ -6423,9 +6469,10 @@
             if (!over || over === drag.card || over.parentNode !== pane) { return; }
             r = over.getBoundingClientRect();
             // Рядом (в одной строке) решает левая/правая половина, одна под другой — верхняя/нижняя.
-            side = Math.abs(r.top - drag.card.getBoundingClientRect().top) < 4;
+            side = pane.classList.contains("mk-masonry") ? Math.abs(r.left - drag.card.getBoundingClientRect().left) >= 4 : Math.abs(r.top - drag.card.getBoundingClientRect().top) < 4;
             before = side ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2;
             pane.insertBefore(drag.card, before ? over : over.nextSibling);
+            mkMasonry();
         }
         function onUp() {
             var d = drag;
@@ -6473,6 +6520,12 @@
             });
         });
         window.addEventListener("resize", function () { if (ui.orbitPane && !ui.orbitPane.hidden) { drawMkFolds(); drawOrbitPreview(); drawGridPreview(); } });
+        // Блок стал выше или ниже (переключили режим, показалась строка) или панель открылась — кладка заново.
+        if (typeof ResizeObserver === "function" && ui.orbitPane) {
+            var ro = new ResizeObserver(mkMasonrySoon);
+            ro.observe(ui.orbitPane);
+            Array.prototype.forEach.call(ui.orbitPane.querySelectorAll(":scope > .mk-card"), function (c) { ro.observe(c); });
+        }
         drawMkFolds();
     }
 

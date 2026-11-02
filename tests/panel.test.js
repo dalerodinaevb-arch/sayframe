@@ -5267,6 +5267,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await mkTab(p);
     c1 = await cards(p);
     check("MK4 a middle panel (740): two blocks side by side, neither wider than 420", c1[0].split("@")[1].split("w")[0] === c1[1].split("@")[1].split("w")[0] && c1.every((x) => Number(x.split("w")[1]) <= 420) && (await p.page.locator("#orbitPane .mk-grip").count()) === 5, c1.join());
+    await p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.orbit.v1") || "{}"); o.fold = "ribbon,grid,textbox"; o.sort = "ribbon,carousel,grid,textbox,phone"; localStorage.setItem("sayframe.orbit.v1", JSON.stringify(o)); });
+    await p.restart(); await mkTab(p);
+    t = await p.page.evaluate(() => { const r = (n) => document.querySelector('.mk-card[data-mk="' + n + '"]').getBoundingClientRect(); return [r("ribbon"), r("grid"), r("textbox"), r("phone"), r("carousel")].map((x) => Math.round(x.left) + "," + Math.round(x.top) + "," + Math.round(x.bottom)).join(" "); });
+    const q = t.split(" ").map((x) => x.split(",").map(Number));
+    check("MK5 no hole under a folded block: the next blocks fill the short column first (Grid, Плашка, phone under the folded ribbon, beside the tall carousel)", q[0][0] === q[1][0] && q[1][0] === q[2][0] && q[2][0] === q[3][0] && q[4][0] > q[0][0] && q[1][1] - q[0][2] <= 14 && q[2][1] - q[1][2] <= 14 && q[3][1] - q[2][2] <= 14 && q[3][1] < q[4][2], t);
     await p.close();
     p = await open({ width: 420, orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);

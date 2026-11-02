@@ -2145,6 +2145,9 @@ html[data-design="ae"] .kr-b, html[data-design="ae"] .kr-stage, html[data-design
 .mk-pane { display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; column-gap: 12px; }
 /* Standard width: 320–420 px. Two blocks stand side by side from about 660 px of panel; wider never stretches them. */
 .mk-pane > .mk-card { flex: 1 1 320px; min-width: 0; max-width: 420px; }
+/* Кладка: блоки расставляет mkMasonry (panel.js) по самым коротким колонкам. */
+.mk-pane.mk-masonry { position: relative; display: block; }
+.mk-pane.mk-masonry > .mk-card { margin: 0; max-width: none; box-sizing: border-box; }
 .mk-head { touch-action: none; cursor: grab; }
 .mk-grip { flex: none; width: 10px; height: 16px; margin-right: -4px; opacity: .45; background: radial-gradient(circle, currentColor 1.2px, transparent 1.5px) 0 0 / 5px 5px; color: var(--muted); }
 .mk-head:hover .mk-grip { opacity: .9; }
