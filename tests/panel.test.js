@@ -5340,6 +5340,18 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
+  // Settings › Блоки: block size and titles act only on the grid designs (Стекло, After Effects); «Студия» lays blocks out itself.
+  {
+    p = await open({ settings: { design: "studio", toolTitles: false } });
+    await p.page.click("#tabMotion");
+    const headShown = await p.page.evaluate(() => getComputedStyle(document.querySelector('#viewMotion .tool-card[data-tool="ease"] .tool-head')).display !== "none");
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabTools");
+    check("BL1 «Студия»: no «Размер блоков» / «Показывать названия блоков» in settings; block titles stay (they fold the blocks)", !(await vis(p, "#toolSize")) && !(await vis(p, "#toolTitles")) && (await vis(p, "#toolPicker")) && headShown);
+    await p.page.click("#setTabTheme"); await p.page.click('#designPick button[data-value="glass"]'); await p.page.click("#setTabTools");
+    check("BL1 switching to «Стекло» shows them again", (await vis(p, "#toolSize")));
+    await p.close();
+  }
+
   // Text box: a box under a text layer that follows the text (sourceRectAtTime), its settings in Effect Controls.
   {
     const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");

@@ -528,8 +528,8 @@ textarea:focus, .field:focus {
 .motion-tools .tool-head b { overflow: hidden; text-overflow: ellipsis; }
 .ease-card .tool-head { margin-bottom: 4px; }
 /* Без названий (настройка «Показывать названия блоков») минус и плюс получают сверху свою полоску. */
-[data-titles="off"] .motion-tools .tool-head { display: none; }
-[data-titles="off"] .motion-tools > .tool-card { padding-top: calc(22px * var(--kz, 1)); }
+html:not([data-design="studio"])[data-titles="off"] .motion-tools .tool-head { display: none; }
+html:not([data-design="studio"])[data-titles="off"] .motion-tools > .tool-card { padding-top: calc(22px * var(--kz, 1)); }
 /* Блок из одной кнопки: кнопка сама говорит, что делает, поэтому заголовка над ней нет. */
 .motion-tools > .tool-card.solo { padding-top: calc(18px * var(--kz, 1)); justify-content: center; }
 .motion-tools > .tool-card.solo > .tool-head { display: none; }
@@ -2131,3 +2131,5 @@ html[data-design="ae"] .mk-pane .mk-card, html[data-design="ae"] .gr-stage, html
 .tb-swatches button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent-hi, var(--accent)); }
 #tbStrokeRow[hidden], #tbStrokeWRow[hidden] { display: none; }
 html[data-design="ae"] .tb-stage { border-radius: 4px; }
+.tool-look { display: flex; flex-direction: column; gap: inherit; }
+.tool-look[hidden] { display: none; }
