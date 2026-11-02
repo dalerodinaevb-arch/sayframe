@@ -2180,5 +2180,24 @@ html[data-design="ae"] .tb-stage { border-radius: 4px; }
 .ph-ico { flex: none; width: 12px; height: 20px; border: 1.6px solid currentColor; border-radius: 4px; opacity: .8; box-sizing: border-box; }
 .ph-ico-a { border-radius: 2.5px; }
 html[data-design="ae"] .ph-stage { border-radius: 4px; }
+/* ---- «Текст по ленте» (Анимация › Макеты): превью ленты рисует та же кривая, что появится в композиции. */
+.rb-pane { display: flex; flex-direction: column; gap: 9px; padding-top: 0; }
+.rb-stage { height: 150px; border-radius: 12px; overflow: hidden; position: relative; background: #ef9ae6; border: 1px solid rgba(255, 255, 255, .08); }
+.rb-stage.rb-ring { background: #0b0b0d; perspective: 520px; }
+.rb-stage svg { display: block; width: 100%; height: 100%; }
+.rb-stage text { font: 900 13px Arial, sans-serif; letter-spacing: .6px; dominant-baseline: central; }
+.rb-ringbox { position: absolute; left: 50%; top: 50%; transform-style: preserve-3d; }
+.rb-ringrow { position: absolute; transform-style: preserve-3d; }
+.rb-ringrow span { position: absolute; left: -9px; width: 18px; text-align: center; font: 900 22px/1 Arial, sans-serif; color: var(--c, #fff); backface-visibility: visible; }
+.rb-opts { display: flex; flex-direction: column; gap: 6px; }
+.rb-opts[hidden], #rbRibbonSl[hidden], #rbRingSl[hidden], #rbRibbonSw[hidden], #rbRingSw[hidden], #rbRibColorRow[hidden] { display: none; }
+.rb-text { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.rb-text .field { height: 32px; min-width: 0; font-size: 12.5px; font-weight: 600; }
+.rb-sep { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.rb-sep .field { width: 38px; text-align: center; padding: 0 4px; }
+.rb-colors { display: flex; flex-direction: column; gap: 6px; }
+.rb-pane .kr-sl { grid-template-columns: 98px 1fr 42px; }
+.rb-pane .kr-sl > span { white-space: nowrap; }
+html[data-design="ae"] .rb-stage { border-radius: 4px; }
 .tool-look { display: flex; flex-direction: column; gap: inherit; }
 .tool-look[hidden] { display: none; }

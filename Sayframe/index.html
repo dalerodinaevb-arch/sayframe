@@ -416,6 +416,53 @@
             <button id="phBtn" class="shift-do shift-go">Создать мокап</button>
           </div>
         </section>
+        <section class="card mk-card" data-mk="ribbon">
+          <div class="mk-head" title="Потяните за название, чтобы поменять блоки местами; щелчок — свернуть"><span class="mk-grip" aria-hidden="true"></span><span class="mk-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 17c3 0 4-10 8-10s3 7 0 7-2-6 4-6 5 9 8 9"/></svg></span><b>Текст по ленте</b><button type="button" class="mk-fold" aria-expanded="true" aria-label="Свернуть"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button></div>
+          <div class="mk-body rb-pane">
+            <div id="rbStage" class="rb-stage" aria-hidden="true"></div>
+            <div id="rbMode" class="kr-seg" role="group" aria-label="Лента или 3D-кольцо">
+              <button type="button" class="kr-b" data-v="ribbon"><span>Лента</span></button>
+              <button type="button" class="kr-b" data-v="ring"><span>3D-кольцо</span></button>
+            </div>
+            <div id="rbRibbonOpts" class="rb-opts">
+              <span class="kr-lab">Форма</span>
+              <div id="rbForm" class="tb-presets" role="group" aria-label="Форма ленты">
+                <button type="button" class="gr-chip" data-v="path" title="Линия, нарисованная пером: выделите её слой (маска или путь шейпа)">Выделенная линия</button>
+                <button type="button" class="gr-chip" data-v="wave">Волна</button>
+                <button type="button" class="gr-chip" data-v="loops">Петли</button>
+                <button type="button" class="gr-chip" data-v="circle">Круг</button>
+                <button type="button" class="gr-chip" data-v="spiral">Спираль</button>
+              </div>
+            </div>
+            <div class="rb-text">
+              <input id="rbText" class="field" type="text" maxlength="60" spellcheck="false" aria-label="Текст">
+              <label class="rb-sep" title="Знак между повторами текста">Разделитель<input id="rbSep" class="field" type="text" maxlength="2" spellcheck="false" aria-label="Разделитель"></label>
+            </div>
+            <div class="rb-colors">
+              <div id="rbRibColorRow" class="tb-colors"><span class="tb-cl">Лента</span><div id="rbRibColors" class="tb-swatches" role="group" aria-label="Лента"><button type="button" data-v="#3aa0e8" style="--c:#3aa0e8" aria-label="#3aa0e8"></button><button type="button" data-v="#141414" style="--c:#141414" aria-label="#141414"></button><button type="button" data-v="#e8672c" style="--c:#e8672c" aria-label="#e8672c"></button><button type="button" data-v="#ffffff" style="--c:#ffffff" aria-label="#ffffff"></button></div></div>
+              <div class="tb-colors"><span class="tb-cl">Текст</span><div id="rbTextColors" class="tb-swatches" role="group" aria-label="Текст"><button type="button" data-v="#e8672c" style="--c:#e8672c" aria-label="#e8672c"></button><button type="button" data-v="#ffffff" style="--c:#ffffff" aria-label="#ffffff"></button><button type="button" data-v="#2bd38a" style="--c:#2bd38a" aria-label="#2bd38a"></button><button type="button" data-v="#141414" style="--c:#141414" aria-label="#141414"></button><button type="button" data-v="#3aa0e8" style="--c:#3aa0e8" aria-label="#3aa0e8"></button></div></div>
+            </div>
+            <div id="rbRibbonSl" class="kr-sliders">
+              <label class="ac-row ac-slider kr-sl"><span>Толщина ленты</span><input id="rbWidth" class="range" type="range" min="10" max="400" step="1"><output id="rbWidthVal" for="rbWidth"></output></label>
+              <label class="ac-row ac-slider kr-sl"><span>Размер текста</span><input id="rbSize" class="range" type="range" min="20" max="100" step="1"><output id="rbSizeVal" for="rbSize"></output></label>
+              <label class="ac-row ac-slider kr-sl"><span>Скорость</span><input id="rbSpeed" class="range" type="range" min="0" max="100" step="1"><output id="rbSpeedVal" for="rbSpeed"></output></label>
+            </div>
+            <div id="rbRingSl" class="kr-sliders">
+              <label class="ac-row ac-slider kr-sl"><span>Колец</span><input id="rbRings" class="range" type="range" min="1" max="5" step="1"><output id="rbRingsVal" for="rbRings"></output></label>
+              <label class="ac-row ac-slider kr-sl"><span>Радиус</span><input id="rbRadius" class="range" type="range" min="100" max="1500" step="1"><output id="rbRadiusVal" for="rbRadius"></output></label>
+              <label class="ac-row ac-slider kr-sl"><span>Наклон</span><input id="rbTilt" class="range" type="range" min="0" max="60" step="1"><output id="rbTiltVal" for="rbTilt"></output></label>
+              <label class="ac-row ac-slider kr-sl"><span>Скорость</span><input id="rbRingSpeed" class="range" type="range" min="0" max="100" step="1"><output id="rbRingSpeedVal" for="rbRingSpeed"></output></label>
+            </div>
+            <div id="rbRibbonSw" class="kr-sw">
+              <label class="switch"><input id="rbRun" type="checkbox"><span class="track"></span><span class="text">Бежит по ленте</span></label>
+            </div>
+            <div id="rbRingSw" class="kr-sw">
+              <label class="switch"><input id="rbBack" type="checkbox"><span class="track"></span><span class="text">Сзади бледнее</span></label>
+              <label class="switch"><input id="rbCamera" type="checkbox"><span class="track"></span><span class="text">Камера</span></label>
+            </div>
+            <button id="rbBtn" class="shift-do shift-go">Создать ленту</button>
+          </div>
+        </section>
       </div>
       <p id="acHint" class="ac-hint"></p>
       <!-- Полоса внизу: то, что меняет вставку (длительность, цвет, когда двигаться), и размер карточек -->
