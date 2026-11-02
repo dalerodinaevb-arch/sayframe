@@ -890,33 +890,33 @@
 
     <!-- «Проекты»: брендбуки. У каждого проекта (клиента, компании) свои логотипы, цвета, шрифты, тексты и форматы. -->
     <div id="viewBrand" class="view" role="tabpanel" aria-labelledby="tabBrand" hidden>
-      <div id="brandSubs" class="brand-subs" role="tablist" aria-label="Разделы: клиенты и группы проектов"></div>
+      <div id="brandBar" class="brand-bar">
+        <div id="brandSubs" class="brand-subs" role="tablist" aria-label="Разделы: клиенты и группы проектов"></div>
+        <span class="brand-tools">
+          <button id="brandExport" class="icon-btn" aria-label="Поделиться" title="Поделиться: сохранить проект целиком — логотипы, цвета, шрифты, тексты — в один файл .sfbrand, чтобы отправить коллеге">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+          </button>
+          <button id="brandMore" class="icon-btn" aria-label="Ещё: новый подбренд, переименовать, импорт, удалить" title="Ещё" aria-haspopup="menu" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg>
+          </button>
+          <div id="brandMenu" class="brand-menu" role="menu" hidden>
+            <button id="brandNew" role="menuitem" title="Создать новый подбренд в этом разделе">+ Новый подбренд</button>
+            <button id="brandRename" role="menuitem" title="Переименовать подбренд">Переименовать</button>
+            <button id="brandImport" role="menuitem" title="Добавить брендбук из файла .sfbrand, который прислал коллега">Импорт из файла .sfbrand</button>
+            <button id="brandDelete" role="menuitem" class="brand-menu-del" title="Удалить подбренд (нажмите дважды)">Удалить подбренд</button>
+          </div>
+        </span>
+      </div>
       <section id="brandTop" class="card brand-top">
-        <div class="brand-row" id="brandPickRow">
+        <div class="brand-row" id="brandPickRow" hidden>
           <select id="brandSelect" class="field" aria-label="Текущий проект"></select>
-          <button id="brandRename" class="icon-btn" aria-label="Переименовать проект" title="Переименовать проект">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>
-          </button>
-          <button id="brandDelete" class="icon-btn" aria-label="Удалить проект" title="Удалить проект (нажмите дважды)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 7h15"/><path d="M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7l.9 11.6a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/></svg>
-          </button>
-          <button id="brandNew" class="ghost brand-new" title="Создать новый проект">+ Новый</button>
         </div>
         <div class="brand-row" id="brandNameRow" hidden>
           <input id="brandName" class="field" maxlength="60" spellcheck="false" placeholder="Название: клиент или компания" aria-label="Название проекта">
           <button id="brandNameOk" class="primary">Сохранить</button>
           <button id="brandNameCancel" class="ghost">Отмена</button>
         </div>
-        <div class="brand-row brand-share" id="brandShareRow">
-          <button id="brandExport" class="ghost" title="Сохранить проект целиком — логотипы, цвета, шрифты, тексты — в один файл .sfbrand, чтобы отправить коллеге">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
-            Поделиться
-          </button>
-          <button id="brandImport" class="ghost" title="Добавить брендбук из файла .sfbrand, который прислал коллега">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
-            Импорт
-          </button>
-        </div>
+        <div class="brand-row brand-share" id="brandShareRow" hidden></div>
         <div class="brand-ask" id="brandAsk" hidden>
           <span id="brandAskText"></span>
           <div class="brand-row">
@@ -938,7 +938,9 @@
       <div id="brandBody" hidden>
         <section class="card brand-sec" data-sec="logos">
           <div class="brand-h"><b>Логотипы</b><button id="brandLogoAdd" class="ghost brand-add" title="Добавить файл логотипа: PNG, SVG, AI, PSD, JPG">+ Добавить</button></div>
+          <div id="brandSubChips" class="brand-subbs" role="tablist" aria-label="Подбренды"></div>
           <div id="brandLogos" class="brand-logos"></div>
+          <div id="brandLogoCap" class="brand-cap" aria-live="polite"></div>
           <small class="hint">Щелчок по логотипу — вставить в открытую композицию прекомпозицией: внутри логотип 100 %, сама прекомпозиция — 10 %. В проекте — в папке «Brand — …». Файлы копируются в «Документы / Sayframe Brands».</small>
         </section>
 

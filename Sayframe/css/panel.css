@@ -1567,7 +1567,7 @@ html[data-design="ae"] .set-tabs button[aria-selected="true"] { background: rgba
 .brand-empty p { margin: 0; color: var(--muted); font: 600 12.5px/1.45 var(--round); }
 .brand-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .brand-h b { font: 700 13.5px/1.25 var(--round); }
-.brand-h b { margin-right: auto; }
+.brand-h > b { margin-right: auto; }
 .brand-move { display: flex; gap: 2px; flex: none; }
 .brand-move button { width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border: 1px solid transparent; border-radius: 7px;
   background: transparent; color: var(--faint); cursor: pointer; }
@@ -1641,6 +1641,60 @@ html[data-design="ae"] .set-tabs button[aria-selected="true"] { background: rgba
 .brand-sub-add { width: 30px; padding: 0; justify-content: center; font-size: 16px; }
 .brand-sub-x { display: grid; place-items: center; width: 16px; height: 16px; margin-right: -6px; border-radius: 50%; color: var(--muted); font-size: 13px; line-height: 1; }
 .brand-sub-x:hover, .brand-sub-x:focus-visible { color: var(--text); background: rgba(255,255,255,0.1); }
+
+/* «Проекты», вид «Компактный список» (2.1): сверху одна строка — разделы, «Поделиться», ⋯;
+   каждый раздел брендбука — строка с превью и числом, щелчок раскрывает. Пояснения — при наведении на название. */
+.brand-bar { position: relative; display: flex; align-items: center; gap: 8px; }
+.brand-bar[hidden] { display: none; }
+.brand-bar .brand-subs { flex: 1 1 auto; min-width: 0; }
+.brand-tools { position: relative; display: flex; gap: 6px; flex: none; }
+.brand-tools .icon-btn { width: 30px; height: 30px; }
+.brand-tools .icon-btn[hidden] { display: none; }
+.brand-tools svg { width: 15px; height: 15px; }
+.brand-menu { position: absolute; top: 36px; right: 0; z-index: 20; min-width: 200px; display: flex; flex-direction: column; padding: 4px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--bg); box-shadow: 0 12px 30px rgba(0,0,0,0.45); }
+.brand-menu[hidden] { display: none; }
+.brand-menu button { height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text); text-align: left; cursor: pointer;
+  font: 600 12.5px/1 var(--round); }
+.brand-menu button[hidden] { display: none; }
+.brand-menu button:hover, .brand-menu button:focus-visible { background: var(--glass-strong, rgba(255,255,255,0.08)); }
+.brand-menu .brand-menu-del { color: #ff7b7b; }
+#brandBody { gap: 8px; }
+#brandBody > .brand-sec { padding: 0 12px; gap: 10px; }
+#brandBody > .brand-sec.open { padding-bottom: 12px; border-color: rgba(var(--accent-rgb), 0.45); }
+#brandBody > .brand-sec:not(.open) > :not(.brand-h) { display: none !important; }
+#brandBody > .brand-sec > small.hint { display: none; }
+#brandBody .brand-h { min-height: 48px; cursor: pointer; gap: 10px; justify-content: flex-start; }
+#brandBody .brand-h > b { order: 2; flex: 0 0 86px; margin-right: 0; font: 700 13px/1.2 var(--round); }
+.brand-pv { order: 3; flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 5px; overflow: hidden; }
+.brand-pv i { width: 22px; height: 22px; flex: none; border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); }
+.brand-pv i.brand-pv-grad { width: 56px; }
+.brand-pv b { flex: none; margin-right: 0 !important; font: 800 15px/1 var(--round); }
+.brand-pv-t { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font: 600 11.5px/1.2 var(--round); }
+.brand-sec.open .brand-pv { visibility: hidden; }
+.brand-n { order: 4; flex: none; min-width: 12px; text-align: right; color: var(--faint); font: 600 11px/1 var(--round); }
+.brand-h .brand-move { order: 5; }
+.brand-h .brand-move button { width: 22px; }
+.brand-h .ghost.brand-add { order: 6; width: 26px; height: 26px; padding: 0; display: none; place-items: center; font-size: 15px; border-radius: 8px; }
+.brand-h:hover .ghost.brand-add, .brand-sec.open .ghost.brand-add, .brand-h .ghost.brand-add:focus-visible { display: grid; }
+.brand-sec.open .brand-plus { display: none; }
+.brand-fold { order: 7; width: 20px; height: 24px; padding: 0; display: grid; place-items: center; border: 0; background: transparent; color: var(--faint); cursor: pointer; }
+.brand-fold svg { width: 12px; height: 12px; transition: transform .15s; transform: rotate(-90deg); }
+.brand-sec.open .brand-fold svg { transform: none; }
+.brand-subbs { display: flex; flex-wrap: wrap; gap: 6px; }
+.brand-subb { height: 28px; padding: 0 11px; border: 1px solid var(--line); border-radius: 14px; background: var(--glass); color: var(--muted); cursor: pointer;
+  font: 600 12px/1 var(--round); }
+.brand-subb:hover { color: var(--text); }
+.brand-subb[aria-selected="true"] { color: #7be3a8; border-color: #18a957; background: rgba(24,169,87,0.16); }
+.brand-subb-add { width: 28px; padding: 0; }
+#brandBody .brand-logos { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+#brandBody .brand-logo-img { height: 56px; padding: 0; overflow: hidden; background: rgba(255,255,255,0.03); }
+#brandBody .brand-logo-img img { width: 100%; height: 100%; max-height: none; object-fit: cover; }
+#brandBody .brand-logo > small { display: none; }
+#brandBody .brand-logo select { position: absolute; left: 4px; right: 4px; bottom: 4px; width: auto; height: 22px; opacity: 0; transition: opacity .15s; }
+#brandBody .brand-logo:hover select, #brandBody .brand-logo select:focus { opacity: 1; }
+.brand-cap { min-height: 14px; text-align: center; color: var(--muted); font: 600 11px/1.2 var(--round); }
+.brand-cap:empty { display: none; }
 
 /* ------------------------------------------------------- Без фона */
 

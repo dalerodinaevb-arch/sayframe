@@ -1099,7 +1099,7 @@
         brandColorPick: el("brandColorPick"), brandColorHex: el("brandColorHex"), brandColorName: el("brandColorName"), brandColorAdd: el("brandColorAdd"),
         brandRigBtn: el("brandRigBtn"), brandFontList: el("brandFontList"), brandFontHead: el("brandFontHead"), brandFontBody: el("brandFontBody"),
         brandFontHeadApply: el("brandFontHeadApply"), brandFontBodyApply: el("brandFontBodyApply"), brandTexts: el("brandTexts"),
-        brandTop: el("brandTop"), brandSubs: el("brandSubs"), brandShareRow: el("brandShareRow"), brandExport: el("brandExport"), brandImport: el("brandImport"),
+        brandTop: el("brandTop"), brandSubs: el("brandSubs"), brandBar: el("brandBar"), brandMore: el("brandMore"), brandMenu: el("brandMenu"), brandSubChips: el("brandSubChips"), brandLogoCap: el("brandLogoCap"), brandShareRow: el("brandShareRow"), brandExport: el("brandExport"), brandImport: el("brandImport"),
         brandFirstImport: el("brandFirstImport"), brandAsk: el("brandAsk"), brandAskText: el("brandAskText"), brandAskUpdate: el("brandAskUpdate"),
         brandAskCopy: el("brandAskCopy"), brandAskCancel: el("brandAskCancel"),
         brandTextName: el("brandTextName"), brandTextValue: el("brandTextValue"), brandTextAdd: el("brandTextAdd"), brandFormats: el("brandFormats"),
@@ -8505,16 +8505,22 @@
             ui.brandSelect.appendChild(o);
         }
         ui.brandSelect.value = pr ? pr.active : "";
-        ui.brandPickRow.hidden = !has || brandNaming !== null;
-        ui.brandShareRow.hidden = !has || brandNaming !== null || !!brandPending;
+        // Сверху — одна строка: разделы, «Поделиться» и ⋯. Карточка над брендбуком видна, только пока вводят название,
+        // спрашивают про импорт или просят нажать «Удалить» ещё раз.
+        ui.brandPickRow.hidden = true;
+        ui.brandShareRow.hidden = true;
         ui.brandAsk.hidden = !brandPending;
-        ui.brandTop.hidden = !has && brandNaming === null && !brandPending;
+        ui.brandTop.hidden = brandNaming === null && !brandPending && !brandDelAt;
+        ui.brandExport.hidden = !has;
+        ui.brandRename.hidden = ui.brandDelete.hidden = !has;
         ui.brandNameRow.hidden = brandNaming === null;
         ui.brandEmpty.hidden = has || brandNaming !== null;
         ui.brandBody.hidden = !b;
         ui.brandDeleteNote.hidden = !brandDelAt;
         ui.brandSubs.hidden = !brands.items.length;   // пока проектов нет, хватает большой кнопки «Создать первый проект»
+        ui.brandBar.hidden = ui.brandSubs.hidden;
         renderBrandSubs();
+        renderBrandSubChips(pr);
         renderBrandHits();
         if (!b) { return; }
         renderBrandLogos(b);
@@ -8524,6 +8530,57 @@
         if (document.activeElement !== ui.brandFontHead) { ui.brandFontHead.value = b.fonts.head; }
         if (document.activeElement !== ui.brandFontBody) { ui.brandFontBody.value = b.fonts.body; }
         renderBrandTexts(b);
+        renderBrandPreviews(b);
+    }
+
+    // Подбренды раздела (Alif, Alif Shop, Alif Business…) — кнопки в «Логотипах»; «+» создаёт новый.
+    function renderBrandSubChips(pr) {
+        var box = ui.brandSubChips, add;
+        box.innerHTML = "";
+        (pr ? pr.subs : []).forEach(function (sb) {
+            var on = sb.id === pr.active, c = mkEl("button", "brand-subb", sb.name);
+            c.type = "button";
+            c.setAttribute("role", "tab");
+            c.setAttribute("data-sub", sb.id);
+            c.setAttribute("aria-selected", on ? "true" : "false");
+            c.title = on ? "Двойной щелчок — переименовать" : "Открыть «" + sb.name + "»";
+            c.addEventListener("click", function () {
+                if (pr.active === sb.id) { return; }
+                pr.active = sb.id; brandDelAt = 0; brandNaming = null; storeBrands(); renderBrand();
+            });
+            c.addEventListener("dblclick", function () { if (pr.active === sb.id) { brandAskName("rename"); } });
+            box.appendChild(c);
+        });
+        add = mkEl("button", "brand-subb brand-subb-add", "+");
+        add.type = "button";
+        add.title = "Новый подбренд";
+        add.setAttribute("aria-label", add.title);
+        add.addEventListener("click", function () { brandAskName("new"); });
+        box.appendChild(add);
+    }
+
+    // Свёрнутый раздел — одна строка: название, маленькое превью и число.
+    function renderBrandPreviews(b) {
+        var pv = {}, n = {}, i;
+        function sw(css) { var e = mkEl("i"); e.style.background = css; return e; }
+        function txt(t) { return mkEl("span", "brand-pv-t", t); }
+        pv.logos = []; n.logos = b.logos.length;
+        pv.icons = b.icons.length ? [] : [txt("пусто")]; n.icons = b.icons.length;
+        pv.colors = b.colors.slice(0, 6).map(function (c) { return sw(c.hex); }); n.colors = b.colors.length;
+        pv.grads = b.gradients.slice(0, 2).map(function (g) { var e = sw(gradientCss(g)); e.className = "brand-pv-grad"; return e; });
+        if (!b.gradients.length) { pv.grads = [txt("пусто")]; }
+        n.grads = b.gradients.length;
+        pv.fonts = b.fonts.head || b.fonts.body ? [mkEl("b", "", "Aa"), txt([b.fonts.head, b.fonts.body].filter(Boolean).map(function (f) { return f.replace(/-.*$/, ""); }).join(" · "))] : [txt("не выбраны")];
+        n.fonts = (b.fonts.head ? 1 : 0) + (b.fonts.body ? 1 : 0);
+        pv.texts = [txt(b.texts.length ? b.texts.slice(0, 3).map(function (t) { return t.text; }).join(" · ") : "пусто")]; n.texts = b.texts.length;
+        pv.formats = [txt("16:9 · 9:16 · 1:1 · 4:5")]; n.formats = "";
+        brandSecs().forEach(function (sec) {
+            var id = sec.getAttribute("data-sec"), box = sec.querySelector(".brand-pv"), cnt = sec.querySelector(".brand-n");
+            if (!box) { return; }
+            box.innerHTML = "";
+            for (i = 0; pv[id] && i < pv[id].length; i++) { box.appendChild(pv[id][i]); }
+            cnt.textContent = n[id] === undefined ? "" : String(n[id]);
+        });
     }
 
     // Разделы — ряд кнопок над проектом: «+» добавляет раздел, двойной щелчок переименовывает, × удаляет.
@@ -8609,6 +8666,7 @@
     function renderBrandLogos(b) {
         var box = ui.brandLogos;
         box.innerHTML = "";
+        ui.brandLogoCap.textContent = b.logos.length ? b.logos[0].name : "";
         box.setAttribute("data-empty", "Пока пусто: нажмите «+ Добавить» и выберите файл логотипа.");
         b.logos.forEach(function (l) {
             var tile = mkEl("div", "brand-logo");
@@ -8627,6 +8685,8 @@
                 pic.appendChild(mkEl("span", "", (l.file.match(/\.([a-z0-9]+)$/i) || ["", "file"])[1]));
             }
             pic.addEventListener("click", function () { brandPlaceLogo(l); });
+            pic.addEventListener("mouseenter", function () { ui.brandLogoCap.textContent = l.name; });
+            pic.addEventListener("focus", function () { ui.brandLogoCap.textContent = l.name; });
             LOGO_VARIANTS.forEach(function (v) {
                 var o = mkEl("option", "", v[1]);
                 o.value = v[0];
@@ -9024,7 +9084,7 @@
     function brandDelete() {
         var g = activeProject(), b = activeBrand();
         if (!g || !b) { return; }
-        if (!brandArmDelete("project", "Нажмите корзину ещё раз, чтобы удалить «" + b.name + "» вместе с его логотипами.")) { return; }
+        if (!brandArmDelete("project", "Нажмите «Удалить подбренд» ещё раз, чтобы удалить «" + b.name + "» вместе с его логотипами.")) { return; }
         brandForget(b);
         g.subs = g.subs.filter(function (x) { return x.id !== b.id; });
         g.active = g.subs.length ? g.subs[0].id : "";
@@ -9266,6 +9326,63 @@
         if (sec.scrollIntoView) { sec.scrollIntoView({ block: "nearest" }); }
     }
 
+    // Разделы сворачиваются в строку (щелчок по заголовку); какие открыты — запоминается. Сначала открыты только «Логотипы».
+    var BRAND_OPEN_KEY = "sayframe.brandOpen.v1";
+    function brandOpenList() {
+        var v = null;
+        try { v = JSON.parse(window.localStorage.getItem(BRAND_OPEN_KEY) || "null"); } catch (e) {}
+        return v instanceof Array ? v : ["logos"];
+    }
+    function brandSetOpen(sec, on) {
+        var id = sec.getAttribute("data-sec"), list = brandOpenList().filter(function (x) { return x !== id; });
+        sec.classList.toggle("open", on);
+        sec.querySelector(".brand-fold").setAttribute("aria-expanded", on ? "true" : "false");
+        if (on) { list.push(id); }
+        try { window.localStorage.setItem(BRAND_OPEN_KEY, JSON.stringify(list)); } catch (e) {}
+    }
+    function brandFoldInit(sec, head, name) {
+        var title = head.querySelector("b"), hint = sec.querySelector(":scope > small.hint"), fold = mkEl("button", "brand-fold"), add;
+        var pv = mkEl("span", "brand-pv"), n = mkEl("span", "brand-n");
+        head.insertBefore(pv, title.nextSibling);
+        head.insertBefore(n, pv.nextSibling);
+        // Пояснение — не серым текстом в блоке, а подсказкой при наведении на название.
+        if (hint) { title.title = hint.textContent; title.setAttribute("data-info", name + "|" + hint.textContent); }
+        add = head.querySelector(".brand-add");
+        if (add) { add.setAttribute("aria-label", add.title); add.textContent = "+"; }
+        if (!add) {
+            // «+» у раздела без своей кнопки: раскрывает раздел и ставит курсор в первое поле.
+            add = mkEl("button", "ghost brand-add brand-plus", "+");
+            add.type = "button";
+            add.title = "Добавить: " + name.toLowerCase();
+            add.setAttribute("aria-label", add.title);
+            add.addEventListener("click", function (e) {
+                var f;
+                e.stopPropagation();
+                brandSetOpen(sec, true);
+                f = sec.querySelector(".brand-addrow input:not([type=color]), .brand-font input");
+                if (f) { f.focus(); }
+            });
+            if (sec.getAttribute("data-sec") !== "formats") { head.appendChild(add); }
+        }
+        fold.type = "button";
+        fold.setAttribute("aria-label", "Свернуть или раскрыть раздел «" + name + "»");
+        fold.title = "Свернуть / раскрыть";
+        fold.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5L6 7.5 9 4.5"/></svg>';
+        fold.addEventListener("click", function (e) { e.stopPropagation(); brandSetOpen(sec, !sec.classList.contains("open")); });
+        head.appendChild(fold);
+        head.addEventListener("click", function (e) {
+            if (e.target.closest("button, input, select")) { return; }
+            brandSetOpen(sec, !sec.classList.contains("open"));
+        });
+        sec.classList.toggle("open", brandOpenList().indexOf(sec.getAttribute("data-sec")) >= 0);
+        fold.setAttribute("aria-expanded", sec.classList.contains("open") ? "true" : "false");
+    }
+
+    function brandMenu(on) {
+        ui.brandMenu.hidden = !on;
+        ui.brandMore.setAttribute("aria-expanded", on ? "true" : "false");
+    }
+
     function initBrandOrder() {
         var saved = null;
         try { saved = JSON.parse(window.localStorage.getItem(BRAND_ORDER_KEY) || "null"); } catch (e) {}
@@ -9283,6 +9400,7 @@
                 box.appendChild(b);
             });
             head.insertBefore(box, head.querySelector("b").nextSibling);
+            brandFoldInit(sec, head, name);
         });
         if (saved instanceof Array) {
             var def = brandSecs().map(function (x) { return x.getAttribute("data-sec"); });
@@ -9543,10 +9661,14 @@
     function initBrand() {
         initBrandOrder();
         initMentions();
+        ui.brandMore.addEventListener("click", function (e) { e.stopPropagation(); brandMenu(ui.brandMenu.hidden); });
+        document.addEventListener("mousedown", function (e) { if (!ui.brandMenu.hidden && !e.target.closest(".brand-tools")) { brandMenu(false); } });
+        [ui.brandNew, ui.brandRename, ui.brandImport].forEach(function (b) { b.addEventListener("click", function () { brandMenu(false); }); });
         ui.brandNew.addEventListener("click", function () { brandAskName("new"); });
         ui.brandFirst.addEventListener("click", function () { brandAskName("new"); });
         ui.brandRename.addEventListener("click", function () { if (activeBrand()) { brandAskName("rename"); } });
         ui.brandDelete.addEventListener("click", brandDelete);
+        ui.brandDelete.addEventListener("click", function () { if (!brandDelAt) { brandMenu(false); } });   // удалено — меню закрывается
         ui.brandNameOk.addEventListener("click", function () { brandNameDone(true); });
         ui.brandNameCancel.addEventListener("click", function () { brandNaming = null; renderBrand(); });
         ui.brandName.addEventListener("keydown", function (e) {
