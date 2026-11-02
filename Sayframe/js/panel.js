@@ -6381,7 +6381,7 @@
             c.classList.toggle("mk-folded", on);
             if (b) { b.setAttribute("aria-expanded", String(!on)); b.setAttribute("aria-label", on ? "Развернуть" : "Свернуть"); }
         });
-        if (ui.orbitPane) { ui.orbitPane.classList.toggle("mk-wide", ui.orbitPane.clientWidth >= 836); }
+        if (ui.orbitPane) { ui.orbitPane.classList.toggle("mk-wide", ui.orbitPane.clientWidth >= 664); }
     }
 
     // Порядок блоков «Макетов»: блок перетаскивают за заголовок, порядок запоминается.
@@ -6419,9 +6419,8 @@
         function onUp() {
             var d = drag;
             drag = null;
-            document.removeEventListener("pointermove", onMove, true);
-            document.removeEventListener("pointerup", onUp, true);
-            document.removeEventListener("pointercancel", onUp, true);
+            document.removeEventListener("mousemove", onMove, true);
+            document.removeEventListener("mouseup", onUp, true);
             if (!d || !d.on) { return; }
             d.card.classList.remove("mk-drag");
             pane.classList.remove("mk-sorting");
@@ -6434,13 +6433,16 @@
             document.addEventListener("click", eat, true);
             setTimeout(function () { document.removeEventListener("click", eat, true); }, 0);
         }
-        pane.addEventListener("pointerdown", function (e) {
+        // Mouse events, not pointer events: pointer events pass the browser tests but do not fire in After Effects.
+        // The press is cancelled (preventDefault) so the browser does not start its own drag or text selection.
+        pane.addEventListener("dragstart", function (e) { e.preventDefault(); });
+        pane.addEventListener("mousedown", function (e) {
             var head = e.button === 0 && e.target.closest ? e.target.closest(".mk-head") : null;
             if (!head || e.target.closest(".mk-fold")) { return; }
+            e.preventDefault();
             drag = { card: head.parentNode, x: e.clientX, y: e.clientY, on: false };
-            document.addEventListener("pointermove", onMove, true);
-            document.addEventListener("pointerup", onUp, true);
-            document.addEventListener("pointercancel", onUp, true);
+            document.addEventListener("mousemove", onMove, true);
+            document.addEventListener("mouseup", onUp, true);
         });
     }
 
@@ -6641,20 +6643,23 @@
         ui.orbitCamera.addEventListener("change", function () { setOrbit("camera", ui.orbitCamera.checked); });
         ui.orbitBack.addEventListener("change", function () { setOrbit("back", ui.orbitBack.checked); });
         ui.orbitBtn.addEventListener("click", onOrbit);
-        // Крутить превью мышкой.
-        ui.orbitStage.addEventListener("pointerdown", function (e) {
+        // Крутить превью мышкой. События мыши, не указателя: указательные в After Effects не приходят.
+        ui.orbitStage.addEventListener("mousedown", function (e) {
+            if (e.button !== 0) { return; }
+            e.preventDefault();
             orbitDrag = { x: e.clientX, spin: orbitSpin };
             ui.orbitStage.classList.add("dragging");
-            try { ui.orbitStage.setPointerCapture(e.pointerId); } catch (e0) {}
         });
-        ui.orbitStage.addEventListener("pointermove", function (e) {
+        document.addEventListener("mousemove", function (e) {
             if (!orbitDrag) { return; }
             orbitSpin = orbitDrag.spin + (e.clientX - orbitDrag.x) * 0.6;
             drawOrbitPreview();
-        });
-        ["pointerup", "pointercancel"].forEach(function (t) {
-            ui.orbitStage.addEventListener(t, function () { orbitDrag = null; ui.orbitStage.classList.remove("dragging"); });
-        });
+        }, true);
+        document.addEventListener("mouseup", function () {
+            if (!orbitDrag) { return; }
+            orbitDrag = null;
+            ui.orbitStage.classList.remove("dragging");
+        }, true);
         drawOrbit();
     }
 
@@ -10390,9 +10395,8 @@
         function onUp() {
             var d = drag, names;
             drag = null;
-            document.removeEventListener("pointermove", onMove, true);
-            document.removeEventListener("pointerup", onUp, true);
-            document.removeEventListener("pointercancel", onUp, true);
+            document.removeEventListener("mousemove", onMove, true);
+            document.removeEventListener("mouseup", onUp, true);
             if (!d || !d.on) { return; }
             d.card.classList.remove("flow-drag");
             g.el.classList.remove("flow-sorting");
@@ -10405,17 +10409,18 @@
             document.addEventListener("click", eat, true);
             setTimeout(function () { document.removeEventListener("click", eat, true); }, 0);
         }
-        g.el.addEventListener("pointerdown", function (e) {
+        // Mouse events, not pointer events: pointer events pass the browser tests but do not fire in After Effects.
+        g.el.addEventListener("mousedown", function (e) {
             var card, tile;
             if (!g.flow || e.button !== 0 || !e.target.closest) { return; }
             card = e.target.closest(".tool-card");
             if (!card || !g.flowBox || (card.parentNode !== g.flowBox.tiles && card.parentNode !== g.flowBox.cols)) { return; }
             tile = card.parentNode === g.flowBox.tiles;
             if (!tile && (!e.target.closest(".tool-head") || e.target.closest(".flow-fold"))) { return; }
+            e.preventDefault();
             drag = { card: card, tile: tile, x: e.clientX, y: e.clientY, on: false };
-            document.addEventListener("pointermove", onMove, true);
-            document.addEventListener("pointerup", onUp, true);
-            document.addEventListener("pointercancel", onUp, true);
+            document.addEventListener("mousemove", onMove, true);
+            document.addEventListener("mouseup", onUp, true);
         });
     }
 

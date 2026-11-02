@@ -2057,9 +2057,11 @@ html[data-design="ae"] .kr-b, html[data-design="ae"] .kr-stage, html[data-design
 .mk-pane[hidden] { display: none; }
 /* Блоки «Макетов» постоянной ширины: в узкой панели на всю ширину, в широкой — рядом, по порядку. */
 .mk-pane { display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; column-gap: 12px; }
-.mk-pane > .mk-card { flex: 0 1 400px; min-width: 0; max-width: 100%; }
-.mk-pane:not(.mk-wide) > .mk-card { flex-basis: 100%; }
-.mk-head { touch-action: none; }
+/* Standard width: 320–420 px. Two blocks stand side by side from about 660 px of panel; wider never stretches them. */
+.mk-pane > .mk-card { flex: 1 1 320px; min-width: 0; max-width: 420px; }
+.mk-head { touch-action: none; cursor: grab; }
+.mk-grip { flex: none; width: 10px; height: 16px; margin-right: -4px; opacity: .45; background: radial-gradient(circle, currentColor 1.2px, transparent 1.5px) 0 0 / 5px 5px; color: var(--muted); }
+.mk-head:hover .mk-grip { opacity: .9; }
 .mk-sorting, .mk-sorting * { cursor: grabbing !important; user-select: none; }
 .mk-card.mk-drag { opacity: .55; outline: 1px dashed var(--accent-hi, var(--accent)); outline-offset: 2px; }
 .mk-pane .mk-card { break-inside: avoid; margin: 0 0 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
