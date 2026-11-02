@@ -1870,6 +1870,27 @@ html[data-design="studio"] .paste-do { justify-content: flex-start !important; t
 html[data-design="studio"] .paste-do:hover { background: #24252b !important; border-color: #30313a !important; }
 html[data-design="studio"] .ec-buttons .paste-do { font-size: 11.5px !important; gap: 6px !important; padding: 5px 6px 5px 5px !important; min-height: 40px !important; }
 html[data-design="studio"] .ec-buttons .paste-do svg { width: 14px !important; height: 14px !important; padding: 5px; border-radius: 7px; }
+/* «Копия» в Студии: три плитки «Взять | Вставить», переключатель и метка буфера в одну строку */
+.ec-labels { display: none; }
+html[data-design="studio"] .easecopy-card .ec-labels { display: grid; grid-template-columns: 1fr 13px 2fr; margin: 0 0 7px; font: 650 10px/1.2 var(--plain); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); text-align: center; }
+html[data-design="studio"] .easecopy-card .ec-labels span:last-child { grid-column: 3; }
+html[data-design="studio"] .easecopy-card .ec-buttons { display: grid !important; grid-template-columns: 1fr 13px 1fr 6px 1fr; column-gap: 0; }
+html[data-design="studio"] .easecopy-card .ec-buttons::before { content: ""; grid-column: 2; grid-row: 1; justify-self: center; width: 1px; margin: 6px 0; background: #2a2b31; }
+html[data-design="studio"] .easecopy-card #ecCopy { grid-column: 1; grid-row: 1; }
+html[data-design="studio"] .easecopy-card #ecPasteEase { grid-column: 3; grid-row: 1; }
+html[data-design="studio"] .easecopy-card #ecPasteValue { grid-column: 5; grid-row: 1; }
+html[data-design="studio"] .easecopy-card .ec-cap { display: inline-block; }
+html[data-design="studio"] .easecopy-card .ec-cap::first-letter { text-transform: uppercase; }
+html[data-design="studio"] .easecopy-card .ec-buttons .paste-do { flex-direction: column !important; justify-content: center !important; align-items: center !important; text-align: center !important; min-height: 66px !important; padding: 8px 4px !important; gap: 6px !important; font-size: 12px !important; }
+html[data-design="studio"] .easecopy-card .ec-buttons .paste-do svg { width: 18px !important; height: 18px !important; padding: 0 !important; background: none !important; }
+html[data-design="studio"] .easecopy-card .ec-buttons .paste-do svg * { fill: none; }
+html[data-design="studio"] .easecopy-card #ecCopy { background: rgba(var(--accent-rgb), .16) !important; border-color: rgba(var(--accent-rgb), .55) !important; color: var(--accent-hi) !important; }
+html[data-design="studio"] .easecopy-card .ec-pre { display: none; }
+html[data-design="studio"] .easecopy-card .ec-opts { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+html[data-design="studio"] .easecopy-card .ec-switch small { display: none !important; }
+html[data-design="studio"] .easecopy-card #ecClip { font-size: 0 !important; line-height: 0; }
+html[data-design="studio"] .easecopy-card #ecClip::after { content: attr(data-short); font: 600 11px/1 var(--plain); color: var(--muted); background: rgba(255,255,255,.05); border-radius: 20px; padding: 5px 9px; display: inline-block; white-space: nowrap; }
+html[data-design="studio"] .easecopy-card #ecClip.has::after { color: var(--accent-hi); background: rgba(var(--accent-rgb), .16); }
 /* кнопки и поля */
 html[data-design="studio"] .primary { border-radius: 11px !important; background: var(--accent) !important; box-shadow: 0 8px 22px -12px rgba(var(--accent-rgb), .9) !important; letter-spacing: 0 !important; }
 html[data-design="studio"] .ghost, html[data-design="studio"] .shift-do, html[data-design="studio"] .anchor-cell, html[data-design="studio"] .shift-arrow, html[data-design="studio"] .align-btn { border-radius: 8px !important; background: var(--st-btn) !important; border: 1px solid #2a2b31 !important; color: #c9cad2 !important; }

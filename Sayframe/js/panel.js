@@ -10873,6 +10873,8 @@
         var n, names;
         if (!ecClip) {
             ui.ecClip.textContent = "Буфер пуст: выделите ключи и нажмите «Копировать».";
+            ui.ecClip.setAttribute("data-short", "Буфер пуст");
+            ui.ecClip.title = ui.ecClip.textContent;
             ui.ecClip.classList.remove("has");
             return;
         }
@@ -10880,6 +10882,8 @@
         names = [];
         ecClip.groups.forEach(function (g) { n += g.keys.length; if (names.indexOf(g.name) < 0) { names.push(g.name); } });
         ui.ecClip.textContent = "В буфере: " + plural(n, "ключ", "ключа", "ключей") + " · " + names.slice(0, 3).join(", ") + (names.length > 3 ? "…" : "");
+        ui.ecClip.setAttribute("data-short", plural(n, "ключ", "ключа", "ключей") + " · " + names[0] + (names.length > 1 ? " +" + (names.length - 1) : ""));
+        ui.ecClip.title = ui.ecClip.textContent;
         ui.ecClip.classList.add("has");
     }
 

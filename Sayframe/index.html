@@ -716,6 +716,7 @@
       <div class="tool-head" title="Копирует плавность ключей отдельно от их значений, а значения — отдельно от плавности">
         <b>Копия</b>
       </div>
+      <div class="ec-labels" aria-hidden="true"><span>Взять</span><span>Вставить</span></div>
       <div class="ec-buttons">
         <button id="ecCopy" class="paste-do" title="Запомнить плавность и значения выделенных ключей">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
@@ -723,15 +724,15 @@
         </button>
         <button id="ecPasteEase" class="paste-do" title="Поставить скопированную плавность на выделенные ключи, не трогая их значения">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 19C9 19 9.5 5 20.5 5"/><circle cx="3.5" cy="19" r="1.4"/><circle cx="20.5" cy="5" r="1.4"/></svg>
-          <span>Вставить плавность</span>
+          <span><span class="ec-pre">Вставить </span><span class="ec-cap">плавность</span></span>
         </button>
         <button id="ecPasteValue" class="paste-do" title="Поставить скопированные значения на выделенные ключи, не трогая их плавность">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l4.5 8.5L12 20.5 7.5 12z"/><path d="M4 12h3.5M16.5 12H20"/></svg>
-          <span>Вставить значения</span>
+          <span><span class="ec-pre">Вставить </span><span class="ec-cap">значения</span></span>
         </button>
       </div>
       <div id="ecOpts" class="ec-opts">
-        <label class="switch ec-switch">
+        <label class="switch ec-switch" title="Для цепочки из трёх и больше ключей: на средних ключах скорость входа и выхода одна, без рывка.">
           <input id="ecThrough" type="checkbox">
           <span class="track"></span>
           <span class="text">Сквозная скорость

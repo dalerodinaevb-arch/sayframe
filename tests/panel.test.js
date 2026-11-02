@@ -4984,6 +4984,29 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.screenshot({ path: path.join(SHOTS, "40-shape-easecopy.png") });
     await p.close();
   }
+  // «Копия» in Studio: three tiles «Взять | Вставить» (Daler picked variant 3), the switch and a short clipboard chip on one line.
+  {
+    p = await open({ width: 420, height: 1400, fresh: true, settings: { design: "studio" } });
+    await p.page.evaluate(() => { localStorage.setItem("sayframe.easecopy.v1", JSON.stringify({ groups: [{ name: "Position", keys: new Array(14).fill({}) }] })); });
+    await p.page.reload(); await p.page.waitForTimeout(500);
+    await p.page.click("#tabMotion").catch(() => {});
+    await p.page.click(".easecopy-card .tool-head").catch(() => {});
+    await p.page.waitForTimeout(300);
+    const ec = await p.page.evaluate(() => {
+      const r = (id) => document.getElementById(id).getBoundingClientRect();
+      const a = r("ecCopy"), b = r("ecPasteEase"), c = r("ecPasteValue"), sw = document.querySelector(".easecopy-card .ec-switch").getBoundingClientRect(), cl = r("ecClip");
+      const sm = document.querySelector(".easecopy-card .ec-switch small");
+      return { row: Math.abs(a.top - b.top) < 2 && Math.abs(b.top - c.top) < 2, gap: b.left - a.right, tall: a.height >= 60,
+        labels: getComputedStyle(document.querySelector(".easecopy-card .ec-labels")).display, txt: document.getElementById("ecPasteEase").innerText.trim(),
+        short: document.getElementById("ecClip").getAttribute("data-short"), oneLine: Math.abs((sw.top + sw.bottom) / 2 - (cl.top + cl.bottom) / 2) < 8, hint: sm ? sm.getBoundingClientRect().height : 0 };
+    });
+    check("EC11 Studio «Копия»: three tiles in one row, «Копировать» set apart by a line, short names, switch and clipboard chip on one line, no grey hint", ec.row && ec.gap >= 12 && ec.tall && ec.labels === "grid" && ec.txt === "Плавность" && ec.short === "14 ключей · Position" && ec.oneLine && ec.hint === 0 && p.errors.length === 0, JSON.stringify(ec) + p.errors.join("|"));
+    await p.close();
+    p = await open({ width: 420, height: 1400, fresh: true, settings: { design: "glass" } });
+    await p.page.click("#tabMotion").catch(() => {});
+    check("EC12 the other designs keep «Вставить плавность» and no «Взять/Вставить» labels", (await p.page.locator("#ecPasteEase").innerText()).replace(/\s+/g, " ").trim() === "Вставить плавность" && (await p.page.locator(".easecopy-card .ec-labels").isHidden()), await p.page.locator("#ecPasteEase").innerText());
+    await p.close();
+  }
 
   // Hover info: the cursor rests for a second on a block, a tab or a button -> a small window explains it.
   {
