@@ -3136,6 +3136,20 @@ var sayframeHost = (function () {
         return gi;
     }
 
+    function tbNewText(comp, text) {
+        var t = comp.layers.addText(text), p, doc;
+        try {
+            p = acP(t, ["ADBE Text Properties", "ADBE Text Document"]);
+            doc = p.value;
+            doc.fontSize = Math.round(Math.min(comp.width, comp.height) * 0.08);
+            doc.fillColor = [1, 1, 1];
+            try { doc.justification = ParagraphJustification.CENTER_JUSTIFY; } catch (e1) {}
+            p.setValue(doc);
+        } catch (e0) {}
+        orbitSet(t, "ADBE Position", [comp.width / 2, comp.height / 2]);
+        return t;
+    }
+
     function tbBuild(comp, t, o, lab) {
         var B = comp.layers.addShape(), per = o.per === "line", n = per ? Math.min(16, tbLines(t) + 2) : 1;
         var c = o.color || [0.23, 0.06, 0.39], sc = o.strokeColor || [1, 1, 1], look = o.look || "fill", helpers = [], H, i, fx, base;
@@ -3178,6 +3192,8 @@ var sayframeHost = (function () {
                 orbitSet(H, "ADBE Position", [0, 0]);
                 orbitSet(H, "ADBE Opacity", 0);
                 try { H.shy = true; } catch (eS) {}
+                // Helpers are shy and the comp hides shy layers: the timeline shows only the text and its box.
+                try { comp.hideShyLayers = true; } catch (eY) {}
                 helpers.push(H);
                 tbGroup(B, comp, lab, o, "thisComp.layer(" + tbQ(H.name) + ")", i, i);
             }
@@ -6011,17 +6027,18 @@ var sayframeHost = (function () {
         // px, py, round, stroke, skew, opacity, shadow, appear: "none"|"left"|"center"|"lines" }; lab - control and layer names.
         textBox: function (o, lab) {
             return reply(function () {
-                var comp = activeComp(), sel = comp.selectedLayers, texts = [], res = [], i;
+                var comp = activeComp(), sel = comp.selectedLayers, texts = [], res = [], i, made = "";
                 if (!o || typeof o !== "object" || !lab) { throw new Error("BAD_TEXTBOX"); }
                 for (i = 0; i < sel.length; i++) { if (sel[i] instanceof TextLayer) { texts.push(sel[i]); } }
-                if (!texts.length) { throw new Error("NO_TEXT_LAYER"); }
                 app.beginUndoGroup("Sayframe: text box");
                 try {
+                    // No text selected: a new text in the middle of the comp gets the box.
+                    if (!texts.length) { texts.push(tbNewText(comp, lab.defaultText || "Text")); made = texts[0].name; }
                     for (i = 0; i < texts.length; i++) { res.push(tbBuild(comp, texts[i], o, lab)); }
                 } finally {
                     app.endUndoGroup();
                 }
-                return { textBox: { boxes: res } };
+                return { textBox: { boxes: res, made: made } };
             });
         },
 

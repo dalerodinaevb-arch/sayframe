@@ -5357,17 +5357,19 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hello\rworld" }, { name: "BG", selected: false }] } });
     await tbTab(p);
     check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
-    check("TB1 defaults: each line, fill, dark purple, no stroke row", (await p.page.getAttribute('#tbPer [data-v="line"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbLook [data-v="fill"]', "aria-pressed")) === "true" && !(await vis(p, "#tbStrokeRow")) && (await p.page.inputValue("#tbColor")) === "#3a0f63");
+    check("TB1 defaults: each line, fill, dark purple, no stroke row, no animation", (await p.page.getAttribute('#tbAppear [data-v="none"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbPer [data-v="line"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbLook [data-v="fill"]', "aria-pressed")) === "true" && !(await vis(p, "#tbStrokeRow")) && (await p.page.inputValue("#tbColor")) === "#3a0f63");
     await p.page.click('#tbLook [data-v="both"]');
     await setRange(p, "#tbRound", 30);
     check("TB2 the preview follows the settings: stroke row appears, roundness on the preview", (await vis(p, "#tbStrokeRow")) && (await p.page.locator("#tbRoundVal").innerText()) === "30" && (await p.page.evaluate(() => document.getElementById("tbText").style.getPropertyValue("--r"))) === "30px");
     await p.page.click('#tbPresets [data-v="pill"]');
     check("TB2 a ready style sets everything at once («Таблетка»: one box, round)", (await p.page.getAttribute('#tbPer [data-v="all"]', "aria-pressed")) === "true" && (await p.page.locator("#tbRoundVal").innerText()) === "100" && (await p.page.evaluate(() => document.getElementById("tbText").classList.contains("tb-all"))));
     await p.page.click('#tbPresets [data-v="sport"]');
+    check("TB2 a ready style keeps the animation choice (none)", (await p.page.getAttribute('#tbAppear [data-v="none"]', "aria-pressed")) === "true");
+    await p.page.click('#tbAppear [data-v="lines"]');
     await p.page.click("#tbBtn"); await p.idle();
     let B = L(p, "Плашка: Title"), T = L(p, "Title");
     check("TB3 «Добавить плашку» (each line): the box under the text, 4 hidden line helpers (2 lines + 2 spare), one undo step", names(p) === "Title,Плашка: Title,Плашка: строка Title 4,Плашка: строка Title 3,Плашка: строка Title 2,Плашка: строка Title 1,BG" && p.ae.log.undo.join() === "begin:Sayframe: text box,end" && /Плашка готова/.test(await p.status()), names(p) + " | " + p.ae.log.undo.join() + " | " + await p.status());
-    check("TB3 the box and the helpers hang on the text; helpers invisible and shy; each helper shows its own line", B.parent === T && [1, 2, 3, 4].every((i) => { const H = L(p, "Плашка: строка Title " + i); return H.parent === T && acAt(H, "ADBE Transform Group", "ADBE Opacity").value === 0 && H.shy === true; }) &&
+    check("TB3 the box and the helpers hang on the text; helpers invisible and shy, the comp hides shy layers (the timeline shows the text and one shape); each helper shows its own line", B.parent === T && [1, 2, 3, 4].every((i) => { const H = L(p, "Плашка: строка Title " + i); return H.parent === T && acAt(H, "ADBE Transform Group", "ADBE Opacity").value === 0 && H.shy === true; }) && p.ae.log.dcMain.hideShyLayers === true &&
       sfEval(L(p, "Плашка: строка Title 2"), acAt(L(p, "Плашка: строка Title 2"), "ADBE Text Properties", "ADBE Text Document"), 0, { parent: parentOf("Hello\rworld") }) === "world" && sfEval(L(p, "Плашка: строка Title 4"), acAt(L(p, "Плашка: строка Title 4"), "ADBE Text Properties", "ADBE Text Document"), 0, { parent: parentOf("Hello\rworld") }) === "");
     check("TB3 its settings live in Effect Controls", fxNames(B) === "По бокам,Сверху/снизу,Скругление,Цвет,Заливка,Обводка,Толщина обводки,Цвет обводки,Наклон" && fxVal(B, "По бокам") === 22 && fxVal(B, "Наклон") === 14 && fxVal(B, "Заливка") === 1 && fxVal(B, "Обводка") === 0, fxNames(B));
     const lay = (n, w) => ({ layer: (x) => (x === n ? { sourceRectAtTime: rectOf(w) } : null), frameDuration: 1 / 30 });
@@ -5385,7 +5387,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await tbTab(p); await p.page.click("#tbBtn"); await p.idle();
-    check("TB6 no text layer selected: a hint, nothing changes", names(p) === "BG" && /текстов/.test(await p.status()) && p.ae.log.undo.length === 0, await p.status());
+    check("TB6 no text layer selected: a new text «Ваш текст» in the middle gets the box, one undo step", /^Ваш текст,Плашка: Ваш текст,Плашка: строка Ваш текст 3,/.test(names(p)) && JSON.stringify(acAt(L(p, "Ваш текст"), "ADBE Transform Group", "ADBE Position").value) === "[960,540]" && L(p, "Плашка: Ваш текст").parent === L(p, "Ваш текст") && p.ae.log.undo.join() === "begin:Sayframe: text box,end" && /Текст не был выделен — создал «Ваш текст»/.test(await p.status()), names(p) + " | " + await p.status());
     await p.close();
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text" }] } });
     await tbTab(p); await p.page.click('#tbPresets [data-v="marker"]');

@@ -7855,14 +7855,14 @@
     // ---- «Плашка под текстом» (вкладка «Шейп»): шейп-слой под текстом, который подстраивается под текст.
     // Превью в блоке рисуется CSS и меняется сразу; в After Effects то же самое делают выражения (host textBox).
     var TB_KEY = "sayframe.textbox.v1";
-    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, appear: "left", shadow: false };
+    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, appear: "none", shadow: false };
     var TB_PRESETS = {
-        news: { per: "line", look: "fill", style: "box", color: "#111111", px: 16, py: 4, round: 0, skew: 0, shadow: false, appear: "left" },
-        sport: { per: "line", look: "fill", style: "box", color: "#ff4f6d", px: 22, py: 6, round: 0, skew: 14, shadow: false, appear: "lines" },
-        sticker: { per: "all", look: "fill", style: "box", color: "#ffffff", px: 26, py: 12, round: 18, skew: 0, shadow: true, appear: "center" },
-        pill: { per: "all", look: "fill", style: "box", color: "#3a0f63", px: 34, py: 12, round: 100, skew: 0, shadow: false, appear: "center" },
-        frame: { per: "all", look: "stroke", style: "box", strokeColor: "#ffffff", stroke: 4, px: 28, py: 14, round: 40, skew: 0, shadow: false, appear: "center" },
-        marker: { per: "line", look: "fill", style: "marker", color: "#ffcc33", px: 6, py: 0, round: 0, skew: 0, shadow: false, appear: "left" }
+        news: { per: "line", look: "fill", style: "box", color: "#111111", px: 16, py: 4, round: 0, skew: 0, shadow: false },
+        sport: { per: "line", look: "fill", style: "box", color: "#ff4f6d", px: 22, py: 6, round: 0, skew: 14, shadow: false },
+        sticker: { per: "all", look: "fill", style: "box", color: "#ffffff", px: 26, py: 12, round: 18, skew: 0, shadow: true },
+        pill: { per: "all", look: "fill", style: "box", color: "#3a0f63", px: 34, py: 12, round: 100, skew: 0, shadow: false },
+        frame: { per: "all", look: "stroke", style: "box", strokeColor: "#ffffff", stroke: 4, px: 28, py: 14, round: 40, skew: 0, shadow: false },
+        marker: { per: "line", look: "fill", style: "marker", color: "#ffcc33", px: 6, py: 0, round: 0, skew: 0, shadow: false }
     };
     var TB_RANGES = { px: [0, 120], py: [0, 80], round: [0, 100], stroke: [1, 30], skew: [-40, 40], opacity: [0, 100] };
     var TB_CHOICES = { per: ["all", "line"], look: ["fill", "stroke", "both"], style: ["box", "marker"], appear: ["none", "left", "center", "lines"] };
@@ -7934,11 +7934,11 @@
             res = await host("textBox", [{ per: tb.per, look: tb.look, style: tb.style, color: tbRgb(tb.color), strokeColor: tbRgb(tb.strokeColor),
                 px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, appear: tb.appear, shadow: tb.shadow },
                 { box: "Плашка", helper: "Плашка: строка", part: "Плашка", side: "По бокам", vert: "Сверху/снизу", round: "Скругление", color: "Цвет",
-                    fillOn: "Заливка", strokeOn: "Обводка", strokeW: "Толщина обводки", strokeColor: "Цвет обводки", skew: "Наклон" }]);
+                    fillOn: "Заливка", strokeOn: "Обводка", strokeW: "Толщина обводки", strokeColor: "Цвет обводки", skew: "Наклон", defaultText: "Ваш текст" }]);
             setBusy(false);
             r = res.textBox.boxes;
             n = r.length;
-            setStatus("Плашка готова: " + (n === 1 ? "«" + r[0].box + "»" : plural(n, "слой", "слоя", "слоёв")) + ". Она подстраивается под текст сама; " +
+            setStatus((res.textBox.made ? "Текст не был выделен — создал «" + res.textBox.made + "». " : "") + "Плашка готова: " + (n === 1 ? "«" + r[0].box + "»" : plural(n, "слой", "слоя", "слоёв")) + ". Она подстраивается под текст сама; " +
                 "цвет, отступы, скругление, обводка и наклон — в Effect Controls плашки." + (r[0].lines ? " Под каждую строку своя плашка (и запас на две новые строки)." : "") +
                 " Отменить — Cmd/Ctrl+Z.", "done");
         } catch (e) {
