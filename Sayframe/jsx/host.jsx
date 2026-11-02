@@ -2819,12 +2819,13 @@ var sayframeHost = (function () {
         return d;
     }
 
-    // An optional dark background under the carousel, as in the preview.
-    function orbitBackground(comp, name) {
-        var bg = comp.layers.addSolid([0.08, 0.08, 0.09], name || "Carousel Background", comp.width, comp.height, comp.pixelAspect || 1, comp.duration);
-        try { bg.moveToEnd(); } catch (e0) {}
-        try { bg.selected = false; } catch (e1) {}
-        return bg;
+    // The number shows only from the front of its card: from behind (the card turned away from the camera) it is hidden.
+    // Dan Ebberts' two-sided layer test: the layer's own Z axis in comp space points away from the camera when facing it.
+    function orbitHideBack(numLayer, cardRef) {
+        try {
+            acP(numLayer, ["ADBE Transform Group", "ADBE Opacity"]).expression =
+                "var L=" + cardRef + ";L.toCompVec([0,0,1])[2]>0?value:0";
+        } catch (e0) {}
     }
 
     function orbitBuild(comp, o, labels) {
@@ -2834,7 +2835,7 @@ var sayframeHost = (function () {
         var pre = o.mode === "precomp", cx = comp.width / 2, cy = comp.height / 2, fs = Math.round(Math.min(w, h) * 0.32);
         var ctrl, cam = "", had = false, cards = [], nums = [], i, j, sp, L, txt, cc, inner, folder = null, base, camL, rig = null;
         base = labels.card || "Card ";
-        var spots = [], bg = null;
+        var spots = [];
         if (pre) {
             try { folder = app.project.items.addFolder(labels.folder || "Carousel"); } catch (eF) { folder = null; }
         }
@@ -2853,6 +2854,8 @@ var sayframeHost = (function () {
                     orbitSet(txt, "ADBE Position", [w / 2, h / 2 + fs * 0.35]);
                 }
                 L = comp.layers.add(cc);
+                // Inside the card comp the number asks the card layer in the main comp which way it faces.
+                if (o.numbers && o.back === false) { orbitHideBack(txt, "comp(" + tbQ(comp.name) + ").layer(" + tbQ(base + (i + 1)) + ")"); }
             } else {
                 L = comp.layers.addShape();
                 orbitCardShape(L, kind, t, w, h, orbitColor(i));
@@ -2868,6 +2871,7 @@ var sayframeHost = (function () {
                 txt.threeDLayer = true;
                 orbitSet(txt, "ADBE Position", [cx + sp.x, cy + sp.y + fs * 0.35, sp.z]);
                 orbitSet(txt, "ADBE Rotate Y", sp.ry);
+                if (o.back === false) { orbitHideBack(txt, "thisLayer"); }
                 nums.unshift(txt);
             }
         }
@@ -2894,11 +2898,10 @@ var sayframeHost = (function () {
                 try { rig.selected = false; camL.selected = false; } catch (eC) {}
             }
         }
-        if (o.bg) { bg = orbitBackground(comp, labels.bg); }
         for (i = 0; i < cards.length; i++) { try { cards[i].selected = false; } catch (eS) {} }
         for (i = 0; i < nums.length; i++) { try { nums[i].selected = false; } catch (eT) {} }
         ctrl.selected = true;
-        return { cards: n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, camRig: rig ? rig.name : "", hadCamera: had, precomp: pre, folder: folder ? folder.name : "", bg: bg ? bg.name : "" };
+        return { cards: n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, camRig: rig ? rig.name : "", hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
     }
 
     // ---- Grid (section "Layouts"): a bento grid of rounded tiles. rows x cols cells; with "rand" some

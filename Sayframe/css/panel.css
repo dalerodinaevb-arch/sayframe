@@ -2018,7 +2018,8 @@ html .pf-card .pf-row .align-btn svg { width: 28px !important; height: 28px !imp
 .kr-stage { position: relative; height: 190px; border-radius: 12px; overflow: hidden; perspective: 640px; cursor: grab; touch-action: none;
   background: radial-gradient(120% 90% at 50% 100%, rgba(var(--accent-rgb), .22), transparent 60%), rgba(0, 0, 0, .28); border: 1px solid rgba(255, 255, 255, .06); }
 .kr-stage.dragging { cursor: grabbing; }
-.kr-stage.kr-nobg { background: repeating-conic-gradient(rgba(255, 255, 255, .07) 0 25%, rgba(255, 255, 255, .02) 0 50%) 0 0 / 16px 16px; }
+.kr-sw .kr-back { grid-column: 1 / -1; }
+.kr-sw .kr-back[hidden] { display: none; }
 .kr-ring { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-style: preserve-3d; }
 .kr-it { position: absolute; display: flex; align-items: center; justify-content: center; transform-style: preserve-3d; color: #fff;
   font: 600 13px/1 system-ui, sans-serif; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .35)); }
