@@ -5370,15 +5370,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hello\rworld" }, { name: "BG", selected: false }] } });
     await tbTab(p);
     check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
-    check("TB1 defaults: each line, fill, dark purple, no stroke row, no animation", (await p.page.getAttribute('#tbAppear [data-v="none"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbPer [data-v="line"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbLook [data-v="fill"]', "aria-pressed")) === "true" && !(await vis(p, "#tbStrokeRow")) && (await p.page.inputValue("#tbColor")) === "#3a0f63");
+    check("TB1 defaults: each line, fill, dark purple, no stroke row; no animation choice", (await p.page.locator("#tbAppear").count()) === 0 && (await p.page.getAttribute('#tbPer [data-v="line"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbLook [data-v="fill"]', "aria-pressed")) === "true" && !(await vis(p, "#tbStrokeRow")) && (await p.page.inputValue("#tbColor")) === "#3a0f63");
     await p.page.click('#tbLook [data-v="both"]');
     await setRange(p, "#tbRound", 30);
     check("TB2 the preview follows the settings: stroke row appears, roundness on the preview", (await vis(p, "#tbStrokeRow")) && (await p.page.locator("#tbRoundVal").innerText()) === "30" && (await p.page.evaluate(() => document.getElementById("tbText").style.getPropertyValue("--r"))) === "30px");
     await p.page.click('#tbPresets [data-v="pill"]');
     check("TB2 a ready style sets everything at once («Таблетка»: one box, round)", (await p.page.getAttribute('#tbPer [data-v="all"]', "aria-pressed")) === "true" && (await p.page.locator("#tbRoundVal").innerText()) === "100" && (await p.page.evaluate(() => document.getElementById("tbText").classList.contains("tb-all"))));
     await p.page.click('#tbPresets [data-v="sport"]');
-    check("TB2 a ready style keeps the animation choice (none)", (await p.page.getAttribute('#tbAppear [data-v="none"]', "aria-pressed")) === "true");
-    await p.page.click('#tbAppear [data-v="lines"]');
     await p.page.click("#tbBtn"); await p.idle();
     let B = L(p, "Плашка: Title"), T = L(p, "Title");
     check("TB3 «Добавить плашку» (each line): the box under the text, 4 hidden line helpers (2 lines + 2 spare), one undo step", names(p) === "Title,Плашка: Title,Плашка: строка Title 4,Плашка: строка Title 3,Плашка: строка Title 2,Плашка: строка Title 1,BG" && p.ae.log.undo.join() === "begin:Sayframe: text box,end" && /Плашка готова/.test(await p.status()), names(p) + " | " + p.ae.log.undo.join() + " | " + await p.status());
@@ -5388,7 +5386,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const lay = (n, w) => ({ layer: (x) => (x === n ? { sourceRectAtTime: rectOf(w) } : null), frameDuration: 1 / 30 });
     const ex = (i, mn, w) => sfEval(B, rectP(B, i, mn), 0, { parent: parentOf("Hello\rworld"), thisComp: lay("Плашка: строка Title " + i, w) });
     check("TB4 each box takes its line's size plus the margins, and sits on its line (2nd one 48 px lower)", JSON.stringify(ex(1, "ADBE Vector Rect Size", 200)) === "[244,52]" && JSON.stringify(ex(1, "ADBE Vector Rect Position", 200)) === "[0,-12]" && JSON.stringify(ex(2, "ADBE Vector Rect Position", 120)) === "[0,36]" && JSON.stringify(ex(3, "ADBE Vector Rect Size", 0)) === "[0,0]", JSON.stringify([ex(1, "ADBE Vector Rect Size", 200), ex(1, "ADBE Vector Rect Position", 200), ex(2, "ADBE Vector Rect Position", 120)]));
-    check("TB4 «Наклон» leans the boxes; «Появление по строкам» staggers the keys", /-effect\("Наклон"\)\(1\)/.test(acAt(grp(B, 1), "ADBE Vector Transform Group", "ADBE Vector Skew").expression) && acAt(grp(B, 2), "ADBE Vector Transform Group", "ADBE Vector Scale").keys[0].t > acAt(grp(B, 1), "ADBE Vector Transform Group", "ADBE Vector Scale").keys[0].t);
+    check("TB4 «Наклон» leans the boxes; the box is not animated (no keys)", /-effect\("Наклон"\)\(1\)/.test(acAt(grp(B, 1), "ADBE Vector Transform Group", "ADBE Vector Skew").expression) && !((acAt(grp(B, 1), "ADBE Vector Transform Group", "ADBE Vector Scale") || {}).keys || []).length && !((acAt(grp(B, 2), "ADBE Vector Transform Group", "ADBE Vector Scale") || {}).keys || []).length);
     await p.close();
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hi" }] } });
     await tbTab(p);

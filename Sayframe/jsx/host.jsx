@@ -3124,8 +3124,7 @@ var sayframeHost = (function () {
     }
 
     function tbGroup(B, comp, lab, o, src, line, k) {
-        var gi = acGroup(B), ri, fi, si, code = tbRectCode(lab, src, line, o.style === "marker"), from = o.appear === "center" ? code.pos : code.left;
-        var f = comp.frameDuration || 1 / 30, t0, t1;
+        var gi = acGroup(B), ri, fi, si, code = tbRectCode(lab, src, line, o.style === "marker"), from = code.left;
         try { acP(B, ["ADBE Root Vectors Group", gi]).name = (lab.part || "Box") + " " + (line + 1); } catch (e0) {}
         ri = acIn(B, gi, "ADBE Vector Shape - Rect");
         acGP(B, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Size"]).expression = code.size;
@@ -3137,16 +3136,10 @@ var sayframeHost = (function () {
         fi = acIn(B, gi, "ADBE Vector Graphic - Fill");
         acGP(B, gi, ["ADBE Vectors Group", fi, "ADBE Vector Fill Color"]).expression = tbFx(lab, "color");
         acGP(B, gi, ["ADBE Vectors Group", fi, "ADBE Vector Fill Opacity"]).expression = tbFx(lab, "fillOn") + "?100:0";
-        // The group grows from the left edge (or the middle) of its box; the slant leans it like a sports title.
+        // The group's pivot is the left edge of its box; the slant leans it like a sports title. No animation.
         acGP(B, gi, ["ADBE Vector Transform Group", "ADBE Vector Anchor"]).expression = from;
         acGP(B, gi, ["ADBE Vector Transform Group", "ADBE Vector Position"]).expression = from;
         acGP(B, gi, ["ADBE Vector Transform Group", "ADBE Vector Skew"]).expression = "-" + tbFx(lab, "skew");
-        if (o.appear && o.appear !== "none") {
-            t0 = comp.time + (o.appear === "lines" ? k * 3 * f : 0);
-            t1 = t0 + 10 * f;
-            acKeys(acGP(B, gi, ["ADBE Vector Transform Group", "ADBE Vector Scale"]), [t0, t1],
-                [o.appear === "center" ? [0, 0] : [0, 100], [100, 100]], 75);
-        }
         return gi;
     }
 
@@ -6045,7 +6038,7 @@ var sayframeHost = (function () {
 
         // Pathfinder: mode "unite" | "front" | "intersect" | "exclude" | "back"; keep - hide the source layers instead of removing them.
         // Text box: o = { per: "all"|"line", look: "fill"|"stroke"|"both", style: "box"|"marker", color, strokeColor,
-        // px, py, round, stroke, skew, opacity, shadow, appear: "none"|"left"|"center"|"lines" }; lab - control and layer names.
+        // px, py, round, stroke, skew, opacity, shadow }; lab - control and layer names. The box is not animated.
         textBox: function (o, lab) {
             return reply(function () {
                 var comp = activeComp(), sel = comp.selectedLayers, texts = [], res = [], i, made = "";

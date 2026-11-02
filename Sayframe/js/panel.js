@@ -1053,7 +1053,7 @@
         cacheBtn: el("cacheBtn"), cacheOptsToggle: el("cacheOptsToggle"), cacheHint: el("cacheHint"),
         nullpBtn: el("nullpBtn"), nullpOptsToggle: el("nullpOptsToggle"), nullpHint: el("nullpHint"),
         splitBtn: el("splitBtn"), splitOptsToggle: el("splitOptsToggle"), splitHint: el("splitHint"),
-        tbText: el("tbText"), tbPresets: el("tbPresets"), tbPer: el("tbPer"), tbLook: el("tbLook"), tbStyle: el("tbStyle"), tbAppear: el("tbAppear"),
+        tbText: el("tbText"), tbPresets: el("tbPresets"), tbPer: el("tbPer"), tbLook: el("tbLook"), tbStyle: el("tbStyle"),
         tbSwatches: el("tbSwatches"), tbColor: el("tbColor"), tbStrokeColor: el("tbStrokeColor"), tbStrokeRow: el("tbStrokeRow"), tbStrokeWRow: el("tbStrokeWRow"),
         tbPx: el("tbPx"), tbPxVal: el("tbPxVal"), tbPy: el("tbPy"), tbPyVal: el("tbPyVal"), tbRound: el("tbRound"), tbRoundVal: el("tbRoundVal"),
         tbStroke: el("tbStroke"), tbStrokeVal: el("tbStrokeVal"), tbSkew: el("tbSkew"), tbSkewVal: el("tbSkewVal"), tbOpacity: el("tbOpacity"), tbOpacityVal: el("tbOpacityVal"),
@@ -7857,7 +7857,7 @@
     // ---- «Плашка под текстом» (вкладка «Шейп»): шейп-слой под текстом, который подстраивается под текст.
     // Превью в блоке рисуется CSS и меняется сразу; в After Effects то же самое делают выражения (host textBox).
     var TB_KEY = "sayframe.textbox.v1";
-    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, appear: "none", shadow: false };
+    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, shadow: false };
     var TB_PRESETS = {
         news: { per: "line", look: "fill", style: "box", color: "#111111", px: 16, py: 4, round: 0, skew: 0, shadow: false },
         sport: { per: "line", look: "fill", style: "box", color: "#ff4f6d", px: 22, py: 6, round: 0, skew: 14, shadow: false },
@@ -7867,7 +7867,7 @@
         marker: { per: "line", look: "fill", style: "marker", color: "#ffcc33", px: 6, py: 0, round: 0, skew: 0, shadow: false }
     };
     var TB_RANGES = { px: [0, 120], py: [0, 80], round: [0, 100], stroke: [1, 30], skew: [-40, 40], opacity: [0, 100] };
-    var TB_CHOICES = { per: ["all", "line"], look: ["fill", "stroke", "both"], style: ["box", "marker"], appear: ["none", "left", "center", "lines"] };
+    var TB_CHOICES = { per: ["all", "line"], look: ["fill", "stroke", "both"], style: ["box", "marker"] };
 
     function tbClean(src) {
         var o = {}, k;
@@ -7906,7 +7906,7 @@
         // Светлая плашка — тёмный текст, чтобы его было видно.
         k = parseHex(tb.color);
         t.style.color = fill && tb.style === "box" && k && (0.299 * k.r + 0.587 * k.g + 0.114 * k.b) / 255 > 0.6 ? "#3a0f63" : "#fff";
-        ["per", "look", "style", "appear"].forEach(function (key) { pressGroupV(ui["tb" + key.charAt(0).toUpperCase() + key.slice(1)], tb[key]); });
+        ["per", "look", "style"].forEach(function (key) { pressGroupV(ui["tb" + key.charAt(0).toUpperCase() + key.slice(1)], tb[key]); });
         Array.prototype.forEach.call(ui.tbSwatches.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === tb.color ? "true" : "false"); });
         ui.tbColor.value = tb.color;
         ui.tbStrokeColor.value = tb.strokeColor;
@@ -7934,7 +7934,7 @@
         setBusy(true);
         try {
             res = await host("textBox", [{ per: tb.per, look: tb.look, style: tb.style, color: tbRgb(tb.color), strokeColor: tbRgb(tb.strokeColor),
-                px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, appear: tb.appear, shadow: tb.shadow },
+                px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, shadow: tb.shadow },
                 { box: "Плашка", helper: "Плашка: строка", part: "Плашка", side: "По бокам", vert: "Сверху/снизу", round: "Скругление", color: "Цвет",
                     fillOn: "Заливка", strokeOn: "Обводка", strokeW: "Толщина обводки", strokeColor: "Цвет обводки", skew: "Наклон", defaultText: "Ваш текст" }]);
             setBusy(false);
@@ -7950,7 +7950,7 @@
 
     function enableTextBox() {
         if (!ui.tbText) { return; }
-        ["per", "look", "style", "appear"].forEach(function (key) {
+        ["per", "look", "style"].forEach(function (key) {
             var box = ui["tb" + key.charAt(0).toUpperCase() + key.slice(1)];
             box.addEventListener("click", function (e) {
                 var b = e.target.closest ? e.target.closest("button[data-v]") : null, ch = {};
