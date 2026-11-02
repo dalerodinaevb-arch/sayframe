@@ -2154,5 +2154,31 @@ html[data-design="ae"] .mk-pane .mk-card, html[data-design="ae"] .gr-stage, html
 .tb-swatches button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent-hi, var(--accent)); }
 #tbStrokeRow[hidden], #tbStrokeWRow[hidden] { display: none; }
 html[data-design="ae"] .tb-stage { border-radius: 4px; }
+/* ---- «Мокап телефона» (Анимация › Макеты): превью рисует тот же телефон, что появится в композиции. */
+.ph-pane { display: flex; flex-direction: column; gap: 9px; padding-top: 0; }
+.ph-stage { height: 190px; border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; perspective: 600px;
+  background: radial-gradient(120% 90% at 50% 100%, rgba(var(--accent-rgb), .22), transparent 60%), rgba(0, 0, 0, .35); border: 1px solid rgba(255, 255, 255, .08); }
+.ph-phone { --w: 76px; --body: #222224; --edge: #6d6d75; --r: .19; --bz: .045; position: relative; width: var(--w); height: calc(var(--w) / .488); box-sizing: border-box;
+  border-radius: calc(var(--w) * var(--r)); background: var(--body); box-shadow: 0 0 0 1.5px var(--edge) inset; padding: calc(var(--w) * var(--bz)); transition: transform .25s; }
+.ph-phone.ph-android { --r: .12; --bz: .035; height: calc(var(--w) / .47); }
+.ph-phone.ph-shadow { box-shadow: 0 0 0 1.5px var(--edge) inset, 0 14px 24px rgba(0, 0, 0, .55); }
+.ph-screen { width: 100%; height: 100%; border-radius: max(0px, calc(var(--w) * (var(--r) - var(--bz)))); background: linear-gradient(160deg, #c94bd8, #6a3df0 55%, #2a1b6b);
+  box-shadow: 0 0 0 calc(var(--w) * .018) #0a0a0b; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 14px; box-sizing: border-box; }
+.ph-screen span { font: 700 9px/1 var(--plain, inherit); color: #fff; }
+.ph-cam { position: absolute; left: 50%; top: calc(var(--w) * (var(--bz) + .035)); width: calc(var(--w) * .32); height: calc(var(--w) * .09); margin-left: calc(var(--w) * -.16);
+  border-radius: 20px; background: #000; }
+.ph-android .ph-cam { width: calc(var(--w) * .065); height: calc(var(--w) * .065); margin-left: calc(var(--w) * -.0325); top: calc(var(--w) * (var(--bz) + .02)); }
+.ph-phone > i[class^="ph-b"] { position: absolute; width: 3px; border-radius: 2px; background: var(--edge); }
+.ph-b1 { left: -2px; top: 22%; height: 9%; } .ph-b2 { left: -2px; top: 33%; height: 9%; } .ph-b3 { right: -2px; top: 26%; height: 14%; }
+.ph-android .ph-b1, .ph-android .ph-b2 { left: auto; right: -2px; } .ph-android .ph-b1 { top: 22%; height: 13%; } .ph-android .ph-b2 { top: 38%; height: 7%; } .ph-android .ph-b3 { display: none; }
+.ph-phone.ph-tilt { transform: rotateX(10deg) rotateY(-24deg) rotateZ(4deg); }
+.ph-phone.ph-lie { transform: rotate(-90deg); }
+.ph-phone.ph-lie .ph-screen span { transform: rotate(90deg); margin-bottom: 30%; }
+.ph-models .kr-b { flex-direction: row; justify-content: flex-start; gap: 10px; padding: 8px 10px; text-align: left; flex-wrap: wrap; }
+.ph-models .kr-b span { font-size: 12.5px; font-weight: 600; }
+.ph-models .kr-b small { flex-basis: 100%; margin: -6px 0 0 24px; font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-ico { flex: none; width: 12px; height: 20px; border: 1.6px solid currentColor; border-radius: 4px; opacity: .8; box-sizing: border-box; }
+.ph-ico-a { border-radius: 2.5px; }
+html[data-design="ae"] .ph-stage { border-radius: 4px; }
 .tool-look { display: flex; flex-direction: column; gap: inherit; }
 .tool-look[hidden] { display: none; }

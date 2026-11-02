@@ -378,6 +378,44 @@
             <button id="tbBtn" class="shift-do shift-go">Добавить плашку</button>
           </div>
         </section>
+        <section class="card mk-card" data-mk="phone">
+          <div class="mk-head" title="Потяните за название, чтобы поменять блоки местами; щелчок — свернуть"><span class="mk-grip" aria-hidden="true"></span><span class="mk-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 5.5h3"/></svg></span><b>Мокап телефона</b><button type="button" class="mk-fold" aria-expanded="true" aria-label="Свернуть"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button></div>
+          <div class="mk-body ph-pane">
+            <div id="phStage" class="ph-stage" aria-hidden="true"><div id="phPhone" class="ph-phone"><i class="ph-b1"></i><i class="ph-b2"></i><i class="ph-b3"></i><div class="ph-screen"><span>ваше видео</span></div><i class="ph-cam"></i></div></div>
+            <div id="phModel" class="kr-seg ph-models" role="group" aria-label="Телефон">
+              <button type="button" class="kr-b" data-v="iphone"><i class="ph-ico"></i><span>iPhone</span><small>6.1″ · 1179×2556</small></button>
+              <button type="button" class="kr-b" data-v="android"><i class="ph-ico ph-ico-a"></i><span>Android</span><small>6.2″ · 1080×2340</small></button>
+            </div>
+            <div class="tb-colors">
+              <span class="tb-cl">Корпус</span>
+              <div id="phColors" class="tb-swatches" role="group" aria-label="Цвет корпуса">
+                <button type="button" data-v="black" style="--c:#222224" aria-label="Чёрный"></button>
+                <button type="button" data-v="silver" style="--c:#d6d6d1" aria-label="Серебристый"></button>
+                <button type="button" data-v="gold" style="--c:#bda88c" aria-label="Золотистый"></button>
+                <button type="button" data-v="blue" style="--c:#3d4a61" aria-label="Синий"></button>
+                <button type="button" data-v="pink" style="--c:#e8c7cc" aria-label="Розовый"></button>
+              </div>
+            </div>
+            <div id="phPose" class="kr-seg tb-three" role="group" aria-label="Как стоит телефон">
+              <button type="button" class="kr-b" data-v="flat"><span>Прямо</span></button>
+              <button type="button" class="kr-b" data-v="tilt"><span>3D-наклон</span></button>
+              <button type="button" class="kr-b" data-v="lie"><span>Лёжа</span></button>
+            </div>
+            <div class="kr-sliders">
+              <label class="ac-row ac-slider kr-sl"><span>Размер</span><input id="phSize" class="range" type="range" min="10" max="100" step="1"><output id="phSizeVal" for="phSize"></output></label>
+              <label class="ac-row ac-slider kr-sl"><span>Скругление</span><input id="phRound" class="range" type="range" min="0" max="150" step="1"><output id="phRoundVal" for="phRound"></output></label>
+            </div>
+            <div id="phScreen" class="kr-seg" role="group" aria-label="Что на экране">
+              <button type="button" class="kr-b" data-v="precomp" title="Экран — композиция настоящего размера: откройте её и положите своё видео"><span>Экран: прекомп</span></button>
+              <button type="button" class="kr-b" data-v="layer" title="На экран встанет выделенный слой (видео или картинка)"><span>Выделенный слой</span></button>
+            </div>
+            <div class="kr-sw">
+              <label class="switch"><input id="phShadow" type="checkbox"><span class="track"></span><span class="text">Тень</span></label>
+              <label class="switch"><input id="phAppear" type="checkbox"><span class="track"></span><span class="text">Появление</span></label>
+            </div>
+            <button id="phBtn" class="shift-do shift-go">Создать мокап</button>
+          </div>
+        </section>
       </div>
       <p id="acHint" class="ac-hint"></p>
       <!-- Полоса внизу: то, что меняет вставку (длительность, цвет, когда двигаться), и размер карточек -->

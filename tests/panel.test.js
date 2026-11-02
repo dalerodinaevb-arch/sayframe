@@ -463,7 +463,8 @@ function mkOrbitComp(log, name, w, h, layers) {
   c.layer = (i) => c.list[i - 1] || null;
   Object.defineProperty(c, "selectedLayers", { get: () => c.list.filter((l) => l.selected) });
   const put = (l) => { c.list.unshift(l); l.containingComp = c; return moveAfter(l); };
-  const moveAfter = (l) => { l.moveAfter = (o) => { const a = c.list.indexOf(l), b = c.list.indexOf(o); if (a < 0 || b < 0) return; c.list.splice(a, 1); c.list.splice(c.list.indexOf(o) + 1, 0, l); }; return l; };
+  const moveAfter = (l) => { l.moveAfter = (o) => { const a = c.list.indexOf(l), b = c.list.indexOf(o); if (a < 0 || b < 0) return; c.list.splice(a, 1); c.list.splice(c.list.indexOf(o) + 1, 0, l); };
+    l.moveBefore = (o) => { const a = c.list.indexOf(l), b = c.list.indexOf(o); if (a < 0 || b < 0) return; c.list.splice(a, 1); c.list.splice(c.list.indexOf(o), 0, l); }; return l; };
   (layers || []).forEach((l) => {
     const L = moveAfter(mkAcLayer(l.name, l.kind || "solid", log));
     if (l.kind === "text") acInit(L.property("ADBE Text Properties").property("ADBE Text Document"), "ADBE Text Document", { text: l.text || l.name, fontSize: 40 }, log);
@@ -5175,7 +5176,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const rect = (l) => acAt(l, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect");
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
-    check("GR1 «Макеты»: three blocks, «Карусель», «Grid» and «Плашка под текстом», open; the grid preview shows numbered tiles", (await p.page.locator("#orbitPane .mk-card").evaluateAll((l) => l.map((c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox" &&
+    check("GR1 «Макеты»: four blocks, «Карусель», «Grid», «Плашка под текстом» and «Мокап телефона», open; the grid preview shows numbered tiles", (await p.page.locator("#orbitPane .mk-card").evaluateAll((l) => l.map((c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone" &&
       (await p.page.isVisible("#orbitStage")) && (await p.page.isVisible("#gridStage")) && (await tiles(p)) > 4 && (await tiles(p)) < 20 && (await p.page.locator("#gridStage .gr-box span").first().innerText()) === "1" && (await overflow(p)) <= 0);
     check("GR1 defaults: 4 rows, 5 columns, gap 20, roundness 20, spread 100%, variant 12345, the comp size, numbers and one-by-one on", (await p.page.inputValue("#gridRows")) === "4" && (await p.page.inputValue("#gridCols")) === "5" && (await p.page.locator("#gridGapVal").innerText()) === "20" &&
       (await p.page.locator("#gridRandVal").innerText()) === "100%" && (await p.page.inputValue("#gridSeed")) === "12345" && (await p.page.getAttribute("#gridFit", "aria-pressed")) === "true" && (await p.page.isDisabled("#gridW")) && (await p.page.isChecked("#gridNumbers")) && (await p.page.isChecked("#gridStagger")));
@@ -5245,7 +5246,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ width: 1300, orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
     let c1 = await cards(p);
-    check("MK1 a wide panel: all three blocks side by side, a standard width (320–420), not stretched", c1.length === 3 && c1.every((x) => { const w = Number(x.split("w")[1]); return w >= 320 && w <= 420; }) && c1.every((x) => x.split("@")[1].split("w")[0] === c1[0].split("@")[1].split("w")[0]) && /^carousel/.test(c1[0]), c1.join());
+    check("MK1 a wide panel: the blocks side by side (three in a row), a standard width (320–420), not stretched", c1.length === 4 && c1.every((x) => { const w = Number(x.split("w")[1]); return w >= 320 && w <= 420; }) && c1.slice(0, 3).every((x) => x.split("@")[1].split("w")[0] === c1[0].split("@")[1].split("w")[0]) && /^carousel/.test(c1[0]), c1.join());
     const a = await p.page.locator('.mk-card[data-mk="grid"] .mk-head b').boundingBox(), b = await p.page.locator('.mk-card[data-mk="carousel"] .mk-head b').boundingBox();
     await p.page.mouse.move(a.x + 10, a.y + 5); await p.page.mouse.down(); await p.page.mouse.move(a.x - 40, a.y + 5, { steps: 4 }); await p.page.mouse.move(b.x + 10, b.y + 5, { steps: 6 }); await p.page.mouse.up();
     c1 = await cards(p);
@@ -5256,7 +5257,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ width: 740, orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
     c1 = await cards(p);
-    check("MK4 a middle panel (740): two blocks side by side, neither wider than 420", c1[0].split("@")[1].split("w")[0] === c1[1].split("@")[1].split("w")[0] && c1.every((x) => Number(x.split("w")[1]) <= 420) && (await p.page.locator("#orbitPane .mk-grip").count()) === 3, c1.join());
+    check("MK4 a middle panel (740): two blocks side by side, neither wider than 420", c1[0].split("@")[1].split("w")[0] === c1[1].split("@")[1].split("w")[0] && c1.every((x) => Number(x.split("w")[1]) <= 420) && (await p.page.locator("#orbitPane .mk-grip").count()) === 4, c1.join());
     await p.close();
     p = await open({ width: 420, orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
@@ -5397,7 +5398,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const parentOf = (s) => ({ sourceRectAtTime: () => ({ left: -100, top: -32, width: 200, height: 88 }), text: { sourceText: txt(s) } });
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hello\rworld" }, { name: "BG", selected: false }] } });
     await tbTab(p);
-    check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
+    check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
     check("TB1 defaults: each line, fill, dark purple, no stroke row; no animation choice", (await p.page.locator("#tbAppear").count()) === 0 && (await p.page.getAttribute('#tbPer [data-v="line"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbLook [data-v="fill"]', "aria-pressed")) === "true" && !(await vis(p, "#tbStrokeRow")) && (await p.page.inputValue("#tbColor")) === "#3a0f63");
     await p.page.click('#tbLook [data-v="both"]');
     await setRange(p, "#tbRound", 30);
@@ -5439,6 +5440,48 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
+  // Phone mockup (Animation › «Макеты»): an iPhone or Android phone of shapes; the screen is a comp of the real resolution or the selected layer.
+  {
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const tf = (l, n) => acAt(l, "ADBE Transform Group", n);
+    const phTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await phTab(p);
+    check("PH1 a «Мокап телефона» block in «Макеты» after the text box: preview, iPhone / Android (no «Samsung»), «Создать мокап»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone" && (await vis(p, "#phStage")) &&
+      (await p.page.locator("#phModel button").allInnerTexts()).map((t) => t.split("\n")[0].trim()).join() === "iPhone,Android" && !/Samsung/i.test(await p.page.locator('.mk-card[data-mk="phone"]').innerText()) && (await p.page.locator("#phBtn").innerText()).trim() === "Создать мокап" && (await overflow(p)) <= 0);
+    check("PH1 defaults: iPhone, black, upright, screen is a precomp, shadow on, no animation; roundness «Авто»", (await p.page.getAttribute('#phModel [data-v="iphone"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#phColors [data-v="black"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#phPose [data-v="flat"]', "aria-pressed")) === "true" &&
+      (await p.page.getAttribute('#phScreen [data-v="precomp"]', "aria-pressed")) === "true" && (await p.page.isChecked("#phShadow")) && !(await p.page.isChecked("#phAppear")) && (await p.page.locator("#phRoundVal").innerText()) === "Авто");
+    await p.page.click("#phBtn"); await p.idle();
+    const C = L(p, "Телефон: управление"), S = L(p, "Экран iPhone"), B = L(p, "Корпус"), I = L(p, "Островок"), sc = tf(S, "ADBE Scale").value[0];
+    const scr = p.ae.log.orbitComps[0];
+    check("PH2 «Создать мокап»: control null, island, screen, body (in this order, on top of the comp), one undo step", names(p) === "Телефон: управление,Островок,Экран iPhone,Корпус,BG" && p.ae.log.undo.join() === "begin:Sayframe: phone mockup,end" && [S, B, I].every((l) => l.parent === C), names(p) + " | " + p.ae.log.undo.join());
+    check("PH2 the screen is a 1179×2556 comp with a background and «Ваше видео», scaled to cover the screen and cut by a rounded mask", scr && scr.name === "Экран iPhone" && scr.width === 1179 && scr.height === 2556 && scr.list.map((l) => l.name).join() === "Ваше видео,Фон" && Math.abs(sc - 32.57) < 0.05 &&
+      acAt(S, "ADBE Mask Parade").children.length === 1 && acAt(S, "ADBE Mask Parade").children[0].name === "Экран" && /Экран iPhone.*1179×2556/.test(await p.status()), (scr && scr.list.map((l) => l.name).join()) + " sc=" + sc + " | " + await p.status());
+    check("PH2 the body: glass, frame and 4 side buttons; a drop shadow; the island near the top; upright and 2D", acAt(B, "ADBE Root Vectors Group").children.map((g) => g.name).join() === "Glass,Frame,Button,Button,Button,Button" && /ADBE Drop Shadow/.test(acAt(B, "ADBE Effect Parade").children.map((e) => e.matchName || e.name).join()) &&
+      tf(I, "ADBE Position").value[1] < 540 - 300 && !C.threeDLayer && !(tf(C, "ADBE Position").keys || []).length, acAt(B, "ADBE Effect Parade").children.map((e) => e.matchName || e.name).join() + " " + tf(I, "ADBE Position").value);
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "Видео" }, { name: "BG", selected: false }] } });
+    p.ae.log.dcMain.list[0].width = 1920; p.ae.log.dcMain.list[0].height = 1080;
+    await phTab(p);
+    await p.page.click('#phModel [data-v="android"]'); await p.page.click('#phPose [data-v="lie"]'); await p.page.click('#phScreen [data-v="layer"]');
+    check("PH3 the preview follows: Android, lying", (await p.page.evaluate(() => { const c = document.getElementById("phPhone").classList; return c.contains("ph-android") && c.contains("ph-lie"); })));
+    await p.page.click("#phBtn"); await p.idle();
+    const C3 = L(p, "Телефон: управление"), V = L(p, "Видео");
+    check("PH3 Android lying with the selected layer on the screen: the layer turned back upright, the phone turned on its side, a punch-hole camera; no new comp", names(p) === "Телефон: управление,Камера,Видео,Корпус,BG" && V.parent === C3 && tf(V, "ADBE Rotate Z").value === 90 && tf(C3, "ADBE Rotate Z").value === -90 &&
+      p.ae.log.orbitComps.length === 0 && acAt(L(p, "Корпус"), "ADBE Root Vectors Group").children.length === 4 && /На экран встал слой «Видео»/.test(await p.status()), names(p) + " | " + await p.status());
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await phTab(p);
+    await p.page.click('#phPose [data-v="tilt"]'); await p.page.click('#phScreen [data-v="layer"]'); await p.page.click('label.switch:has(#phAppear)'); await p.page.click('#phColors [data-v="pink"]');
+    await p.page.click("#phBtn"); await p.idle();
+    const C4 = L(p, "Телефон: управление");
+    check("PH4 3D tilt: every part is 3D and the null turns the phone; «Появление» slides it up from below; no layer selected → the screen is a comp", ["Телефон: управление", "Островок", "Экран iPhone", "Корпус"].every((n) => L(p, n) && L(p, n).threeDLayer) &&
+      tf(C4, "ADBE Rotate X").value === 10 && tf(C4, "ADBE Rotate Y").value === -24 && (tf(C4, "ADBE Position").keys || []).length === 2 && /Слой не был выделен/.test(await p.status()), names(p) + " | " + await p.status());
+    await p.restart(); await phTab(p);
+    check("PH5 the settings survive a restart", (await p.page.getAttribute('#phPose [data-v="tilt"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#phColors [data-v="pink"]', "aria-pressed")) === "true" && (await p.page.isChecked("#phAppear")) && p.errors.length === 0, p.errors.join("|"));
+    await p.close();
+  }
   // Decompose: the layers of a selected precomp come out into the open comp, in its place.
   {
     const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");

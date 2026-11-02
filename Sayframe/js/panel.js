@@ -1058,6 +1058,8 @@
         tbPx: el("tbPx"), tbPxVal: el("tbPxVal"), tbPy: el("tbPy"), tbPyVal: el("tbPyVal"), tbRound: el("tbRound"), tbRoundVal: el("tbRoundVal"),
         tbStroke: el("tbStroke"), tbStrokeVal: el("tbStrokeVal"), tbSkew: el("tbSkew"), tbSkewVal: el("tbSkewVal"), tbOpacity: el("tbOpacity"), tbOpacityVal: el("tbOpacityVal"),
         tbShadow: el("tbShadow"), tbBtn: el("tbBtn"),
+        phPhone: el("phPhone"), phModel: el("phModel"), phColors: el("phColors"), phPose: el("phPose"), phSize: el("phSize"), phSizeVal: el("phSizeVal"),
+        phRound: el("phRound"), phRoundVal: el("phRoundVal"), phScreen: el("phScreen"), phShadow: el("phShadow"), phAppear: el("phAppear"), phBtn: el("phBtn"),
         pfModes: el("pfModes"), pfName: el("pfName"), pfSub: el("pfSub"), pfKeep: el("pfKeep"), pfOptsToggle: el("pfOptsToggle"), pfHint: el("pfHint"),
         unusedBtn: el("unusedBtn"), unusedOptsToggle: el("unusedOptsToggle"), unusedHint: el("unusedHint"),
         cutoutBtn: el("cutoutBtn"), cutoutOptsToggle: el("cutoutOptsToggle"), cutoutHint: el("cutoutHint"),
@@ -1365,6 +1367,7 @@
         if (ui.orbitBtn) { ui.orbitBtn.disabled = on; }
         if (ui.gridBtn) { ui.gridBtn.disabled = on; }
         if (ui.tbBtn) { ui.tbBtn.disabled = on; }
+        if (ui.phBtn) { ui.phBtn.disabled = on; }
         ui.unusedBtn.disabled = on;
         ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
@@ -7982,6 +7985,94 @@
         drawTb();
     }
 
+    // ---- Мокап телефона (Анимация › Макеты): iPhone или Android из шейпов, экран — прекомп настоящего размера или выделенный слой.
+    var PH_KEY = "sayframe.phone.v1";
+    var PH_DEFAULTS = { model: "iphone", color: "black", pose: "flat", size: 80, round: 100, screen: "precomp", shadow: true, appear: false };
+    var PH_CHOICES = { model: ["iphone", "android"], color: ["black", "silver", "gold", "blue", "pink"], pose: ["flat", "tilt", "lie"], screen: ["precomp", "layer"] };
+    var PH_BODY = { black: ["#222224", "#6d6d75"], silver: ["#d6d6d1", "#f0f0ec"], gold: ["#bda88c", "#dccbb0"], blue: ["#3d4a61", "#76839a"], pink: ["#e8c7cc", "#f6e2e5"] };
+
+    function phClean(src) {
+        var o = {}, k;
+        for (k in PH_DEFAULTS) { if (PH_DEFAULTS.hasOwnProperty(k)) { o[k] = src && typeof src === "object" && typeof src[k] === typeof PH_DEFAULTS[k] ? src[k] : PH_DEFAULTS[k]; } }
+        for (k in PH_CHOICES) { if (PH_CHOICES.hasOwnProperty(k) && PH_CHOICES[k].indexOf(o[k]) < 0) { o[k] = PH_DEFAULTS[k]; } }
+        o.size = Math.max(10, Math.min(100, Math.round(o.size) || 80));
+        o.round = Math.max(0, Math.min(150, Math.round(o.round)));
+        if (isNaN(o.round)) { o.round = 100; }
+        return o;
+    }
+
+    var phone = (function () { try { return phClean(JSON.parse(window.localStorage.getItem(PH_KEY) || "null")); } catch (e) { return phClean(null); } })();
+
+    function drawPhone() {
+        var p = ui.phPhone, rk = phone.round / 100;
+        if (!p) { return; }
+        p.classList.toggle("ph-android", phone.model === "android");
+        p.classList.toggle("ph-tilt", phone.pose === "tilt");
+        p.classList.toggle("ph-lie", phone.pose === "lie");
+        p.classList.toggle("ph-shadow", phone.shadow);
+        p.style.setProperty("--body", PH_BODY[phone.color][0]);
+        p.style.setProperty("--edge", PH_BODY[phone.color][1]);
+        p.style.setProperty("--r", String(Math.min(0.5, (phone.model === "android" ? 0.12 : 0.19) * rk)));
+        p.style.setProperty("--w", Math.round(40 + phone.size * 0.45) + "px");
+        ["model", "pose", "screen"].forEach(function (key) { pressGroupV(ui["ph" + key.charAt(0).toUpperCase() + key.slice(1)], phone[key]); });
+        Array.prototype.forEach.call(ui.phColors.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === phone.color ? "true" : "false"); });
+        ui.phSize.value = String(phone.size); ui.phSizeVal.textContent = phone.size + "%";
+        ui.phRound.value = String(phone.round); ui.phRoundVal.textContent = phone.round === 100 ? "Авто" : phone.round + "%";
+        ui.phShadow.checked = phone.shadow;
+        ui.phAppear.checked = phone.appear;
+    }
+
+    function setPhone(changes) {
+        var k;
+        for (k in changes) { if (changes.hasOwnProperty(k)) { phone[k] = changes[k]; } }
+        phone = phClean(phone);
+        try { window.localStorage.setItem(PH_KEY, JSON.stringify(phone)); } catch (e) {}
+        drawPhone();
+    }
+
+    async function onPhone() {
+        var res, r, name;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Собираю мокап…", "busy");
+        try {
+            res = await host("phoneMake", [{ model: phone.model, color: phone.color, pose: phone.pose, size: phone.size, round: phone.round,
+                shadow: phone.shadow, appear: phone.appear, screen: phone.screen },
+                { ctrl: "Телефон: управление", body: "Корпус", screen: "Экран", screenMask: "Экран", island: "Островок", camera: "Камера",
+                    iphone: "iPhone", android: "Android", bg: "Фон", video: "Ваше видео" }]);
+            setBusy(false);
+            r = res.phoneMake || res;
+            name = r.model === "android" ? "Android" : "iPhone";
+            setStatus("Мокап " + name + " готов. " + (r.screenComp ? "Экран — композиция «" + r.screenComp + "» (" + r.res.join("×") + "): откройте её и положите своё видео. " :
+                "На экран встал слой «" + r.used + "». ") + (r.fallback ? "Слой не был выделен, поэтому экран — композиция. " : "") +
+                "Двигайте и крутите телефон слоем «" + r.ctrl + "». Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function enablePhone() {
+        if (!ui.phPhone) { return; }
+        ["model", "pose", "screen"].forEach(function (key) {
+            ui["ph" + key.charAt(0).toUpperCase() + key.slice(1)].addEventListener("click", function (e) {
+                var b = e.target.closest ? e.target.closest("button[data-v]") : null, ch = {};
+                if (!b) { return; }
+                ch[key] = b.getAttribute("data-v");
+                setPhone(ch);
+            });
+        });
+        ui.phColors.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("button[data-v]") : null;
+            if (b) { setPhone({ color: b.getAttribute("data-v") }); }
+        });
+        ui.phSize.addEventListener("input", function () { setPhone({ size: Number(ui.phSize.value) }); });
+        ui.phRound.addEventListener("input", function () { setPhone({ round: Number(ui.phRound.value) }); });
+        ui.phShadow.addEventListener("change", function () { setPhone({ shadow: ui.phShadow.checked }); });
+        ui.phAppear.addEventListener("change", function () { setPhone({ appear: ui.phAppear.checked }); });
+        ui.phBtn.addEventListener("click", onPhone);
+        drawPhone();
+    }
+
     // ---- Pathfinder (вкладка «Шейп»): как Shape Modes в Illustrator, через Merge Paths.
     var PF_MODES = { unite: ["Объединить", "Все фигуры сливаются в одну"], front: ["Вычесть верхнюю", "Верхние фигуры вырезаются из нижней"],
         intersect: ["Пересечение", "Остаётся только общая часть"], exclude: ["Исключить", "Общая часть вырезается, остальное остаётся"],
@@ -10948,6 +11039,7 @@
         if (!PF_MODES[shape.pfLast]) { shape.pfLast = "unite"; }
         enablePathfinder();
         enableTextBox();
+        enablePhone();
         ui.ecOptsToggle.addEventListener("click", function () {
             motion.ecOpts = motion.ecOpts === false;
             showEcFold();
