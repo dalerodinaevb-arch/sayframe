@@ -3150,13 +3150,20 @@ var sayframeHost = (function () {
         return gi;
     }
 
-    function tbNewText(comp, text) {
+    // A light filled box gets dark text (the panel preview's purple), anything else white: the new text stays readable.
+    function tbTextColor(o) {
+        var c = o.color || [0.23, 0.06, 0.39];
+        if (o.look === "stroke" || o.style === "marker") { return [1, 1, 1]; }
+        return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2] > 0.6 ? [0.23, 0.06, 0.39] : [1, 1, 1];
+    }
+
+    function tbNewText(comp, text, color) {
         var t = comp.layers.addText(text), p, doc;
         try {
             p = acP(t, ["ADBE Text Properties", "ADBE Text Document"]);
             doc = p.value;
             doc.fontSize = Math.round(Math.min(comp.width, comp.height) * 0.08);
-            doc.fillColor = [1, 1, 1];
+            doc.fillColor = color || [1, 1, 1];
             try { doc.justification = ParagraphJustification.CENTER_JUSTIFY; } catch (e1) {}
             p.setValue(doc);
         } catch (e0) {}
@@ -6047,7 +6054,7 @@ var sayframeHost = (function () {
                 app.beginUndoGroup("Sayframe: text box");
                 try {
                     // No text selected: a new text in the middle of the comp gets the box.
-                    if (!texts.length) { texts.push(tbNewText(comp, lab.defaultText || "Text")); made = texts[0].name; }
+                    if (!texts.length) { texts.push(tbNewText(comp, lab.defaultText || "Text", tbTextColor(o))); made = texts[0].name; }
                     for (i = 0; i < texts.length; i++) { res.push(tbBuild(comp, texts[i], o, lab)); }
                 } finally {
                     app.endUndoGroup();

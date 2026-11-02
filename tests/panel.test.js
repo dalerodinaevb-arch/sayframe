@@ -5400,7 +5400,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await tbTab(p); await p.page.click("#tbBtn"); await p.idle();
-    check("TB6 no text layer selected: a new text «Ваш текст» in the middle gets the box, one undo step", /^Ваш текст,Плашка: Ваш текст,Плашка: строка Ваш текст 3,/.test(names(p)) && JSON.stringify(acAt(L(p, "Ваш текст"), "ADBE Transform Group", "ADBE Position").value) === "[960,540]" && L(p, "Плашка: Ваш текст").parent === L(p, "Ваш текст") && p.ae.log.undo.join() === "begin:Sayframe: text box,end" && /Текст не был выделен — создал «Ваш текст»/.test(await p.status()), names(p) + " | " + await p.status());
+    check("TB6 no text layer selected: a new text «Ваш текст» in the middle gets the box, one undo step; dark box → white text", JSON.stringify(acAt(L(p, "Ваш текст"), "ADBE Text Properties", "ADBE Text Document").value.fillColor) === "[1,1,1]" && /^Ваш текст,Плашка: Ваш текст,Плашка: строка Ваш текст 3,/.test(names(p)) && JSON.stringify(acAt(L(p, "Ваш текст"), "ADBE Transform Group", "ADBE Position").value) === "[960,540]" && L(p, "Плашка: Ваш текст").parent === L(p, "Ваш текст") && p.ae.log.undo.join() === "begin:Sayframe: text box,end" && /Текст не был выделен — создал «Ваш текст»/.test(await p.status()), names(p) + " | " + await p.status());
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await tbTab(p); await p.page.click('#tbSwatches [data-v="#ffffff"]'); await p.page.click("#tbBtn"); await p.idle();
+    check("TB6 a white box: the new text is dark so it shows", JSON.stringify(acAt(L(p, "Ваш текст"), "ADBE Text Properties", "ADBE Text Document").value.fillColor) === "[0.23,0.06,0.39]", JSON.stringify(acAt(L(p, "Ваш текст"), "ADBE Text Properties", "ADBE Text Document").value));
     await p.close();
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text" }] } });
     await tbTab(p); await p.page.click('#tbPresets [data-v="marker"]');
