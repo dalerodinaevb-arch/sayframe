@@ -2982,17 +2982,14 @@ var sayframeHost = (function () {
             orbitSet(L, "ADBE Rotate Y", sp.ry);
             cards.unshift(L);
             if (pre) {
-                // From behind a card can show only its back: the card comp (number, picture) hides when it faces away,
-                // and a plain back of the same shape and colour shows instead (the "Back visible" checkbox decides).
-                bk = comp.layers.addShape();
-                orbitCardShape(bk, kind, t, w, h, orbitColor(i));
-                orbitLiveShape(bk, kind, F, String(w), String(h));
-                bk.name = base + (i + 1) + ": " + (labels.back || "back");
-                bk.threeDLayer = true;
-                bk.parent = L;
-                orbitSet(bk, "ADBE Position", [w / 2, h / 2, 0]);
-                orbitSet(bk, "ADBE Rotate Y", 0);
-                bk.moveAfter(L);
+                // From behind a card shows only its back: a Fill effect on the card itself paints it plain, in the card's colour,
+                // when it faces away (the "Back visible" checkbox decides). No extra layer.
+                bk = null;
+                try {
+                    bk = L.property("ADBE Effect Parade").addProperty("ADBE Fill");
+                    bk.name = labels.backFx || "Back side";
+                    bk.property("ADBE Fill-0002").setValue(orbitColor(i));
+                } catch (eBk) { bk = null; }
                 backs.unshift(bk);
             } else {
                 backs.unshift(null);
@@ -3028,8 +3025,8 @@ var sayframeHost = (function () {
             orbitExpr(cards[i], "ADBE Rotate Y", sx + "a===0?0:-a");
             if (pre) {
                 orbitExpr(cards[i], "ADBE Scale", "[" + F.w + "/" + w + "*100," + F.h + "/" + h + "*100,100]");
-                orbitExpr(cards[i], "ADBE Opacity", sx + "i<n&&(" + F.b + "==1||" + face + ")?value:0");
-                orbitExpr(backs[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n&&" + F.b + "!=1&&!(" + face + ")?value:0");
+                orbitExpr(cards[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n?value:0");
+                if (backs[i]) { try { backs[i].property("ADBE Fill-0005").expression = F.b + "!=1&&!(" + face + ")?value:0"; } catch (eBx) {} }
             } else {
                 orbitExpr(cards[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n?value:0");
             }
@@ -3052,7 +3049,6 @@ var sayframeHost = (function () {
         }
         for (i = 0; i < cards.length; i++) { try { cards[i].selected = false; } catch (eS) {} }
         for (i = 0; i < nums.length; i++) { try { nums[i].selected = false; } catch (eT) {} }
-        for (i = 0; i < backs.length; i++) { try { if (backs[i]) { backs[i].selected = false; } } catch (eB) {} }
         ctrl.selected = true;
         return { cards: n, spare: nAll - n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, camRig: rig ? rig.name : "", hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
     }
@@ -3356,22 +3352,93 @@ var sayframeHost = (function () {
         return function () { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
     }
 
-    // A random line across the frame: 4-6 bends, some of them with a loop. The same number gives the same line.
+    // "Random": one of many figures (spiral, zigzag, straight line, heart, diamond, square, wave, triangle, arc),
+    // each with its own random size and bends. The same number gives the same figure. Few points, so it is easy
+    // to bend by hand; corners stay sharp.
     function ribRandom(seed, W, H) {
-        var r = ribRng(seed), pts = [], n = 4 + Math.floor(r() * 3), i, k, x, y, rad, dir, cy, t, step = W * 1.1 / n;
-        for (i = 0; i <= n; i++) {
-            x = -W * 0.55 + i * step;
-            y = (r() - 0.5) * H * 0.5;
-            pts.push([x, y]);
-            if (i > 0 && i < n && r() < 0.5) {
-                rad = H * (0.08 + r() * 0.07);
-                dir = r() < 0.5 ? 1 : -1;
-                cy = y - dir * rad;
-                for (k = 1; k < 8; k++) { t = k / 8 * 2 * Math.PI; pts.push([x + rad * Math.sin(t) + k / 8 * step * 0.12, cy + dir * rad * Math.cos(t)]); }
-                pts.push([x + step * 0.14, y]);
-            }
+        var r = ribRng(Math.floor(Math.abs(Number(seed) || 1)) * 7919 % 2147483629 + 17), kinds = ["spiral", "zigzag", "line", "heart", "diamond", "square", "wave", "triangle", "arc"];
+        var kind, M = Math.min(W, H), pts = [], corners = {}, i, n, t, a, rr, s, w, h, amp, turns, cnt, k, a0;
+        function poly(list) { for (var j = 0; j < list.length; j++) { pts.push(list[j]); corners[j] = true; } }
+        r(); r(); r();
+        kind = kinds[Math.floor(r() * kinds.length) % kinds.length];
+        if (kind === "spiral") {
+            turns = 2 + r() * 2; n = Math.ceil(turns * 16); a0 = r() * 2 * Math.PI;
+            for (i = 0; i <= n; i++) { t = a0 + i / n * turns * 2 * Math.PI; rr = M * 0.44 * (0.1 + 0.9 * i / n); pts.push([rr * Math.cos(t), rr * Math.sin(t)]); }
+            return { pts: pts, closed: false, step: 4, kind: kind };
         }
-        return pts;
+        if (kind === "zigzag") {
+            cnt = 4 + Math.floor(r() * 5); amp = H * (0.12 + r() * 0.16);
+            for (i = 0; i <= cnt; i++) { pts.push([(i / cnt - 0.5) * W * 1.1, (i % 2 ? -1 : 1) * amp]); corners[i] = true; }
+            return { pts: pts, closed: false, step: 1, corners: corners, kind: kind };
+        }
+        if (kind === "line") {
+            s = (r() - 0.5) * 0.6;
+            for (i = 0; i <= 2; i++) { t = (i / 2 - 0.5) * W * 1.1; pts.push([t, t * s * H / W]); }
+            return { pts: pts, closed: false, step: 1, kind: kind };
+        }
+        if (kind === "heart") {
+            n = 48; s = M * (0.36 + r() * 0.1) / 17;
+            for (i = 0; i < n; i++) { t = i / n * 2 * Math.PI; pts.push([16 * Math.pow(Math.sin(t), 3) * s, -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t) + 2.5) * s]); }
+            corners[0] = true; corners[24] = true;
+            return { pts: pts, closed: true, step: 4, corners: corners, kind: kind };
+        }
+        if (kind === "diamond") {
+            w = M * (0.24 + r() * 0.1); h = Math.min(w * (1.25 + r() * 0.35), M * 0.44);
+            poly([[0, -h], [w, 0], [0, h], [-w, 0]]);
+            return { pts: pts, closed: true, step: 1, corners: corners, kind: kind };
+        }
+        if (kind === "square") {
+            w = M * (0.28 + r() * 0.12); a = (r() - 0.5) * 0.4;
+            for (i = 0; i < 4; i++) { t = a + Math.PI / 4 + i * Math.PI / 2; pts.push([w * Math.SQRT2 * Math.cos(t), w * Math.SQRT2 * Math.sin(t)]); corners[i] = true; }
+            return { pts: pts, closed: true, step: 1, corners: corners, kind: kind };
+        }
+        if (kind === "triangle") {
+            w = M * (0.36 + r() * 0.1); a = (r() - 0.5) * 0.5;
+            for (i = 0; i < 3; i++) { t = a - Math.PI / 2 + i * 2 * Math.PI / 3; pts.push([w * Math.cos(t), w * Math.sin(t) + w * 0.18]); corners[i] = true; }
+            return { pts: pts, closed: true, step: 1, corners: corners, kind: kind };
+        }
+        if (kind === "arc") {
+            a = (0.6 + r() * 0.45) * Math.PI; rr = W * 0.5 / Math.max(0.5, Math.sin(a / 2)); k = r() < 0.5 ? 1 : -1; n = 24;
+            for (i = 0; i <= n; i++) { t = -a / 2 + i / n * a; pts.push([rr * Math.sin(t), -k * rr * Math.cos(t)]); }
+            // Centred, and small enough to stay inside the frame.
+            w = 0; h = 1e9; for (i = 0; i <= n; i++) { w = Math.max(w, pts[i][1]); h = Math.min(h, pts[i][1]); }
+            s = Math.min(1, H * 0.7 / Math.max(1, w - h), W * 1.0 / Math.max(1, 2 * rr * (a > Math.PI ? 1 : Math.sin(a / 2))));
+            for (i = 0; i <= n; i++) { pts[i] = [pts[i][0] * s, (pts[i][1] - (w + h) / 2) * s]; }
+            return { pts: pts, closed: false, step: 6, kind: kind };
+        }
+        // wave: one to three waves
+        cnt = 1 + Math.floor(r() * 3); amp = H * (0.1 + r() * 0.16); n = cnt * 16; a0 = r() < 0.5 ? 1 : -1;
+        for (i = 0; i <= n; i++) { t = i / n; pts.push([(t - 0.5) * W * 1.1, -a0 * Math.sin(t * cnt * 2 * Math.PI) * amp]); }
+        return { pts: pts, closed: false, step: 4, kind: "wave" };
+    }
+
+    // A line with few points, easy to bend by hand: every step-th point of the dense line is kept, its handles
+    // point along the dense line and are a third of the way to the next kept point. At a corner the two handles
+    // point at their own neighbours, so it stays sharp.
+    function ribBez(sm) {
+        var p = sm.pts, n = p.length, st = sm.step || 1, cr = sm.corners || {}, keep = [], i, k, a, b, dx, dy, d, ex, ey, lenTo, ins = [], outs = [], v = [];
+        for (i = 0; i < n; i += st) { keep.push(i); }
+        if (!sm.closed && keep[keep.length - 1] !== n - 1) { if (n - 1 - keep[keep.length - 1] < st / 2 && keep.length > 1) { keep.pop(); } keep.push(n - 1); }
+        function at(j) { return p[((j % n) + n) % n]; }
+        function arc(i0, i1) {
+            var L = 0, j, q, r;
+            for (j = i0; j < i1; j++) { q = at(j); r = at(j + 1); L += Math.sqrt((r[0] - q[0]) * (r[0] - q[0]) + (r[1] - q[1]) * (r[1] - q[1])); }
+            return L;
+        }
+        function unit(x, y) { var l = Math.sqrt(x * x + y * y) || 1; return [x / l, y / l]; }
+        for (k = 0; k < keep.length; k++) {
+            i = keep[k];
+            a = sm.closed ? at(i - 1) : p[Math.max(0, i - 1)];
+            b = sm.closed ? at(i + 1) : p[Math.min(n - 1, i + 1)];
+            if (cr[i]) { d = unit(p[i][0] - a[0], p[i][1] - a[1]); dx = d[0]; dy = d[1]; d = unit(b[0] - p[i][0], b[1] - p[i][1]); ex = d[0]; ey = d[1]; }
+            else { d = unit(b[0] - a[0], b[1] - a[1]); dx = ex = d[0]; dy = ey = d[1]; }
+            lenTo = (k > 0 || sm.closed) ? arc(k > 0 ? keep[k - 1] : keep[keep.length - 1] - n, i) / 3 : 0;
+            ins.push([-dx * lenTo, -dy * lenTo]);
+            lenTo = (k < keep.length - 1 || sm.closed) ? arc(i, k < keep.length - 1 ? keep[k + 1] : keep[0] + n) / 3 : 0;
+            outs.push([ex * lenTo, ey * lenTo]);
+            v.push([p[i][0], p[i][1]]);
+        }
+        return { vertices: v, inTangents: ins, outTangents: outs, closed: !!sm.closed };
     }
 
     // Line forms, turned by angle (degrees, 0 = left to right, -90 = bottom to top). A turned line is drawn
@@ -3389,16 +3456,16 @@ var sayframeHost = (function () {
 
     function ribSample0(form, W, H, o) {
         var pts = [], i, n, t, u, m = Math.min(W, H), x, y, r, xs = [], ys = [], s, x0, x1, y0, y1;
-        if (form === "random") { return { pts: ribRandom(o && o.seed, W, H), closed: false }; }
+        if (form === "random") { return ribRandom(o && o.seed, W, H); }
         if (form === "circle") {
             r = m * 0.3;
             for (i = 0; i < 24; i++) { t = i / 24 * 2 * Math.PI; pts.push([r * Math.sin(t), -r * Math.cos(t)]); }
-            return { pts: pts, closed: true };
+            return { pts: pts, closed: true, step: 6 };
         }
         if (form === "spiral") {
             n = 44;
             for (i = 0; i <= n; i++) { t = i / n * 5 * Math.PI; r = m * 0.4 * (0.12 + 0.88 * i / n); pts.push([r * Math.cos(t), r * Math.sin(t)]); }
-            return { pts: pts, closed: false };
+            return { pts: pts, closed: false, step: 4 };
         }
         if (form === "loops") {
             // A prolate cycloid: three loops in a row.
@@ -3408,16 +3475,17 @@ var sayframeHost = (function () {
             for (i = 0; i <= n; i++) { x0 = Math.min(x0, xs[i]); x1 = Math.max(x1, xs[i]); y0 = Math.min(y0, ys[i]); y1 = Math.max(y1, ys[i]); }
             s = Math.min(W * 0.9 / (x1 - x0), H * 0.62 / (y1 - y0));
             for (i = 0; i <= n; i++) { pts.push([(xs[i] - (x0 + x1) / 2) * s, (ys[i] - (y0 + y1) / 2) * s]); }
-            return { pts: pts, closed: false };
+            return { pts: pts, closed: false, step: 3 };
         }
         // wave: two full waves across the frame
         n = 32;
         for (i = 0; i <= n; i++) { u = i / n; x = (u - 0.5) * W * 1.1; y = -Math.sin(u * 4 * Math.PI) * H * 0.18; pts.push([x, y]); }
-        return { pts: pts, closed: false };
+        return { pts: pts, closed: false, step: 4 };
     }
 
     function ribShape(sm) {
         var p = sm.pts, n = p.length, s = new Shape(), ins = [], outs = [], i, a, b, tx, ty;
+        if (sm.step >= 1) { b = ribBez(sm); s.vertices = b.vertices; s.inTangents = b.inTangents; s.outTangents = b.outTangents; s.closed = b.closed; return s; }
         for (i = 0; i < n; i++) {
             a = sm.closed ? p[(i - 1 + n) % n] : p[Math.max(0, i - 1)];
             b = sm.closed ? p[(i + 1) % n] : p[Math.min(n - 1, i + 1)];
@@ -3628,7 +3696,7 @@ var sayframeHost = (function () {
     // R and T are the ribbon and its text, already made; top is the highest layer of the ribbon so far.
     function ribOverlap(comp, o, labels, R, T, Mt, sh, ctx) {
         var W = ctx.width, fs = ctx.fs, L = ctx.len, cut = ribCuts(sh, W), cuts = cut.cuts, n = cuts.length + 1, i, a, b, Rk, Tk, Sk, top = Mt || T;
-        var adv, d = W / 2 + fs / 2, sTo, s0, s1, pieces = [], shadows = [], tf, k, gi = 1, matte = Mt && typeof Mt.enabled !== "undefined" && !Mt.enabled && typeof T.setTrackMatte === "function";
+        var adv, d = W / 2 + fs / 2, sTo, s0, s1, texts = [], pieces = [], shadows = [], tf, k, gi = 1, matte = Mt && typeof Mt.enabled !== "undefined" && !Mt.enabled && typeof T.setTrackMatte === "function";
         if (n < 2) { return { pieces: 1, crossings: 0 }; }
         adv = ribAdvances(comp, ctx.unit, fs, ctx.tc, ctx.uw);
         if (ctx.closed && adv.period > 0) {
@@ -3689,9 +3757,29 @@ var sayframeHost = (function () {
             for (k = 0; k < ctx.tr.length; k++) { try { orbitSet(Tk, ctx.tr[k][0], ctx.tr[k][1]); } catch (eP) {} }
             Tk.moveBefore(top);
             top = Tk;
+            texts.push(Tk);
             try { Tk.selected = false; Rk.selected = false; } catch (eS) {}
         }
-        return { pieces: n, crossings: cut.crossings };
+        return { pieces: n, crossings: cut.crossings, ribbons: pieces, texts: texts };
+    }
+
+    // A gradient on a ribbon or text layer: a Gradient Ramp across the frame at the given angle, then
+    // Set Matte with the layer's own alpha, so the colours stay inside the ribbon or the letters.
+    function ribGrad(l, g, labels) {
+        var e, m, a = Number(g.angle) || 0, F = ["ADBE Effect Parade"];
+        var half = "var a=" + a + "*Math.PI/180, d=[Math.cos(a),Math.sin(a)], c=[thisComp.width/2,thisComp.height/2], r=Math.abs(d[0])*thisComp.width/2+Math.abs(d[1])*thisComp.height/2;";
+        e = acAdd(l, F, "ADBE Ramp");
+        try { acP(l, F.concat([e])).name = labels.grad || "Gradient"; } catch (eN) {}
+        acP(l, F.concat([e, "ADBE Ramp-0002"])).setValue([g.a[0], g.a[1], g.a[2], 1]);
+        acP(l, F.concat([e, "ADBE Ramp-0004"])).setValue([g.b[0], g.b[1], g.b[2], 1]);
+        try { acP(l, F.concat([e, "ADBE Ramp-0005"])).setValue(1); } catch (eS) {}
+        acP(l, F.concat([e, "ADBE Ramp-0001"])).expression = half + " fromComp(c - d*r)";
+        acP(l, F.concat([e, "ADBE Ramp-0003"])).expression = half + " fromComp(c + d*r)";
+        m = acAdd(l, F, "ADBE Set Matte3");
+        try { acP(l, F.concat([m])).name = labels.gradMatte || "Gradient: shape"; } catch (eM) {}
+        try { acP(l, F.concat([m, "ADBE Set Matte3-0001"])).setValue(l.index); } catch (eL) {}
+        try { acP(l, F.concat([m, "ADBE Set Matte3-0002"])).setValue(4); } catch (eU) {}
+        return e;
     }
 
     function ribBuild(comp, o, labels) {
@@ -3733,7 +3821,8 @@ var sayframeHost = (function () {
             track = 40 + (len - j * uw) / (j * unit.length) / fs * 1000;
         } else {
             // An open line: enough for the whole line and for everything that runs past during the comp.
-            need = len + (o.run ? speed * 10 * comp.duration : 0) + uw;
+            // Half as much again, so the line can be made longer by hand and still be full.
+            need = len * 1.5 + (o.run ? speed * 10 * comp.duration : 0) + uw;
             for (j = 0; j < 400 && j * uw < need; j++) { str += unit; }
             track = 40;
         }
@@ -3743,7 +3832,7 @@ var sayframeHost = (function () {
             try { doc.tracking = Math.round(track * 10) / 10; } catch (eT2) {}
             tp.setValue(doc);
         } catch (eD) {}
-        ribOnPath(T, sh, fs, false);
+        var tmi = ribOnPath(T, sh, fs, false);
         // Settings in Effect Controls of the text: the ribbon reads its width and colour from there.
         kitControl(T, "ADBE Slider Control", labels.width || "Width", width);
         kitControl(T, "ADBE Slider Control", labels.speed || "Speed", speed);
@@ -3787,9 +3876,29 @@ var sayframeHost = (function () {
             try { trs = [["ADBE Anchor Point", acTransform(T, "ADBE Anchor Point").value], ["ADBE Position", acTransform(T, "ADBE Position").value], ["ADBE Scale", acTransform(T, "ADBE Scale").value], ["ADBE Rotate Z", acTransform(T, "ADBE Rotate Z").value]]; } catch (eTr) {}
             ov = ribOverlap(comp, o, labels, R, T, Mt, sh, { width: width, fs: fs, len: len, unit: unit, uw: uw, tc: tc, rc: rc, str: str, track: Math.round(track * 10) / 10, closed: !!sh.closed, reps: j, tr: trs });
         }
-        try { R.selected = false; } catch (eS) {}
-        T.selected = true;
-        return { mode: "ribbon", pieces: ov ? ov.pieces : 0, form: form, seed: form === "random" ? Math.floor(Number(o.seed) || 1) : 0, angle: form === "path" ? 0 : Number(o.angle) || 0, dir: o.dir === "back" ? "back" : "fwd", ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j, matte: Mt ? Mt.name : "" };
+        // One line for everything: the text and the matte follow the ribbon's line and move with the ribbon,
+        // so bending or moving the line by hand keeps all of it together. (With overlaps the pieces are cut
+        // from the line as it is now, so they stay as made.)
+        var linked = !ov, lineExpr = "thisComp.layer(" + tbQ(R.name) + ").content(1).content(1).path";
+        if (linked) {
+            try { acP(T, ["ADBE Mask Parade", tmi, "ADBE Mask Shape"]).expression = lineExpr; } catch (eL1) { linked = false; }
+            if (Mt) { try { acGP(Mt, gi, ["ADBE Vectors Group", 1, "ADBE Vector Shape"]).expression = lineExpr; Mt.parent = R; } catch (eL2) {} }
+            try { T.parent = R; } catch (eL3) {}
+        }
+        // Gradients go on last, when every layer sits at its final index (Set Matte points at the layer itself).
+        var gi2;
+        if (o.ribbonGrad && o.ribbonGrad.a && o.ribbonGrad.b) {
+            ribGrad(R, o.ribbonGrad, labels);
+            if (ov && ov.ribbons) { for (gi2 = 0; gi2 < ov.ribbons.length; gi2++) { ribGrad(ov.ribbons[gi2], o.ribbonGrad, labels); } }
+        }
+        if (o.textGrad && o.textGrad.a && o.textGrad.b) {
+            ribGrad(T, o.textGrad, labels);
+            if (ov && ov.texts) { for (gi2 = 0; gi2 < ov.texts.length; gi2++) { ribGrad(ov.texts[gi2], o.textGrad, labels); } }
+        }
+        try { T.selected = false; } catch (eS) {}
+        R.selected = true;
+        try { acGP(R, gi, ["ADBE Vectors Group", 1, "ADBE Vector Shape"]).selected = true; } catch (eSel) {}
+        return { mode: "ribbon", linked: linked, pieces: ov ? ov.pieces : 0, form: form, seed: form === "random" ? Math.floor(Number(o.seed) || 1) : 0, angle: form === "path" ? 0 : Number(o.angle) || 0, dir: o.dir === "back" ? "back" : "fwd", ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j, matte: Mt ? Mt.name : "" };
     }
 
     function ringBuild(comp, o, labels) {
@@ -4505,8 +4614,9 @@ var sayframeHost = (function () {
     // ------------------------------------------------------- quick export
     // H.264 template of the output module by quality: light 5, normal 15, max 40 Mbps (the names
     // After Effects 2023+ ships). Falls back to any H.264 template, then to anything MP4.
-    function exTemplate(list, quality) {
-        var want = quality === "light" ? 5 : (quality === "max" ? 40 : 15), i, m, best = "", any = "", mp4 = "", d, bestD = 1e9;
+    // mbps (optional) asks for that bitrate; the nearest H.264 template wins.
+    function exTemplate(list, quality, mbps) {
+        var want = Number(mbps) > 0 ? Number(mbps) : (quality === "light" ? 5 : (quality === "max" ? 40 : 15)), i, m, best = "", any = "", mp4 = "", d, bestD = 1e9;
         list = list || [];
         for (i = 0; i < list.length; i++) {
             m = /H\.?264.*?(\d+)\s*Mbps/i.exec(String(list[i]));
@@ -4543,6 +4653,120 @@ var sayframeHost = (function () {
 
     // A comp of the platform's size with the source comp inside: fit (black bars), crop (cover),
     // or blur (fit, over a blurred cover copy that fills the edges).
+    // Bitrate (Mbps) written in an H.264 template's name, 0 when none.
+    function exTplRate(tpl) { var m = /H\.?264.*?(\d+)\s*Mbps/i.exec(String(tpl || "")); return m ? Number(m[1]) : 0; }
+
+    // ---- Media Encoder at any bitrate. After Effects has H.264 templates only for 5 / 15 / 40 Mbps, so for
+    // another bitrate AE renders a 40 Mbps file first and Media Encoder re-encodes it with a preset made
+    // from its own H.264 preset ("Match Source - High bitrate"), the bitrate changed.
+    var exEprBase = null;
+
+    function exReadText(f) {
+        var t = "";
+        try { f.encoding = "UTF-8"; if (f.open("r")) { t = f.read(); f.close(); } } catch (e) {}
+        return t;
+    }
+
+    function exIsH264Epr(t) {
+        return t.indexOf("<ParamIdentifier>ADBEVideoTargetBitrate</ParamIdentifier>") >= 0 && t.indexOf("<ExporterClassID>1313424203</ExporterClassID>") >= 0;
+    }
+
+    // Folders that hold Media Encoder's own presets, newest version first.
+    function exEprDirs() {
+        var roots = [], out = [], i, j, k, ames, apps, r;
+        try { r = Folder.appPackage.parent.parent; if (r && r.exists) { roots.push(r); } } catch (e0) {}
+        roots.push(new Folder("/Applications"), new Folder("C:/Program Files/Adobe"));
+        for (i = 0; i < roots.length; i++) {
+            if (!roots[i].exists) { continue; }
+            ames = roots[i].getFiles(function (f) { return f instanceof Folder && /^Adobe Media Encoder/i.test(decodeURI(f.name)); }) || [];
+            ames.sort(function (a, b) { return decodeURI(a.name) < decodeURI(b.name) ? 1 : -1; });
+            for (j = 0; j < ames.length; j++) {
+                out.push(new Folder(ames[j].fsName + "/MediaIO/systempresets"));
+                apps = ames[j].getFiles(function (f) { return f instanceof Folder && /\.app$/i.test(decodeURI(f.name)); }) || [];
+                for (k = 0; k < apps.length; k++) { out.push(new Folder(apps[k].fsName + "/Contents/MediaIO/systempresets")); }
+            }
+        }
+        return out;
+    }
+
+    // The H.264 preset to start from: "Match Source - High bitrate" if found, else any H.264 one.
+    function exFindEpr() {
+        var dirs = exEprDirs(), best = null, any = null, seen = 0, i;
+        function walk(d, depth) {
+            var list, n, f, t, nm;
+            if (best || depth > 4 || seen > 600 || !d.exists) { return; }
+            list = d.getFiles() || [];
+            for (n = 0; n < list.length && !best; n++) {
+                f = list[n];
+                if (f instanceof Folder) { walk(f, depth + 1); continue; }
+                nm = decodeURI(f.name);
+                if (!/\.epr$/i.test(nm)) { continue; }
+                seen++;
+                t = exReadText(f);
+                if (!exIsH264Epr(t)) { continue; }
+                if (/match source/i.test(nm) && /high bitrate/i.test(nm)) { best = { path: f.fsName, text: t }; }
+                else if (!any) { any = { path: f.fsName, text: t }; }
+            }
+        }
+        for (i = 0; i < dirs.length && !best; i++) { walk(dirs[i], 0); }
+        return best || any;
+    }
+
+    // Sets the value of one parameter of an .epr text (the <ParamValue> inside its <ExporterParam>).
+    function exEprSet(t, id, val) {
+        var k = t.indexOf("<ParamIdentifier>" + id + "</ParamIdentifier>"), a, b, next;
+        if (k < 0) { return t; }
+        next = t.indexOf("</ExporterParam>", k);
+        a = t.indexOf("<ParamValue>", k);
+        b = a >= 0 ? t.indexOf("</ParamValue>", a) : -1;
+        if (a < 0 || b < 0 || (next >= 0 && a > next)) { return t; }
+        return t.substring(0, a + 12) + val + t.substring(b);
+    }
+
+    function exHex(n) { var s = "", i; for (i = 0; i < n; i++) { s += "0123456789abcdef".charAt(Math.floor(Math.random() * 16)); } return s; }
+
+    // Writes "Sayframe N Mbps.epr" into the temp folder; returns its path or "".
+    function exMakeEpr(mbps, w, h) {
+        var t, f, dir, num = function (v) { return Math.round(v) === v ? v + "." : String(v); };
+        if (!exEprBase) { exEprBase = exFindEpr() || false; }
+        if (!exEprBase) { return ""; }
+        t = exEprBase.text;
+        t = exEprSet(t, "ADBEVideoTargetBitrate", num(mbps));
+        t = exEprSet(t, "ADBEVideoMaxBitrate", num(Math.round(mbps * 1.25 * 10) / 10));
+        t = exEprSet(t, "ADBEVideoMinBitrate", num(Math.max(0.5, Math.round(mbps * 0.5 * 10) / 10)));
+        t = exEprSet(t, "ADBEVideoMatchSource", "true");
+        t = exEprSet(t, "ADBEVideoWidth", String(w));
+        t = exEprSet(t, "ADBEVideoHeight", String(h));
+        t = t.replace(/<PresetID>[^<]*<\/PresetID>/, "<PresetID>" + exHex(8) + "-" + exHex(4) + "-" + exHex(4) + "-" + exHex(4) + "-" + exHex(12) + "</PresetID>");
+        t = t.replace(/<PresetName>[^<]*<\/PresetName>/, "<PresetName>Sayframe " + mbps + " Mbps</PresetName>");
+        dir = new Folder(Folder.temp.fsName + "/Sayframe");
+        if (!dir.exists) { dir.create(); }
+        f = new File(dir.fsName + "/Sayframe " + mbps + " Mbps.epr");
+        f.encoding = "UTF-8";
+        if (!f.open("w")) { return ""; }
+        f.write(t);
+        f.close();
+        return f.fsName;
+    }
+
+    function exAmeTarget() { try { return BridgeTalk.getSpecifier("ame") || ""; } catch (e) { return ""; } }
+
+    function exJs(s) { return '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"'; }
+
+    // Sends the file to Media Encoder with the preset and starts its queue. The source is deleted
+    // after the encode. Returns true when Media Encoder took it.
+    function exSendAme(target, src, epr, out) {
+        var bt = new BridgeTalk(), ok = false;
+        bt.target = target;
+        bt.body = "var fe = app.getFrontend(), w = fe.addFileToBatch(" + exJs(src) + ", \"H.264\", " + exJs(epr) + ", " + exJs(out) + ");" +
+            "if (w) { try { w.addEventListener(\"onEncodeFinished\", function () { try { new File(" + exJs(src) + ").remove(); } catch (e) {} }, false); } catch (e1) {}" +
+            " app.getEncoderHost().runBatch(); \"ok\"; } else { \"fail\"; }";
+        bt.onResult = function (m) { ok = String(m.body) === "ok"; };
+        bt.onError = function () { ok = false; };
+        try { bt.send(90); } catch (e) { return false; }
+        return ok;
+    }
+
     function exWrap(comp, w, h, fit, name, binName) {
         var proj = app.project, c, bg, L, fx, sx = w / comp.width, sy = h / comp.height;
         var fitS = Math.min(sx, sy) * 100, cover = Math.max(sx, sy) * 100;
@@ -6314,7 +6538,7 @@ var sayframeHost = (function () {
         exportOne: function (o) {
             return reply(function () {
                 var comp = activeComp(), proj = app.project, rq = proj.renderQueue, w, h, wrap = null, it, om, tpl, file, dir;
-                var parked = [], i, q, mode, base, size = 0, tpls = [];
+                var parked = [], i, q, mode, base, size = 0, tpls = [], want, rate, ameT = "", epr = "", src = null;
                 if (!o || typeof o !== "object") { throw new Error("BAD_EXPORT"); }
                 if (!rq || !rq.items) { throw new Error("NO_RENDER_QUEUE"); }
                 if (rq.rendering) { throw new Error("EXPORT_BUSY"); }
@@ -6341,12 +6565,37 @@ var sayframeHost = (function () {
                     }
                     om = it.outputModule(1);
                     try { tpls = om.templates; } catch (e3) {}
-                    tpl = exTemplate(tpls, o.quality);
+                    tpl = exTemplate(tpls, o.quality, o.mbps);
+                    want = Number(o.mbps) > 0 ? Number(o.mbps) : exTplRate(tpl);
+                    rate = exTplRate(tpl);
+                    // Another bitrate than AE's templates: AE makes a 40 Mbps file, Media Encoder the final one.
+                    if (o.ame && rq.canQueueInAME && tpl && want && rate !== want && want < 40) {
+                        ameT = exAmeTarget();
+                        epr = ameT ? exMakeEpr(want, w, h) : "";
+                        if (epr) { tpl = exTemplate(tpls, "max", 40); }
+                    }
                     if (tpl) { om.applyTemplate(tpl); }
                     file = exFreeFile(dir.fsName, base, ".mp4");
-                    om.file = file;
+                    if (epr) {
+                        src = new File(Folder.temp.fsName + "/Sayframe/" + base + " (40 Mbps " + new Date().getTime() + ").mp4");
+                        om.file = src;
+                    } else {
+                        om.file = file;
+                    }
                     if (!tpl && !o.ame) { throw new Error("NO_H264"); }
-                    if (o.ame && rq.canQueueInAME) {
+                    if (epr) {
+                        rq.render();
+                        try { it.remove(); } catch (e11) {}
+                        if (wrap) { try { wrap.remove(); } catch (e12) {} wrap = null; }
+                        if (exSendAme(ameT, src.fsName, epr, file.fsName)) {
+                            mode = "ame"; rate = want;
+                        } else {
+                            // Media Encoder did not answer: keep the 40 Mbps file as the result.
+                            try { if (src.copy(file.fsName)) { src.remove(); } } catch (e13) {}
+                            mode = "ae"; rate = 40;
+                            try { size = new File(file.fsName).length; } catch (e14) {}
+                        }
+                    } else if (o.ame && rq.canQueueInAME) {
                         rq.queueInAME(true);
                         mode = "ame";
                         try { it.render = false; } catch (e4) {}
@@ -6365,7 +6614,7 @@ var sayframeHost = (function () {
                     for (i = 0; i < parked.length; i++) { try { parked[i].render = true; } catch (e10) {} }
                     app.endUndoGroup();
                 }
-                return { path: file.fsName, name: decodeURI(file.name), size: size, mode: mode, w: w, h: h, wrapped: !!wrap || (w !== comp.width || h !== comp.height), template: tpl };
+                return { path: file.fsName, name: decodeURI(file.name), size: size, mode: mode, w: w, h: h, wrapped: !!wrap || (w !== comp.width || h !== comp.height), template: tpl, mbps: rate || 0 };
             });
         },
 

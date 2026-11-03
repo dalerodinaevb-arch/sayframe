@@ -596,7 +596,7 @@ function makeAE(opts, tmpDir) {
   // rq.templates — output module templates (default: the H.264 ones of AE 2023+). render() writes a 2.5 MB file per item.
   if (opts.rq) {
     const rqo = opts.rq, items = [];
-    log.rq = { added: [], rendered: [], ame: [], removed: 0 };
+    log.rq = { added: [], rendered: [], ame: [], removed: 0, bt: [] };
     (rqo.queued || []).forEach((n) => items.push({ name: n, render: true, comp: { name: n } }));
     project.renderQueue = { rendering: !!rqo.rendering, canQueueInAME: !!rqo.ame, get numItems() { return items.length; }, item(i) { return items[i - 1]; },
       items: { add(c) {
@@ -622,7 +622,7 @@ function makeAE(opts, tmpDir) {
   Folder.prototype.selectDlg = function (prompt) { log.folderDlg.push({ path: this.fsName, prompt }); return opts.pickFolder === null ? null : new Folder(opts.pickFolder || this.fsName); };
   Folder.prototype.execute = function () { log.executed = (log.executed || []).concat([this.fsName]); return true; };
   Folder.prototype.create = function () { fs.mkdirSync(this.fsName, { recursive: true }); return true; };
-  Folder.prototype.getFiles = function () { return fs.readdirSync(this.fsName).sort().map((n) => { const f = path.join(this.fsName, n); return fs.statSync(f).isDirectory() ? new Folder(f) : new File(f); }); };
+  Folder.prototype.getFiles = function (filter) { return fs.readdirSync(this.fsName).sort().map((n) => { const f = path.join(this.fsName, n); return fs.statSync(f).isDirectory() ? new Folder(f) : new File(f); }).filter((f) => typeof filter !== "function" || filter(f)); };
   const aeRoot = path.join(tmpDir, "Applications", "Adobe After Effects 2026");
   const write = (base, files) => Object.keys(files || {}).forEach((rel) => { const f = path.join(base, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, files[rel]); });
   fs.mkdirSync(path.join(aeRoot, "Adobe After Effects 2026.app"), { recursive: true });
@@ -630,6 +630,34 @@ function makeAE(opts, tmpDir) {
   write(path.join(tmpDir, "Documents", "Adobe", "After Effects 2026", "User Presets"), opts.userPresets);
   Folder.appPackage = new Folder(path.join(aeRoot, "Adobe After Effects 2026.app"));
   Folder.myDocuments = new Folder(path.join(tmpDir, "Documents"));
+  Folder.temp = new Folder(path.join(tmpDir, "Temp"));
+  fs.mkdirSync(Folder.temp.fsName, { recursive: true });
+  // Plain text files, as ExtendScript's File: open / read / write / close, copy, remove.
+  File.prototype.open = function (mode) { this._mode = mode; this._buf = ""; return mode === "r" ? fs.existsSync(this.fsName) : fs.existsSync(path.dirname(this.fsName)); };
+  File.prototype.read = function () { return fs.readFileSync(this.fsName, "utf8"); };
+  File.prototype.write = function (t) { this._buf += String(t); return true; };
+  File.prototype.close = function () { if (this._mode === "w") fs.writeFileSync(this.fsName, this._buf, "utf8"); return true; };
+  File.prototype.copy = function (to) { fs.copyFileSync(this.fsName, String(to)); return true; };
+  File.prototype.remove = function () { try { fs.unlinkSync(this.fsName); return true; } catch (e) { return false; } };
+  // Media Encoder (opts.rq.ameApp): installed next to After Effects with its H.264 preset; BridgeTalk takes
+  // scripts for it (log.rq.bt). ameApp "silent": Media Encoder does not answer.
+  function BridgeTalk() {}
+  BridgeTalk.getSpecifier = (n) => (opts.rq && opts.rq.ameApp && n === "ame" ? "ame-26.0" : null);
+  BridgeTalk.prototype.send = function () {
+    log.rq.bt.push({ target: this.target, body: this.body });
+    if (opts.rq.ameApp === "silent") { if (this.onError) this.onError({ body: "timeout" }); return false; }
+    if (this.onResult) this.onResult({ body: "ok" });
+    return true;
+  };
+  if (opts.rq && opts.rq.ameApp) {
+    const pre = path.join(tmpDir, "Applications", "Adobe Media Encoder 2026", "Adobe Media Encoder 2026.app", "Contents", "MediaIO", "systempresets");
+    const param = (id, v) => "\t<ExporterParam ObjectID=\"1\" ClassID=\"x\" Version=\"1\">\n\t\t<ParamIdentifier>" + id + "</ParamIdentifier>\n\t\t<ParamType>3</ParamType>\n\t\t<ParamValue>" + v + "</ParamValue>\n\t</ExporterParam>\n";
+    const epr = (cls) => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<PremiereData Version=\"3\">\n\t<PresetID>9bb57b43-b3d1-448f-bdb0-4c5e3dcf9749</PresetID>\n\t<ExporterClassID>" + cls + "</ExporterClassID>\n\t<PresetName>Match Source - High bitrate</PresetName>\n" +
+      param("ADBEVideoMatchSource", "false") + param("ADBEVideoWidth", "1920") + param("ADBEVideoHeight", "1080") + param("ADBEVideoBitrateEncoding", "2") + param("ADBEVideoMinBitrate", "2.") + param("ADBEVideoTargetBitrate", "10.") + param("ADBEVideoMaxBitrate", "12.") + "</PremiereData>\n";
+    fs.mkdirSync(path.join(pre, "4E49434B_48323634"), { recursive: true }); fs.mkdirSync(path.join(pre, "4D504547_4D504547"), { recursive: true });
+    fs.writeFileSync(path.join(pre, "4D504547_4D504547", "Match Source - High bitrate.epr"), epr("1297106761"));
+    fs.writeFileSync(path.join(pre, "4E49434B_48323634", "Match Source - High bitrate.epr"), epr("1313424203"));
+  }
   log.acAdds = []; log.acLayers = []; log.acRemoved = []; log.layersRemoved = []; log.addedLayers = [];
   log.snaps = []; log.saveDlg = []; log.events = []; log.tasks = []; log.folderDlg = [];
   File.prototype.saveDlg = function (prompt) { log.saveDlg.push({ path: this.fsName, prompt }); return opts.saveAs === null ? null : new File(opts.saveAs || this.fsName); };
@@ -675,7 +703,7 @@ function makeAE(opts, tmpDir) {
     purge: (t) => { log.purges = (log.purges || []).concat([t]); },
     fonts: opts.noFonts ? undefined : { allFonts: [[{ postScriptName: "Inter-Regular" }, { postScriptName: "Inter-Bold" }], [{ postScriptName: "Montserrat-Bold" }]],
       getFontsByPostScriptName: (n) => (/^(Inter|Montserrat|ArialMT)/.test(n) ? [{ postScriptName: n }] : []) } };
-  const ctx = vm.createContext({ app, PurgeTarget: opts.noPurge ? undefined : { ALL_CACHES: 1012, UNDO_CACHES: 1013, SNAPSHOT_CACHES: 1014, IMAGE_CACHES: 1015 }, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212, OVERLAY: 5224 }, TrackMatteType: { ALPHA: 5013, NO_TRACK_MATTE: 5012 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, Window, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {}, screens: [{ left: 0, top: 0, right: 1440, bottom: 900 }] },
+  const ctx = vm.createContext({ app, PurgeTarget: opts.noPurge ? undefined : { ALL_CACHES: 1012, UNDO_CACHES: 1013, SNAPSHOT_CACHES: 1014, IMAGE_CACHES: 1015 }, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212, OVERLAY: 5224 }, TrackMatteType: { ALPHA: 5013, NO_TRACK_MATTE: 5012 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, Window, BridgeTalk, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {}, screens: [{ left: 0, top: 0, right: 1440, bottom: 900 }] },
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   ctx.$.global = ctx;
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
@@ -823,7 +851,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     });
 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false, design: "glass", designSet: 2 }, opts.settings || {});
-    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin, extId }) => {
+    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin, extId, hostExts }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
       window.__SAYFRAME_TEST_UPDATE_KEY__ = updateKey;
       window.__SAYFRAME_TEST_RETRY_MS__ = [40, 40, 40];
@@ -856,6 +884,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         // opts.extId: the panel runs as one of the separate windows (com.sayframe.ae.win.<key>).
         getExtensionId() { return extId || "com.sayframe.ae.panel"; },
         requestOpenExtension(id, params) { window.__openedExt.push(id); },
+        // opts.hostExts: the extensions After Effects loaded at its start (it reads the manifest only then).
+        getExtensions: hostExts ? () => JSON.stringify(hostExts.map((id) => ({ id }))) : undefined,
         getHostEnvironment() { const env = { appName: "AEFT", appVersion: "25.0.1" }; const k = window.__skin;
           // opts.skin: the colours of After Effects' own panels, as CEP reports them ({ bg: [r, g, b], hi: [r, g, b] }).
           if (k) env.appSkinInfo = { panelBackgroundColor: { antialiasLevel: 0, color: { red: k.bg[0], green: k.bg[1], blue: k.bg[2], alpha: 255 } },
@@ -885,7 +915,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           return { kill() { s.killed = true; } };
         };
       }
-    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null, extId: opts.extId || "" });
+    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null, extId: opts.extId || "", hostExts: opts.hostExts || null });
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
     // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
@@ -5211,7 +5241,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     t = Lx(p, "Карточка 1");
     check("OR3 «Шейп + прекомп»: 3 card comps (and 9 spare ones) in a «Карусель» folder, each with the shape (a rounded triangle path) and no number", comps.length === 12 && comps.map((c) => c.name).indexOf("Карточка 3") >= 0 && p.ae.log.bins.indexOf("Карусель") >= 0 &&
       comps.every((c) => c.list.length === 1 && c.list[0].name === "Форма" && acAt(c.list[0], "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length === 6), comps.map((c) => c.name + ":" + c.list.map((l) => l.name)).join(" "));
-    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one; numbers off — the back switch still shows, a picture can be inside", (await vis(p, "#orbitBackRow")) && !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => "Карточка " + i + ",Карточка " + i + ": обратная сторона").join(",") + ",Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
+    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one; numbers off — the back switch still shows, a picture can be inside", (await vis(p, "#orbitBackRow")) && !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => "Карточка " + i).join(",") + ",Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
     const fx3 = { ...FX0, "Карточек": 3, "Углы %": 50 }, inShape = comps[0].list[0], tpath = acAt(inShape, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").expression;
     const mpath = acAt(t, "ADBE Mask Parade").children[0].children.find((c) => c.matchName === "ADBE Mask Shape").expression;
     check("OR5 in «Шейп + прекомп» the triangle's corners follow «Углы %» (inside the card comp and in its mask): 6 points rounded, 3 sharp; the card comp layer scales to «Ширина» × «Высота»", runX(tpath, fx3).P.length === 6 && runX(tpath, { ...fx3, "Углы %": 0 }).P.length === 3 && runX(mpath, fx3).P.length === 6 &&
@@ -5281,6 +5311,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       "var FX=" + JSON.stringify(fx) + ";var thisComp={layer:function(){return {effect:function(n){return function(){return FX[n]}}}}};function comp(){return thisComp}" + expr);
     const FX0 = { "Карточек": 8, "Радиус": 600, "Ширина": 400, "Высота": 560, "Углы %": 20, "Сзади видно цифру и картинку": 1 };
     const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const names2 = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]');
     const spans0 = await p.page.locator("#orbitRing .kr-it span").count();
@@ -5290,11 +5321,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const ex = (acAt(Lx(p, "Номер 3"), "ADBE Transform Group", "ADBE Opacity") || {}).expression;
     check("OR4 «Цифра видна сзади» off: the preview drops the numbers of the back cards; each number layer hides when its card faces away", spans0 === 8 && spans1 < 8 && spans1 > 0 && runX(ex, { ...FX0, "Сзади видно цифру и картинку": 0 }, { facing: false }) === 0 && runX(ex, { ...FX0, "Сзади видно цифру и картинку": 0 }) === 100, spans0 + " " + spans1 + " " + ex);
     await p.page.click('#orbitMode [data-v="precomp"]'); await p.page.click("#orbitBtn"); await p.idle();
-    const cardL = p.ae.log.dcMain.list.find((l) => l.name === "Карточка 2" && l.source), backL = Lx(p, "Карточка 2: обратная сторона");
+    const cardL = p.ae.log.dcMain.list.find((l) => l.name === "Карточка 2" && l.source);
     const op = (l) => (acAt(l, "ADBE Transform Group", "ADBE Opacity") || {}).expression;
     const off = { ...FX0, "Сзади видно цифру и картинку": 0 };
-    check("OR4 …in «Шейп + прекомп» the whole card comp (number, picture) hides when it faces away; a plain back of the same shape shows instead; the switch in Effect Controls flips it live", !!cardL && runX(op(cardL), off, { facing: false }) === 0 && runX(op(cardL), off) === 100 &&
-      !!backL && backL.parent === cardL && runX(op(backL), off, { facing: false }) === 100 && runX(op(backL), off) === 0 && runX(op(backL), FX0, { facing: false }) === 0 && runX(op(cardL), FX0, { facing: false }) === 100 && backL.threeDLayer, (cardL ? op(cardL) : "no card") + " | " + (backL ? op(backL) : "no back"));
+    const fill = cardL && acAt(cardL, "ADBE Effect Parade").children.find((e) => e.matchName === "ADBE Fill"), fop = fill && fill.children.find((c) => c.matchName === "ADBE Fill-0005").expression;
+    check("OR4 …in «Шейп + прекомп» the back is a Fill effect «Обратная сторона» on the card itself (no extra layer): it paints the card plain in its colour when it faces away; the switch in Effect Controls flips it live", !!cardL && !!fill && fill.name === "Обратная сторона" &&
+      runX(fop, off, { facing: false }) === 100 && runX(fop, off) === 0 && runX(fop, FX0, { facing: false }) === 0 && runX(op(cardL), off, { facing: false }) === 100 &&
+      JSON.stringify(fill.children.find((c) => c.matchName === "ADBE Fill-0002").value) !== "null" && !p.ae.log.dcMain.list.some((l) => /обратная сторона/.test(l.name)), (cardL ? op(cardL) : "no card") + " | " + fop + " | " + names2(p));
     const mk = cardL && acAt(cardL, "ADBE Mask Parade").children[0];
     check("OR4 …and a picture put inside gets the card's shape: a mask of the rounded card on the card comp layer", !!mk && mk.name === "Card" && mk.children.find((c) => c.matchName === "ADBE Mask Shape").value.vertices.length === 8, mk ? JSON.stringify(mk.children.find((c) => c.matchName === "ADBE Mask Shape").value.vertices) : "no mask");
     check("OR4 the switch is named «Сзади видно цифру и картинку»", (await p.page.innerText("#orbitBackRow")).trim() === "Сзади видно цифру и картинку");
@@ -5518,59 +5551,117 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const scaleOf = (l) => acAt(l, "ADBE Transform Group", "ADBE Scale").value;
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { queued: ["Old"] } });
     const exDir = path.join(p.home, "Desktop", "Sayframe Экспорт");
+    const tileBox = (q, id) => q.page.locator('#exTargets [data-t="' + id + '"]').boundingBox();
     await exOpen(p);
-    check("EX1 the ⤓ button opens «Быстрый экспорт»: comp line, 6 platform tiles, Reels picked, quality «Обычное», «Всю композицию»", (await p.page.locator("#exCompName").innerText()) === "Main" && (await p.page.locator("#exCompMeta").innerText()) === "1920×1080 · 10 с" &&
-      (await p.page.locator("#exTargets .ex-t span").allInnerTexts()).join() === "Reels / Stories,YouTube,Telegram,Пост 4:5,TikTok,Свой" && (await pressed(p, "#exTargets .ex-t")) === "reels" &&
-      (await pressed(p, "#exQuality button")) === "normal" && (await pressed(p, "#exSpan button")) === "all" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео" && (await overflow(p)) <= 0, await pressed(p, "#exTargets .ex-t"));
-    check("EX1 16:9 comp and Reels 9:16 -> the sheet asks how, «Размытый фон по краям» by default", (await vis(p, "#exFitRow")) && (await p.page.locator("#exFitText").innerText()) === "Композиция горизонтальная, а Reels — вертикальный. Как сделать?" && (await pressed(p, "#exFit button")) === "blur", await p.page.locator("#exFitText").innerText());
+    check("EX1 the ⤓ button opens «Быстрый экспорт»: comp line, quality tiles Низкое / Среднее / Высокое / Своё with the size in MB, «Среднее» picked, «Всю композицию»", (await p.page.locator("#exCompName").innerText()) === "Main" && (await p.page.locator("#exCompMeta").innerText()) === "1920×1080 · 10 с" &&
+      (await p.page.locator("#exTargets .ex-t span").allInnerTexts()).join() === "Низкое,Среднее,Высокое,Своё" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
+      (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() === "≈ 6,7 МБ,≈ 19 МБ,≈ 50 МБ," && (await pressed(p, "#exSpan button")) === "all" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 19 МБ" && (await overflow(p)) <= 0,
+      (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() + " | " + await p.page.locator("#exGo").innerText());
+    t = await tileBox(p, "normal");
+    check("EX1 a horizontal comp -> horizontal tiles; no size question, no quality row (the tile is the quality)", t.width > t.height * 1.3 && !(await vis(p, "#exFitRow")) && !(await vis(p, "#exQualRow")), JSON.stringify(t));
     check("EX1 unsaved project -> Desktop › «Sayframe Экспорт»; no Media Encoder switch when there is no Media Encoder", (await p.page.getAttribute("#exFolder", "title")) === exDir && !(await vis(p, "#exAmeRow")), await p.page.getAttribute("#exFolder", "title"));
     await p.page.screenshot({ path: path.join(SHOTS, "90-export-sheet.png") });
-    await p.page.click('#exTargets [data-t="youtube"]');
-    check("EX2 two platforms -> «Сохранить 2 видео»", (await p.page.locator("#exGo").innerText()).trim() === "Сохранить 2 видео");
     await exRun(p);
     t = p.ae.log.rq.rendered;
-    check("EX2 one MP4 per platform, named «Comp — Platform.mp4», in the folder", mp4s(exDir).join() === "Main — Reels.mp4,Main — YouTube.mp4", mp4s(exDir).join());
-    check("EX2 Reels goes through a 1080×1920 comp, YouTube is the comp itself; H.264 15 Mbps; whole comp", t.length === 2 && t[0].w === 1080 && t[0].h === 1920 && t[1].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 15 Mbps" && t[1].tpl === t[0].tpl && t[0].span[1] === 10, JSON.stringify(t));
-    const wr = p.ae.log.orbitComps[0];
-    check("EX2 the 9:16 comp: the source fits the width over a blurred, silent copy that covers the frame", wr.list.map((l) => l.name).join() === "Main,Blur" && Math.abs(scaleOf(wr.list[0])[0] - 56.25) < 0.01 && Math.abs(scaleOf(wr.list[1])[0] - 1920 / 1080 * 106) < 0.1 &&
-      wr.list[1].audioEnabled === false && !!acAt(wr.list[1], "ADBE Effect Parade").children.find((e) => e.matchName === "ADBE Gaussian Blur 2"), wr.list.map((l) => l.name + ":" + scaleOf(l)).join(" "));
-    check("EX2 items already in the Render Queue sit the render out and come back; ours and the helper comp are removed after", t.every((r) => r.others === 0) && p.ae.project.renderQueue.numItems === 1 && p.ae.project.renderQueue.item(1).render === true && p.ae.log.rq.removed === 2 && p.ae.log.compsRemoved === 1, JSON.stringify([t.map((r) => r.others), p.ae.log.rq.removed, p.ae.log.compsRemoved]));
-    check("EX2 the list shows ✓, the size and «Показать»; the status names the folder", (await p.page.locator("#exResults .ex-row.done").count()) === 2 && (await p.page.locator("#exResults .ex-row small").allInnerTexts()).join() === "2,4 МБ,2,4 МБ" &&
-      (await p.page.locator("#exResults .ex-row .ghost").count()) === 2 && (await p.page.locator("#exResults .ex-now").innerText()) === "Готово, 2 видео" && (await p.status()) === "Видео сохранены в папку «Sayframe Экспорт».", await p.status());
+    check("EX2 one MP4 at the comp's size, named «Comp — Среднее.mp4»; H.264 15 Mbps; whole comp; no helper comp", mp4s(exDir).join() === "Main — Среднее.mp4" && t.length === 1 && t[0].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 15 Mbps" && t[0].span[1] === 10 && p.ae.log.orbitComps.length === 0, mp4s(exDir).join() + JSON.stringify(t));
+    check("EX2 items already in the Render Queue sit the render out and come back; ours is removed after", t.every((r) => r.others === 0) && p.ae.project.renderQueue.numItems === 1 && p.ae.project.renderQueue.item(1).render === true && p.ae.log.rq.removed === 1, JSON.stringify([t.map((r) => r.others), p.ae.log.rq.removed]));
+    check("EX2 the list shows ✓, the size and «Показать»; the status names the folder", (await p.page.locator("#exResults .ex-row.done").count()) === 1 && (await p.page.locator("#exResults .ex-row small").allInnerTexts()).join() === "2,4 МБ · 15 Мбит/с" &&
+      (await p.page.locator("#exResults .ex-row .ghost").count()) === 1 && (await p.page.locator("#exResults .ex-now").innerText()) === "Готово" && (await p.status()) === "Видео сохранены в папку «Sayframe Экспорт».", await p.status());
     await p.page.screenshot({ path: path.join(SHOTS, "91-export-done.png") });
     await p.page.click("#exResults .ex-row .ghost"); await p.page.waitForTimeout(200);
     check("EX3 «Показать» opens the folder", (p.ae.log.executed || []).join() === exDir, JSON.stringify(p.ae.log.executed));
     await p.page.click("#exResults .ex-again .ghost");
     check("EX3 «Назад к настройкам» brings the sheet back", await vis(p, "#exGo"));
-    await p.page.click("#exGo"); await p.page.waitForFunction(() => document.querySelectorAll("#exResults .ex-row.done").length === 2);
-    check("EX3 a second run does not overwrite: «Main — Reels 2.mp4»", mp4s(exDir).indexOf("Main — Reels 2.mp4") >= 0, mp4s(exDir).join());
+    await p.page.click("#exGo"); await p.page.waitForFunction(() => document.querySelectorAll("#exResults .ex-row.done").length === 1);
+    check("EX3 a second run does not overwrite: «Main — Среднее 2.mp4»", mp4s(exDir).indexOf("Main — Среднее 2.mp4") >= 0, mp4s(exDir).join());
     await p.close();
 
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
     p.ae.log.dcMain.workAreaStart = 2; p.ae.log.dcMain.workAreaDuration = 3;
     await exOpen(p);
-    await p.page.click('#exTargets [data-t="reels"]'); await p.page.click('#exTargets [data-t="telegram"]');
-    await p.page.click('#exQuality [data-v="max"]'); await p.page.click('#exSpan [data-v="work"]');
-    check("EX4 Telegram alone keeps the comp's shape: nothing to ask", !(await vis(p, "#exFitRow")));
+    await p.page.click('#exTargets [data-t="light"]'); await p.page.click('#exSpan [data-v="work"]');
+    check("EX4 «Рабочую область»: the MB follow the work area's length", (await p.page.locator('#exTargets [data-t="light"] .ex-mb').innerText()) === "≈ 2 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 2 МБ", await p.page.locator("#exGo").innerText());
     await exRun(p);
     t = p.ae.log.rq.rendered;
-    check("EX4 Telegram is always the light file (5 Mbps) at the comp's size; «Рабочую область» renders the work area", t.length === 1 && t[0].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 5 Mbps" && t[0].span.join() === "2,3", JSON.stringify(t));
+    check("EX4 «Низкое» = 5 Mbps at the comp's size; «Рабочую область» renders the work area; the file says the quality", t.length === 1 && t[0].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 5 Mbps" && t[0].span.join() === "2,3" && /Main — Низкое\.mp4$/.test(t[0].file), JSON.stringify(t));
     await p.restart();
     await exOpen(p);
-    check("EX4 the choice is remembered", (await pressed(p, "#exTargets .ex-t")) === "telegram" && (await pressed(p, "#exQuality button")) === "max" && (await pressed(p, "#exSpan button")) === "work");
-    await p.page.click('#exTargets [data-t="telegram"]'); await p.page.click('#exTargets [data-t="post"]'); await p.page.click('#exFit [data-v="crop"]');
+    check("EX4 the choice is remembered", (await pressed(p, "#exTargets .ex-t")) === "light" && (await pressed(p, "#exSpan button")) === "work");
+    await p.page.click('#exTargets [data-t="max"]');
     await exRun(p);
-    t = p.ae.log.rq.rendered;
-    t = t.slice(1);
-    check("EX5 «Обрезать»: the 4:5 comp is filled (cover), no blur copy; «Максимум» = 40 Mbps", t.length === 1 && t[0].w === 1080 && t[0].h === 1350 && t[0].tpl === "H.264 - Match Render Settings - 40 Mbps" && p.ae.log.orbitComps[0].list.length === 1 && Math.abs(scaleOf(p.ae.log.orbitComps[0].list[0])[0] - 125) < 0.01, JSON.stringify(t));
+    t = p.ae.log.rq.rendered.slice(1);
+    check("EX5 «Высокое» = 40 Mbps", t.length === 1 && t[0].tpl === "H.264 - Match Render Settings - 40 Mbps" && t[0].comp === "Main", JSON.stringify(t));
     await p.page.click("#exResults .ex-again .ghost");
-    await p.page.click('#exTargets [data-t="post"]'); await p.page.click('#exTargets [data-t="custom"]');
-    check("EX6 «Свой» shows width × height", await vis(p, "#exCustom"));
-    await p.page.fill("#exW", "1080"); await p.page.fill("#exH", "1080"); await p.page.click('#exFit [data-v="black"]');
-    check("EX6 the tile shows the size; square vs 16:9 is asked about", (await p.page.locator('#exTargets [data-t="custom"] small').innerText()) === "1080×1080" && (await p.page.locator("#exFitText").innerText()) === "Композиция горизонтальная, а 1080×1080 — квадратный. Как сделать?", await p.page.locator("#exFitText").innerText());
+    await p.page.click('#exTargets [data-t="custom"]');
+    check("EX6 «Своё» shows width × height and the quality", (await vis(p, "#exCustom")) && (await vis(p, "#exQualRow")));
+    await p.page.fill("#exW", "1080"); await p.page.fill("#exH", "1080"); await p.page.click('#exFit [data-v="black"]'); await p.page.click('#exQuality [data-v="light"]');
+    check("EX6 the tile shows the size; square vs 16:9 is asked about", (await p.page.locator('#exTargets [data-t="custom"] .ex-mb').innerText()) === "1080×1080" && (await p.page.locator("#exFitText").innerText()) === "Композиция горизонтальная, а видео 1080×1080 — квадратное. Как сделать?", await p.page.locator("#exFitText").innerText());
     await exRun(p);
     t = p.ae.log.rq.rendered;
-    check("EX6 «Чёрные поля»: the source fits inside, one layer; the file is «Main — 1080x1080.mp4»", t.length === 3 && t[2].w === 1080 && t[2].h === 1080 && /Main — 1080x1080\.mp4$/.test(t[2].file) && p.ae.log.orbitComps[1].list.length === 1 && Math.abs(scaleOf(p.ae.log.orbitComps[1].list[0])[0] - 56.25) < 0.01, JSON.stringify(t[2]));
+    check("EX6 «Чёрные поля»: the source fits inside, one layer; the file is «Main — 1080x1080.mp4»; its own quality", t.length === 3 && t[2].w === 1080 && t[2].h === 1080 && /Main — 1080x1080\.mp4$/.test(t[2].file) && t[2].tpl === "H.264 - Match Render Settings - 5 Mbps" && p.ae.log.orbitComps[0].list.length === 1 && Math.abs(scaleOf(p.ae.log.orbitComps[0].list[0])[0] - 56.25) < 0.01, JSON.stringify(t[2]));
+    await p.close();
+
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    p.ae.log.dcMain.width = 1080; p.ae.log.dcMain.height = 1920;
+    await exOpen(p);
+    t = await tileBox(p, "normal");
+    check("EX9 a vertical comp -> vertical tiles, in one row", t.height > t.width * 1.3 && Math.abs((await tileBox(p, "custom")).y - t.y) < 2, JSON.stringify(t));
+    m = await p.page.evaluate(() => { const b = document.querySelector('#exTargets [data-t="normal"]'), r = b.querySelector(".ex-rate").getBoundingClientRect(), bb = b.getBoundingClientRect(); return [r.right <= bb.right - 4, b.querySelector(".ex-mb").getBoundingClientRect().right <= bb.right, b.querySelector(".ex-rate em").textContent]; });
+    check("EX9 narrow vertical tile: − 15 + fits inside", m[0] && m[1] && m[2] === "15", JSON.stringify(m));
+    await p.page.screenshot({ path: path.join(SHOTS, "92-export-vertical.png") });
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    p.ae.log.dcMain.width = 1080; p.ae.log.dcMain.height = 1080;
+    await exOpen(p);
+    t = await tileBox(p, "normal");
+    check("EX9 a square comp -> square tiles", Math.abs(t.width - t.height) < 3, JSON.stringify(t));
+    await p.close();
+
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    await exOpen(p);
+    const rateOf = (id) => p.page.locator('#exTargets [data-t="' + id + '"] .ex-rate em').evaluate((e) => e.textContent + getComputedStyle(e, "::after").content.replace(/"/g, ""));
+    check("EX10 every tile shows its bitrate; − and + only on the picked one", (await rateOf("light")) === "5 Мбит/с" && (await rateOf("normal")) === "15 Мбит/с" && (await rateOf("max")) === "40 Мбит/с" &&
+      (await vis(p, '#exTargets [data-t="normal"] .ex-rate [data-d="1"]')) && !(await vis(p, '#exTargets [data-t="light"] .ex-rate [data-d="1"]')) && (await overflow(p)) <= 0);
+    await p.page.click('#exTargets [data-t="normal"] .ex-rate [data-d="1"]');
+    check("EX10 + on «Среднее» -> 18 Мбит/с, MB and the button follow, the tile stays picked", (await rateOf("normal")) === "18 Мбит/с" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
+      (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 23 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 23 МБ");
+    await p.page.click('#exTargets [data-t="light"]');
+    check("EX10 − on a tile that is not picked just picks it", (await pressed(p, "#exTargets .ex-t")) === "light" && (await rateOf("light")) === "5 Мбит/с");
+    for (let i = 0; i < 6; i++) await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="-1"]');
+    check("EX10 − stops at 1 Мбит/с", (await rateOf("light")) === "1 Мбит/с" && (await p.page.locator('#exTargets [data-t="light"] .ex-rate [data-d="-1"]').getAttribute("class")) === "off");
+    await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="1"]'); await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="1"]');
+    await exRun(p);
+    check("EX10 the bitrate goes to After Effects: 3 Мбит/с -> the nearest H.264 template (5 Mbps)", p.ae.log.rq.rendered.length === 1 && /5 Mbps$/.test(p.ae.log.rq.rendered[0].tpl), JSON.stringify(p.ae.log.rq.rendered));
+    await p.page.click("#exResults .ex-again .ghost");
+    await p.page.keyboard.press("Escape"); await exOpen(p);
+    check("EX10 the bitrates are remembered", (await rateOf("light")) === "3 Мбит/с" && (await rateOf("normal")) === "18 Мбит/с");
+    await p.close();
+
+    // Any bitrate through Media Encoder: AE renders 40 Mbps into Temp, Media Encoder gets it with a preset made from its own H.264 one.
+    const exPlus = async (q, id, n) => { for (let i = 0; i < n; i++) await q.page.click('#exTargets [data-t="' + id + '"] .ex-rate [data-d="1"]'); };
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { ame: true, ameApp: true } });
+    await exOpen(p); await exPlus(p, "normal", 1); await exRun(p);
+    m = p.ae.log.rq.bt[0] || { body: "" };
+    t = (/addFileToBatch\("([^"]+)", "H\.264", "([^"]+)", "([^"]+)"\)/.exec(m.body) || []).slice(1);
+    c = t[1] && fs.existsSync(t[1]) ? fs.readFileSync(t[1], "utf8") : "";
+    const pv = (id) => ((new RegExp("<ParamIdentifier>" + id + "</ParamIdentifier>[\\s\\S]*?<ParamValue>([^<]*)<")).exec(c) || [])[1];
+    check("EX11 18 Мбит/с + Media Encoder: AE renders the 40 Mbps template into Temp, nothing stays in the queue", p.ae.log.rq.rendered.length === 1 && /40 Mbps$/.test(p.ae.log.rq.rendered[0].tpl) && p.ae.log.rq.rendered[0].file.indexOf(path.join(p.tmpDir || "", "")) === 0 && /Temp/.test(p.ae.log.rq.rendered[0].file) && p.ae.project.renderQueue.numItems === 0 && p.ae.log.rq.ame.length === 0, JSON.stringify(p.ae.log.rq.rendered));
+    check("EX11 Media Encoder gets the file, the preset and the final .mp4, and starts", p.ae.log.rq.bt.length === 1 && m.target === "ame-26.0" && t.length === 3 && t[0] === p.ae.log.rq.rendered[0].file && /\.epr$/.test(t[1]) && /Main — Среднее\.mp4$/.test(t[2]) && /runBatch\(\)/.test(m.body) && /onEncodeFinished/.test(m.body), m.body);
+    check("EX11 the preset is the H.264 one with the bitrate changed (18 / max 22.5 / min 9), match source, own id and name", /<ExporterClassID>1313424203</.test(c) && pv("ADBEVideoTargetBitrate") === "18." && pv("ADBEVideoMaxBitrate") === "22.5" && pv("ADBEVideoMinBitrate") === "9." &&
+      pv("ADBEVideoMatchSource") === "true" && pv("ADBEVideoWidth") === "1920" && !/9bb57b43-b3d1-448f-bdb0-4c5e3dcf9749/.test(c) && /<PresetName>Sayframe 18 Mbps<\/PresetName>/.test(c), c.slice(0, 400));
+    check("EX11 the row says Media Encoder and 18 Мбит/с", (await p.page.locator("#exResults .ex-row small").innerText()) === "в Media Encoder · 18 Мбит/с" && /^Отправлено в Media Encoder/.test(await p.page.locator("#exResults .ex-now").innerText()));
+    await p.page.click("#exResults .ex-again .ghost");
+    await exPlus(p, "normal", 0); await p.page.click('#exTargets [data-t="normal"] .ex-rate [data-d="-1"]'); await exRun(p);
+    check("EX11 15 Мбит/с has its own AE template: straight to Media Encoder as before, no preset", p.ae.log.rq.bt.length === 1 && p.ae.log.rq.ame.length === 1 && (await p.page.locator("#exResults .ex-row small").innerText()) === "в Media Encoder · 15 Мбит/с");
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { ame: true, ameApp: "silent" } });
+    await exOpen(p); await exPlus(p, "normal", 1); await exRun(p);
+    t = await p.page.locator("#exResults .ex-nm").getAttribute("title");
+    check("EX11 Media Encoder does not answer -> the 40 Mbps file is kept as the video, the row says 40 Мбит/с", p.ae.log.rq.bt.length === 1 && fs.existsSync(t) && fs.statSync(t).size > 0 && /· 40 Мбит\/с$/.test(await p.page.locator("#exResults .ex-row small").innerText()) && /Temp/.test(p.ae.log.rq.rendered[0].file) && !fs.existsSync(p.ae.log.rq.rendered[0].file), t);
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { ame: true } });
+    await exOpen(p); await exPlus(p, "normal", 1); await exRun(p);
+    check("EX11 no Media Encoder preset found -> the nearest AE template (15), the row says so", p.ae.log.rq.ame.length === 1 && p.ae.log.rq.bt.length === 0 && (await p.page.locator("#exResults .ex-row small").innerText()) === "в Media Encoder · 15 Мбит/с" && /ближайший/.test(await p.page.locator("#exResults .ex-row small").getAttribute("title")));
     await p.close();
 
     const exProj = fs.mkdtempSync(path.join(os.tmpdir(), "exproj-"));
@@ -5579,7 +5670,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("EX7 a saved project -> «Рядом с проектом / Экспорт»; with Media Encoder the switch is there and on", (await p.page.locator("#exFolder").innerText()) === "Рядом с проектом / Экспорт" && (await p.page.getAttribute("#exFolder", "title")) === path.join(exProj, "Экспорт") && (await vis(p, "#exAmeRow")) && (await p.page.locator("#exAme").isChecked()));
     await exRun(p);
     check("EX7 Media Encoder: queued there (starts at once), nothing renders in After Effects, the row says so", p.ae.log.rq.ame.length === 1 && p.ae.log.rq.ame[0].now === true && p.ae.log.rq.ame[0].others === 0 && p.ae.log.rq.rendered.length === 0 &&
-      (await p.page.locator("#exResults .ex-row small").innerText()) === "в Media Encoder" && /^Отправлено в Media Encoder/.test(await p.page.locator("#exResults .ex-now").innerText()) && p.ae.project.renderQueue.item(1).render === true, JSON.stringify(p.ae.log.rq.ame));
+      (await p.page.locator("#exResults .ex-row small").innerText()) === "в Media Encoder · 15 Мбит/с" && /^Отправлено в Media Encoder/.test(await p.page.locator("#exResults .ex-now").innerText()) && p.ae.project.renderQueue.item(1).render === true, JSON.stringify(p.ae.log.rq.ame));
     await p.page.click("#exResults .ex-again .ghost"); await p.page.click("#exAmeRow"); await exRun(p);
     check("EX7 switch off -> After Effects renders it", p.ae.log.rq.rendered.length === 1 && p.ae.log.rq.rendered[0].others === 0 && mp4s(path.join(exProj, "Экспорт")).length === 1, JSON.stringify(mp4s(path.join(exProj, "Экспорт"))));
     await p.close();
@@ -5649,6 +5740,16 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("WN6 the export sheet has ↗ too", await vis(p, '#exHead .win-open[data-win="export"]'));
     await p.close();
 
+    p = await open({ ownExt: true, settings: { design: "ae", designSet: 2 }, hostExts: ["com.sayframe.ae.panel"] });
+    await p.page.click("#tabMotion"); await p.page.hover('section[data-tool="ease"]'); await p.page.click('section[data-tool="ease"] .win-open'); await p.page.waitForTimeout(300);
+    check("WN8 After Effects has not been restarted since the update (it does not know the window yet): ↗ says to restart instead of doing nothing", (await p.page.evaluate(() => window.__openedExt.length)) === 0 &&
+      /ещё не видит\. Перезапустите After Effects/.test(await p.status()), await p.status());
+    await p.close();
+    p = await open({ ownExt: true, settings: { design: "ae", designSet: 2 }, hostExts: ["com.sayframe.ae.panel", "com.sayframe.ae.win.ease"] });
+    await p.page.click("#tabMotion"); await p.page.hover('section[data-tool="ease"]'); await p.page.click('section[data-tool="ease"] .win-open'); await p.page.waitForTimeout(300);
+    check("WN8 after the restart ↗ opens it and says where it is", (await p.page.evaluate(() => window.__openedExt.join())) === "com.sayframe.ae.win.ease" && /^Открываю окно «Плавность»/.test(await p.status()), await p.status());
+    await p.close();
+
     p = await open({ ownExt: true, signedExt: true, settings: { design: "ae", designSet: 2 } });
     await p.page.click("#settingsBtn"); await p.page.click("#setTabWin");
     await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
@@ -5714,11 +5815,49 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("RB1 «3D-кольцо»: the ring's own settings, the ribbon's ones hide; letters in the preview, the far ones dimmer", (await vis(p, "#rbRingSl")) && !(await vis(p, "#rbRibbonSl")) && !(await vis(p, "#rbForm")) && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать кольцо" &&
       (await p.page.locator("#rbStage .rb-ringrow").count()) === 2 && (await p.page.locator('#rbStage .rb-ringrow span[style*="opacity"]').count()) > 5);
     await p.page.click('#rbMode [data-v="ribbon"]');
+    check("RB10 colours: «Лента / Текст» on the preview picks what is painted; swatches with gradients, ready pairs; no gradient row for a plain colour",
+      (await vis(p, "#rbPaint")) && (await p.page.getAttribute('#rbPaint [data-v="ribbon"]', "aria-pressed")) === "true" && (await p.page.locator("#rbRibColors button").count()) === 10 &&
+      (await p.page.locator("#rbPairs button").count()) === 6 && !(await vis(p, "#rbGradRow")) && !(await vis(p, "#rbRingColorRow")));
+    await p.page.locator("#rbStage text").first().evaluate((el) => el.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    check("RB10 a click on the letters in the preview paints the text", (await p.page.getAttribute('#rbPaint [data-v="text"]', "aria-pressed")) === "true");
+    await p.page.click('#rbRibColors [data-v="#ffcc33"]');
+    check("RB10 a swatch paints the chosen part only", /#ffcc33/.test(await p.page.getAttribute("#rbStage text", "fill")) && (await p.page.getAttribute("#rbPrevPath", "stroke")) === "#3aa0e8", await p.page.getAttribute("#rbStage text", "fill"));
+    await p.page.click('#rbPaint [data-v="ribbon"]');
+    await p.page.click('#rbRibColors [data-v="#f953c6>#7b5cff"]');
+    check("RB10 a gradient swatch: the ribbon gets a gradient in the preview, the row with two colours and the direction shows",
+      (await p.page.getAttribute("#rbPrevPath", "stroke")) === "url(#rbGR)" && (await p.page.locator("#rbStage linearGradient#rbGR stop").count()) === 2 && (await vis(p, "#rbGradRow")) && (await p.page.inputValue("#rbGradB")) === "#7b5cff");
+    await p.page.click('#rbGradDir [data-v="90"]');
+    await p.page.locator("#rbGradA").evaluate((el) => { el.value = "#00ff00"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+    check("RB10 the gradient's colours and direction can be changed", Number(await p.page.getAttribute("#rbStage linearGradient#rbGR", "x1")) === 0 && Number(await p.page.getAttribute("#rbStage linearGradient#rbGR", "y2")) > 500 && (await p.page.getAttribute("#rbStage linearGradient#rbGR stop", "stop-color")) === "#00ff00");
+    await p.page.screenshot({ path: path.join(SHOTS, "rb-colors.png") });
     await p.page.click("#rbBtn"); await p.idle();
     let T = L(p, "Текст ленты"), R = L(p, "Лента");
+    check("RB10 «Создать ленту» with a gradient ribbon: a Gradient Ramp top to bottom on the ribbon, the text in its plain colour",
+      acAt(R, "ADBE Effect Parade").children.some((e) => e.matchName === "ADBE Ramp" && /var a=90\*/.test(e.children.find((c) => c.matchName === "ADBE Ramp-0001").expression)) &&
+      !acAt(T, "ADBE Effect Parade").children.some((e) => e.matchName === "ADBE Ramp"));
+    await p.page.click('#rbPairs button[data-r="#3aa0e8"]');
+    check("RB10 a ready pair sets both colours", (await p.page.getAttribute("#rbPrevPath", "stroke")) === "#3aa0e8" && (await p.page.getAttribute("#rbStage text", "fill")) === "#ffffff" && (await p.page.getAttribute('#rbPairs button[data-r="#3aa0e8"]', "aria-pressed")) === "true");
     check("RB2 «Создать ленту»: the text above the ribbon, one undo step; the text repeats with its separator", names(p) === "Текст ленты,Лента,BG" && p.ae.log.undo.join() === "begin:Sayframe: text ribbon,end" && /^(WEST LOOP • ){5,}/.test(docText(T)) && /Лента готова/.test(await p.status()), names(p) + " | " + p.ae.log.undo.join() + " | " + await p.status());
     check("RB2 the text runs on its own mask (the same line) and is centred on it; the ribbon is a thick round stroke", acAt(T, "ADBE Mask Parade").children.length === 1 && acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text Path").value === 1 &&
-      acAt(T, "ADBE Text Properties", "ADBE Text Animators").children.length === 1 && JSON.stringify(acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length) === "55");
+      acAt(T, "ADBE Text Properties", "ADBE Text Animators").children.length === 1 && JSON.stringify(acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length) === "19");
+    const rbPath = (l) => acAt(acAt(l, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape");
+    const rbMt = L(p, "Лента: маска") || p.ae.log.dcMain.list.find((l) => /^Лента: /.test(l.name));
+    check("RB8 one line for everything: the text's mask and the matte follow the ribbon's line, both move with the ribbon; the line is selected for editing",
+      acAt(T, "ADBE Mask Parade").children[0].children.find((c) => c.matchName === "ADBE Mask Shape").expression === 'thisComp.layer("Лента").content(1).content(1).path' &&
+      T.parent === R && (!rbMt || (rbMt.parent === R && rbPath(rbMt).expression === 'thisComp.layer("Лента").content(1).content(1).path')) && R.selected === true && T.selected === false && rbPath(R).selected === true,
+      String(rbMt && rbMt.name) + " | " + acAt(T, "ADBE Mask Parade").children[0].children.find((c) => c.matchName === "ADBE Mask Shape").expression);
+    check("RB8 the line has few points with smooth handles (easy to bend by hand)", rbPath(R).value.outTangents.slice(0, -1).every((t) => Math.hypot(t[0], t[1]) > 1) && rbPath(R).value.inTangents.slice(1).every((t) => Math.hypot(t[0], t[1]) > 1));
+    {
+      const before = p.ae.log.dcMain.list.length;
+      const rbRes = await p.page.evaluate(() => new Promise((done) => window.__adobe_cep__.evalScript('sayframeHost.ribbonMake({mode:"ribbon",form:"wave",text:"GRAD",sep:"",width:120,textSize:60,speed:0,run:false,ribbonColor:[1,0,0],textColor:[1,1,1],ribbonGrad:{a:[1,0.3,0.4],b:[0.5,0.3,1],angle:0},textGrad:{a:[1,1,1],b:[1,0.8,0.2],angle:90}},{ribbon:"\\u0413-\\u043b\\u0435\\u043d\\u0442\\u0430",text:"\\u0413-\\u0442\\u0435\\u043a\\u0441\\u0442",grad:"\\u0413\\u0440\\u0430\\u0434\\u0438\\u0435\\u043d\\u0442",gradMatte:"\\u0413\\u0440\\u0430\\u0434\\u0438\\u0435\\u043d\\u0442: \\u0444\\u043e\\u0440\\u043c\\u0430"})', done)));
+      const GR = L(p, "Г-лента"), GT = L(p, "Г-текст"), fx = (l) => acAt(l, "ADBE Effect Parade").children;
+      const ramp = GR && fx(GR).find((e) => e.matchName === "ADBE Ramp"), sm = GR && fx(GR).find((e) => e.matchName === "ADBE Set Matte3");
+      check("RB9 a gradient: a Gradient Ramp across the frame, kept inside the ribbon by Set Matte from itself; the text gets its own",
+        p.ae.log.dcMain.list.length > before && ramp && ramp.name === "Градиент" && JSON.stringify(ramp.children.find((c) => c.matchName === "ADBE Ramp-0002").value) === "[1,0.3,0.4,1]" &&
+        /fromComp\(c - d\*r\)/.test(ramp.children.find((c) => c.matchName === "ADBE Ramp-0001").expression) && sm && sm.children.find((c) => c.matchName === "ADBE Set Matte3-0002").value === 4 &&
+        GT && fx(GT).some((e) => e.matchName === "ADBE Ramp" && /var a=90\*/.test(e.children.find((c) => c.matchName === "ADBE Ramp-0003").expression)),
+        GR ? fx(GR).map((e) => e.matchName).join() : "no layer " + rbRes);
+    }
     check("RB2 settings in Effect Controls of the text; the ribbon reads width and colour from there; the text runs with time", fxNames(T) === "Толщина ленты,Скорость,Цвет ленты" &&
       /effect\("Толщина ленты"\)/.test(acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Width").expression) &&
       /time\*effect\("Скорость"\)/.test(acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin").expression), fxNames(T));
@@ -5782,9 +5921,20 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("RN2 «Другая линия» gives a new number and a new line", s2 !== "4127" && d2 !== d1, s2);
     await p.page.fill("#rbSeed", "4127"); await p.page.press("#rbSeed", "Enter");
     check("RN2 the same number brings the same line back", (await d(p)) === d1);
+    {
+      const src = fs.readFileSync(path.join(__dirname, "..", "Sayframe", "js", "panel.js"), "utf8");
+      const grab = (name) => { const i = src.indexOf("    function " + name + "("); let dd = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") dd++; else if (src[k] === "}" && !--dd) return src.slice(i, k + 1); } };
+      const gen = new Function(["rbRng", "rbRandom"].map(grab).join("\n") + ";return rbRandom;")();
+      const kinds = {}; let bad = "";
+      for (let sd = 1; sd <= 60; sd++) { const sm = gen(sd * 131 + 7, 1920, 1080); kinds[sm.kind] = 1; if (sm.pts.some((q) => Math.abs(q[1]) > 540 * 0.95)) bad += sm.kind + sd + " "; }
+      check("RN7 «Случайная» gives many figures (spiral, zigzag, line, heart, diamond, square, wave, triangle, arc), no loops, all inside the frame's height",
+        ["spiral", "zigzag", "line", "heart", "diamond", "square", "wave", "triangle", "arc"].every((k) => kinds[k]) && !kinds.loops && !bad, Object.keys(kinds).join() + " | " + bad);
+      const hsrc = fs.readFileSync(path.join(__dirname, "..", "Sayframe", "jsx", "host.jsx"), "utf8");
+      check("RN7 the comp's figure is the same as the preview's (one generator in both)", hsrc.includes(grab("rbRandom").replace(/rb([A-Z])/g, "rib$1")), "host differs");
+    }
     await p.page.click("#rbBtn"); await p.idle();
     const v1 = JSON.stringify(verts(L(p, "Лента")));
-    check("RN3 the comp gets that random line", verts(L(p, "Лента")).length >= 5 && spread(verts(L(p, "Лента")), 0) > 1500 && /Лента готова/.test(await p.status()), await p.status());
+    check("RN3 the comp gets that random line", verts(L(p, "Лента")).length >= 2 && verts(L(p, "Лента")).length <= 20 && Math.max(spread(verts(L(p, "Лента")), 0), spread(verts(L(p, "Лента")), 1)) > 300 && /Лента готова/.test(await p.status()), await p.status());
     await p.close();
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
     await rbTab(p);

@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.70.0";
+    var VERSION = "1.72.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -788,11 +788,37 @@
         return "written";
     }
 
+    // Окна, которые After Effects знает прямо сейчас: он читает manifest.xml только при запуске,
+    // поэтому после обновления или смены списка новые окна появляются лишь после перезапуска AE.
+    // null — After Effects не сказал (тогда верим файлу, каким он был при запуске панели).
+    function hostWindows() {
+        var cep = window.__adobe_cep__, list, out = [], mine = false, i, id;
+        if (!cep || typeof cep.getExtensions !== "function") { return null; }
+        try { list = JSON.parse(cep.getExtensions(JSON.stringify([]))); } catch (e) { return null; }
+        if (!list || typeof list.length !== "number") { return null; }
+        for (i = 0; i < list.length; i++) {
+            id = String(list[i] && list[i].id || "");
+            if (id.indexOf("com.sayframe.ae.") === 0) { mine = true; }
+            if (id.indexOf(WIN_PREFIX) === 0) { out.push(id.slice(WIN_PREFIX.length)); }
+        }
+        return mine ? out : null;
+    }
+
     function openWindow(key) {
-        var w = winByKey(key), list;
+        var w = winByKey(key), list, known = hostWindows() || winLoaded || [], inFile;
         if (!w) { return; }
-        if (winLoaded && winLoaded.indexOf(key) >= 0 && window.__adobe_cep__ && typeof window.__adobe_cep__.requestOpenExtension === "function") {
-            try { window.__adobe_cep__.requestOpenExtension(WIN_PREFIX + key, ""); return; } catch (e) {}
+        if (known.indexOf(key) >= 0 && window.__adobe_cep__ && typeof window.__adobe_cep__.requestOpenExtension === "function") {
+            try {
+                window.__adobe_cep__.requestOpenExtension(WIN_PREFIX + key, "");
+                setStatus("Открываю окно «" + w.label + "». Если оно не появилось: Window › Extensions › Sayframe \u2014 " + w.label + ".", "done");
+                return;
+            } catch (e) {}
+        }
+        inFile = windowList(settings.windows).indexOf(key) >= 0;
+        if (inFile && winLocked === "") {
+            setStatus("Окно «" + w.label + "» уже добавлено, но After Effects его ещё не видит. Перезапустите After Effects один раз — потом ↗ откроет его сразу.", "");
+            syncWindowsManifest().catch(function () {});
+            return;
         }
         list = windowList(settings.windows);
         if (list.indexOf(key) < 0) { list.push(key); }
@@ -1266,7 +1292,7 @@
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
         winPicker: el("winPicker"), winNote: el("winNote"), exHead: el("exHead"),
         exportBtn: el("exportBtn"), exportBar: el("exportBar"), exClose: el("exClose"), exSetup: el("exSetup"), exCompName: el("exCompName"), exCompMeta: el("exCompMeta"),
-        exTargets: el("exTargets"), exCustom: el("exCustom"), exW: el("exW"), exH: el("exH"), exFitRow: el("exFitRow"), exFitText: el("exFitText"), exFit: el("exFit"),
+        exTargets: el("exTargets"), exCustom: el("exCustom"), exQualRow: el("exQualRow"), exW: el("exW"), exH: el("exH"), exFitRow: el("exFitRow"), exFitText: el("exFitText"), exFit: el("exFit"),
         exQuality: el("exQuality"), exSpan: el("exSpan"), exFolder: el("exFolder"), exBrowse: el("exBrowse"), exAmeRow: el("exAmeRow"), exAme: el("exAme"), exGo: el("exGo"), exResults: el("exResults"),
         fxBtn: el("fxBtn"), snapBtn: el("snapBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
         orbitPane: el("orbitPane"), orbitStage: el("orbitStage"), orbitRing: el("orbitRing"), orbitLayout: el("orbitLayout"), orbitShape: el("orbitShape"),
@@ -1298,7 +1324,7 @@
         tbShadow: el("tbShadow"), tbBtn: el("tbBtn"),
         phPhone: el("phPhone"), phModel: el("phModel"), phColors: el("phColors"), phPose: el("phPose"), phSize: el("phSize"), phSizeVal: el("phSizeVal"),
         rbStage: el("rbStage"), rbSeedRow: el("rbSeedRow"), rbSeed: el("rbSeed"), rbDice: el("rbDice"), rbDirRow: el("rbDirRow"), rbDir: el("rbDir"), rbAngle: el("rbAngle"), rbAngleVal: el("rbAngleVal"), rbRunDir: el("rbRunDir"), rbMode: el("rbMode"), rbRibbonOpts: el("rbRibbonOpts"), rbForm: el("rbForm"), rbText: el("rbText"), rbSep: el("rbSep"),
-        rbRibColorRow: el("rbRibColorRow"), rbRibColors: el("rbRibColors"), rbTextColors: el("rbTextColors"), rbRibbonSl: el("rbRibbonSl"), rbRingSl: el("rbRingSl"),
+        rbRibColorRow: el("rbRibColorRow"), rbRibColors: el("rbRibColors"), rbTextColors: el("rbTextColors"), rbPaint: el("rbPaint"), rbCustom: el("rbCustom"), rbGradRow: el("rbGradRow"), rbGradA: el("rbGradA"), rbGradB: el("rbGradB"), rbGradBar: el("rbGradBar"), rbGradDir: el("rbGradDir"), rbPairs: el("rbPairs"), rbRingColorRow: el("rbRingColorRow"), rbRibbonSl: el("rbRibbonSl"), rbRingSl: el("rbRingSl"),
         rbRibbonSw: el("rbRibbonSw"), rbRingSw: el("rbRingSw"), rbRun: el("rbRun"), rbOverlap: el("rbOverlap"), rbShadow: el("rbShadow"), rbShadowRow: el("rbShadowRow"), rbBack: el("rbBack"), rbCamera: el("rbCamera"), rbBtn: el("rbBtn"),
         rbWidth: el("rbWidth"), rbWidthVal: el("rbWidthVal"), rbSize: el("rbSize"), rbSizeVal: el("rbSizeVal"), rbSpeed: el("rbSpeed"), rbSpeedVal: el("rbSpeedVal"),
         rbRings: el("rbRings"), rbRingsVal: el("rbRingsVal"), rbRadius: el("rbRadius"), rbRadiusVal: el("rbRadiusVal"), rbTilt: el("rbTilt"), rbTiltVal: el("rbTiltVal"),
@@ -1618,7 +1644,7 @@
         ui.fxBtn.disabled = on;
         ui.snapBtn.disabled = on;
         ui.exportBtn.disabled = on;
-        ui.exGo.disabled = on || !exInfo || !(exState && exState.targets.length);
+        ui.exGo.disabled = on || !exInfo;
         ui.exBrowse.disabled = on;
         ui.snapSave.disabled = on;
         ui.snapBrowse.disabled = on;
@@ -6932,7 +6958,7 @@
         try {
             res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: orbit.mode,
                 radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera, back: orbit.back },
-                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма", back: "обратная сторона",
+                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма", back: "обратная сторона", backFx: "Обратная сторона",
                     fxCount: "Карточек", fxRadius: "Радиус", fxW: "Ширина", fxH: "Высота", fxCorners: "Углы %", fxBack: "Сзади видно цифру и картинку" }]);
             setBusy(false);
             setStatus("Карусель готова: " + plural(res.cards, "карточка", "карточки", "карточек") + ", " + ORBIT_LAYOUT_NAMES[res.layout] + ". " +
@@ -7445,21 +7471,17 @@
 
     // ---- Быстрый экспорт: MP4 для площадок. Окно-плашка под шапкой, кнопка ⤓ в шапке.
     var EXPORT_KEY = "sayframe.export.v1";
-    var EX_TARGETS = {
-        reels: { label: "Reels", w: 1080, h: 1920 },
-        youtube: { label: "YouTube", w: 1920, h: 1080 },
-        telegram: { label: "Telegram", light: true },
-        post: { label: "Пост 4x5", w: 1080, h: 1350 },
-        tiktok: { label: "TikTok", w: 1080, h: 1920 },
-        custom: { label: "" }
-    };
-    var EX_ORDER = ["reels", "youtube", "telegram", "post", "tiktok", "custom"];
-    var exState = { targets: ["reels"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080 };
+    // Окошки качества: размер видео = размер композиции, отличается только качество (битрейт H.264 из host.jsx).
+    var EX_LEVELS = { light: { label: "Низкое", mbps: 5 }, normal: { label: "Среднее", mbps: 15 }, max: { label: "Высокое", mbps: 40 }, custom: { label: "Своё" } };
+    var EX_ORDER = ["light", "normal", "max", "custom"];
+    // Битрейт каждого качества меняется − и + на выбранном окошке, шагами EX_RATES. Выше 40 нет: у AE нет шаблона лучше.
+    var EX_RATES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40];
+    var exState = { level: "normal", quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {} };
     var exInfo = null, exFolderNow = "", exDefaultNow = "";
     try {
         (function () {
             var v = JSON.parse(window.localStorage.getItem(EXPORT_KEY) || "{}") || {};
-            if (Array.isArray(v.targets)) { exState.targets = v.targets.filter(function (t) { return EX_TARGETS[t]; }); }
+            if (EX_LEVELS[v.level]) { exState.level = v.level; }
             if (/^(light|normal|max)$/.test(v.quality)) { exState.quality = v.quality; }
             if (/^(all|work)$/.test(v.span)) { exState.span = v.span; }
             if (/^(blur|black|crop)$/.test(v.fit)) { exState.fit = v.fit; }
@@ -7467,36 +7489,48 @@
             if (typeof v.ame === "boolean") { exState.ame = v.ame; }
             if (v.cw > 0) { exState.cw = Math.round(v.cw); }
             if (v.ch > 0) { exState.ch = Math.round(v.ch); }
+            if (v.rates && typeof v.rates === "object") {
+                ["light", "normal", "max"].forEach(function (k) { if (EX_RATES.indexOf(v.rates[k]) >= 0) { exState.rates[k] = v.rates[k]; } });
+            }
         })();
     } catch (e) {}
 
     function storeExport() { try { window.localStorage.setItem(EXPORT_KEY, JSON.stringify(exState)); } catch (e) {} }
 
-    // Размер для площадки: у Telegram — размер композиции (длинная сторона не больше 1920), у «Своего» — введённый.
-    function exSize(id) {
-        var t = EX_TARGETS[id], c = exInfo ? exInfo.comp : { w: 1920, h: 1080 }, k;
-        if (id === "custom") { return { w: exState.cw, h: exState.ch }; }
-        if (t.light) {
-            k = Math.min(1, 1920 / Math.max(c.w, c.h));
-            return { w: Math.round(c.w * k / 2) * 2, h: Math.round(c.h * k / 2) * 2 };
-        }
-        return { w: t.w, h: t.h };
+    // Размер видео: как у композиции, у «Своего» — введённый.
+    function exSize() {
+        var c = exInfo ? exInfo.comp : { w: 1920, h: 1080 };
+        if (exState.level === "custom") { return { w: exState.cw, h: exState.ch }; }
+        return { w: Math.round(c.w / 2) * 2, h: Math.round(c.h / 2) * 2 };
     }
 
     function exShape(w, h) { return Math.abs(w / h - 1) < 0.02 ? "квадратн" : (w > h ? "горизонтальн" : "вертикальн"); }
 
-    function exOrder(ids) { return EX_ORDER.filter(function (id) { return ids.indexOf(id) >= 0; }); }
+    function exQualityOf(level) { return level === "custom" ? exState.quality : level; }
 
-    function exMismatch() {
-        var c = exInfo && exInfo.comp;
-        if (!c) { return null; }
-        return exOrder(exState.targets).filter(function (id) {
-            var s = exSize(id);
-            return Math.abs(s.w / s.h - c.w / c.h) > 0.01;
-        })[0] || null;
+    // Битрейт (Мбит/с) окошка: свой, если меняли − и +, иначе стандартный.
+    function exRate(level) { var q = exQualityOf(level); return exState.rates[q] || EX_LEVELS[q].mbps; }
+
+    function exStepRate(level, d) {
+        var q = exQualityOf(level), r = exRate(level), i, next = r;
+        if (d > 0) { for (i = 0; i < EX_RATES.length; i++) { if (EX_RATES[i] > r) { next = EX_RATES[i]; break; } } }
+        else { for (i = EX_RATES.length - 1; i >= 0; i--) { if (EX_RATES[i] < r) { next = EX_RATES[i]; break; } } }
+        if (next === EX_LEVELS[q].mbps) { delete exState.rates[q]; } else { exState.rates[q] = next; }
     }
 
-    function exTargetName(id) { return id === "custom" ? exState.cw + "×" + exState.ch : (id === "reels" ? "Reels" : id === "post" ? "пост 4:5" : EX_TARGETS[id].label); }
+    // Примерный размер файла: битрейт видео + звук (~320 кбит/с) × длина.
+    function exMB(level) {
+        var c = exInfo && exInfo.comp, dur, mb;
+        if (!c) { return ""; }
+        dur = exState.span === "work" && c.waDur > 0 ? c.waDur : c.dur;
+        mb = (exRate(level) + 0.32) * dur / 8;
+        return mb < 1 ? "< 1 МБ" : "≈ " + (mb < 10 ? (Math.round(mb * 10) / 10).toString().replace(".", ",") : Math.round(mb)) + " МБ";
+    }
+
+    function exMismatch() {
+        var c = exInfo && exInfo.comp, s = exSize();
+        return c && exState.level === "custom" && Math.abs(s.w / s.h - c.w / c.h) > 0.01;
+    }
 
     function showExFolder(path) {
         var parts = String(path || "").split(/[\\\/]/).filter(Boolean);
@@ -7507,13 +7541,22 @@
     }
 
     function drawExport() {
-        var n = exState.targets.length, mis = exMismatch(), c = exInfo && exInfo.comp, s;
+        var c = exInfo && exInfo.comp, s, ar = c ? c.w / c.h : 16 / 9, mb = exMB(exState.level), custom = exState.level === "custom";
+        ui.exTargets.classList.toggle("ex-h", ar > 1.02);
+        ui.exTargets.classList.toggle("ex-v", ar < 0.98);
+        ui.exTargets.classList.toggle("ex-sq", ar >= 0.98 && ar <= 1.02);
+        ui.exTargets.style.setProperty("--ar", String(Math.max(9 / 16, Math.min(16 / 9, ar))));
         Array.prototype.forEach.call(ui.exTargets.querySelectorAll(".ex-t"), function (b) {
             var id = b.getAttribute("data-t");
-            b.setAttribute("aria-pressed", exState.targets.indexOf(id) >= 0 ? "true" : "false");
-            if (id === "custom") { b.querySelector("small").textContent = exState.targets.indexOf("custom") >= 0 ? exState.cw + "×" + exState.ch : "свой размер"; }
+            b.setAttribute("aria-pressed", exState.level === id ? "true" : "false");
+            b.querySelector(".ex-mb").textContent = id === "custom" ? (custom ? exState.cw + "×" + exState.ch : "") : exMB(id);
+            if (id !== "custom") {
+                b.querySelector(".ex-rate em").textContent = String(exRate(id));
+                b.querySelector('.ex-rate [data-d="-1"]').classList.toggle("off", exRate(id) <= EX_RATES[0]);
+                b.querySelector('.ex-rate [data-d="1"]').classList.toggle("off", exRate(id) >= EX_RATES[EX_RATES.length - 1]);
+            }
         });
-        ui.exCustom.hidden = exState.targets.indexOf("custom") < 0;
+        ui.exCustom.hidden = ui.exQualRow.hidden = !custom;
         if (document.activeElement !== ui.exW) { ui.exW.value = exState.cw; }
         if (document.activeElement !== ui.exH) { ui.exH.value = exState.ch; }
         [["exQuality", "quality"], ["exSpan", "span"], ["exFit", "fit"]].forEach(function (p) {
@@ -7521,15 +7564,15 @@
                 b.setAttribute("aria-pressed", b.getAttribute("data-v") === exState[p[1]] ? "true" : "false");
             });
         });
-        ui.exFitRow.hidden = !mis;
-        if (mis && c) {
-            s = exSize(mis);
-            ui.exFitText.textContent = "Композиция " + exShape(c.w, c.h) + "ая, а " + exTargetName(mis) + " — " + exShape(s.w, s.h) + "ый. Как сделать?";
+        ui.exFitRow.hidden = !exMismatch();
+        if (exMismatch()) {
+            s = exSize();
+            ui.exFitText.textContent = "Композиция " + exShape(c.w, c.h) + "ая, а видео " + s.w + "×" + s.h + " — " + exShape(s.w, s.h) + "ое. Как сделать?";
         }
         ui.exAmeRow.hidden = !(exInfo && exInfo.ame);
         ui.exAme.checked = exState.ame;
-        ui.exGo.textContent = n > 1 ? "Сохранить " + n + " видео" : "Сохранить видео";
-        ui.exGo.disabled = busy || !n || !exInfo;
+        ui.exGo.textContent = "Сохранить видео" + (mb ? " · " + mb : "");
+        ui.exGo.disabled = busy || !exInfo;
     }
 
     async function onExport() {
@@ -7604,12 +7647,11 @@
 
     async function runExport() {
         var jobs, folder, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null;
-        if (busy || !exInfo || !exState.targets.length) { return; }
+        if (busy || !exInfo) { return; }
         folder = exFolderNow || exDefaultNow;
-        jobs = exOrder(exState.targets).map(function (id) {
-            var s = exSize(id);
-            return { id: id, w: s.w, h: s.h, label: id === "custom" ? s.w + "x" + s.h : EX_TARGETS[id].label,
-                quality: EX_TARGETS[id].light ? "light" : exState.quality };
+        jobs = [exState.level].map(function (id) {
+            var s = exSize();
+            return { id: id, w: s.w, h: s.h, label: id === "custom" ? s.w + "x" + s.h : EX_LEVELS[id].label, quality: exQualityOf(id), mbps: exRate(id) };
         });
         setBusy(true);
         ui.exSetup.hidden = true;
@@ -7639,7 +7681,7 @@
             j.st.textContent = "●"; j.sm.textContent = "сохраняю…";
             bar.firstChild.style.width = Math.round(i / jobs.length * 100) + "%";
             try {
-                r = await host("exportOne", [{ w: j.w, h: j.h, label: j.label, fit: exState.fit, quality: j.quality, span: exState.span,
+                r = await host("exportOne", [{ w: j.w, h: j.h, label: j.label, fit: exState.fit, quality: j.quality, mbps: j.mbps, span: exState.span,
                     folder: folder, ame: !!(exInfo.ame && exState.ame), bin: "Sayframe Экспорт" }]);
                 done++;
                 last = r.path;
@@ -7648,6 +7690,11 @@
                 j.nm.textContent = r.name || platform.basename(r.path);
                 j.nm.title = r.path;
                 if (r.mode === "ame") { ame = true; j.sm.textContent = "в Media Encoder"; } else { j.sm.textContent = exSizeText(r.size); }
+                // Битрейт, с которым сохранили; без Media Encoder — ближайший шаблон AE (5, 15 или 40).
+                if (r.mbps > 0) {
+                    j.sm.textContent += " · " + r.mbps + " Мбит/с";
+                    if (j.mbps && r.mbps !== j.mbps) { j.sm.title = "Без Media Encoder After Effects умеет только 5, 15 и 40 Мбит/с — взят ближайший"; }
+                }
                 j.row.appendChild(exShowBtn(r.path));
             } catch (e) {
                 failed++;
@@ -7692,11 +7739,15 @@
         ui.exBrowse.addEventListener("click", onExBrowse);
         ui.exGo.addEventListener("click", runExport);
         ui.exTargets.addEventListener("click", function (e) {
-            var b = e.target.closest ? e.target.closest(".ex-t") : null, id, k;
+            var b = e.target.closest ? e.target.closest(".ex-t") : null, st = e.target.closest ? e.target.closest(".ex-rate [data-d]") : null;
             if (!b) { return; }
-            id = b.getAttribute("data-t");
-            k = exState.targets.indexOf(id);
-            if (k >= 0) { exState.targets.splice(k, 1); } else { exState.targets.push(id); }
+            if (st && b.getAttribute("aria-pressed") === "true") {
+                if (!st.classList.contains("off")) { exStepRate(b.getAttribute("data-t"), Number(st.getAttribute("data-d"))); }
+                storeExport();
+                drawExport();
+                return;
+            }
+            exState.level = b.getAttribute("data-t");
             storeExport();
             drawExport();
         });
@@ -8683,21 +8734,42 @@
 
     // ---- Текст по ленте (Анимация › Макеты): лента с бегущим текстом по линии или 3D-кольцо из букв.
     var RB_KEY = "sayframe.ribbon.v1";
-    var RB_DEFAULTS = { mode: "ribbon", form: "loops", text: "WEST LOOP", sep: "•", ribbonColor: "#3aa0e8", textColor: "#e8672c", ringColor: "#ffffff",
+    var RB_DEFAULTS = { mode: "ribbon", form: "loops", text: "WEST LOOP", sep: "•", ribbonColor: "#3aa0e8", textColor: "#e8672c", ringColor: "#ffffff", paint: "ribbon", gAngle: 0,
         width: 120, size: 60, speed: 35, run: true, rings: 2, radius: 560, tilt: 12, ringSpeed: 40, back: true, camera: true, seed: 4127, angle: 0, dir: "fwd", overlap: false, shadow: true };
-    var RB_RANGES = { width: [10, 400], size: [20, 100], speed: [0, 100], rings: [1, 5], radius: [100, 1500], tilt: [0, 60], ringSpeed: [0, 100], seed: [1, 99999], angle: [-90, 90] };
-    var RB_CHOICES = { mode: ["ribbon", "ring"], form: ["path", "wave", "loops", "circle", "spiral", "random"], dir: ["fwd", "back"] };
+    var RB_RANGES = { gAngle: [-90, 90], width: [10, 400], size: [20, 100], speed: [0, 100], rings: [1, 5], radius: [100, 1500], tilt: [0, 60], ringSpeed: [0, 100], seed: [1, 99999], angle: [-90, 90] };
+    var RB_CHOICES = { mode: ["ribbon", "ring"], form: ["path", "wave", "loops", "circle", "spiral", "random"], dir: ["fwd", "back"], paint: ["ribbon", "text"] };
 
     function rbClean(src) {
         var o = {}, k;
         for (k in RB_DEFAULTS) { if (RB_DEFAULTS.hasOwnProperty(k)) { o[k] = src && typeof src === "object" && typeof src[k] === typeof RB_DEFAULTS[k] ? src[k] : RB_DEFAULTS[k]; } }
         for (k in RB_RANGES) { if (RB_RANGES.hasOwnProperty(k)) { o[k] = Math.max(RB_RANGES[k][0], Math.min(RB_RANGES[k][1], Math.round(Number(o[k]) || 0))); } }
         for (k in RB_CHOICES) { if (RB_CHOICES.hasOwnProperty(k) && RB_CHOICES[k].indexOf(o[k]) < 0) { o[k] = RB_DEFAULTS[k]; } }
-        ["ribbonColor", "textColor", "ringColor"].forEach(function (c) { o[c] = parseHex(o[c]) ? parseHex(o[c]).hex : RB_DEFAULTS[c]; });
+        ["ribbonColor", "textColor", "ringColor"].forEach(function (c) { o[c] = rbFill(o[c], c !== "ringColor") || RB_DEFAULTS[c]; });
         o.text = String(o.text).slice(0, 60);
         o.sep = String(o.sep).slice(0, 2);
         return o;
     }
+
+    // Цвет ленты или текста: "#rrggbb" или градиент "#rrggbb>#rrggbb".
+    function rbFill(v, grad) {
+        var p = String(v || "").split(">"), a = parseHex(p[0]), b = p.length === 2 ? parseHex(p[1]) : null;
+        if (!a || p.length > 2 || (p.length === 2 && (!b || !grad))) { return ""; }
+        return b ? a.hex + ">" + b.hex : a.hex;
+    }
+    function rbStops(v) { var p = String(v).split(">"); return [p[0], p[1] || p[0]]; }
+    // Краска для SVG превью: цвет или ссылка на градиент поперёк кадра (как Gradient Ramp в host.jsx).
+    function rbGradDefs() {
+        var a = rb.gAngle * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a), r = Math.abs(dx) * 960 + Math.abs(dy) * 540, out = "";
+        [["rbGR", rb.ribbonColor], ["rbGT", rb.textColor]].forEach(function (d) {
+            var st = rbStops(d[1]);
+            if (d[1].indexOf(">") < 0) { return; }
+            out += "<linearGradient id=\"" + d[0] + "\" gradientUnits=\"userSpaceOnUse\" x1=\"" + (-dx * r).toFixed(1) + "\" y1=\"" + (-dy * r).toFixed(1) + "\" x2=\"" + (dx * r).toFixed(1) + "\" y2=\"" + (dy * r).toFixed(1) +
+                "\"><stop offset=\"0\" stop-color=\"" + st[0] + "\"/><stop offset=\"1\" stop-color=\"" + st[1] + "\"/></linearGradient>";
+        });
+        return out ? "<defs>" + out + "</defs>" : "";
+    }
+    function rbPaintOf(which) { var v = which === "text" ? rb.textColor : rb.ribbonColor; return v.indexOf(">") < 0 ? v : "url(#" + (which === "text" ? "rbGT" : "rbGR") + ")"; }
+    function rbCss(v) { return v.indexOf(">") < 0 ? v : "linear-gradient(135deg," + v.replace(">", ",") + ")"; }
 
     var rb = (function () { try { return rbClean(JSON.parse(window.localStorage.getItem(RB_KEY) || "null")); } catch (e) { return rbClean(null); } })();
 
@@ -8707,22 +8779,93 @@
         return function () { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
     }
 
-    // «Случайная»: 4–6 изгибов, на части — петля. Тот же номер варианта — та же линия (как ribRandom в host.jsx).
+    // «Random»: one of many figures (spiral, zigzag, straight line, heart, diamond, square, wave, triangle, arc),
+    // each with its own random size and bends. The same number gives the same figure. Few points, so it is easy
+    // to bend by hand; corners stay sharp.
     function rbRandom(seed, W, H) {
-        var r = rbRng(seed), pts = [], n = 4 + Math.floor(r() * 3), i, k, x, y, rad, dir, cy, t, step = W * 1.1 / n;
-        for (i = 0; i <= n; i++) {
-            x = -W * 0.55 + i * step;
-            y = (r() - 0.5) * H * 0.5;
-            pts.push([x, y]);
-            if (i > 0 && i < n && r() < 0.5) {
-                rad = H * (0.08 + r() * 0.07);
-                dir = r() < 0.5 ? 1 : -1;
-                cy = y - dir * rad;
-                for (k = 1; k < 8; k++) { t = k / 8 * 2 * Math.PI; pts.push([x + rad * Math.sin(t) + k / 8 * step * 0.12, cy + dir * rad * Math.cos(t)]); }
-                pts.push([x + step * 0.14, y]);
-            }
+        var r = rbRng(Math.floor(Math.abs(Number(seed) || 1)) * 7919 % 2147483629 + 17), kinds = ["spiral", "zigzag", "line", "heart", "diamond", "square", "wave", "triangle", "arc"];
+        var kind, M = Math.min(W, H), pts = [], corners = {}, i, n, t, a, rr, s, w, h, amp, turns, cnt, k, a0;
+        function poly(list) { for (var j = 0; j < list.length; j++) { pts.push(list[j]); corners[j] = true; } }
+        r(); r(); r();
+        kind = kinds[Math.floor(r() * kinds.length) % kinds.length];
+        if (kind === "spiral") {
+            turns = 2 + r() * 2; n = Math.ceil(turns * 16); a0 = r() * 2 * Math.PI;
+            for (i = 0; i <= n; i++) { t = a0 + i / n * turns * 2 * Math.PI; rr = M * 0.44 * (0.1 + 0.9 * i / n); pts.push([rr * Math.cos(t), rr * Math.sin(t)]); }
+            return { pts: pts, closed: false, step: 4, kind: kind };
         }
-        return pts;
+        if (kind === "zigzag") {
+            cnt = 4 + Math.floor(r() * 5); amp = H * (0.12 + r() * 0.16);
+            for (i = 0; i <= cnt; i++) { pts.push([(i / cnt - 0.5) * W * 1.1, (i % 2 ? -1 : 1) * amp]); corners[i] = true; }
+            return { pts: pts, closed: false, step: 1, corners: corners, kind: kind };
+        }
+        if (kind === "line") {
+            s = (r() - 0.5) * 0.6;
+            for (i = 0; i <= 2; i++) { t = (i / 2 - 0.5) * W * 1.1; pts.push([t, t * s * H / W]); }
+            return { pts: pts, closed: false, step: 1, kind: kind };
+        }
+        if (kind === "heart") {
+            n = 48; s = M * (0.36 + r() * 0.1) / 17;
+            for (i = 0; i < n; i++) { t = i / n * 2 * Math.PI; pts.push([16 * Math.pow(Math.sin(t), 3) * s, -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t) + 2.5) * s]); }
+            corners[0] = true; corners[24] = true;
+            return { pts: pts, closed: true, step: 4, corners: corners, kind: kind };
+        }
+        if (kind === "diamond") {
+            w = M * (0.24 + r() * 0.1); h = Math.min(w * (1.25 + r() * 0.35), M * 0.44);
+            poly([[0, -h], [w, 0], [0, h], [-w, 0]]);
+            return { pts: pts, closed: true, step: 1, corners: corners, kind: kind };
+        }
+        if (kind === "square") {
+            w = M * (0.28 + r() * 0.12); a = (r() - 0.5) * 0.4;
+            for (i = 0; i < 4; i++) { t = a + Math.PI / 4 + i * Math.PI / 2; pts.push([w * Math.SQRT2 * Math.cos(t), w * Math.SQRT2 * Math.sin(t)]); corners[i] = true; }
+            return { pts: pts, closed: true, step: 1, corners: corners, kind: kind };
+        }
+        if (kind === "triangle") {
+            w = M * (0.36 + r() * 0.1); a = (r() - 0.5) * 0.5;
+            for (i = 0; i < 3; i++) { t = a - Math.PI / 2 + i * 2 * Math.PI / 3; pts.push([w * Math.cos(t), w * Math.sin(t) + w * 0.18]); corners[i] = true; }
+            return { pts: pts, closed: true, step: 1, corners: corners, kind: kind };
+        }
+        if (kind === "arc") {
+            a = (0.6 + r() * 0.45) * Math.PI; rr = W * 0.5 / Math.max(0.5, Math.sin(a / 2)); k = r() < 0.5 ? 1 : -1; n = 24;
+            for (i = 0; i <= n; i++) { t = -a / 2 + i / n * a; pts.push([rr * Math.sin(t), -k * rr * Math.cos(t)]); }
+            // Centred, and small enough to stay inside the frame.
+            w = 0; h = 1e9; for (i = 0; i <= n; i++) { w = Math.max(w, pts[i][1]); h = Math.min(h, pts[i][1]); }
+            s = Math.min(1, H * 0.7 / Math.max(1, w - h), W * 1.0 / Math.max(1, 2 * rr * (a > Math.PI ? 1 : Math.sin(a / 2))));
+            for (i = 0; i <= n; i++) { pts[i] = [pts[i][0] * s, (pts[i][1] - (w + h) / 2) * s]; }
+            return { pts: pts, closed: false, step: 6, kind: kind };
+        }
+        // wave: one to three waves
+        cnt = 1 + Math.floor(r() * 3); amp = H * (0.1 + r() * 0.16); n = cnt * 16; a0 = r() < 0.5 ? 1 : -1;
+        for (i = 0; i <= n; i++) { t = i / n; pts.push([(t - 0.5) * W * 1.1, -a0 * Math.sin(t * cnt * 2 * Math.PI) * amp]); }
+        return { pts: pts, closed: false, step: 4, kind: "wave" };
+    }
+
+    // A line with few points, easy to bend by hand: every step-th point of the dense line is kept, its handles
+    // point along the dense line and are a third of the way to the next kept point. At a corner the two handles
+    // point at their own neighbours, so it stays sharp.
+    function rbBez(sm) {
+        var p = sm.pts, n = p.length, st = sm.step || 1, cr = sm.corners || {}, keep = [], i, k, a, b, dx, dy, d, ex, ey, lenTo, ins = [], outs = [], v = [];
+        for (i = 0; i < n; i += st) { keep.push(i); }
+        if (!sm.closed && keep[keep.length - 1] !== n - 1) { if (n - 1 - keep[keep.length - 1] < st / 2 && keep.length > 1) { keep.pop(); } keep.push(n - 1); }
+        function at(j) { return p[((j % n) + n) % n]; }
+        function arc(i0, i1) {
+            var L = 0, j, q, r;
+            for (j = i0; j < i1; j++) { q = at(j); r = at(j + 1); L += Math.sqrt((r[0] - q[0]) * (r[0] - q[0]) + (r[1] - q[1]) * (r[1] - q[1])); }
+            return L;
+        }
+        function unit(x, y) { var l = Math.sqrt(x * x + y * y) || 1; return [x / l, y / l]; }
+        for (k = 0; k < keep.length; k++) {
+            i = keep[k];
+            a = sm.closed ? at(i - 1) : p[Math.max(0, i - 1)];
+            b = sm.closed ? at(i + 1) : p[Math.min(n - 1, i + 1)];
+            if (cr[i]) { d = unit(p[i][0] - a[0], p[i][1] - a[1]); dx = d[0]; dy = d[1]; d = unit(b[0] - p[i][0], b[1] - p[i][1]); ex = d[0]; ey = d[1]; }
+            else { d = unit(b[0] - a[0], b[1] - a[1]); dx = ex = d[0]; dy = ey = d[1]; }
+            lenTo = (k > 0 || sm.closed) ? arc(k > 0 ? keep[k - 1] : keep[keep.length - 1] - n, i) / 3 : 0;
+            ins.push([-dx * lenTo, -dy * lenTo]);
+            lenTo = (k < keep.length - 1 || sm.closed) ? arc(i, k < keep.length - 1 ? keep[k + 1] : keep[0] + n) / 3 : 0;
+            outs.push([ex * lenTo, ey * lenTo]);
+            v.push([p[i][0], p[i][1]]);
+        }
+        return { vertices: v, inTangents: ins, outTangents: outs, closed: !!sm.closed };
     }
 
     // Направление линии: форма строится для повёрнутого кадра и поворачивается (как ribSample в host.jsx).
@@ -8739,7 +8882,7 @@
 
     function rbSample0(form, W, H, o) {
         var pts = [], i, n, t, u, m = Math.min(W, H), r, xs = [], ys = [], s, x0, x1, y0, y1;
-        if (form === "random") { return { pts: rbRandom(o && o.seed, W, H), closed: false }; }
+        if (form === "random") { return rbRandom(o && o.seed, W, H); }
         if (form === "circle") { r = m * 0.3; for (i = 0; i < 24; i++) { t = i / 24 * 2 * Math.PI; pts.push([r * Math.sin(t), -r * Math.cos(t)]); } return { pts: pts, closed: true }; }
         if (form === "spiral") { n = 44; for (i = 0; i <= n; i++) { t = i / n * 5 * Math.PI; r = m * 0.4 * (0.12 + 0.88 * i / n); pts.push([r * Math.cos(t), r * Math.sin(t)]); } return { pts: pts, closed: false }; }
         if (form === "loops" || form === "path") {
@@ -8756,6 +8899,14 @@
     }
 
     function rbSvgPath(sm) {
+        if (sm.step >= 1) {
+            var bz = rbBez(sm), v = bz.vertices, m = v.length, out = "M" + v[0][0].toFixed(1) + " " + v[0][1].toFixed(1), q, e;
+            for (q = 0; q < (bz.closed ? m : m - 1); q++) {
+                e = (q + 1) % m;
+                out += " C" + (v[q][0] + bz.outTangents[q][0]).toFixed(1) + " " + (v[q][1] + bz.outTangents[q][1]).toFixed(1) + " " + (v[e][0] + bz.inTangents[e][0]).toFixed(1) + " " + (v[e][1] + bz.inTangents[e][1]).toFixed(1) + " " + v[e][0].toFixed(1) + " " + v[e][1].toFixed(1);
+            }
+            return out + (bz.closed ? " Z" : "");
+        }
         var p = sm.pts, n = p.length, d = "M" + p[0][0].toFixed(1) + " " + p[0][1].toFixed(1), i, segs = sm.closed ? n : n - 1;
         function tan(i) {
             var a = sm.closed ? p[(i - 1 + n) % n] : p[Math.max(0, i - 1)], b = sm.closed ? p[(i + 1) % n] : p[Math.min(n - 1, i + 1)];
@@ -8817,8 +8968,8 @@
             for (q = 0; q < n; q++) { sp += q >= G[0] && q < G[1] ? rbEsc(txt.charAt(q)) : "<tspan fill-opacity=\"0\">" + rbEsc(txt.charAt(q)) + "</tspan>"; }
             el = document.createElementNS(NS, "g");
             el.setAttribute("class", "rb-piece");
-            el.innerHTML = "<use href=\"#rbPrevPath\" fill=\"none\" stroke=\"" + rb.ribbonColor + "\" stroke-width=\"" + W + "\" stroke-linecap=\"" + (k === 0 || k === groups.length - 1 ? "round" : "butt") + "\" stroke-dasharray=\"0 " + G[2] + " " + (len + 0.8) + " " + L * 3 + "\"/>" +
-                "<text fill=\"" + rb.textColor + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + sp + "</textPath></text>";
+            el.innerHTML = "<use href=\"#rbPrevPath\" fill=\"none\" stroke=\"" + rbPaintOf("ribbon") + "\" stroke-width=\"" + W + "\" stroke-linecap=\"" + (k === 0 || k === groups.length - 1 ? "round" : "butt") + "\" stroke-dasharray=\"0 " + G[2] + " " + (len + 0.8) + " " + L * 3 + "\"/>" +
+                "<text fill=\"" + rbPaintOf("text") + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + sp + "</textPath></text>";
             g.appendChild(el);
         });
     }
@@ -8830,8 +8981,8 @@
         if (rb.mode === "ribbon") {
             for (i = 0; i < 60; i++) { txt += unit; }
             fs = Math.max(6, Math.round(rb.width * rb.size / 100));
-            st.innerHTML = "<svg viewBox=\"-1100 -560 2200 1120\" preserveAspectRatio=\"xMidYMid meet\"><path id=\"rbPrevPath\" d=\"" + rbSvgPath(rbSample(rb.form, 1920, 1080, { seed: rb.seed, angle: rb.angle })) + "\" fill=\"none\" stroke=\"" + rb.ribbonColor +
-                "\" stroke-width=\"" + rb.width + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><text fill=\"" + rb.textColor + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + rbEsc(txt) + "</textPath></text></svg>";
+            st.innerHTML = "<svg viewBox=\"-1100 -560 2200 1120\" preserveAspectRatio=\"xMidYMid meet\">" + rbGradDefs() + "<path id=\"rbPrevPath\" class=\"rb-hit-r\" d=\"" + rbSvgPath(rbSample(rb.form, 1920, 1080, { seed: rb.seed, angle: rb.angle })) + "\" fill=\"none\" stroke=\"" + rbPaintOf("ribbon") +
+                "\" stroke-width=\"" + rb.width + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><text class=\"rb-hit-t\" fill=\"" + rbPaintOf("text") + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + rbEsc(txt) + "</textPath></text></svg>";
             if (rb.overlap) { rbOverlapPreview(st.querySelector("svg"), txt, fs); }
             return;
         }
@@ -8859,12 +9010,23 @@
         if (!ui.rbStage) { return; }
         pressGroupV(ui.rbMode, rb.mode);
         Array.prototype.forEach.call(ui.rbForm.querySelectorAll("button[data-v]"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === rb.form ? "true" : "false"); });
-        ui.rbRibbonOpts.hidden = ui.rbRibbonSl.hidden = ui.rbRibbonSw.hidden = ui.rbRibColorRow.hidden = ring;
+        ui.rbRibbonOpts.hidden = ui.rbRibbonSl.hidden = ui.rbRibbonSw.hidden = ui.rbRibColorRow.hidden = ui.rbPairs.hidden = ui.rbPaint.hidden = ring;
+        ui.rbRingColorRow.hidden = !ring;
         ui.rbRingSl.hidden = ui.rbRingSw.hidden = !ring;
         if (document.activeElement !== ui.rbText) { ui.rbText.value = rb.text; }
         if (document.activeElement !== ui.rbSep) { ui.rbSep.value = rb.sep; }
-        Array.prototype.forEach.call(ui.rbRibColors.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === rb.ribbonColor ? "true" : "false"); });
-        Array.prototype.forEach.call(ui.rbTextColors.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === (ring ? rb.ringColor : rb.textColor) ? "true" : "false"); });
+        var cur = rb.paint === "text" ? rb.textColor : rb.ribbonColor, st = rbStops(cur);
+        pressGroupV(ui.rbPaint, rb.paint);
+        Array.prototype.forEach.call(ui.rbRibColors.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === cur ? "true" : "false"); });
+        Array.prototype.forEach.call(ui.rbTextColors.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === rb.ringColor ? "true" : "false"); });
+        Array.prototype.forEach.call(ui.rbPairs.querySelectorAll("button"), function (b) {
+            b.setAttribute("aria-pressed", b.getAttribute("data-r") === rb.ribbonColor && b.getAttribute("data-t") === rb.textColor ? "true" : "false");
+            b.querySelector("span").textContent = String(rb.text || "TEXT").split(" ")[0].slice(0, 9).toUpperCase() + (rb.sep ? " " + rb.sep : "");
+        });
+        ui.rbGradRow.hidden = ring || cur.indexOf(">") < 0;
+        ui.rbCustom.value = st[0]; ui.rbGradA.value = st[0]; ui.rbGradB.value = st[1];
+        ui.rbGradBar.style.background = "linear-gradient(90deg," + st[0] + "," + st[1] + ")";
+        Array.prototype.forEach.call(ui.rbGradDir.querySelectorAll("button[data-v]"), function (b) { b.setAttribute("aria-pressed", Number(b.getAttribute("data-v")) === rb.gAngle ? "true" : "false"); });
         [["Width", "width", ""], ["Size", "size", "%"], ["Speed", "speed", ""], ["Rings", "rings", ""], ["Radius", "radius", ""], ["Tilt", "tilt", "°"], ["RingSpeed", "ringSpeed", ""]].forEach(function (d) {
             ui["rb" + d[0]].value = String(rb[d[1]]);
             ui["rb" + d[0] + "Val"].textContent = rb[d[1]] + d[2];
@@ -8897,10 +9059,12 @@
         setStatus(ring ? "Собираю кольцо…" : "Собираю ленту…", "busy");
         try {
             res = await host("ribbonMake", [{ mode: rb.mode, form: rb.form, text: rb.text || "TEXT", sep: rb.sep, width: rb.width, textSize: rb.size, speed: ring ? rb.ringSpeed : rb.speed, run: rb.run, seed: rb.seed, angle: rb.angle, dir: rb.dir, overlap: rb.overlap, shadow: rb.shadow,
-                ribbonColor: tbRgb(rb.ribbonColor), textColor: tbRgb(ring ? rb.ringColor : rb.textColor), rings: rb.rings, radius: rb.radius, tilt: rb.tilt,
+                ribbonColor: tbRgb(rbStops(rb.ribbonColor)[0]), textColor: tbRgb(ring ? rb.ringColor : rbStops(rb.textColor)[0]),
+                ribbonGrad: !ring && rb.ribbonColor.indexOf(">") > 0 ? { a: tbRgb(rbStops(rb.ribbonColor)[0]), b: tbRgb(rbStops(rb.ribbonColor)[1]), angle: rb.gAngle } : null,
+                textGrad: !ring && rb.textColor.indexOf(">") > 0 ? { a: tbRgb(rbStops(rb.textColor)[0]), b: tbRgb(rbStops(rb.textColor)[1]), angle: rb.gAngle } : null, rings: rb.rings, radius: rb.radius, tilt: rb.tilt,
                 backDark: rb.back, camera: rb.camera },
                 { ribbon: "Лента", path: "Линия", text: "Текст ленты", width: "Толщина ленты", speed: "Скорость", color: "Цвет ленты",
-                    piece: "кусок", shadow: "тень", ring: "Кольцо", tilt: "Кольцо: наклон", spin: "Кольцо: вращение", camera: "Камера кольца" }]);
+                    piece: "кусок", shadow: "тень", grad: "Градиент", gradMatte: "Градиент: форма", ring: "Кольцо", tilt: "Кольцо: наклон", spin: "Кольцо: вращение", camera: "Камера кольца" }]);
             setBusy(false);
             r = res.ribbonMake || res;
             if (r.mode === "ring") {
@@ -8918,11 +9082,22 @@
         if (!ui.rbStage) { return; }
         ui.rbMode.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ mode: b.getAttribute("data-v") }); } });
         ui.rbForm.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ form: b.getAttribute("data-v") }); } });
-        ui.rbRibColors.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ ribbonColor: b.getAttribute("data-v") }); } });
-        ui.rbTextColors.addEventListener("click", function (e) {
-            var b = e.target.closest ? e.target.closest("button[data-v]") : null;
-            if (b) { setRibbon(rb.mode === "ring" ? { ringColor: b.getAttribute("data-v") } : { textColor: b.getAttribute("data-v") }); }
+        // Красим то, что выбрано на превью: ленту или текст.
+        function paintSet(v) { var ch = {}; ch[rb.paint === "text" ? "textColor" : "ribbonColor"] = v; setRibbon(ch); }
+        function paintCur() { return rb.paint === "text" ? rb.textColor : rb.ribbonColor; }
+        ui.rbRibColors.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { paintSet(b.getAttribute("data-v")); } });
+        ui.rbTextColors.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ ringColor: b.getAttribute("data-v") }); } });
+        ui.rbPaint.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ paint: b.getAttribute("data-v") }); } });
+        ui.rbStage.addEventListener("click", function (e) {
+            if (rb.mode !== "ribbon" || !e.target.closest) { return; }
+            if (e.target.closest("text")) { setRibbon({ paint: "text" }); }
+            else if (e.target.closest("path, use")) { setRibbon({ paint: "ribbon" }); }
         });
+        ui.rbPairs.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-r]") : null; if (b) { setRibbon({ ribbonColor: b.getAttribute("data-r"), textColor: b.getAttribute("data-t") }); } });
+        ui.rbCustom.addEventListener("input", function () { paintSet(ui.rbCustom.value); });
+        ui.rbGradA.addEventListener("input", function () { paintSet(ui.rbGradA.value + ">" + rbStops(paintCur())[1]); });
+        ui.rbGradB.addEventListener("input", function () { paintSet(rbStops(paintCur())[0] + ">" + ui.rbGradB.value); });
+        ui.rbGradDir.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ gAngle: Number(b.getAttribute("data-v")) }); } });
         ui.rbText.addEventListener("input", function () { setRibbon({ text: ui.rbText.value }); });
         ui.rbSep.addEventListener("input", function () { setRibbon({ sep: ui.rbSep.value }); });
         [["Width", "width"], ["Size", "size"], ["Speed", "speed"], ["Rings", "rings"], ["Radius", "radius"], ["Tilt", "tilt"], ["RingSpeed", "ringSpeed"]].forEach(function (d) {

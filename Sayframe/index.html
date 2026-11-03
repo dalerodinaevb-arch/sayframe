@@ -75,13 +75,11 @@
       </div>
       <div id="exSetup" class="ex-setup">
         <div class="ex-comp"><span id="exCompName">Композиция</span><small id="exCompMeta"></small></div>
-        <div id="exTargets" class="ex-targets" role="group" aria-label="Куда пойдёт видео">
-          <button type="button" class="kr-b ex-t" data-t="reels" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2.5"/></svg><span>Reels / Stories</span><small>1080×1920</small></button>
-          <button type="button" class="kr-b ex-t" data-t="youtube" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M10.5 9.5v5l4-2.5z"/></svg><span>YouTube</span><small>1920×1080</small></button>
-          <button type="button" class="kr-b ex-t" data-t="telegram" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 4.5L3.5 11l6 2.2 2.3 6.3 3.2-4 4.8 3.5z"/><path d="M9.5 13.2L20.5 4.5"/></svg><span>Telegram</span><small>лёгкий файл</small></button>
-          <button type="button" class="kr-b ex-t" data-t="post" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/></svg><span>Пост 4:5</span><small>1080×1350</small></button>
-          <button type="button" class="kr-b ex-t" data-t="tiktok" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 4v10.5a3.5 3.5 0 1 1-3.5-3.5"/><path d="M13 4c.5 2.4 2.2 4 4.5 4.2"/></svg><span>TikTok</span><small>1080×1920</small></button>
-          <button type="button" class="kr-b ex-t" data-t="custom" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v12M6 12h12"/></svg><span>Свой</span><small>свой размер</small></button>
+        <div id="exTargets" class="ex-targets ex-h" role="group" aria-label="Качество видео">
+          <button type="button" class="kr-b ex-t" data-t="light" aria-pressed="false"><i class="ex-bars" aria-hidden="true"><b></b><b></b><b></b></i><span>Низкое</span><strong class="ex-mb"></strong><small class="ex-rate"><i data-d="-1" title="Меньше">−</i><em></em><i data-d="1" title="Больше">+</i></small></button>
+          <button type="button" class="kr-b ex-t" data-t="normal" aria-pressed="false"><i class="ex-bars" aria-hidden="true"><b></b><b></b><b></b></i><span>Среднее</span><strong class="ex-mb"></strong><small class="ex-rate"><i data-d="-1" title="Меньше">−</i><em></em><i data-d="1" title="Больше">+</i></small></button>
+          <button type="button" class="kr-b ex-t" data-t="max" aria-pressed="false"><i class="ex-bars" aria-hidden="true"><b></b><b></b><b></b></i><span>Высокое</span><strong class="ex-mb"></strong><small class="ex-rate"><i data-d="-1" title="Меньше">−</i><em></em><i data-d="1" title="Больше">+</i></small></button>
+          <button type="button" class="kr-b ex-t" data-t="custom" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v12M6 12h12"/></svg><span>Своё</span><strong class="ex-mb"></strong><small>свой размер</small></button>
         </div>
         <div id="exCustom" class="ex-custom" hidden>
           <input id="exW" type="number" min="16" max="8192" step="2" aria-label="Ширина"><span>×</span><input id="exH" type="number" min="16" max="8192" step="2" aria-label="Высота">
@@ -94,11 +92,13 @@
             <button type="button" data-v="crop" aria-pressed="false">Обрезать</button>
           </div>
         </div>
+        <div id="exQualRow" class="ex-qualrow" hidden>
         <span class="kr-lab">Качество</span>
         <div id="exQuality" class="kr-seg tb-three" role="group" aria-label="Качество">
-          <button type="button" class="kr-b" data-v="light"><span>Лёгкий файл</span></button>
-          <button type="button" class="kr-b" data-v="normal"><span>Обычное</span></button>
-          <button type="button" class="kr-b" data-v="max"><span>Максимум</span></button>
+          <button type="button" class="kr-b" data-v="light"><span>Низкое</span></button>
+          <button type="button" class="kr-b" data-v="normal"><span>Среднее</span></button>
+          <button type="button" class="kr-b" data-v="max"><span>Высокое</span></button>
+        </div>
         </div>
         <span class="kr-lab">Что сохранить</span>
         <div id="exSpan" class="kr-seg" role="group" aria-label="Что сохранить">
@@ -495,7 +495,10 @@
         <section class="card mk-card" data-mk="ribbon">
           <div class="mk-head" title="Потяните за название, чтобы поменять блоки местами; щелчок — свернуть"><span class="mk-grip" aria-hidden="true"></span><span class="mk-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 17c3 0 4-10 8-10s3 7 0 7-2-6 4-6 5 9 8 9"/></svg></span><b>Текст по ленте</b><button type="button" class="mk-fold" aria-expanded="true" aria-label="Свернуть"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button></div>
           <div class="mk-body rb-pane">
-            <div id="rbStage" class="rb-stage" aria-hidden="true"></div>
+            <div class="rb-stagewrap">
+              <div id="rbStage" class="rb-stage" aria-hidden="true"></div>
+              <div id="rbPaint" class="rb-paint" role="group" aria-label="Что красим"><button type="button" data-v="ribbon">Лента</button><button type="button" data-v="text">Текст</button></div>
+            </div>
             <div id="rbMode" class="kr-seg" role="group" aria-label="Лента или 3D-кольцо">
               <button type="button" class="kr-b" data-v="ribbon"><span>Лента</span></button>
               <button type="button" class="kr-b" data-v="ring"><span>3D-кольцо</span></button>
@@ -530,8 +533,10 @@
               <label class="rb-sep" title="Знак между повторами текста">Разделитель<input id="rbSep" class="field" type="text" maxlength="2" spellcheck="false" aria-label="Разделитель"></label>
             </div>
             <div class="rb-colors">
-              <div id="rbRibColorRow" class="tb-colors"><span class="tb-cl">Лента</span><div id="rbRibColors" class="tb-swatches" role="group" aria-label="Лента"><button type="button" data-v="#3aa0e8" style="--c:#3aa0e8" aria-label="#3aa0e8"></button><button type="button" data-v="#141414" style="--c:#141414" aria-label="#141414"></button><button type="button" data-v="#e8672c" style="--c:#e8672c" aria-label="#e8672c"></button><button type="button" data-v="#ffffff" style="--c:#ffffff" aria-label="#ffffff"></button></div></div>
-              <div class="tb-colors"><span class="tb-cl">Текст</span><div id="rbTextColors" class="tb-swatches" role="group" aria-label="Текст"><button type="button" data-v="#e8672c" style="--c:#e8672c" aria-label="#e8672c"></button><button type="button" data-v="#ffffff" style="--c:#ffffff" aria-label="#ffffff"></button><button type="button" data-v="#2bd38a" style="--c:#2bd38a" aria-label="#2bd38a"></button><button type="button" data-v="#141414" style="--c:#141414" aria-label="#141414"></button><button type="button" data-v="#3aa0e8" style="--c:#3aa0e8" aria-label="#3aa0e8"></button></div></div>
+              <div id="rbRibColorRow" class="rb-paintrow"><div id="rbRibColors" class="tb-swatches" role="group" aria-label="Цвет"><button type="button" data-v="#3aa0e8" style="--c:#3aa0e8" aria-label="Синий" title="Синий"></button><button type="button" data-v="#141414" style="--c:#141414" aria-label="Чёрный" title="Чёрный"></button><button type="button" data-v="#ffffff" style="--c:#ffffff" aria-label="Белый" title="Белый"></button><button type="button" data-v="#e8672c" style="--c:#e8672c" aria-label="Оранжевый" title="Оранжевый"></button><button type="button" data-v="#2bd38a" style="--c:#2bd38a" aria-label="Зелёный" title="Зелёный"></button><button type="button" data-v="#ffcc33" style="--c:#ffcc33" aria-label="Жёлтый" title="Жёлтый"></button><button type="button" data-v="#f953c6>#7b5cff" style="--c:linear-gradient(135deg,#f953c6,#7b5cff)" aria-label="Неон" title="Неон"></button><button type="button" data-v="#ff5f6d>#ffc371" style="--c:linear-gradient(135deg,#ff5f6d,#ffc371)" aria-label="Закат" title="Закат"></button><button type="button" data-v="#00c6ff>#0072ff" style="--c:linear-gradient(135deg,#00c6ff,#0072ff)" aria-label="Океан" title="Океан"></button><button type="button" data-v="#11998e>#38ef7d" style="--c:linear-gradient(135deg,#11998e,#38ef7d)" aria-label="Мята" title="Мята"></button></div><input id="rbCustom" class="color-pick" type="color" aria-label="Свой цвет" title="Свой цвет"></div>
+              <div id="rbGradRow" class="rb-gradrow"><input id="rbGradA" class="color-pick rb-stop" type="color" aria-label="Цвет 1"><span id="rbGradBar" class="rb-gradbar"></span><input id="rbGradB" class="color-pick rb-stop" type="color" aria-label="Цвет 2"><div id="rbGradDir" class="rb-graddir" role="group" aria-label="Направление градиента"><button type="button" data-v="0" aria-label="Слева направо">→</button><button type="button" data-v="45" aria-label="По диагонали">↘</button><button type="button" data-v="90" aria-label="Сверху вниз">↓</button><button type="button" data-v="-45" aria-label="Снизу вверх по диагонали">↗</button></div></div>
+              <div id="rbPairs" class="rb-pairs" role="group" aria-label="Готовые пары"><button type="button" data-r="#3aa0e8" data-t="#ffffff" style="--r:#3aa0e8;--t:#ffffff"><span></span></button><button type="button" data-r="#f953c6>#7b5cff" data-t="#ffffff" style="--r:linear-gradient(135deg,#f953c6,#7b5cff);--t:#ffffff"><span></span></button><button type="button" data-r="#141414" data-t="#ffcc33" style="--r:#141414;--t:#ffcc33"><span></span></button><button type="button" data-r="#ffffff" data-t="#141414" style="--r:#ffffff;--t:#141414"><span></span></button><button type="button" data-r="#ff5f6d>#ffc371" data-t="#3a0f63" style="--r:linear-gradient(135deg,#ff5f6d,#ffc371);--t:#3a0f63"><span></span></button><button type="button" data-r="#2bd38a" data-t="#0b3d2a" style="--r:#2bd38a;--t:#0b3d2a"><span></span></button></div>
+              <div id="rbRingColorRow" class="tb-colors"><span class="tb-cl">Цвет</span><div id="rbTextColors" class="tb-swatches" role="group" aria-label="Цвет букв"><button type="button" data-v="#ffffff" style="--c:#ffffff" aria-label="#ffffff"></button><button type="button" data-v="#e8672c" style="--c:#e8672c" aria-label="#e8672c"></button><button type="button" data-v="#2bd38a" style="--c:#2bd38a" aria-label="#2bd38a"></button><button type="button" data-v="#141414" style="--c:#141414" aria-label="#141414"></button><button type="button" data-v="#3aa0e8" style="--c:#3aa0e8" aria-label="#3aa0e8"></button></div></div>
             </div>
             <div id="rbRibbonSl" class="kr-sliders">
               <label class="ac-row ac-slider kr-sl"><span>Толщина ленты</span><input id="rbWidth" class="range" type="range" min="10" max="400" step="1"><output id="rbWidthVal" for="rbWidth"></output></label>
