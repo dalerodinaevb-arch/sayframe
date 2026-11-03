@@ -5804,9 +5804,20 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("RN2 «Другая линия» gives a new number and a new line", s2 !== "4127" && d2 !== d1, s2);
     await p.page.fill("#rbSeed", "4127"); await p.page.press("#rbSeed", "Enter");
     check("RN2 the same number brings the same line back", (await d(p)) === d1);
+    {
+      const src = fs.readFileSync(path.join(__dirname, "..", "Sayframe", "js", "panel.js"), "utf8");
+      const grab = (name) => { const i = src.indexOf("    function " + name + "("); let dd = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") dd++; else if (src[k] === "}" && !--dd) return src.slice(i, k + 1); } };
+      const gen = new Function(["rbRng", "rbRandom"].map(grab).join("\n") + ";return rbRandom;")();
+      const kinds = {}; let bad = "";
+      for (let sd = 1; sd <= 60; sd++) { const sm = gen(sd * 131 + 7, 1920, 1080); kinds[sm.kind] = 1; if (sm.pts.some((q) => Math.abs(q[1]) > 540 * 0.95)) bad += sm.kind + sd + " "; }
+      check("RN7 «Случайная» gives many figures (spiral, zigzag, line, heart, diamond, square, wave, triangle, arc), no loops, all inside the frame's height",
+        ["spiral", "zigzag", "line", "heart", "diamond", "square", "wave", "triangle", "arc"].every((k) => kinds[k]) && !kinds.loops && !bad, Object.keys(kinds).join() + " | " + bad);
+      const hsrc = fs.readFileSync(path.join(__dirname, "..", "Sayframe", "jsx", "host.jsx"), "utf8");
+      check("RN7 the comp's figure is the same as the preview's (one generator in both)", hsrc.includes(grab("rbRandom").replace(/rb([A-Z])/g, "rib$1")), "host differs");
+    }
     await p.page.click("#rbBtn"); await p.idle();
     const v1 = JSON.stringify(verts(L(p, "Лента")));
-    check("RN3 the comp gets that random line", verts(L(p, "Лента")).length >= 5 && spread(verts(L(p, "Лента")), 0) > 1500 && /Лента готова/.test(await p.status()), await p.status());
+    check("RN3 the comp gets that random line", verts(L(p, "Лента")).length >= 2 && verts(L(p, "Лента")).length <= 20 && Math.max(spread(verts(L(p, "Лента")), 0), spread(verts(L(p, "Лента")), 1)) > 300 && /Лента готова/.test(await p.status()), await p.status());
     await p.close();
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
     await rbTab(p);

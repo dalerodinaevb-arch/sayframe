@@ -3352,22 +3352,93 @@ var sayframeHost = (function () {
         return function () { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
     }
 
-    // A random line across the frame: 4-6 bends, some of them with a loop. The same number gives the same line.
+    // "Random": one of many figures (spiral, zigzag, straight line, heart, diamond, square, wave, triangle, arc),
+    // each with its own random size and bends. The same number gives the same figure. Few points, so it is easy
+    // to bend by hand; corners stay sharp.
     function ribRandom(seed, W, H) {
-        var r = ribRng(seed), pts = [], n = 4 + Math.floor(r() * 3), i, k, x, y, rad, dir, cy, t, step = W * 1.1 / n;
-        for (i = 0; i <= n; i++) {
-            x = -W * 0.55 + i * step;
-            y = (r() - 0.5) * H * 0.5;
-            pts.push([x, y]);
-            if (i > 0 && i < n && r() < 0.5) {
-                rad = H * (0.08 + r() * 0.07);
-                dir = r() < 0.5 ? 1 : -1;
-                cy = y - dir * rad;
-                for (k = 2; k < 8; k += 2) { t = k / 8 * 2 * Math.PI; pts.push([x + rad * Math.sin(t) + k / 8 * step * 0.12, cy + dir * rad * Math.cos(t)]); }
-                pts.push([x + step * 0.14, y]);
-            }
+        var r = ribRng(Math.floor(Math.abs(Number(seed) || 1)) * 7919 % 2147483629 + 17), kinds = ["spiral", "zigzag", "line", "heart", "diamond", "square", "wave", "triangle", "arc"];
+        var kind, M = Math.min(W, H), pts = [], corners = {}, i, n, t, a, rr, s, w, h, amp, turns, cnt, k, a0;
+        function poly(list) { for (var j = 0; j < list.length; j++) { pts.push(list[j]); corners[j] = true; } }
+        r(); r(); r();
+        kind = kinds[Math.floor(r() * kinds.length) % kinds.length];
+        if (kind === "spiral") {
+            turns = 2 + r() * 2; n = Math.ceil(turns * 16); a0 = r() * 2 * Math.PI;
+            for (i = 0; i <= n; i++) { t = a0 + i / n * turns * 2 * Math.PI; rr = M * 0.44 * (0.1 + 0.9 * i / n); pts.push([rr * Math.cos(t), rr * Math.sin(t)]); }
+            return { pts: pts, closed: false, step: 4, kind: kind };
         }
-        return pts;
+        if (kind === "zigzag") {
+            cnt = 4 + Math.floor(r() * 5); amp = H * (0.12 + r() * 0.16);
+            for (i = 0; i <= cnt; i++) { pts.push([(i / cnt - 0.5) * W * 1.1, (i % 2 ? -1 : 1) * amp]); corners[i] = true; }
+            return { pts: pts, closed: false, step: 1, corners: corners, kind: kind };
+        }
+        if (kind === "line") {
+            s = (r() - 0.5) * 0.6;
+            for (i = 0; i <= 2; i++) { t = (i / 2 - 0.5) * W * 1.1; pts.push([t, t * s * H / W]); }
+            return { pts: pts, closed: false, step: 1, kind: kind };
+        }
+        if (kind === "heart") {
+            n = 48; s = M * (0.36 + r() * 0.1) / 17;
+            for (i = 0; i < n; i++) { t = i / n * 2 * Math.PI; pts.push([16 * Math.pow(Math.sin(t), 3) * s, -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t) + 2.5) * s]); }
+            corners[0] = true; corners[24] = true;
+            return { pts: pts, closed: true, step: 4, corners: corners, kind: kind };
+        }
+        if (kind === "diamond") {
+            w = M * (0.24 + r() * 0.1); h = Math.min(w * (1.25 + r() * 0.35), M * 0.44);
+            poly([[0, -h], [w, 0], [0, h], [-w, 0]]);
+            return { pts: pts, closed: true, step: 1, corners: corners, kind: kind };
+        }
+        if (kind === "square") {
+            w = M * (0.28 + r() * 0.12); a = (r() - 0.5) * 0.4;
+            for (i = 0; i < 4; i++) { t = a + Math.PI / 4 + i * Math.PI / 2; pts.push([w * Math.SQRT2 * Math.cos(t), w * Math.SQRT2 * Math.sin(t)]); corners[i] = true; }
+            return { pts: pts, closed: true, step: 1, corners: corners, kind: kind };
+        }
+        if (kind === "triangle") {
+            w = M * (0.36 + r() * 0.1); a = (r() - 0.5) * 0.5;
+            for (i = 0; i < 3; i++) { t = a - Math.PI / 2 + i * 2 * Math.PI / 3; pts.push([w * Math.cos(t), w * Math.sin(t) + w * 0.18]); corners[i] = true; }
+            return { pts: pts, closed: true, step: 1, corners: corners, kind: kind };
+        }
+        if (kind === "arc") {
+            a = (0.6 + r() * 0.45) * Math.PI; rr = W * 0.5 / Math.max(0.5, Math.sin(a / 2)); k = r() < 0.5 ? 1 : -1; n = 24;
+            for (i = 0; i <= n; i++) { t = -a / 2 + i / n * a; pts.push([rr * Math.sin(t), -k * rr * Math.cos(t)]); }
+            // Centred, and small enough to stay inside the frame.
+            w = 0; h = 1e9; for (i = 0; i <= n; i++) { w = Math.max(w, pts[i][1]); h = Math.min(h, pts[i][1]); }
+            s = Math.min(1, H * 0.7 / Math.max(1, w - h), W * 1.0 / Math.max(1, 2 * rr * (a > Math.PI ? 1 : Math.sin(a / 2))));
+            for (i = 0; i <= n; i++) { pts[i] = [pts[i][0] * s, (pts[i][1] - (w + h) / 2) * s]; }
+            return { pts: pts, closed: false, step: 6, kind: kind };
+        }
+        // wave: one to three waves
+        cnt = 1 + Math.floor(r() * 3); amp = H * (0.1 + r() * 0.16); n = cnt * 16; a0 = r() < 0.5 ? 1 : -1;
+        for (i = 0; i <= n; i++) { t = i / n; pts.push([(t - 0.5) * W * 1.1, -a0 * Math.sin(t * cnt * 2 * Math.PI) * amp]); }
+        return { pts: pts, closed: false, step: 4, kind: "wave" };
+    }
+
+    // A line with few points, easy to bend by hand: every step-th point of the dense line is kept, its handles
+    // point along the dense line and are a third of the way to the next kept point. At a corner the two handles
+    // point at their own neighbours, so it stays sharp.
+    function ribBez(sm) {
+        var p = sm.pts, n = p.length, st = sm.step || 1, cr = sm.corners || {}, keep = [], i, k, a, b, dx, dy, d, ex, ey, lenTo, ins = [], outs = [], v = [];
+        for (i = 0; i < n; i += st) { keep.push(i); }
+        if (!sm.closed && keep[keep.length - 1] !== n - 1) { if (n - 1 - keep[keep.length - 1] < st / 2 && keep.length > 1) { keep.pop(); } keep.push(n - 1); }
+        function at(j) { return p[((j % n) + n) % n]; }
+        function arc(i0, i1) {
+            var L = 0, j, q, r;
+            for (j = i0; j < i1; j++) { q = at(j); r = at(j + 1); L += Math.sqrt((r[0] - q[0]) * (r[0] - q[0]) + (r[1] - q[1]) * (r[1] - q[1])); }
+            return L;
+        }
+        function unit(x, y) { var l = Math.sqrt(x * x + y * y) || 1; return [x / l, y / l]; }
+        for (k = 0; k < keep.length; k++) {
+            i = keep[k];
+            a = sm.closed ? at(i - 1) : p[Math.max(0, i - 1)];
+            b = sm.closed ? at(i + 1) : p[Math.min(n - 1, i + 1)];
+            if (cr[i]) { d = unit(p[i][0] - a[0], p[i][1] - a[1]); dx = d[0]; dy = d[1]; d = unit(b[0] - p[i][0], b[1] - p[i][1]); ex = d[0]; ey = d[1]; }
+            else { d = unit(b[0] - a[0], b[1] - a[1]); dx = ex = d[0]; dy = ey = d[1]; }
+            lenTo = (k > 0 || sm.closed) ? arc(k > 0 ? keep[k - 1] : keep[keep.length - 1] - n, i) / 3 : 0;
+            ins.push([-dx * lenTo, -dy * lenTo]);
+            lenTo = (k < keep.length - 1 || sm.closed) ? arc(i, k < keep.length - 1 ? keep[k + 1] : keep[0] + n) / 3 : 0;
+            outs.push([ex * lenTo, ey * lenTo]);
+            v.push([p[i][0], p[i][1]]);
+        }
+        return { vertices: v, inTangents: ins, outTangents: outs, closed: !!sm.closed };
     }
 
     // Line forms, turned by angle (degrees, 0 = left to right, -90 = bottom to top). A turned line is drawn
@@ -3385,7 +3456,7 @@ var sayframeHost = (function () {
 
     function ribSample0(form, W, H, o) {
         var pts = [], i, n, t, u, m = Math.min(W, H), x, y, r, xs = [], ys = [], s, x0, x1, y0, y1;
-        if (form === "random") { return { pts: ribRandom(o && o.seed, W, H), closed: false }; }
+        if (form === "random") { return ribRandom(o && o.seed, W, H); }
         if (form === "circle") {
             r = m * 0.3;
             for (i = 0; i < 24; i++) { t = i / 24 * 2 * Math.PI; pts.push([r * Math.sin(t), -r * Math.cos(t)]); }
@@ -3412,35 +3483,9 @@ var sayframeHost = (function () {
         return { pts: pts, closed: false, step: 4 };
     }
 
-    // A line drawn with few points, so it is easy to bend by hand: every step-th point of the dense line is kept,
-    // its handles point along the dense line and are a third of the way to the next kept point.
-    function ribSimplify(sm) {
-        var p = sm.pts, n = p.length, st = sm.step, keep = [], i, k, a, b, dx, dy, d, lenTo, s = new Shape(), ins = [], outs = [], v = [];
-        for (i = 0; i < n; i += st) { keep.push(i); }
-        if (!sm.closed && keep[keep.length - 1] !== n - 1) { if (n - 1 - keep[keep.length - 1] < st / 2 && keep.length > 1) { keep.pop(); } keep.push(n - 1); }
-        function arc(i0, i1) {
-            var L = 0, j, q, r;
-            for (j = i0; j < i1; j++) { q = p[((j % n) + n) % n]; r = p[(((j + 1) % n) + n) % n]; L += Math.sqrt((r[0] - q[0]) * (r[0] - q[0]) + (r[1] - q[1]) * (r[1] - q[1])); }
-            return L;
-        }
-        for (k = 0; k < keep.length; k++) {
-            i = keep[k];
-            a = sm.closed ? p[(i - 1 + n) % n] : p[Math.max(0, i - 1)];
-            b = sm.closed ? p[(i + 1) % n] : p[Math.min(n - 1, i + 1)];
-            dx = b[0] - a[0]; dy = b[1] - a[1]; d = Math.sqrt(dx * dx + dy * dy) || 1; dx /= d; dy /= d;
-            lenTo = (k > 0 || sm.closed) ? arc(k > 0 ? keep[k - 1] : keep[keep.length - 1] - n, i) / 3 : 0;
-            ins.push([-dx * lenTo, -dy * lenTo]);
-            lenTo = (k < keep.length - 1 || sm.closed) ? arc(i, k < keep.length - 1 ? keep[k + 1] : keep[0] + n) / 3 : 0;
-            outs.push([dx * lenTo, dy * lenTo]);
-            v.push([p[i][0], p[i][1]]);
-        }
-        s.vertices = v; s.inTangents = ins; s.outTangents = outs; s.closed = sm.closed;
-        return s;
-    }
-
     function ribShape(sm) {
         var p = sm.pts, n = p.length, s = new Shape(), ins = [], outs = [], i, a, b, tx, ty;
-        if (sm.step > 1 && n > sm.step * 2) { return ribSimplify(sm); }
+        if (sm.step >= 1) { b = ribBez(sm); s.vertices = b.vertices; s.inTangents = b.inTangents; s.outTangents = b.outTangents; s.closed = b.closed; return s; }
         for (i = 0; i < n; i++) {
             a = sm.closed ? p[(i - 1 + n) % n] : p[Math.max(0, i - 1)];
             b = sm.closed ? p[(i + 1) % n] : p[Math.min(n - 1, i + 1)];
