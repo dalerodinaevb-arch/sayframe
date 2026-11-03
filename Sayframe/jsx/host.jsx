@@ -5364,26 +5364,26 @@ var sayframeHost = (function () {
     }
 
     // Moves every keyframe of the layer by dt seconds (the "in" and the "out" animation together).
-    // An edge of the layer that the animation touches moves with it; a key that would fall outside the layer stretches it.
+    // The layer itself stays; a key that would fall outside the layer stretches it.
     function shiftAllKeys(layer, dt, frame, out) {
         var a = findTransition(layer, "in");
         var b = findTransition(layer, "out");
         var span = a.span;
         var before = out.keys;
-        var first, last, atStart, atEnd, start, end, lists, i;
+        var first, last, start, end, lists, i;
         if (!a.count && !b.count) { return "none"; }
         if (Math.abs(dt) < frame / 1000) { return "same"; }
         first = a.count ? a.first : b.first;
         last = b.count ? b.last : a.last;
-        atStart = Math.abs(first - span.start) <= frame * EDGE_FRAMES;
-        atEnd = Math.abs(last - span.end) <= frame * EDGE_FRAMES;
         // Far side first, so that no key has to jump over one that is still waiting to move.
         lists = dt > 0 ? b.list.concat(a.list) : a.list.concat(b.list);
         for (i = 0; i < lists.length; i++) { moveKeysOf(lists[i], dt, frame / 4, out); }
         if (out.keys === before) { return "failed"; }
-        start = atStart ? span.start + dt : Math.min(span.start, first + dt);
-        end = atEnd ? span.end + dt : Math.max(span.end, last + dt + frame);
-        trimLayer(layer, start, end);
+        // Only the keys move: the layer keeps its place and its edges. It grows only when a key would leave it
+        // (otherwise After Effects would not play that key).
+        start = Math.min(span.start, first + dt);
+        end = Math.max(span.end, last + dt + frame);
+        if (start < span.start - frame / 4 || end > span.end + frame / 4) { trimLayer(layer, start, end); }
         return "moved";
     }
 
