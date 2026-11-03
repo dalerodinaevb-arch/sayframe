@@ -602,7 +602,8 @@ function makeAE(opts, tmpDir) {
       items: { add(c) {
         const om = { templates: rqo.templates || ["Best Settings", "H.264 - Match Render Settings - 15 Mbps", "H.264 - Match Render Settings - 40 Mbps", "H.264 - Match Render Settings - 5 Mbps", "Lossless"],
           tpl: "", file: null, applyTemplate(t) { om.tpl = t; } };
-        const it = { comp: c, render: true, timeSpanStart: 0, timeSpanDuration: c.duration, om, outputModule() { return om; },
+        // As in After Effects with default render settings «Work Area Only»: a new item starts with the work area.
+        const it = { comp: c, render: true, timeSpanStart: c.workAreaStart || 0, timeSpanDuration: c.workAreaDuration || c.duration, om, outputModule() { return om; },
           remove() { items.splice(items.indexOf(it), 1); log.rq.removed++; } };
         items.push(it); log.rq.added.push(it); return it;
       } },
@@ -5579,7 +5580,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
     p.ae.log.dcMain.workAreaStart = 2; p.ae.log.dcMain.workAreaDuration = 3;
     await exOpen(p);
-    await p.page.click('#exTargets [data-t="light"]'); await p.page.click('#exSpan [data-v="work"]');
+    await p.page.click('#exTargets [data-t="light"]'); await p.page.click('#exTargets [data-t="normal"]'); await p.page.click('#exSpan [data-v="work"]');
     check("EX4 «Рабочую область»: the MB follow the work area's length", (await p.page.locator('#exTargets [data-t="light"] .ex-mb').innerText()) === "≈ 2 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 2 МБ", await p.page.locator("#exGo").innerText());
     await exRun(p);
     t = p.ae.log.rq.rendered;
@@ -5587,12 +5588,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.restart();
     await exOpen(p);
     check("EX4 the choice is remembered", (await pressed(p, "#exTargets .ex-t")) === "light" && (await pressed(p, "#exSpan button")) === "work");
-    await p.page.click('#exTargets [data-t="max"]');
+    await p.page.click('#exTargets [data-t="max"]'); await p.page.click('#exTargets [data-t="light"]');
     await exRun(p);
     t = p.ae.log.rq.rendered.slice(1);
     check("EX5 «Высокое» = 40 Mbps", t.length === 1 && t[0].tpl === "H.264 - Match Render Settings - 40 Mbps" && t[0].comp === "Main", JSON.stringify(t));
     await p.page.click("#exResults .ex-again .ghost");
-    await p.page.click('#exTargets [data-t="custom"]');
+    await p.page.click('#exTargets [data-t="custom"]'); await p.page.click('#exTargets [data-t="max"]');
     check("EX6 «Своё» shows width × height and the quality", (await vis(p, "#exCustom")) && (await vis(p, "#exQualRow")));
     await p.page.fill("#exW", "1080"); await p.page.fill("#exH", "1080"); await p.page.click('#exFit [data-v="black"]'); await p.page.click('#exQuality [data-v="light"]');
     check("EX6 the tile shows the size; square vs 16:9 is asked about", (await p.page.locator('#exTargets [data-t="custom"] .ex-mb').innerText()) === "1080×1080" && (await p.page.locator("#exFitText").innerText()) === "Композиция горизонтальная, а видео 1080×1080 — квадратное. Как сделать?", await p.page.locator("#exFitText").innerText());
@@ -5625,8 +5626,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click('#exTargets [data-t="normal"] .ex-rate [data-d="1"]');
     check("EX10 + on «Среднее» -> 18 Мбит/с, MB and the button follow, the tile stays picked", (await rateOf("normal")) === "18 Мбит/с" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
       (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 23 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 23 МБ");
-    await p.page.click('#exTargets [data-t="light"]');
-    check("EX10 − on a tile that is not picked just picks it", (await pressed(p, "#exTargets .ex-t")) === "light" && (await rateOf("light")) === "5 Мбит/с");
+    await p.page.click('#exTargets [data-t="light"]'); await p.page.click('#exTargets [data-t="normal"]');
+    check("EX10 − on a tile that is not picked just picks it (and the other one taken away)", (await pressed(p, "#exTargets .ex-t")) === "light" && (await rateOf("light")) === "5 Мбит/с");
     for (let i = 0; i < 6; i++) await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="-1"]');
     check("EX10 − stops at 1 Мбит/с", (await rateOf("light")) === "1 Мбит/с" && (await p.page.locator('#exTargets [data-t="light"] .ex-rate [data-d="-1"]').getAttribute("class")) === "off");
     await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="1"]'); await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="1"]');
@@ -5635,6 +5636,28 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click("#exResults .ex-again .ghost");
     await p.page.keyboard.press("Escape"); await exOpen(p);
     check("EX10 the bitrates are remembered", (await rateOf("light")) === "3 Мбит/с" && (await rateOf("normal")) === "18 Мбит/с");
+    await p.close();
+
+    // Several tiles at once: one video per tile. «Всю композицию» really renders the whole comp even when AE's default says work area.
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    p.ae.log.dcMain.workAreaStart = 2; p.ae.log.dcMain.workAreaDuration = 3;
+    await exOpen(p);
+    await p.page.click('#exTargets [data-t="light"]');
+    check("EX12 a second tile is added, not swapped: both picked, the button counts and sums the MB", (await pressed(p, "#exTargets .ex-t")) === "light,normal" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить 2 видео · ≈ 26 МБ" &&
+      (await vis(p, '#exTargets [data-t="light"] .ex-rate [data-d="1"]')) && (await vis(p, '#exTargets [data-t="normal"] .ex-rate [data-d="1"]')));
+    await p.page.click('#exTargets [data-t="normal"]');
+    check("EX12 clicking a picked tile takes it away", (await pressed(p, "#exTargets .ex-t")) === "light" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 6,7 МБ");
+    await p.page.click('#exTargets [data-t="light"]');
+    check("EX12 the last picked tile stays", (await pressed(p, "#exTargets .ex-t")) === "light");
+    await p.page.click('#exTargets [data-t="max"]');
+    await exRun(p);
+    t = p.ae.log.rq.rendered;
+    check("EX12 two videos: «Низкое» 5 Mbps and «Высокое» 40 Mbps, each the whole comp (0–10 s) though the work area is 2–5 s", t.length === 2 && /Main — Низкое\.mp4$/.test(t[0].file) && /5 Mbps$/.test(t[0].tpl) && /Main — Высокое\.mp4$/.test(t[1].file) && /40 Mbps$/.test(t[1].tpl) &&
+      t.every((r) => r.span[0] === 0 && r.span[1] === 10) && (await p.page.locator("#exResults .ex-row.done").count()) === 2 && (await p.page.locator("#exResults .ex-now").innerText()) === "Готово, 2 видео", JSON.stringify(t));
+    await p.page.click("#exResults .ex-again .ghost");
+    await p.page.click('#exSpan [data-v="work"]'); await exRun(p);
+    t = p.ae.log.rq.rendered.slice(2);
+    check("EX12 «Рабочую область» -> 2–5 s; the choice of tiles is remembered", t.length === 2 && t.every((r) => r.span[0] === 2 && r.span[1] === 3) && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.export.v1"))).levels.join() === "light,max", JSON.stringify(t));
     await p.close();
 
     // Any bitrate through Media Encoder: AE renders 40 Mbps into Temp, Media Encoder gets it with a preset made from its own H.264 one.
