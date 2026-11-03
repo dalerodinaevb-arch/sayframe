@@ -6932,7 +6932,7 @@
         try {
             res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: orbit.mode,
                 radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera, back: orbit.back },
-                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма", back: "обратная сторона",
+                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма", back: "обратная сторона", backFx: "Обратная сторона",
                     fxCount: "Карточек", fxRadius: "Радиус", fxW: "Ширина", fxH: "Высота", fxCorners: "Углы %", fxBack: "Сзади видно цифру и картинку" }]);
             setBusy(false);
             setStatus("Карусель готова: " + plural(res.cards, "карточка", "карточки", "карточек") + ", " + ORBIT_LAYOUT_NAMES[res.layout] + ". " +

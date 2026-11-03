@@ -2982,17 +2982,14 @@ var sayframeHost = (function () {
             orbitSet(L, "ADBE Rotate Y", sp.ry);
             cards.unshift(L);
             if (pre) {
-                // From behind a card can show only its back: the card comp (number, picture) hides when it faces away,
-                // and a plain back of the same shape and colour shows instead (the "Back visible" checkbox decides).
-                bk = comp.layers.addShape();
-                orbitCardShape(bk, kind, t, w, h, orbitColor(i));
-                orbitLiveShape(bk, kind, F, String(w), String(h));
-                bk.name = base + (i + 1) + ": " + (labels.back || "back");
-                bk.threeDLayer = true;
-                bk.parent = L;
-                orbitSet(bk, "ADBE Position", [w / 2, h / 2, 0]);
-                orbitSet(bk, "ADBE Rotate Y", 0);
-                bk.moveAfter(L);
+                // From behind a card shows only its back: a Fill effect on the card itself paints it plain, in the card's colour,
+                // when it faces away (the "Back visible" checkbox decides). No extra layer.
+                bk = null;
+                try {
+                    bk = L.property("ADBE Effect Parade").addProperty("ADBE Fill");
+                    bk.name = labels.backFx || "Back side";
+                    bk.property("ADBE Fill-0002").setValue(orbitColor(i));
+                } catch (eBk) { bk = null; }
                 backs.unshift(bk);
             } else {
                 backs.unshift(null);
@@ -3028,8 +3025,8 @@ var sayframeHost = (function () {
             orbitExpr(cards[i], "ADBE Rotate Y", sx + "a===0?0:-a");
             if (pre) {
                 orbitExpr(cards[i], "ADBE Scale", "[" + F.w + "/" + w + "*100," + F.h + "/" + h + "*100,100]");
-                orbitExpr(cards[i], "ADBE Opacity", sx + "i<n&&(" + F.b + "==1||" + face + ")?value:0");
-                orbitExpr(backs[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n&&" + F.b + "!=1&&!(" + face + ")?value:0");
+                orbitExpr(cards[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n?value:0");
+                if (backs[i]) { try { backs[i].property("ADBE Fill-0005").expression = F.b + "!=1&&!(" + face + ")?value:0"; } catch (eBx) {} }
             } else {
                 orbitExpr(cards[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n?value:0");
             }
@@ -3052,7 +3049,6 @@ var sayframeHost = (function () {
         }
         for (i = 0; i < cards.length; i++) { try { cards[i].selected = false; } catch (eS) {} }
         for (i = 0; i < nums.length; i++) { try { nums[i].selected = false; } catch (eT) {} }
-        for (i = 0; i < backs.length; i++) { try { if (backs[i]) { backs[i].selected = false; } } catch (eB) {} }
         ctrl.selected = true;
         return { cards: n, spare: nAll - n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, camRig: rig ? rig.name : "", hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
     }

@@ -5211,7 +5211,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     t = Lx(p, "Карточка 1");
     check("OR3 «Шейп + прекомп»: 3 card comps (and 9 spare ones) in a «Карусель» folder, each with the shape (a rounded triangle path) and no number", comps.length === 12 && comps.map((c) => c.name).indexOf("Карточка 3") >= 0 && p.ae.log.bins.indexOf("Карусель") >= 0 &&
       comps.every((c) => c.list.length === 1 && c.list[0].name === "Форма" && acAt(c.list[0], "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length === 6), comps.map((c) => c.name + ":" + c.list.map((l) => l.name)).join(" "));
-    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one; numbers off — the back switch still shows, a picture can be inside", (await vis(p, "#orbitBackRow")) && !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => "Карточка " + i + ",Карточка " + i + ": обратная сторона").join(",") + ",Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
+    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one; numbers off — the back switch still shows, a picture can be inside", (await vis(p, "#orbitBackRow")) && !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => "Карточка " + i).join(",") + ",Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
     const fx3 = { ...FX0, "Карточек": 3, "Углы %": 50 }, inShape = comps[0].list[0], tpath = acAt(inShape, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").expression;
     const mpath = acAt(t, "ADBE Mask Parade").children[0].children.find((c) => c.matchName === "ADBE Mask Shape").expression;
     check("OR5 in «Шейп + прекомп» the triangle's corners follow «Углы %» (inside the card comp and in its mask): 6 points rounded, 3 sharp; the card comp layer scales to «Ширина» × «Высота»", runX(tpath, fx3).P.length === 6 && runX(tpath, { ...fx3, "Углы %": 0 }).P.length === 3 && runX(mpath, fx3).P.length === 6 &&
@@ -5281,6 +5281,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       "var FX=" + JSON.stringify(fx) + ";var thisComp={layer:function(){return {effect:function(n){return function(){return FX[n]}}}}};function comp(){return thisComp}" + expr);
     const FX0 = { "Карточек": 8, "Радиус": 600, "Ширина": 400, "Высота": 560, "Углы %": 20, "Сзади видно цифру и картинку": 1 };
     const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const names2 = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]');
     const spans0 = await p.page.locator("#orbitRing .kr-it span").count();
@@ -5290,11 +5291,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const ex = (acAt(Lx(p, "Номер 3"), "ADBE Transform Group", "ADBE Opacity") || {}).expression;
     check("OR4 «Цифра видна сзади» off: the preview drops the numbers of the back cards; each number layer hides when its card faces away", spans0 === 8 && spans1 < 8 && spans1 > 0 && runX(ex, { ...FX0, "Сзади видно цифру и картинку": 0 }, { facing: false }) === 0 && runX(ex, { ...FX0, "Сзади видно цифру и картинку": 0 }) === 100, spans0 + " " + spans1 + " " + ex);
     await p.page.click('#orbitMode [data-v="precomp"]'); await p.page.click("#orbitBtn"); await p.idle();
-    const cardL = p.ae.log.dcMain.list.find((l) => l.name === "Карточка 2" && l.source), backL = Lx(p, "Карточка 2: обратная сторона");
+    const cardL = p.ae.log.dcMain.list.find((l) => l.name === "Карточка 2" && l.source);
     const op = (l) => (acAt(l, "ADBE Transform Group", "ADBE Opacity") || {}).expression;
     const off = { ...FX0, "Сзади видно цифру и картинку": 0 };
-    check("OR4 …in «Шейп + прекомп» the whole card comp (number, picture) hides when it faces away; a plain back of the same shape shows instead; the switch in Effect Controls flips it live", !!cardL && runX(op(cardL), off, { facing: false }) === 0 && runX(op(cardL), off) === 100 &&
-      !!backL && backL.parent === cardL && runX(op(backL), off, { facing: false }) === 100 && runX(op(backL), off) === 0 && runX(op(backL), FX0, { facing: false }) === 0 && runX(op(cardL), FX0, { facing: false }) === 100 && backL.threeDLayer, (cardL ? op(cardL) : "no card") + " | " + (backL ? op(backL) : "no back"));
+    const fill = cardL && acAt(cardL, "ADBE Effect Parade").children.find((e) => e.matchName === "ADBE Fill"), fop = fill && fill.children.find((c) => c.matchName === "ADBE Fill-0005").expression;
+    check("OR4 …in «Шейп + прекомп» the back is a Fill effect «Обратная сторона» on the card itself (no extra layer): it paints the card plain in its colour when it faces away; the switch in Effect Controls flips it live", !!cardL && !!fill && fill.name === "Обратная сторона" &&
+      runX(fop, off, { facing: false }) === 100 && runX(fop, off) === 0 && runX(fop, FX0, { facing: false }) === 0 && runX(op(cardL), off, { facing: false }) === 100 &&
+      JSON.stringify(fill.children.find((c) => c.matchName === "ADBE Fill-0002").value) !== "null" && !p.ae.log.dcMain.list.some((l) => /обратная сторона/.test(l.name)), (cardL ? op(cardL) : "no card") + " | " + fop + " | " + names2(p));
     const mk = cardL && acAt(cardL, "ADBE Mask Parade").children[0];
     check("OR4 …and a picture put inside gets the card's shape: a mask of the rounded card on the card comp layer", !!mk && mk.name === "Card" && mk.children.find((c) => c.matchName === "ADBE Mask Shape").value.vertices.length === 8, mk ? JSON.stringify(mk.children.find((c) => c.matchName === "ADBE Mask Shape").value.vertices) : "no mask");
     check("OR4 the switch is named «Сзади видно цифру и картинку»", (await p.page.innerText("#orbitBackRow")).trim() === "Сзади видно цифру и картинку");
