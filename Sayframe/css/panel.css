@@ -2320,7 +2320,7 @@ html[data-design="ae"] .rb-stage { border-radius: 4px; }
 #viewClaude.ai-v3 .quick-chip span { white-space: normal; }
 #viewClaude.ai-v3 .quick-chip:hover:not(:disabled), #viewClaude.ai-v3 .quick-new:hover:not(:disabled) { border-color: rgba(var(--accent-rgb), .55) !important; }
 #viewClaude.ai-v3 .quick-new { border-style: dashed !important; color: var(--muted) !important; }
-#viewClaude.ai-v3 .quick-ic { display: block; font-style: normal; font-size: 16px; line-height: 1; color: rgba(var(--accent-rgb), 1); font-weight: 600; }
+#viewClaude.ai-v3 .quick-ic { order: -1; display: block; font-style: normal; font-size: 16px; line-height: 1; color: rgba(var(--accent-rgb), 1); font-weight: 600; }
 #viewClaude.ai-v3 .quick-new .quick-ic { color: var(--muted); }
 #viewClaude.ai-v3 .quick-chip .quick-del { position: absolute; top: 6px; right: 8px; margin: 0; }
 #viewClaude.ai-v3 .quick-link { grid-column: 1 / -1; }

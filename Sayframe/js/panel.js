@@ -2708,8 +2708,8 @@
             ic.className = "quick-ic";
             ic.setAttribute("aria-hidden", "true");
             ic.textContent = QUICK_ICONS[q.id] || "✦";
-            b.appendChild(ic);
             b.appendChild(label);
+            b.appendChild(ic);
             if (quickEditing) {
                 del = document.createElement("span");
                 del.className = "quick-del";
@@ -2727,7 +2727,7 @@
             reset = document.createElement("button");
             reset.className = "quick-new";
             reset.setAttribute("data-act", "new");
-            reset.innerHTML = "<i class=\"quick-ic\" aria-hidden=\"true\">+</i><span>Своя задача</span>";
+            reset.innerHTML = "<span>Своя задача</span><i class=\"quick-ic\" aria-hidden=\"true\">+</i>";
             reset.title = "Сохранить свою задачу: текст из поля станет плиткой";
             reset.disabled = busy;
             ui.quickList.appendChild(reset);
