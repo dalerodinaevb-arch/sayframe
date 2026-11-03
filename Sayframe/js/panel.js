@@ -779,6 +779,11 @@
             return "After Effects не ответил панели. Закройте и снова откройте её в меню Window > Extensions.";
         }
         if (m === "NODE_UNAVAILABLE") { return "Панель не получила доступ к файлам (Node.js выключен)."; }
+        if (m === "NO_H264") { return "В After Effects нет настройки H.264 (MP4) — нужен After Effects 2023 или новее. Или включите «Через Media Encoder»."; }
+        if (m === "EXPORT_NO_FOLDER") { return "Не получилось создать папку для видео. " + FILE_ACCESS_HINT; }
+        if (m === "EXPORT_BUSY") { return "After Effects уже что-то сохраняет (Render Queue). Дождитесь конца и попробуйте снова."; }
+        if (m === "BAD_EXPORT_SIZE") { return "Размер видео — от 16 до 16384 пикселей."; }
+        if (m === "NO_RENDER_QUEUE") { return "У After Effects не нашлось Render Queue."; }
         if (m === "FRAME_NOT_SAVED") { return "After Effects не сохранил кадр. " + FILE_ACCESS_HINT; }
         if (m === "NO_PICTURE_IN_FILE") { return "В этом файле нет изображения — нужен ролик или картинка."; }
         if (m === "NOT_AN_IMAGE") { return "Скопированный файл не является изображением."; }
@@ -1033,6 +1038,9 @@
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
+        exportBtn: el("exportBtn"), exportBar: el("exportBar"), exClose: el("exClose"), exSetup: el("exSetup"), exCompName: el("exCompName"), exCompMeta: el("exCompMeta"),
+        exTargets: el("exTargets"), exCustom: el("exCustom"), exW: el("exW"), exH: el("exH"), exFitRow: el("exFitRow"), exFitText: el("exFitText"), exFit: el("exFit"),
+        exQuality: el("exQuality"), exSpan: el("exSpan"), exFolder: el("exFolder"), exBrowse: el("exBrowse"), exAmeRow: el("exAmeRow"), exAme: el("exAme"), exGo: el("exGo"), exResults: el("exResults"),
         fxBtn: el("fxBtn"), snapBtn: el("snapBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
         orbitPane: el("orbitPane"), orbitStage: el("orbitStage"), orbitRing: el("orbitRing"), orbitLayout: el("orbitLayout"), orbitShape: el("orbitShape"),
         orbitCornerRow: el("orbitCornerRow"), orbitCornerIco: el("orbitCornerIco"), orbitCorners: el("orbitCorners"), orbitCornersVal: el("orbitCornersVal"),
@@ -1382,6 +1390,9 @@
         ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
         ui.snapBtn.disabled = on;
+        ui.exportBtn.disabled = on;
+        ui.exGo.disabled = on || !exInfo || !(exState && exState.targets.length);
+        ui.exBrowse.disabled = on;
         ui.snapSave.disabled = on;
         ui.snapBrowse.disabled = on;
         ui.ecCopy.disabled = on;
@@ -7204,6 +7215,283 @@
         });
     }
 
+    // ---- Быстрый экспорт: MP4 для площадок. Окно-плашка под шапкой, кнопка ⤓ в шапке.
+    var EXPORT_KEY = "sayframe.export.v1";
+    var EX_TARGETS = {
+        reels: { label: "Reels", w: 1080, h: 1920 },
+        youtube: { label: "YouTube", w: 1920, h: 1080 },
+        telegram: { label: "Telegram", light: true },
+        post: { label: "Пост 4x5", w: 1080, h: 1350 },
+        tiktok: { label: "TikTok", w: 1080, h: 1920 },
+        custom: { label: "" }
+    };
+    var EX_ORDER = ["reels", "youtube", "telegram", "post", "tiktok", "custom"];
+    var exState = { targets: ["reels"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080 };
+    var exInfo = null, exFolderNow = "", exDefaultNow = "";
+    try {
+        (function () {
+            var v = JSON.parse(window.localStorage.getItem(EXPORT_KEY) || "{}") || {};
+            if (Array.isArray(v.targets)) { exState.targets = v.targets.filter(function (t) { return EX_TARGETS[t]; }); }
+            if (/^(light|normal|max)$/.test(v.quality)) { exState.quality = v.quality; }
+            if (/^(all|work)$/.test(v.span)) { exState.span = v.span; }
+            if (/^(blur|black|crop)$/.test(v.fit)) { exState.fit = v.fit; }
+            if (typeof v.folder === "string") { exState.folder = v.folder; }
+            if (typeof v.ame === "boolean") { exState.ame = v.ame; }
+            if (v.cw > 0) { exState.cw = Math.round(v.cw); }
+            if (v.ch > 0) { exState.ch = Math.round(v.ch); }
+        })();
+    } catch (e) {}
+
+    function storeExport() { try { window.localStorage.setItem(EXPORT_KEY, JSON.stringify(exState)); } catch (e) {} }
+
+    // Размер для площадки: у Telegram — размер композиции (длинная сторона не больше 1920), у «Своего» — введённый.
+    function exSize(id) {
+        var t = EX_TARGETS[id], c = exInfo ? exInfo.comp : { w: 1920, h: 1080 }, k;
+        if (id === "custom") { return { w: exState.cw, h: exState.ch }; }
+        if (t.light) {
+            k = Math.min(1, 1920 / Math.max(c.w, c.h));
+            return { w: Math.round(c.w * k / 2) * 2, h: Math.round(c.h * k / 2) * 2 };
+        }
+        return { w: t.w, h: t.h };
+    }
+
+    function exShape(w, h) { return Math.abs(w / h - 1) < 0.02 ? "квадратн" : (w > h ? "горизонтальн" : "вертикальн"); }
+
+    function exOrder(ids) { return EX_ORDER.filter(function (id) { return ids.indexOf(id) >= 0; }); }
+
+    function exMismatch() {
+        var c = exInfo && exInfo.comp;
+        if (!c) { return null; }
+        return exOrder(exState.targets).filter(function (id) {
+            var s = exSize(id);
+            return Math.abs(s.w / s.h - c.w / c.h) > 0.01;
+        })[0] || null;
+    }
+
+    function exTargetName(id) { return id === "custom" ? exState.cw + "×" + exState.ch : (id === "reels" ? "Reels" : id === "post" ? "пост 4:5" : EX_TARGETS[id].label); }
+
+    function showExFolder(path) {
+        var parts = String(path || "").split(/[\\\/]/).filter(Boolean);
+        exFolderNow = path;
+        ui.exFolder.textContent = path === exDefaultNow && exInfo && exInfo.projectFolder ? "Рядом с проектом / Экспорт" :
+            "📁 " + (parts.length > 2 ? "…/" : "/") + parts.slice(-2).join("/");
+        ui.exFolder.title = path;
+    }
+
+    function drawExport() {
+        var n = exState.targets.length, mis = exMismatch(), c = exInfo && exInfo.comp, s;
+        Array.prototype.forEach.call(ui.exTargets.querySelectorAll(".ex-t"), function (b) {
+            var id = b.getAttribute("data-t");
+            b.setAttribute("aria-pressed", exState.targets.indexOf(id) >= 0 ? "true" : "false");
+            if (id === "custom") { b.querySelector("small").textContent = exState.targets.indexOf("custom") >= 0 ? exState.cw + "×" + exState.ch : "свой размер"; }
+        });
+        ui.exCustom.hidden = exState.targets.indexOf("custom") < 0;
+        if (document.activeElement !== ui.exW) { ui.exW.value = exState.cw; }
+        if (document.activeElement !== ui.exH) { ui.exH.value = exState.ch; }
+        [["exQuality", "quality"], ["exSpan", "span"], ["exFit", "fit"]].forEach(function (p) {
+            Array.prototype.forEach.call(ui[p[0]].querySelectorAll("button[data-v]"), function (b) {
+                b.setAttribute("aria-pressed", b.getAttribute("data-v") === exState[p[1]] ? "true" : "false");
+            });
+        });
+        ui.exFitRow.hidden = !mis;
+        if (mis && c) {
+            s = exSize(mis);
+            ui.exFitText.textContent = "Композиция " + exShape(c.w, c.h) + "ая, а " + exTargetName(mis) + " — " + exShape(s.w, s.h) + "ый. Как сделать?";
+        }
+        ui.exAmeRow.hidden = !(exInfo && exInfo.ame);
+        ui.exAme.checked = exState.ame;
+        ui.exGo.textContent = n > 1 ? "Сохранить " + n + " видео" : "Сохранить видео";
+        ui.exGo.disabled = busy || !n || !exInfo;
+    }
+
+    async function onExport() {
+        var res, c;
+        if (busy) { return; }
+        if (!ui.exportBar.hidden) { closeExport(); return; }
+        closeFxConsole();
+        closeSnapBar();
+        ui.exportBar.hidden = false;
+        ui.exSetup.hidden = false;
+        ui.exResults.hidden = true;
+        exInfo = null;
+        ui.exCompName.textContent = "Композиция";
+        ui.exCompMeta.textContent = "";
+        drawExport();
+        try {
+            res = await host("exportInfo", []);
+            exInfo = res;
+            c = res.comp;
+            ui.exCompName.textContent = c.name;
+            ui.exCompMeta.textContent = c.w + "×" + c.h + " · " + (Math.round(c.dur * 10) / 10) + " с";
+            exDefaultNow = res.projectFolder ? platform.join(res.projectFolder, "Экспорт") : platform.join(platform.homedir(), "Desktop", "Sayframe Экспорт");
+        } catch (e) {
+            exInfo = null;
+            ui.exCompName.textContent = e && e.message === "NO_ACTIVE_COMP" ? "Откройте композицию, которую сохранить" : "Нет связи с After Effects";
+            exDefaultNow = platform.join(platform.homedir(), "Desktop", "Sayframe Экспорт");
+        }
+        showExFolder(exState.folder || exDefaultNow);
+        drawExport();
+        try { ui.exGo.focus(); } catch (e2) {}
+    }
+
+    function closeExport() { ui.exportBar.hidden = true; }
+
+    async function onExBrowse() {
+        var res, start = exFolderNow || exDefaultNow;
+        if (busy) { return; }
+        try {
+            if (start === exDefaultNow) { try { await platform.mkdirp(start); } catch (e1) {} }
+            res = await host("snapPickFolder", [start, "Папка для видео"]);
+            if (res.folder) {
+                exState.folder = res.folder;
+                storeExport();
+                showExFolder(res.folder);
+            }
+        } catch (e) {
+            setStatus("Не удалось выбрать папку: " + humanError(e), "error");
+        }
+    }
+
+    function exSizeText(b) {
+        if (!(b > 0)) { return ""; }
+        return b >= 1048576 ? (Math.round(b / 104857.6) / 10).toString().replace(".", ",") + " МБ" : Math.max(1, Math.round(b / 1024)) + " КБ";
+    }
+
+    function exRow(job) {
+        var row = document.createElement("div"), st = document.createElement("span"), nm = document.createElement("span"), sm = document.createElement("small");
+        row.className = "ex-row";
+        st.className = "ex-st"; st.textContent = "○";
+        nm.className = "ex-nm"; nm.textContent = exInfo.comp.name + " — " + job.label + ".mp4";
+        sm.textContent = "ждёт";
+        row.appendChild(st); row.appendChild(nm); row.appendChild(sm);
+        job.row = row; job.st = st; job.nm = nm; job.sm = sm;
+        return row;
+    }
+
+    async function runExport() {
+        var jobs, folder, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null;
+        if (busy || !exInfo || !exState.targets.length) { return; }
+        folder = exFolderNow || exDefaultNow;
+        jobs = exOrder(exState.targets).map(function (id) {
+            var s = exSize(id);
+            return { id: id, w: s.w, h: s.h, label: id === "custom" ? s.w + "x" + s.h : EX_TARGETS[id].label,
+                quality: EX_TARGETS[id].light ? "light" : exState.quality };
+        });
+        setBusy(true);
+        ui.exSetup.hidden = true;
+        ui.exResults.hidden = false;
+        ui.exResults.textContent = "";
+        ui.exResults.classList.remove("finished");
+        now = document.createElement("div"); now.className = "ex-now";
+        bar = document.createElement("div"); bar.className = "ex-bar-track"; bar.appendChild(document.createElement("i"));
+        ui.exResults.appendChild(now); ui.exResults.appendChild(bar);
+        jobs.forEach(function (job) { ui.exResults.appendChild(exRow(job)); });
+        setStatus("Сохраняю видео…", "busy");
+        try {
+            if (!(await host("info", [])).fileAccess) { throw new Error(FILE_ACCESS_HINT); }
+            await platform.mkdirp(folder);
+        } catch (e0) {
+            jobs.forEach(function (job) { job.row.classList.add("fail"); job.st.textContent = "!"; job.sm.textContent = ""; });
+            now.textContent = "Не получилось начать";
+            ui.exResults.classList.add("finished");
+            setBusy(false);
+            exBackRow();
+            setStatus("Не удалось сохранить видео: " + humanError(e0), "error");
+            return;
+        }
+        for (i = 0; i < jobs.length; i++) {
+            j = jobs[i];
+            now.textContent = "Сохраняю «" + exInfo.comp.name + "» — " + j.label + (jobs.length > 1 ? " (" + (i + 1) + " из " + jobs.length + ")" : "");
+            j.st.textContent = "●"; j.sm.textContent = "сохраняю…";
+            bar.firstChild.style.width = Math.round(i / jobs.length * 100) + "%";
+            try {
+                r = await host("exportOne", [{ w: j.w, h: j.h, label: j.label, fit: exState.fit, quality: j.quality, span: exState.span,
+                    folder: folder, ame: !!(exInfo.ame && exState.ame), bin: "Sayframe Экспорт" }]);
+                done++;
+                last = r.path;
+                j.row.classList.add("done");
+                j.st.textContent = "✓";
+                j.nm.textContent = r.name || platform.basename(r.path);
+                j.nm.title = r.path;
+                if (r.mode === "ame") { ame = true; j.sm.textContent = "в Media Encoder"; } else { j.sm.textContent = exSizeText(r.size); }
+                j.row.appendChild(exShowBtn(r.path));
+            } catch (e) {
+                failed++;
+                j.row.classList.add("fail");
+                j.st.textContent = "!";
+                j.sm.textContent = "";
+                j.nm.title = humanError(e);
+                j.nm.textContent = j.label + ": " + humanError(e);
+                if (e && (e.message === "NO_ACTIVE_COMP" || e.message === "HOST_ERROR")) { break; }
+            }
+        }
+        ui.exResults.classList.add("finished");
+        setBusy(false);
+        now.textContent = failed ? (done ? "Сохранено " + done + " из " + jobs.length : "Не получилось сохранить") :
+            (ame ? "Отправлено в Media Encoder — он сохранит видео в фоне" : (done > 1 ? "Готово, " + done + " видео" : "Готово"));
+        exBackRow();
+        setStatus(failed ? "Сохранить получилось не всё — причина в строке с ошибкой." :
+            (ame ? "Видео ушли в Media Encoder. Папка: " + platform.basename(folder) + "." : "Видео сохранены в папку «" + platform.basename(folder) + "»."), failed ? "error" : "done");
+    }
+
+    function exShowBtn(path) {
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "ghost"; b.textContent = "Показать"; b.title = "Открыть папку с видео";
+        b.addEventListener("click", function () {
+            host("exportReveal", [path]).catch(function (e) { setStatus("Не удалось открыть папку: " + humanError(e), "error"); });
+        });
+        return b;
+    }
+
+    function exBackRow() {
+        var row = document.createElement("div"), b = document.createElement("button");
+        row.className = "ex-again";
+        b.type = "button"; b.className = "ghost"; b.textContent = "Назад к настройкам";
+        b.addEventListener("click", function () { ui.exResults.hidden = true; ui.exSetup.hidden = false; drawExport(); try { ui.exGo.focus(); } catch (e) {} });
+        row.appendChild(b);
+        ui.exResults.appendChild(row);
+    }
+
+    function enableExport() {
+        ui.exportBtn.addEventListener("click", onExport);
+        ui.exClose.addEventListener("click", closeExport);
+        ui.exBrowse.addEventListener("click", onExBrowse);
+        ui.exGo.addEventListener("click", runExport);
+        ui.exTargets.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest(".ex-t") : null, id, k;
+            if (!b) { return; }
+            id = b.getAttribute("data-t");
+            k = exState.targets.indexOf(id);
+            if (k >= 0) { exState.targets.splice(k, 1); } else { exState.targets.push(id); }
+            storeExport();
+            drawExport();
+        });
+        [["exQuality", "quality"], ["exSpan", "span"], ["exFit", "fit"]].forEach(function (p) {
+            ui[p[0]].addEventListener("click", function (e) {
+                var b = e.target.closest ? e.target.closest("button[data-v]") : null;
+                if (!b) { return; }
+                exState[p[1]] = b.getAttribute("data-v");
+                storeExport();
+                drawExport();
+            });
+        });
+        ["exW", "exH"].forEach(function (id) {
+            ui[id].addEventListener("input", function () {
+                var v = Math.round(Number(ui[id].value));
+                if (v >= 16 && v <= 8192) { exState[id === "exW" ? "cw" : "ch"] = v; storeExport(); drawExport(); }
+            });
+        });
+        ui.exAme.addEventListener("change", function () { exState.ame = ui.exAme.checked; storeExport(); });
+        // Esc закрывает окно, пока фокус в нём или нигде (например, после «Назад к настройкам»).
+        document.addEventListener("keydown", function (e) {
+            var a = document.activeElement;
+            if (e.key !== "Escape" || ui.exportBar.hidden || busy) { return; }
+            if (a && a !== document.body && !ui.exportBar.contains(a)) { return; }
+            e.preventDefault(); e.stopPropagation(); closeExport();
+        }, true);
+        drawExport();
+    }
+
     async function copyPngToClipboard(path) {
         var r;
         try {
@@ -12044,6 +12332,7 @@
     ui.fxSnap.addEventListener("click", onSnapshot);
     ui.snapBtn.addEventListener("click", onSnapshot);
     enableSnapBar();
+    enableExport();
     enableInfoTips();
     ui.fxKeys.addEventListener("mousedown", function (e) { e.preventDefault(); });
     ui.fxKeys.addEventListener("click", onFxKeys);

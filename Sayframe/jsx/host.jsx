@@ -4502,6 +4502,69 @@ var sayframeHost = (function () {
         return item;
     }
 
+    // ------------------------------------------------------- quick export
+    // H.264 template of the output module by quality: light 5, normal 15, max 40 Mbps (the names
+    // After Effects 2023+ ships). Falls back to any H.264 template, then to anything MP4.
+    function exTemplate(list, quality) {
+        var want = quality === "light" ? 5 : (quality === "max" ? 40 : 15), i, m, best = "", any = "", mp4 = "", d, bestD = 1e9;
+        list = list || [];
+        for (i = 0; i < list.length; i++) {
+            m = /H\.?264.*?(\d+)\s*Mbps/i.exec(String(list[i]));
+            if (m) {
+                d = Math.abs(Number(m[1]) - want);
+                if (d < bestD) { bestD = d; best = String(list[i]); }
+            }
+            if (!any && /H\.?264/i.test(String(list[i]))) { any = String(list[i]); }
+            if (!mp4 && /mp4/i.test(String(list[i]))) { mp4 = String(list[i]); }
+        }
+        return best || any || mp4;
+    }
+
+    function exSafe(s) { return String(s).replace(/[\\\/:\*\?"<>\|]/g, "_").replace(/^\s+|\s+$/g, ""); }
+
+    // A file name that is not taken yet: "Name.mp4", "Name 2.mp4", ...
+    function exFreeFile(folder, base, ext) {
+        var f = new File(folder + "/" + base + ext), n = 2;
+        while (f.exists && n < 500) { f = new File(folder + "/" + base + " " + n + ext); n++; }
+        return f;
+    }
+
+    function exBin(name) {
+        var proj = app.project, i;
+        for (i = 1; i <= proj.numItems; i++) {
+            if (proj.item(i) instanceof FolderItem && String(proj.item(i).name) === name) { return proj.item(i); }
+        }
+        return proj.items.addFolder(name);
+    }
+
+    function exScale(layer, s) {
+        try { layer.property("ADBE Transform Group").property("ADBE Scale").setValue([s, s]); } catch (e) {}
+    }
+
+    // A comp of the platform's size with the source comp inside: fit (black bars), crop (cover),
+    // or blur (fit, over a blurred cover copy that fills the edges).
+    function exWrap(comp, w, h, fit, name, binName) {
+        var proj = app.project, c, bg, L, fx, sx = w / comp.width, sy = h / comp.height;
+        var fitS = Math.min(sx, sy) * 100, cover = Math.max(sx, sy) * 100;
+        c = proj.items.addComp(name, w, h, 1, comp.duration, comp.frameRate);
+        try { c.parentFolder = exBin(binName); } catch (e0) {}
+        try { c.bgColor = [0, 0, 0]; } catch (e1) {}
+        if (fit === "blur") {
+            bg = c.layers.add(comp);
+            try { bg.name = "Blur"; } catch (e2) {}
+            exScale(bg, cover * 1.06);
+            try { bg.audioEnabled = false; } catch (e3) {}
+            try {
+                fx = bg.property("ADBE Effect Parade").addProperty("ADBE Gaussian Blur 2");
+                fx.property("ADBE Gaussian Blur 2-0001").setValue(Math.max(30, Math.round(Math.max(w, h) / 28)));
+                fx.property("ADBE Gaussian Blur 2-0003").setValue(1);
+            } catch (e4) {}
+        }
+        L = c.layers.add(comp);
+        exScale(L, fit === "crop" ? cover : fitS);
+        return c;
+    }
+
     function clampInfluence(v) {
         v = Number(v);
         if (isNaN(v)) { v = 33.33; }
@@ -6232,6 +6295,88 @@ var sayframeHost = (function () {
         // fav and recent are item ids ("e:<matchName>" or "p:<path>"). The same key again closes it.
         fxPopup: function (x, y, fav, recent) {
             return reply(function () { return fxPopupShow(x, y, fav || [], recent || []); });
+        },
+
+        // Quick export. What the export sheet needs to know about the open comp and the machine.
+        exportInfo: function () {
+            return reply(function () {
+                var comp = activeComp(), proj = app.project, rq = proj.renderQueue, ame = false;
+                try { ame = !!(rq && rq.canQueueInAME); } catch (e0) {}
+                return { comp: { name: String(comp.name), w: comp.width, h: comp.height, dur: comp.duration, fps: comp.frameRate,
+                    waStart: comp.workAreaStart, waDur: comp.workAreaDuration },
+                    projectFolder: proj.file && proj.file.parent ? proj.file.parent.fsName : "", ame: ame };
+            });
+        },
+
+        // Saves the open comp as one MP4 (H.264): o = { w, h, label, fit: blur|black|crop, quality: light|normal|max,
+        // span: all|work, folder, ame, bin }. Another size than the comp's goes through a wrapper comp.
+        // In After Effects the render runs here and blocks until done; with ame it is sent to Media Encoder.
+        exportOne: function (o) {
+            return reply(function () {
+                var comp = activeComp(), proj = app.project, rq = proj.renderQueue, w, h, wrap = null, it, om, tpl, file, dir;
+                var parked = [], i, q, mode, base, size = 0, tpls = [];
+                if (!o || typeof o !== "object") { throw new Error("BAD_EXPORT"); }
+                if (!rq || !rq.items) { throw new Error("NO_RENDER_QUEUE"); }
+                if (rq.rendering) { throw new Error("EXPORT_BUSY"); }
+                w = Math.round(Number(o.w) || comp.width); h = Math.round(Number(o.h) || comp.height);
+                w -= w % 2; h -= h % 2;
+                if (w < 16 || h < 16 || w > 16384 || h > 16384) { throw new Error("BAD_EXPORT_SIZE"); }
+                dir = new Folder(String(o.folder));
+                if (!dir.exists) { try { dir.create(); } catch (e0) {} }
+                if (!dir.exists) { throw new Error("EXPORT_NO_FOLDER"); }
+                base = exSafe(String(comp.name) + (o.label ? " \u2014 " + o.label : ""));
+                app.beginUndoGroup("Sayframe: export");
+                try {
+                    if (w !== comp.width || h !== comp.height) {
+                        wrap = exWrap(comp, w, h, o.fit === "crop" ? "crop" : (o.fit === "black" ? "black" : "blur"), base, String(o.bin || "Sayframe Export"));
+                    }
+                    // Other items already waiting in the Render Queue stay there but sit this render out.
+                    for (i = 1; i <= rq.numItems; i++) {
+                        q = rq.item(i);
+                        try { if (q.render) { q.render = false; parked.push(q); } } catch (e1) {}
+                    }
+                    it = rq.items.add(wrap || comp);
+                    if (o.span === "work") {
+                        try { it.timeSpanStart = comp.workAreaStart; it.timeSpanDuration = comp.workAreaDuration; } catch (e2) {}
+                    }
+                    om = it.outputModule(1);
+                    try { tpls = om.templates; } catch (e3) {}
+                    tpl = exTemplate(tpls, o.quality);
+                    if (tpl) { om.applyTemplate(tpl); }
+                    file = exFreeFile(dir.fsName, base, ".mp4");
+                    om.file = file;
+                    if (!tpl && !o.ame) { throw new Error("NO_H264"); }
+                    if (o.ame && rq.canQueueInAME) {
+                        rq.queueInAME(true);
+                        mode = "ame";
+                        try { it.render = false; } catch (e4) {}
+                    } else {
+                        rq.render();
+                        mode = "ae";
+                        try { size = new File(file.fsName).length; } catch (e5) {}
+                        try { it.remove(); } catch (e6) {}
+                        if (wrap) { try { wrap.remove(); } catch (e7) {} wrap = null; }
+                    }
+                } catch (err) {
+                    if (it && mode !== "ame") { try { it.remove(); } catch (e8) {} }
+                    if (wrap && mode !== "ame") { try { wrap.remove(); } catch (e9) {} }
+                    throw err;
+                } finally {
+                    for (i = 0; i < parked.length; i++) { try { parked[i].render = true; } catch (e10) {} }
+                    app.endUndoGroup();
+                }
+                return { path: file.fsName, name: decodeURI(file.name), size: size, mode: mode, w: w, h: h, wrapped: !!wrap || (w !== comp.width || h !== comp.height), template: tpl };
+            });
+        },
+
+        // Opens the folder of an exported file in Finder / Explorer.
+        exportReveal: function (path) {
+            return reply(function () {
+                var f = new File(String(path)), d = f.parent;
+                if (!d || !d.exists) { throw new Error("EXPORT_NO_FOLDER"); }
+                d.execute();
+                return { folder: d.fsName };
+            });
         },
 
         // Saves the frame at the time indicator of the open comp as a PNG in the given folder.

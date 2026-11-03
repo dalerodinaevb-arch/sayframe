@@ -15,6 +15,9 @@
         <h1>Sayframe</h1>
       </div>
       <div class="top-actions">
+      <button id="exportBtn" data-info="Быстрый экспорт|Сохраняет открытую композицию в MP4 для Reels, YouTube, Telegram, TikTok или поста — сразу в нужном размере. Можно выбрать несколько площадок." class="icon-btn" aria-label="Быстрый экспорт" title="Быстрый экспорт в MP4">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/></svg>
+      </button>
       <button id="snapBtn" data-info="Снимок кадра|Сохраняет кадр под указателем времени в PNG и кладёт в буфер обмена. В плашке можно выбрать папку и добавить снимок в проект After Effects." class="icon-btn" aria-label="Снимок кадра" title="Снимок кадра: PNG рядом с проектом и в буфер обмена">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5a2 2 0 0 1 2-2h2l1.5-2h5L16 6.5h2a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
       </button>
@@ -62,6 +65,56 @@
         <button id="snapSave" class="primary" title="Сохранить кадр под указателем времени (Enter)">Сохранить</button>
       </div>
       <small id="snapFolder" class="snap-folder"></small>
+    </section>
+
+    <!-- Быстрый экспорт: MP4 для площадок одной кнопкой. -->
+    <section id="exportBar" class="card ex-bar" hidden aria-label="Быстрый экспорт">
+      <div class="snap-head">
+        <b>Быстрый экспорт</b>
+        <button id="exClose" class="icon-btn small" aria-label="Закрыть" title="Закрыть (Esc)">&times;</button>
+      </div>
+      <div id="exSetup" class="ex-setup">
+        <div class="ex-comp"><span id="exCompName">Композиция</span><small id="exCompMeta"></small></div>
+        <div id="exTargets" class="ex-targets" role="group" aria-label="Куда пойдёт видео">
+          <button type="button" class="kr-b ex-t" data-t="reels" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2.5"/></svg><span>Reels / Stories</span><small>1080×1920</small></button>
+          <button type="button" class="kr-b ex-t" data-t="youtube" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M10.5 9.5v5l4-2.5z"/></svg><span>YouTube</span><small>1920×1080</small></button>
+          <button type="button" class="kr-b ex-t" data-t="telegram" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 4.5L3.5 11l6 2.2 2.3 6.3 3.2-4 4.8 3.5z"/><path d="M9.5 13.2L20.5 4.5"/></svg><span>Telegram</span><small>лёгкий файл</small></button>
+          <button type="button" class="kr-b ex-t" data-t="post" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/></svg><span>Пост 4:5</span><small>1080×1350</small></button>
+          <button type="button" class="kr-b ex-t" data-t="tiktok" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 4v10.5a3.5 3.5 0 1 1-3.5-3.5"/><path d="M13 4c.5 2.4 2.2 4 4.5 4.2"/></svg><span>TikTok</span><small>1080×1920</small></button>
+          <button type="button" class="kr-b ex-t" data-t="custom" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v12M6 12h12"/></svg><span>Свой</span><small>свой размер</small></button>
+        </div>
+        <div id="exCustom" class="ex-custom" hidden>
+          <input id="exW" type="number" min="16" max="8192" step="2" aria-label="Ширина"><span>×</span><input id="exH" type="number" min="16" max="8192" step="2" aria-label="Высота">
+        </div>
+        <div id="exFitRow" class="ex-fit" hidden>
+          <span id="exFitText">Размер не совпадает. Как сделать?</span>
+          <div id="exFit" class="ex-chips" role="group" aria-label="Если размер не совпадает">
+            <button type="button" data-v="blur" aria-pressed="true" title="Видео по центру, по краям — оно же, размытое">Размытый фон</button>
+            <button type="button" data-v="black" aria-pressed="false">Чёрные поля</button>
+            <button type="button" data-v="crop" aria-pressed="false">Обрезать</button>
+          </div>
+        </div>
+        <span class="kr-lab">Качество</span>
+        <div id="exQuality" class="kr-seg tb-three" role="group" aria-label="Качество">
+          <button type="button" class="kr-b" data-v="light"><span>Лёгкий файл</span></button>
+          <button type="button" class="kr-b" data-v="normal"><span>Обычное</span></button>
+          <button type="button" class="kr-b" data-v="max"><span>Максимум</span></button>
+        </div>
+        <span class="kr-lab">Что сохранить</span>
+        <div id="exSpan" class="kr-seg" role="group" aria-label="Что сохранить">
+          <button type="button" class="kr-b" data-v="all"><span>Всю композицию</span></button>
+          <button type="button" class="kr-b" data-v="work"><span>Рабочую область</span></button>
+        </div>
+        <span class="kr-lab">Куда</span>
+        <div class="ex-folder"><span id="exFolder">Рядом с проектом / Экспорт</span><button id="exBrowse" type="button" class="ex-link">Изменить</button></div>
+        <label id="exAmeRow" class="snap-check" hidden title="Media Encoder сохраняет видео в фоне, а After Effects в это время свободен">
+          <input id="exAme" type="checkbox" checked aria-label="Через Media Encoder">
+          <span class="snap-box" aria-hidden="true"></span>
+          <span>Через Media Encoder — AE не занят</span>
+        </label>
+        <button id="exGo" class="primary ex-go" type="button">Сохранить видео</button>
+      </div>
+      <div id="exResults" class="ex-results" hidden></div>
     </section>
 
     <!-- Вкладки и блоки раздела «Инструменты» можно менять местами. Перетаскивание включается двойным щелчком

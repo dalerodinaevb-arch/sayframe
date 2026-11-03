@@ -583,7 +583,7 @@ function makeAE(opts, tmpDir) {
     items: { addFolder(name) { const f = new FolderItem(name); f.id = 900 + log.bins.length; projItems.push(f); log.bins.push(name);
         f.remove = () => { projItems.splice(projItems.indexOf(f), 1); log.bins.splice(log.bins.lastIndexOf(name), 1); log.undo.push("mark"); }; return f; },
       addComp(name, w, h, par, dur, fps) {
-        if (opts.orbit) { const oc = mkOrbitComp(log, name, w, h); Object.assign(oc, { duration: dur, frameRate: fps }); projItems.push(oc); log.orbitComps.push(oc); return oc; }
+        if (opts.orbit) { const oc = mkOrbitComp(log, name, w, h); Object.assign(oc, { duration: dur, frameRate: fps, remove() { projItems.splice(projItems.indexOf(oc), 1); log.compsRemoved = (log.compsRemoved || 0) + 1; } }); projItems.push(oc); log.orbitComps.push(oc); return oc; }
         const c = Object.assign(new CompItem(), { name, width: w, height: h, duration: dur, frameRate: fps, saved: [], scaleSet: null,
           openInViewer() { log.opened++; project.activeItem = c; },
           layers: { add(it) { c.added = it; c.addedLayer = { collapseTransformation: false, property() { return { property() { return { setValue(v) { c.scaleSet = v; } }; } }; } }; return c.addedLayer; },
@@ -592,11 +592,35 @@ function makeAE(opts, tmpDir) {
           remove() { log.removed.push("comp"); } });
         log.refComps.push(c); return c;
       } } };
+  // opts.rq: the Render Queue for «Быстрый экспорт». rq.queued — names of items already waiting; rq.ame — Media Encoder is there;
+  // rq.templates — output module templates (default: the H.264 ones of AE 2023+). render() writes a 2.5 MB file per item.
+  if (opts.rq) {
+    const rqo = opts.rq, items = [];
+    log.rq = { added: [], rendered: [], ame: [], removed: 0 };
+    (rqo.queued || []).forEach((n) => items.push({ name: n, render: true, comp: { name: n } }));
+    project.renderQueue = { rendering: !!rqo.rendering, canQueueInAME: !!rqo.ame, get numItems() { return items.length; }, item(i) { return items[i - 1]; },
+      items: { add(c) {
+        const om = { templates: rqo.templates || ["Best Settings", "H.264 - Match Render Settings - 15 Mbps", "H.264 - Match Render Settings - 40 Mbps", "H.264 - Match Render Settings - 5 Mbps", "Lossless"],
+          tpl: "", file: null, applyTemplate(t) { om.tpl = t; } };
+        const it = { comp: c, render: true, timeSpanStart: 0, timeSpanDuration: c.duration, om, outputModule() { return om; },
+          remove() { items.splice(items.indexOf(it), 1); log.rq.removed++; } };
+        items.push(it); log.rq.added.push(it); return it;
+      } },
+      render() {
+        if (rqo.renderThrows) throw new Error("render failed");
+        items.filter((i) => i.render && i.om).forEach((i) => {
+          log.rq.rendered.push({ comp: i.comp.name, w: i.comp.width, h: i.comp.height, file: i.om.file.fsName, tpl: i.om.tpl, span: [i.timeSpanStart, i.timeSpanDuration], others: items.filter((x) => x !== i && x.render).length });
+          fs.writeFileSync(i.om.file.fsName, Buffer.alloc(2500000));
+        });
+      },
+      queueInAME(now) { items.filter((i) => i.render && i.om).forEach((i) => log.rq.ame.push({ comp: i.comp.name, file: i.om.file.fsName, now, others: items.filter((x) => x !== i && x.render).length })); } };
+  }
   // A small After Effects install on disk for FX Console: shipped presets beside the app, user presets in Documents.
   function Folder(p) { this.fsName = p; this.name = encodeURI(path.basename(p)); }
   Object.defineProperty(Folder.prototype, "exists", { get() { return fs.existsSync(this.fsName) && fs.statSync(this.fsName).isDirectory(); } });
   Object.defineProperty(Folder.prototype, "parent", { get() { return new Folder(path.dirname(this.fsName)); } });
   Folder.prototype.selectDlg = function (prompt) { log.folderDlg.push({ path: this.fsName, prompt }); return opts.pickFolder === null ? null : new Folder(opts.pickFolder || this.fsName); };
+  Folder.prototype.execute = function () { log.executed = (log.executed || []).concat([this.fsName]); return true; };
   Folder.prototype.create = function () { fs.mkdirSync(this.fsName, { recursive: true }); return true; };
   Folder.prototype.getFiles = function () { return fs.readdirSync(this.fsName).sort().map((n) => { const f = path.join(this.fsName, n); return fs.statSync(f).isDirectory() ? new Folder(f) : new File(f); }); };
   const aeRoot = path.join(tmpDir, "Applications", "Adobe After Effects 2026");
@@ -1912,7 +1936,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = pngs(snapProj);
   check("SN5 with a saved project the default folder is the project's; Enter saves", t.length === 1 && (await p.status()).indexOf("Кадр сохранён: " + path.basename(snapProj) + " › ") === 0, await p.status());
   t = await p.page.evaluate(() => Array.from(document.querySelector(".top-actions").children).map((c) => c.id).join());
-  check("SN5 the camera is in the header next to the search, and in FX Console", t === "snapBtn,fxBtn,settingsBtn");
+  check("SN5 the camera is in the header next to the search (after the export button), and in FX Console", t === "exportBtn,snapBtn,fxBtn,settingsBtn", t);
   await p.close();
   p = await open({ copyFails: true });
   await p.page.click("#snapBtn"); await p.page.waitForFunction(() => !document.getElementById("snapBar").hidden); await p.page.click("#snapSave"); await p.idle();
@@ -1926,6 +1950,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#snapBtn"); await p.page.waitForFunction(() => !document.getElementById("snapBar").hidden); await p.page.click("#snapSave"); await p.idle();
   check("SN6 no comp -> a hint", /^Откройте композицию/.test(await p.status()), await p.status());
   await p.close();
+
 
   console.log("\n=== hotkeys ===");
   p = await open({ selectedLayers: [mkFxLayer("A")] });
@@ -5479,6 +5504,95 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("TB6 the settings survive a restart", (await p.page.getAttribute('#tbStyle [data-v="marker"]', "aria-pressed")) === "true" && (await p.page.inputValue("#tbColor")) === "#ffcc33" && (await p.page.evaluate(() => document.getElementById("tbText").classList.contains("tb-marker"))));
     await p.close();
   }
+
+  // «Быстрый экспорт»: the ⤓ button in the header opens a sheet; platforms, quality, what to save, folder; MP4 via the Render Queue or Media Encoder.
+  {
+    const exOpen = async (q) => { await q.page.click("#exportBtn"); await q.page.waitForFunction(() => !document.getElementById("exportBar").hidden && /×/.test(document.getElementById("exCompMeta").textContent)); };
+    const exRun = async (q) => { await q.page.click("#exGo"); await q.page.waitForFunction(() => /^(Готово|Отправлено|Сохранено|Не получилось)/.test((document.querySelector("#exResults .ex-now") || {}).textContent || "")); };
+    const mp4s = (d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((n) => /\.mp4$/.test(n)).sort() : []);
+    const pressed = (q, sel) => q.page.evaluate((s) => Array.prototype.filter.call(document.querySelectorAll(s), (b) => b.getAttribute("aria-pressed") === "true").map((b) => b.getAttribute("data-t") || b.getAttribute("data-v")).join(), sel);
+    const scaleOf = (l) => acAt(l, "ADBE Transform Group", "ADBE Scale").value;
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { queued: ["Old"] } });
+    const exDir = path.join(p.home, "Desktop", "Sayframe Экспорт");
+    await exOpen(p);
+    check("EX1 the ⤓ button opens «Быстрый экспорт»: comp line, 6 platform tiles, Reels picked, quality «Обычное», «Всю композицию»", (await p.page.locator("#exCompName").innerText()) === "Main" && (await p.page.locator("#exCompMeta").innerText()) === "1920×1080 · 10 с" &&
+      (await p.page.locator("#exTargets .ex-t span").allInnerTexts()).join() === "Reels / Stories,YouTube,Telegram,Пост 4:5,TikTok,Свой" && (await pressed(p, "#exTargets .ex-t")) === "reels" &&
+      (await pressed(p, "#exQuality button")) === "normal" && (await pressed(p, "#exSpan button")) === "all" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео" && (await overflow(p)) <= 0, await pressed(p, "#exTargets .ex-t"));
+    check("EX1 16:9 comp and Reels 9:16 -> the sheet asks how, «Размытый фон по краям» by default", (await vis(p, "#exFitRow")) && (await p.page.locator("#exFitText").innerText()) === "Композиция горизонтальная, а Reels — вертикальный. Как сделать?" && (await pressed(p, "#exFit button")) === "blur", await p.page.locator("#exFitText").innerText());
+    check("EX1 unsaved project -> Desktop › «Sayframe Экспорт»; no Media Encoder switch when there is no Media Encoder", (await p.page.getAttribute("#exFolder", "title")) === exDir && !(await vis(p, "#exAmeRow")), await p.page.getAttribute("#exFolder", "title"));
+    await p.page.screenshot({ path: path.join(SHOTS, "90-export-sheet.png") });
+    await p.page.click('#exTargets [data-t="youtube"]');
+    check("EX2 two platforms -> «Сохранить 2 видео»", (await p.page.locator("#exGo").innerText()).trim() === "Сохранить 2 видео");
+    await exRun(p);
+    t = p.ae.log.rq.rendered;
+    check("EX2 one MP4 per platform, named «Comp — Platform.mp4», in the folder", mp4s(exDir).join() === "Main — Reels.mp4,Main — YouTube.mp4", mp4s(exDir).join());
+    check("EX2 Reels goes through a 1080×1920 comp, YouTube is the comp itself; H.264 15 Mbps; whole comp", t.length === 2 && t[0].w === 1080 && t[0].h === 1920 && t[1].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 15 Mbps" && t[1].tpl === t[0].tpl && t[0].span[1] === 10, JSON.stringify(t));
+    const wr = p.ae.log.orbitComps[0];
+    check("EX2 the 9:16 comp: the source fits the width over a blurred, silent copy that covers the frame", wr.list.map((l) => l.name).join() === "Main,Blur" && Math.abs(scaleOf(wr.list[0])[0] - 56.25) < 0.01 && Math.abs(scaleOf(wr.list[1])[0] - 1920 / 1080 * 106) < 0.1 &&
+      wr.list[1].audioEnabled === false && !!acAt(wr.list[1], "ADBE Effect Parade").children.find((e) => e.matchName === "ADBE Gaussian Blur 2"), wr.list.map((l) => l.name + ":" + scaleOf(l)).join(" "));
+    check("EX2 items already in the Render Queue sit the render out and come back; ours and the helper comp are removed after", t.every((r) => r.others === 0) && p.ae.project.renderQueue.numItems === 1 && p.ae.project.renderQueue.item(1).render === true && p.ae.log.rq.removed === 2 && p.ae.log.compsRemoved === 1, JSON.stringify([t.map((r) => r.others), p.ae.log.rq.removed, p.ae.log.compsRemoved]));
+    check("EX2 the list shows ✓, the size and «Показать»; the status names the folder", (await p.page.locator("#exResults .ex-row.done").count()) === 2 && (await p.page.locator("#exResults .ex-row small").allInnerTexts()).join() === "2,4 МБ,2,4 МБ" &&
+      (await p.page.locator("#exResults .ex-row .ghost").count()) === 2 && (await p.page.locator("#exResults .ex-now").innerText()) === "Готово, 2 видео" && (await p.status()) === "Видео сохранены в папку «Sayframe Экспорт».", await p.status());
+    await p.page.screenshot({ path: path.join(SHOTS, "91-export-done.png") });
+    await p.page.click("#exResults .ex-row .ghost"); await p.page.waitForTimeout(200);
+    check("EX3 «Показать» opens the folder", (p.ae.log.executed || []).join() === exDir, JSON.stringify(p.ae.log.executed));
+    await p.page.click("#exResults .ex-again .ghost");
+    check("EX3 «Назад к настройкам» brings the sheet back", await vis(p, "#exGo"));
+    await p.page.click("#exGo"); await p.page.waitForFunction(() => document.querySelectorAll("#exResults .ex-row.done").length === 2);
+    check("EX3 a second run does not overwrite: «Main — Reels 2.mp4»", mp4s(exDir).indexOf("Main — Reels 2.mp4") >= 0, mp4s(exDir).join());
+    await p.close();
+
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    p.ae.log.dcMain.workAreaStart = 2; p.ae.log.dcMain.workAreaDuration = 3;
+    await exOpen(p);
+    await p.page.click('#exTargets [data-t="reels"]'); await p.page.click('#exTargets [data-t="telegram"]');
+    await p.page.click('#exQuality [data-v="max"]'); await p.page.click('#exSpan [data-v="work"]');
+    check("EX4 Telegram alone keeps the comp's shape: nothing to ask", !(await vis(p, "#exFitRow")));
+    await exRun(p);
+    t = p.ae.log.rq.rendered;
+    check("EX4 Telegram is always the light file (5 Mbps) at the comp's size; «Рабочую область» renders the work area", t.length === 1 && t[0].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 5 Mbps" && t[0].span.join() === "2,3", JSON.stringify(t));
+    await p.restart();
+    await exOpen(p);
+    check("EX4 the choice is remembered", (await pressed(p, "#exTargets .ex-t")) === "telegram" && (await pressed(p, "#exQuality button")) === "max" && (await pressed(p, "#exSpan button")) === "work");
+    await p.page.click('#exTargets [data-t="telegram"]'); await p.page.click('#exTargets [data-t="post"]'); await p.page.click('#exFit [data-v="crop"]');
+    await exRun(p);
+    t = p.ae.log.rq.rendered;
+    t = t.slice(1);
+    check("EX5 «Обрезать»: the 4:5 comp is filled (cover), no blur copy; «Максимум» = 40 Mbps", t.length === 1 && t[0].w === 1080 && t[0].h === 1350 && t[0].tpl === "H.264 - Match Render Settings - 40 Mbps" && p.ae.log.orbitComps[0].list.length === 1 && Math.abs(scaleOf(p.ae.log.orbitComps[0].list[0])[0] - 125) < 0.01, JSON.stringify(t));
+    await p.page.click("#exResults .ex-again .ghost");
+    await p.page.click('#exTargets [data-t="post"]'); await p.page.click('#exTargets [data-t="custom"]');
+    check("EX6 «Свой» shows width × height", await vis(p, "#exCustom"));
+    await p.page.fill("#exW", "1080"); await p.page.fill("#exH", "1080"); await p.page.click('#exFit [data-v="black"]');
+    check("EX6 the tile shows the size; square vs 16:9 is asked about", (await p.page.locator('#exTargets [data-t="custom"] small').innerText()) === "1080×1080" && (await p.page.locator("#exFitText").innerText()) === "Композиция горизонтальная, а 1080×1080 — квадратный. Как сделать?", await p.page.locator("#exFitText").innerText());
+    await exRun(p);
+    t = p.ae.log.rq.rendered;
+    check("EX6 «Чёрные поля»: the source fits inside, one layer; the file is «Main — 1080x1080.mp4»", t.length === 3 && t[2].w === 1080 && t[2].h === 1080 && /Main — 1080x1080\.mp4$/.test(t[2].file) && p.ae.log.orbitComps[1].list.length === 1 && Math.abs(scaleOf(p.ae.log.orbitComps[1].list[0])[0] - 56.25) < 0.01, JSON.stringify(t[2]));
+    await p.close();
+
+    const exProj = fs.mkdtempSync(path.join(os.tmpdir(), "exproj-"));
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { ame: true, queued: ["Old"] }, projectFile: path.join(exProj, "ролик.aep") });
+    await exOpen(p);
+    check("EX7 a saved project -> «Рядом с проектом / Экспорт»; with Media Encoder the switch is there and on", (await p.page.locator("#exFolder").innerText()) === "Рядом с проектом / Экспорт" && (await p.page.getAttribute("#exFolder", "title")) === path.join(exProj, "Экспорт") && (await vis(p, "#exAmeRow")) && (await p.page.locator("#exAme").isChecked()));
+    await exRun(p);
+    check("EX7 Media Encoder: queued there (starts at once), nothing renders in After Effects, the row says so", p.ae.log.rq.ame.length === 1 && p.ae.log.rq.ame[0].now === true && p.ae.log.rq.ame[0].others === 0 && p.ae.log.rq.rendered.length === 0 &&
+      (await p.page.locator("#exResults .ex-row small").innerText()) === "в Media Encoder" && /^Отправлено в Media Encoder/.test(await p.page.locator("#exResults .ex-now").innerText()) && p.ae.project.renderQueue.item(1).render === true, JSON.stringify(p.ae.log.rq.ame));
+    await p.page.click("#exResults .ex-again .ghost"); await p.page.click("#exAmeRow"); await exRun(p);
+    check("EX7 switch off -> After Effects renders it", p.ae.log.rq.rendered.length === 1 && p.ae.log.rq.rendered[0].others === 0 && mp4s(path.join(exProj, "Экспорт")).length === 1, JSON.stringify(mp4s(path.join(exProj, "Экспорт"))));
+    await p.close();
+
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { templates: ["Best Settings", "Lossless"] } });
+    await exOpen(p); await exRun(p);
+    check("EX8 no H.264 template and no Media Encoder -> a clear error in the row; the item is taken out of the queue", (await p.page.locator("#exResults .ex-row.fail").count()) === 1 && /нет настройки H\.264/.test(await p.page.locator("#exResults .ex-row .ex-nm").innerText()) && p.ae.project.renderQueue.numItems === 0 && (await p.statusKind()) === "error", await p.page.locator("#exResults .ex-row .ex-nm").innerText());
+    await p.page.click("#exResults .ex-again .ghost");
+    await p.page.keyboard.press("Escape");
+    check("EX8 Esc closes the sheet", !(await vis(p, "#exportBar")));
+    await p.close();
+    p = await open({ noActiveComp: true });
+    await p.page.click("#exportBtn"); await p.page.waitForFunction(() => /^Откройте/.test(document.getElementById("exCompName").textContent));
+    check("EX8 no comp open -> asks to open one, «Сохранить» is off", await p.page.locator("#exGo").isDisabled());
+    await p.close();
+  }
+
 
   // Phone mockup (Animation › «Макеты»): an iPhone or Android phone of shapes; the screen is a comp of the real resolution or the selected layer.
   {
