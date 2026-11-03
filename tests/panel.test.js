@@ -5733,7 +5733,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     let T = L(p, "Текст ленты"), R = L(p, "Лента");
     check("RB2 «Создать ленту»: the text above the ribbon, one undo step; the text repeats with its separator", names(p) === "Текст ленты,Лента,BG" && p.ae.log.undo.join() === "begin:Sayframe: text ribbon,end" && /^(WEST LOOP • ){5,}/.test(docText(T)) && /Лента готова/.test(await p.status()), names(p) + " | " + p.ae.log.undo.join() + " | " + await p.status());
     check("RB2 the text runs on its own mask (the same line) and is centred on it; the ribbon is a thick round stroke", acAt(T, "ADBE Mask Parade").children.length === 1 && acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text Path").value === 1 &&
-      acAt(T, "ADBE Text Properties", "ADBE Text Animators").children.length === 1 && JSON.stringify(acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length) === "55");
+      acAt(T, "ADBE Text Properties", "ADBE Text Animators").children.length === 1 && JSON.stringify(acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length) === "19");
+    const rbPath = (l) => acAt(acAt(l, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape");
+    const rbMt = L(p, "Лента: маска") || p.ae.log.dcMain.list.find((l) => /^Лента: /.test(l.name));
+    check("RB8 one line for everything: the text's mask and the matte follow the ribbon's line, both move with the ribbon; the line is selected for editing",
+      acAt(T, "ADBE Mask Parade").children[0].children.find((c) => c.matchName === "ADBE Mask Shape").expression === 'thisComp.layer("Лента").content(1).content(1).path' &&
+      T.parent === R && (!rbMt || (rbMt.parent === R && rbPath(rbMt).expression === 'thisComp.layer("Лента").content(1).content(1).path')) && R.selected === true && T.selected === false && rbPath(R).selected === true,
+      String(rbMt && rbMt.name) + " | " + acAt(T, "ADBE Mask Parade").children[0].children.find((c) => c.matchName === "ADBE Mask Shape").expression);
+    check("RB8 the line has few points with smooth handles (easy to bend by hand)", rbPath(R).value.outTangents.slice(0, -1).every((t) => Math.hypot(t[0], t[1]) > 1) && rbPath(R).value.inTangents.slice(1).every((t) => Math.hypot(t[0], t[1]) > 1));
     check("RB2 settings in Effect Controls of the text; the ribbon reads width and colour from there; the text runs with time", fxNames(T) === "Толщина ленты,Скорость,Цвет ленты" &&
       /effect\("Толщина ленты"\)/.test(acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Width").expression) &&
       /time\*effect\("Скорость"\)/.test(acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin").expression), fxNames(T));

@@ -3363,7 +3363,7 @@ var sayframeHost = (function () {
                 rad = H * (0.08 + r() * 0.07);
                 dir = r() < 0.5 ? 1 : -1;
                 cy = y - dir * rad;
-                for (k = 1; k < 8; k++) { t = k / 8 * 2 * Math.PI; pts.push([x + rad * Math.sin(t) + k / 8 * step * 0.12, cy + dir * rad * Math.cos(t)]); }
+                for (k = 2; k < 8; k += 2) { t = k / 8 * 2 * Math.PI; pts.push([x + rad * Math.sin(t) + k / 8 * step * 0.12, cy + dir * rad * Math.cos(t)]); }
                 pts.push([x + step * 0.14, y]);
             }
         }
@@ -3389,12 +3389,12 @@ var sayframeHost = (function () {
         if (form === "circle") {
             r = m * 0.3;
             for (i = 0; i < 24; i++) { t = i / 24 * 2 * Math.PI; pts.push([r * Math.sin(t), -r * Math.cos(t)]); }
-            return { pts: pts, closed: true };
+            return { pts: pts, closed: true, step: 6 };
         }
         if (form === "spiral") {
             n = 44;
             for (i = 0; i <= n; i++) { t = i / n * 5 * Math.PI; r = m * 0.4 * (0.12 + 0.88 * i / n); pts.push([r * Math.cos(t), r * Math.sin(t)]); }
-            return { pts: pts, closed: false };
+            return { pts: pts, closed: false, step: 4 };
         }
         if (form === "loops") {
             // A prolate cycloid: three loops in a row.
@@ -3404,16 +3404,43 @@ var sayframeHost = (function () {
             for (i = 0; i <= n; i++) { x0 = Math.min(x0, xs[i]); x1 = Math.max(x1, xs[i]); y0 = Math.min(y0, ys[i]); y1 = Math.max(y1, ys[i]); }
             s = Math.min(W * 0.9 / (x1 - x0), H * 0.62 / (y1 - y0));
             for (i = 0; i <= n; i++) { pts.push([(xs[i] - (x0 + x1) / 2) * s, (ys[i] - (y0 + y1) / 2) * s]); }
-            return { pts: pts, closed: false };
+            return { pts: pts, closed: false, step: 3 };
         }
         // wave: two full waves across the frame
         n = 32;
         for (i = 0; i <= n; i++) { u = i / n; x = (u - 0.5) * W * 1.1; y = -Math.sin(u * 4 * Math.PI) * H * 0.18; pts.push([x, y]); }
-        return { pts: pts, closed: false };
+        return { pts: pts, closed: false, step: 4 };
+    }
+
+    // A line drawn with few points, so it is easy to bend by hand: every step-th point of the dense line is kept,
+    // its handles point along the dense line and are a third of the way to the next kept point.
+    function ribSimplify(sm) {
+        var p = sm.pts, n = p.length, st = sm.step, keep = [], i, k, a, b, dx, dy, d, lenTo, s = new Shape(), ins = [], outs = [], v = [];
+        for (i = 0; i < n; i += st) { keep.push(i); }
+        if (!sm.closed && keep[keep.length - 1] !== n - 1) { if (n - 1 - keep[keep.length - 1] < st / 2 && keep.length > 1) { keep.pop(); } keep.push(n - 1); }
+        function arc(i0, i1) {
+            var L = 0, j, q, r;
+            for (j = i0; j < i1; j++) { q = p[((j % n) + n) % n]; r = p[(((j + 1) % n) + n) % n]; L += Math.sqrt((r[0] - q[0]) * (r[0] - q[0]) + (r[1] - q[1]) * (r[1] - q[1])); }
+            return L;
+        }
+        for (k = 0; k < keep.length; k++) {
+            i = keep[k];
+            a = sm.closed ? p[(i - 1 + n) % n] : p[Math.max(0, i - 1)];
+            b = sm.closed ? p[(i + 1) % n] : p[Math.min(n - 1, i + 1)];
+            dx = b[0] - a[0]; dy = b[1] - a[1]; d = Math.sqrt(dx * dx + dy * dy) || 1; dx /= d; dy /= d;
+            lenTo = (k > 0 || sm.closed) ? arc(k > 0 ? keep[k - 1] : keep[keep.length - 1] - n, i) / 3 : 0;
+            ins.push([-dx * lenTo, -dy * lenTo]);
+            lenTo = (k < keep.length - 1 || sm.closed) ? arc(i, k < keep.length - 1 ? keep[k + 1] : keep[0] + n) / 3 : 0;
+            outs.push([dx * lenTo, dy * lenTo]);
+            v.push([p[i][0], p[i][1]]);
+        }
+        s.vertices = v; s.inTangents = ins; s.outTangents = outs; s.closed = sm.closed;
+        return s;
     }
 
     function ribShape(sm) {
         var p = sm.pts, n = p.length, s = new Shape(), ins = [], outs = [], i, a, b, tx, ty;
+        if (sm.step > 1 && n > sm.step * 2) { return ribSimplify(sm); }
         for (i = 0; i < n; i++) {
             a = sm.closed ? p[(i - 1 + n) % n] : p[Math.max(0, i - 1)];
             b = sm.closed ? p[(i + 1) % n] : p[Math.min(n - 1, i + 1)];
@@ -3729,7 +3756,8 @@ var sayframeHost = (function () {
             track = 40 + (len - j * uw) / (j * unit.length) / fs * 1000;
         } else {
             // An open line: enough for the whole line and for everything that runs past during the comp.
-            need = len + (o.run ? speed * 10 * comp.duration : 0) + uw;
+            // Half as much again, so the line can be made longer by hand and still be full.
+            need = len * 1.5 + (o.run ? speed * 10 * comp.duration : 0) + uw;
             for (j = 0; j < 400 && j * uw < need; j++) { str += unit; }
             track = 40;
         }
@@ -3739,7 +3767,7 @@ var sayframeHost = (function () {
             try { doc.tracking = Math.round(track * 10) / 10; } catch (eT2) {}
             tp.setValue(doc);
         } catch (eD) {}
-        ribOnPath(T, sh, fs, false);
+        var tmi = ribOnPath(T, sh, fs, false);
         // Settings in Effect Controls of the text: the ribbon reads its width and colour from there.
         kitControl(T, "ADBE Slider Control", labels.width || "Width", width);
         kitControl(T, "ADBE Slider Control", labels.speed || "Speed", speed);
@@ -3783,9 +3811,19 @@ var sayframeHost = (function () {
             try { trs = [["ADBE Anchor Point", acTransform(T, "ADBE Anchor Point").value], ["ADBE Position", acTransform(T, "ADBE Position").value], ["ADBE Scale", acTransform(T, "ADBE Scale").value], ["ADBE Rotate Z", acTransform(T, "ADBE Rotate Z").value]]; } catch (eTr) {}
             ov = ribOverlap(comp, o, labels, R, T, Mt, sh, { width: width, fs: fs, len: len, unit: unit, uw: uw, tc: tc, rc: rc, str: str, track: Math.round(track * 10) / 10, closed: !!sh.closed, reps: j, tr: trs });
         }
-        try { R.selected = false; } catch (eS) {}
-        T.selected = true;
-        return { mode: "ribbon", pieces: ov ? ov.pieces : 0, form: form, seed: form === "random" ? Math.floor(Number(o.seed) || 1) : 0, angle: form === "path" ? 0 : Number(o.angle) || 0, dir: o.dir === "back" ? "back" : "fwd", ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j, matte: Mt ? Mt.name : "" };
+        // One line for everything: the text and the matte follow the ribbon's line and move with the ribbon,
+        // so bending or moving the line by hand keeps all of it together. (With overlaps the pieces are cut
+        // from the line as it is now, so they stay as made.)
+        var linked = !ov, lineExpr = "thisComp.layer(" + tbQ(R.name) + ").content(1).content(1).path";
+        if (linked) {
+            try { acP(T, ["ADBE Mask Parade", tmi, "ADBE Mask Shape"]).expression = lineExpr; } catch (eL1) { linked = false; }
+            if (Mt) { try { acGP(Mt, gi, ["ADBE Vectors Group", 1, "ADBE Vector Shape"]).expression = lineExpr; Mt.parent = R; } catch (eL2) {} }
+            try { T.parent = R; } catch (eL3) {}
+        }
+        try { T.selected = false; } catch (eS) {}
+        R.selected = true;
+        try { acGP(R, gi, ["ADBE Vectors Group", 1, "ADBE Vector Shape"]).selected = true; } catch (eSel) {}
+        return { mode: "ribbon", linked: linked, pieces: ov ? ov.pieces : 0, form: form, seed: form === "random" ? Math.floor(Number(o.seed) || 1) : 0, angle: form === "path" ? 0 : Number(o.angle) || 0, dir: o.dir === "back" ? "back" : "fwd", ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j, matte: Mt ? Mt.name : "" };
     }
 
     function ringBuild(comp, o, labels) {
