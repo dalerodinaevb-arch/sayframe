@@ -596,7 +596,7 @@ function makeAE(opts, tmpDir) {
   // rq.templates — output module templates (default: the H.264 ones of AE 2023+). render() writes a 2.5 MB file per item.
   if (opts.rq) {
     const rqo = opts.rq, items = [];
-    log.rq = { added: [], rendered: [], ame: [], removed: 0 };
+    log.rq = { added: [], rendered: [], ame: [], removed: 0, bt: [] };
     (rqo.queued || []).forEach((n) => items.push({ name: n, render: true, comp: { name: n } }));
     project.renderQueue = { rendering: !!rqo.rendering, canQueueInAME: !!rqo.ame, get numItems() { return items.length; }, item(i) { return items[i - 1]; },
       items: { add(c) {
@@ -622,7 +622,7 @@ function makeAE(opts, tmpDir) {
   Folder.prototype.selectDlg = function (prompt) { log.folderDlg.push({ path: this.fsName, prompt }); return opts.pickFolder === null ? null : new Folder(opts.pickFolder || this.fsName); };
   Folder.prototype.execute = function () { log.executed = (log.executed || []).concat([this.fsName]); return true; };
   Folder.prototype.create = function () { fs.mkdirSync(this.fsName, { recursive: true }); return true; };
-  Folder.prototype.getFiles = function () { return fs.readdirSync(this.fsName).sort().map((n) => { const f = path.join(this.fsName, n); return fs.statSync(f).isDirectory() ? new Folder(f) : new File(f); }); };
+  Folder.prototype.getFiles = function (filter) { return fs.readdirSync(this.fsName).sort().map((n) => { const f = path.join(this.fsName, n); return fs.statSync(f).isDirectory() ? new Folder(f) : new File(f); }).filter((f) => typeof filter !== "function" || filter(f)); };
   const aeRoot = path.join(tmpDir, "Applications", "Adobe After Effects 2026");
   const write = (base, files) => Object.keys(files || {}).forEach((rel) => { const f = path.join(base, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, files[rel]); });
   fs.mkdirSync(path.join(aeRoot, "Adobe After Effects 2026.app"), { recursive: true });
@@ -630,6 +630,34 @@ function makeAE(opts, tmpDir) {
   write(path.join(tmpDir, "Documents", "Adobe", "After Effects 2026", "User Presets"), opts.userPresets);
   Folder.appPackage = new Folder(path.join(aeRoot, "Adobe After Effects 2026.app"));
   Folder.myDocuments = new Folder(path.join(tmpDir, "Documents"));
+  Folder.temp = new Folder(path.join(tmpDir, "Temp"));
+  fs.mkdirSync(Folder.temp.fsName, { recursive: true });
+  // Plain text files, as ExtendScript's File: open / read / write / close, copy, remove.
+  File.prototype.open = function (mode) { this._mode = mode; this._buf = ""; return mode === "r" ? fs.existsSync(this.fsName) : fs.existsSync(path.dirname(this.fsName)); };
+  File.prototype.read = function () { return fs.readFileSync(this.fsName, "utf8"); };
+  File.prototype.write = function (t) { this._buf += String(t); return true; };
+  File.prototype.close = function () { if (this._mode === "w") fs.writeFileSync(this.fsName, this._buf, "utf8"); return true; };
+  File.prototype.copy = function (to) { fs.copyFileSync(this.fsName, String(to)); return true; };
+  File.prototype.remove = function () { try { fs.unlinkSync(this.fsName); return true; } catch (e) { return false; } };
+  // Media Encoder (opts.rq.ameApp): installed next to After Effects with its H.264 preset; BridgeTalk takes
+  // scripts for it (log.rq.bt). ameApp "silent": Media Encoder does not answer.
+  function BridgeTalk() {}
+  BridgeTalk.getSpecifier = (n) => (opts.rq && opts.rq.ameApp && n === "ame" ? "ame-26.0" : null);
+  BridgeTalk.prototype.send = function () {
+    log.rq.bt.push({ target: this.target, body: this.body });
+    if (opts.rq.ameApp === "silent") { if (this.onError) this.onError({ body: "timeout" }); return false; }
+    if (this.onResult) this.onResult({ body: "ok" });
+    return true;
+  };
+  if (opts.rq && opts.rq.ameApp) {
+    const pre = path.join(tmpDir, "Applications", "Adobe Media Encoder 2026", "Adobe Media Encoder 2026.app", "Contents", "MediaIO", "systempresets");
+    const param = (id, v) => "\t<ExporterParam ObjectID=\"1\" ClassID=\"x\" Version=\"1\">\n\t\t<ParamIdentifier>" + id + "</ParamIdentifier>\n\t\t<ParamType>3</ParamType>\n\t\t<ParamValue>" + v + "</ParamValue>\n\t</ExporterParam>\n";
+    const epr = (cls) => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<PremiereData Version=\"3\">\n\t<PresetID>9bb57b43-b3d1-448f-bdb0-4c5e3dcf9749</PresetID>\n\t<ExporterClassID>" + cls + "</ExporterClassID>\n\t<PresetName>Match Source - High bitrate</PresetName>\n" +
+      param("ADBEVideoMatchSource", "false") + param("ADBEVideoWidth", "1920") + param("ADBEVideoHeight", "1080") + param("ADBEVideoBitrateEncoding", "2") + param("ADBEVideoMinBitrate", "2.") + param("ADBEVideoTargetBitrate", "10.") + param("ADBEVideoMaxBitrate", "12.") + "</PremiereData>\n";
+    fs.mkdirSync(path.join(pre, "4E49434B_48323634"), { recursive: true }); fs.mkdirSync(path.join(pre, "4D504547_4D504547"), { recursive: true });
+    fs.writeFileSync(path.join(pre, "4D504547_4D504547", "Match Source - High bitrate.epr"), epr("1297106761"));
+    fs.writeFileSync(path.join(pre, "4E49434B_48323634", "Match Source - High bitrate.epr"), epr("1313424203"));
+  }
   log.acAdds = []; log.acLayers = []; log.acRemoved = []; log.layersRemoved = []; log.addedLayers = [];
   log.snaps = []; log.saveDlg = []; log.events = []; log.tasks = []; log.folderDlg = [];
   File.prototype.saveDlg = function (prompt) { log.saveDlg.push({ path: this.fsName, prompt }); return opts.saveAs === null ? null : new File(opts.saveAs || this.fsName); };
@@ -675,7 +703,7 @@ function makeAE(opts, tmpDir) {
     purge: (t) => { log.purges = (log.purges || []).concat([t]); },
     fonts: opts.noFonts ? undefined : { allFonts: [[{ postScriptName: "Inter-Regular" }, { postScriptName: "Inter-Bold" }], [{ postScriptName: "Montserrat-Bold" }]],
       getFontsByPostScriptName: (n) => (/^(Inter|Montserrat|ArialMT)/.test(n) ? [{ postScriptName: n }] : []) } };
-  const ctx = vm.createContext({ app, PurgeTarget: opts.noPurge ? undefined : { ALL_CACHES: 1012, UNDO_CACHES: 1013, SNAPSHOT_CACHES: 1014, IMAGE_CACHES: 1015 }, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212, OVERLAY: 5224 }, TrackMatteType: { ALPHA: 5013, NO_TRACK_MATTE: 5012 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, Window, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {}, screens: [{ left: 0, top: 0, right: 1440, bottom: 900 }] },
+  const ctx = vm.createContext({ app, PurgeTarget: opts.noPurge ? undefined : { ALL_CACHES: 1012, UNDO_CACHES: 1013, SNAPSHOT_CACHES: 1014, IMAGE_CACHES: 1015 }, File, Folder, MarkerValue, BlendingMode: { NORMAL: 5208, SCREEN: 5220, ADD: 5212, OVERLAY: 5224 }, TrackMatteType: { ALPHA: 5013, NO_TRACK_MATTE: 5012 }, Shape: function Shape() {}, CSXSEvent, ExternalObject, Window, BridgeTalk, ScriptUI: { environment: { keyboardState } }, FolderItem, FootageItem, FileSource, PlaceholderSource, ImportOptions, CompItem, TextLayer, ShapeLayer, CameraLayer, LightLayer, SolidSource, $: { sleep() {}, screens: [{ left: 0, top: 0, right: 1440, bottom: 900 }] },
     KeyframeEase, KeyframeInterpolationType: KIT, PropertyType: { PROPERTY, INDEXED_GROUP: 6213, NAMED_GROUP: 6214 } });
   ctx.$.global = ctx;
   if (!opts.hostNotPreloaded) vm.runInContext(hostSrc, ctx);
@@ -5537,7 +5565,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     t = p.ae.log.rq.rendered;
     check("EX2 one MP4 at the comp's size, named «Comp — Среднее.mp4»; H.264 15 Mbps; whole comp; no helper comp", mp4s(exDir).join() === "Main — Среднее.mp4" && t.length === 1 && t[0].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 15 Mbps" && t[0].span[1] === 10 && p.ae.log.orbitComps.length === 0, mp4s(exDir).join() + JSON.stringify(t));
     check("EX2 items already in the Render Queue sit the render out and come back; ours is removed after", t.every((r) => r.others === 0) && p.ae.project.renderQueue.numItems === 1 && p.ae.project.renderQueue.item(1).render === true && p.ae.log.rq.removed === 1, JSON.stringify([t.map((r) => r.others), p.ae.log.rq.removed]));
-    check("EX2 the list shows ✓, the size and «Показать»; the status names the folder", (await p.page.locator("#exResults .ex-row.done").count()) === 1 && (await p.page.locator("#exResults .ex-row small").allInnerTexts()).join() === "2,4 МБ" &&
+    check("EX2 the list shows ✓, the size and «Показать»; the status names the folder", (await p.page.locator("#exResults .ex-row.done").count()) === 1 && (await p.page.locator("#exResults .ex-row small").allInnerTexts()).join() === "2,4 МБ · 15 Мбит/с" &&
       (await p.page.locator("#exResults .ex-row .ghost").count()) === 1 && (await p.page.locator("#exResults .ex-now").innerText()) === "Готово" && (await p.status()) === "Видео сохранены в папку «Sayframe Экспорт».", await p.status());
     await p.page.screenshot({ path: path.join(SHOTS, "91-export-done.png") });
     await p.page.click("#exResults .ex-row .ghost"); await p.page.waitForTimeout(200);
@@ -5609,13 +5637,40 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("EX10 the bitrates are remembered", (await rateOf("light")) === "3 Мбит/с" && (await rateOf("normal")) === "18 Мбит/с");
     await p.close();
 
+    // Any bitrate through Media Encoder: AE renders 40 Mbps into Temp, Media Encoder gets it with a preset made from its own H.264 one.
+    const exPlus = async (q, id, n) => { for (let i = 0; i < n; i++) await q.page.click('#exTargets [data-t="' + id + '"] .ex-rate [data-d="1"]'); };
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { ame: true, ameApp: true } });
+    await exOpen(p); await exPlus(p, "normal", 1); await exRun(p);
+    m = p.ae.log.rq.bt[0] || { body: "" };
+    t = (/addFileToBatch\("([^"]+)", "H\.264", "([^"]+)", "([^"]+)"\)/.exec(m.body) || []).slice(1);
+    c = t[1] && fs.existsSync(t[1]) ? fs.readFileSync(t[1], "utf8") : "";
+    const pv = (id) => ((new RegExp("<ParamIdentifier>" + id + "</ParamIdentifier>[\\s\\S]*?<ParamValue>([^<]*)<")).exec(c) || [])[1];
+    check("EX11 18 Мбит/с + Media Encoder: AE renders the 40 Mbps template into Temp, nothing stays in the queue", p.ae.log.rq.rendered.length === 1 && /40 Mbps$/.test(p.ae.log.rq.rendered[0].tpl) && p.ae.log.rq.rendered[0].file.indexOf(path.join(p.tmpDir || "", "")) === 0 && /Temp/.test(p.ae.log.rq.rendered[0].file) && p.ae.project.renderQueue.numItems === 0 && p.ae.log.rq.ame.length === 0, JSON.stringify(p.ae.log.rq.rendered));
+    check("EX11 Media Encoder gets the file, the preset and the final .mp4, and starts", p.ae.log.rq.bt.length === 1 && m.target === "ame-26.0" && t.length === 3 && t[0] === p.ae.log.rq.rendered[0].file && /\.epr$/.test(t[1]) && /Main — Среднее\.mp4$/.test(t[2]) && /runBatch\(\)/.test(m.body) && /onEncodeFinished/.test(m.body), m.body);
+    check("EX11 the preset is the H.264 one with the bitrate changed (18 / max 22.5 / min 9), match source, own id and name", /<ExporterClassID>1313424203</.test(c) && pv("ADBEVideoTargetBitrate") === "18." && pv("ADBEVideoMaxBitrate") === "22.5" && pv("ADBEVideoMinBitrate") === "9." &&
+      pv("ADBEVideoMatchSource") === "true" && pv("ADBEVideoWidth") === "1920" && !/9bb57b43-b3d1-448f-bdb0-4c5e3dcf9749/.test(c) && /<PresetName>Sayframe 18 Mbps<\/PresetName>/.test(c), c.slice(0, 400));
+    check("EX11 the row says Media Encoder and 18 Мбит/с", (await p.page.locator("#exResults .ex-row small").innerText()) === "в Media Encoder · 18 Мбит/с" && /^Отправлено в Media Encoder/.test(await p.page.locator("#exResults .ex-now").innerText()));
+    await p.page.click("#exResults .ex-again .ghost");
+    await exPlus(p, "normal", 0); await p.page.click('#exTargets [data-t="normal"] .ex-rate [data-d="-1"]'); await exRun(p);
+    check("EX11 15 Мбит/с has its own AE template: straight to Media Encoder as before, no preset", p.ae.log.rq.bt.length === 1 && p.ae.log.rq.ame.length === 1 && (await p.page.locator("#exResults .ex-row small").innerText()) === "в Media Encoder · 15 Мбит/с");
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { ame: true, ameApp: "silent" } });
+    await exOpen(p); await exPlus(p, "normal", 1); await exRun(p);
+    t = await p.page.locator("#exResults .ex-nm").getAttribute("title");
+    check("EX11 Media Encoder does not answer -> the 40 Mbps file is kept as the video, the row says 40 Мбит/с", p.ae.log.rq.bt.length === 1 && fs.existsSync(t) && fs.statSync(t).size > 0 && /· 40 Мбит\/с$/.test(await p.page.locator("#exResults .ex-row small").innerText()) && /Temp/.test(p.ae.log.rq.rendered[0].file) && !fs.existsSync(p.ae.log.rq.rendered[0].file), t);
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { ame: true } });
+    await exOpen(p); await exPlus(p, "normal", 1); await exRun(p);
+    check("EX11 no Media Encoder preset found -> the nearest AE template (15), the row says so", p.ae.log.rq.ame.length === 1 && p.ae.log.rq.bt.length === 0 && (await p.page.locator("#exResults .ex-row small").innerText()) === "в Media Encoder · 15 Мбит/с" && /ближайший/.test(await p.page.locator("#exResults .ex-row small").getAttribute("title")));
+    await p.close();
+
     const exProj = fs.mkdtempSync(path.join(os.tmpdir(), "exproj-"));
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { ame: true, queued: ["Old"] }, projectFile: path.join(exProj, "ролик.aep") });
     await exOpen(p);
     check("EX7 a saved project -> «Рядом с проектом / Экспорт»; with Media Encoder the switch is there and on", (await p.page.locator("#exFolder").innerText()) === "Рядом с проектом / Экспорт" && (await p.page.getAttribute("#exFolder", "title")) === path.join(exProj, "Экспорт") && (await vis(p, "#exAmeRow")) && (await p.page.locator("#exAme").isChecked()));
     await exRun(p);
     check("EX7 Media Encoder: queued there (starts at once), nothing renders in After Effects, the row says so", p.ae.log.rq.ame.length === 1 && p.ae.log.rq.ame[0].now === true && p.ae.log.rq.ame[0].others === 0 && p.ae.log.rq.rendered.length === 0 &&
-      (await p.page.locator("#exResults .ex-row small").innerText()) === "в Media Encoder" && /^Отправлено в Media Encoder/.test(await p.page.locator("#exResults .ex-now").innerText()) && p.ae.project.renderQueue.item(1).render === true, JSON.stringify(p.ae.log.rq.ame));
+      (await p.page.locator("#exResults .ex-row small").innerText()) === "в Media Encoder · 15 Мбит/с" && /^Отправлено в Media Encoder/.test(await p.page.locator("#exResults .ex-now").innerText()) && p.ae.project.renderQueue.item(1).render === true, JSON.stringify(p.ae.log.rq.ame));
     await p.page.click("#exResults .ex-again .ghost"); await p.page.click("#exAmeRow"); await exRun(p);
     check("EX7 switch off -> After Effects renders it", p.ae.log.rq.rendered.length === 1 && p.ae.log.rq.rendered[0].others === 0 && mp4s(path.join(exProj, "Экспорт")).length === 1, JSON.stringify(mp4s(path.join(exProj, "Экспорт"))));
     await p.close();

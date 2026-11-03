@@ -4653,6 +4653,120 @@ var sayframeHost = (function () {
 
     // A comp of the platform's size with the source comp inside: fit (black bars), crop (cover),
     // or blur (fit, over a blurred cover copy that fills the edges).
+    // Bitrate (Mbps) written in an H.264 template's name, 0 when none.
+    function exTplRate(tpl) { var m = /H\.?264.*?(\d+)\s*Mbps/i.exec(String(tpl || "")); return m ? Number(m[1]) : 0; }
+
+    // ---- Media Encoder at any bitrate. After Effects has H.264 templates only for 5 / 15 / 40 Mbps, so for
+    // another bitrate AE renders a 40 Mbps file first and Media Encoder re-encodes it with a preset made
+    // from its own H.264 preset ("Match Source - High bitrate"), the bitrate changed.
+    var exEprBase = null;
+
+    function exReadText(f) {
+        var t = "";
+        try { f.encoding = "UTF-8"; if (f.open("r")) { t = f.read(); f.close(); } } catch (e) {}
+        return t;
+    }
+
+    function exIsH264Epr(t) {
+        return t.indexOf("<ParamIdentifier>ADBEVideoTargetBitrate</ParamIdentifier>") >= 0 && t.indexOf("<ExporterClassID>1313424203</ExporterClassID>") >= 0;
+    }
+
+    // Folders that hold Media Encoder's own presets, newest version first.
+    function exEprDirs() {
+        var roots = [], out = [], i, j, k, ames, apps, r;
+        try { r = Folder.appPackage.parent.parent; if (r && r.exists) { roots.push(r); } } catch (e0) {}
+        roots.push(new Folder("/Applications"), new Folder("C:/Program Files/Adobe"));
+        for (i = 0; i < roots.length; i++) {
+            if (!roots[i].exists) { continue; }
+            ames = roots[i].getFiles(function (f) { return f instanceof Folder && /^Adobe Media Encoder/i.test(decodeURI(f.name)); }) || [];
+            ames.sort(function (a, b) { return decodeURI(a.name) < decodeURI(b.name) ? 1 : -1; });
+            for (j = 0; j < ames.length; j++) {
+                out.push(new Folder(ames[j].fsName + "/MediaIO/systempresets"));
+                apps = ames[j].getFiles(function (f) { return f instanceof Folder && /\.app$/i.test(decodeURI(f.name)); }) || [];
+                for (k = 0; k < apps.length; k++) { out.push(new Folder(apps[k].fsName + "/Contents/MediaIO/systempresets")); }
+            }
+        }
+        return out;
+    }
+
+    // The H.264 preset to start from: "Match Source - High bitrate" if found, else any H.264 one.
+    function exFindEpr() {
+        var dirs = exEprDirs(), best = null, any = null, seen = 0, i;
+        function walk(d, depth) {
+            var list, n, f, t, nm;
+            if (best || depth > 4 || seen > 600 || !d.exists) { return; }
+            list = d.getFiles() || [];
+            for (n = 0; n < list.length && !best; n++) {
+                f = list[n];
+                if (f instanceof Folder) { walk(f, depth + 1); continue; }
+                nm = decodeURI(f.name);
+                if (!/\.epr$/i.test(nm)) { continue; }
+                seen++;
+                t = exReadText(f);
+                if (!exIsH264Epr(t)) { continue; }
+                if (/match source/i.test(nm) && /high bitrate/i.test(nm)) { best = { path: f.fsName, text: t }; }
+                else if (!any) { any = { path: f.fsName, text: t }; }
+            }
+        }
+        for (i = 0; i < dirs.length && !best; i++) { walk(dirs[i], 0); }
+        return best || any;
+    }
+
+    // Sets the value of one parameter of an .epr text (the <ParamValue> inside its <ExporterParam>).
+    function exEprSet(t, id, val) {
+        var k = t.indexOf("<ParamIdentifier>" + id + "</ParamIdentifier>"), a, b, next;
+        if (k < 0) { return t; }
+        next = t.indexOf("</ExporterParam>", k);
+        a = t.indexOf("<ParamValue>", k);
+        b = a >= 0 ? t.indexOf("</ParamValue>", a) : -1;
+        if (a < 0 || b < 0 || (next >= 0 && a > next)) { return t; }
+        return t.substring(0, a + 12) + val + t.substring(b);
+    }
+
+    function exHex(n) { var s = "", i; for (i = 0; i < n; i++) { s += "0123456789abcdef".charAt(Math.floor(Math.random() * 16)); } return s; }
+
+    // Writes "Sayframe N Mbps.epr" into the temp folder; returns its path or "".
+    function exMakeEpr(mbps, w, h) {
+        var t, f, dir, num = function (v) { return Math.round(v) === v ? v + "." : String(v); };
+        if (!exEprBase) { exEprBase = exFindEpr() || false; }
+        if (!exEprBase) { return ""; }
+        t = exEprBase.text;
+        t = exEprSet(t, "ADBEVideoTargetBitrate", num(mbps));
+        t = exEprSet(t, "ADBEVideoMaxBitrate", num(Math.round(mbps * 1.25 * 10) / 10));
+        t = exEprSet(t, "ADBEVideoMinBitrate", num(Math.max(0.5, Math.round(mbps * 0.5 * 10) / 10)));
+        t = exEprSet(t, "ADBEVideoMatchSource", "true");
+        t = exEprSet(t, "ADBEVideoWidth", String(w));
+        t = exEprSet(t, "ADBEVideoHeight", String(h));
+        t = t.replace(/<PresetID>[^<]*<\/PresetID>/, "<PresetID>" + exHex(8) + "-" + exHex(4) + "-" + exHex(4) + "-" + exHex(4) + "-" + exHex(12) + "</PresetID>");
+        t = t.replace(/<PresetName>[^<]*<\/PresetName>/, "<PresetName>Sayframe " + mbps + " Mbps</PresetName>");
+        dir = new Folder(Folder.temp.fsName + "/Sayframe");
+        if (!dir.exists) { dir.create(); }
+        f = new File(dir.fsName + "/Sayframe " + mbps + " Mbps.epr");
+        f.encoding = "UTF-8";
+        if (!f.open("w")) { return ""; }
+        f.write(t);
+        f.close();
+        return f.fsName;
+    }
+
+    function exAmeTarget() { try { return BridgeTalk.getSpecifier("ame") || ""; } catch (e) { return ""; } }
+
+    function exJs(s) { return '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"'; }
+
+    // Sends the file to Media Encoder with the preset and starts its queue. The source is deleted
+    // after the encode. Returns true when Media Encoder took it.
+    function exSendAme(target, src, epr, out) {
+        var bt = new BridgeTalk(), ok = false;
+        bt.target = target;
+        bt.body = "var fe = app.getFrontend(), w = fe.addFileToBatch(" + exJs(src) + ", \"H.264\", " + exJs(epr) + ", " + exJs(out) + ");" +
+            "if (w) { try { w.addEventListener(\"onEncodeFinished\", function () { try { new File(" + exJs(src) + ").remove(); } catch (e) {} }, false); } catch (e1) {}" +
+            " app.getEncoderHost().runBatch(); \"ok\"; } else { \"fail\"; }";
+        bt.onResult = function (m) { ok = String(m.body) === "ok"; };
+        bt.onError = function () { ok = false; };
+        try { bt.send(90); } catch (e) { return false; }
+        return ok;
+    }
+
     function exWrap(comp, w, h, fit, name, binName) {
         var proj = app.project, c, bg, L, fx, sx = w / comp.width, sy = h / comp.height;
         var fitS = Math.min(sx, sy) * 100, cover = Math.max(sx, sy) * 100;
@@ -6424,7 +6538,7 @@ var sayframeHost = (function () {
         exportOne: function (o) {
             return reply(function () {
                 var comp = activeComp(), proj = app.project, rq = proj.renderQueue, w, h, wrap = null, it, om, tpl, file, dir;
-                var parked = [], i, q, mode, base, size = 0, tpls = [];
+                var parked = [], i, q, mode, base, size = 0, tpls = [], want, rate, ameT = "", epr = "", src = null;
                 if (!o || typeof o !== "object") { throw new Error("BAD_EXPORT"); }
                 if (!rq || !rq.items) { throw new Error("NO_RENDER_QUEUE"); }
                 if (rq.rendering) { throw new Error("EXPORT_BUSY"); }
@@ -6452,11 +6566,36 @@ var sayframeHost = (function () {
                     om = it.outputModule(1);
                     try { tpls = om.templates; } catch (e3) {}
                     tpl = exTemplate(tpls, o.quality, o.mbps);
+                    want = Number(o.mbps) > 0 ? Number(o.mbps) : exTplRate(tpl);
+                    rate = exTplRate(tpl);
+                    // Another bitrate than AE's templates: AE makes a 40 Mbps file, Media Encoder the final one.
+                    if (o.ame && rq.canQueueInAME && tpl && want && rate !== want && want < 40) {
+                        ameT = exAmeTarget();
+                        epr = ameT ? exMakeEpr(want, w, h) : "";
+                        if (epr) { tpl = exTemplate(tpls, "max", 40); }
+                    }
                     if (tpl) { om.applyTemplate(tpl); }
                     file = exFreeFile(dir.fsName, base, ".mp4");
-                    om.file = file;
+                    if (epr) {
+                        src = new File(Folder.temp.fsName + "/Sayframe/" + base + " (40 Mbps " + new Date().getTime() + ").mp4");
+                        om.file = src;
+                    } else {
+                        om.file = file;
+                    }
                     if (!tpl && !o.ame) { throw new Error("NO_H264"); }
-                    if (o.ame && rq.canQueueInAME) {
+                    if (epr) {
+                        rq.render();
+                        try { it.remove(); } catch (e11) {}
+                        if (wrap) { try { wrap.remove(); } catch (e12) {} wrap = null; }
+                        if (exSendAme(ameT, src.fsName, epr, file.fsName)) {
+                            mode = "ame"; rate = want;
+                        } else {
+                            // Media Encoder did not answer: keep the 40 Mbps file as the result.
+                            try { if (src.copy(file.fsName)) { src.remove(); } } catch (e13) {}
+                            mode = "ae"; rate = 40;
+                            try { size = new File(file.fsName).length; } catch (e14) {}
+                        }
+                    } else if (o.ame && rq.canQueueInAME) {
                         rq.queueInAME(true);
                         mode = "ame";
                         try { it.render = false; } catch (e4) {}
@@ -6475,7 +6614,7 @@ var sayframeHost = (function () {
                     for (i = 0; i < parked.length; i++) { try { parked[i].render = true; } catch (e10) {} }
                     app.endUndoGroup();
                 }
-                return { path: file.fsName, name: decodeURI(file.name), size: size, mode: mode, w: w, h: h, wrapped: !!wrap || (w !== comp.width || h !== comp.height), template: tpl };
+                return { path: file.fsName, name: decodeURI(file.name), size: size, mode: mode, w: w, h: h, wrapped: !!wrap || (w !== comp.width || h !== comp.height), template: tpl, mbps: rate || 0 };
             });
         },
 

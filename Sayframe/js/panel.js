@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.71.0";
+    var VERSION = "1.72.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -7474,8 +7474,8 @@
     // Окошки качества: размер видео = размер композиции, отличается только качество (битрейт H.264 из host.jsx).
     var EX_LEVELS = { light: { label: "Низкое", mbps: 5 }, normal: { label: "Среднее", mbps: 15 }, max: { label: "Высокое", mbps: 40 }, custom: { label: "Своё" } };
     var EX_ORDER = ["light", "normal", "max", "custom"];
-    // Битрейт каждого качества меняется − и + на выбранном окошке, шагами EX_RATES.
-    var EX_RATES = [1, 2, 3, 5, 8, 10, 12, 15, 18, 20, 25, 30, 40, 50, 60, 80];
+    // Битрейт каждого качества меняется − и + на выбранном окошке, шагами EX_RATES. Выше 40 нет: у AE нет шаблона лучше.
+    var EX_RATES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40];
     var exState = { level: "normal", quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {} };
     var exInfo = null, exFolderNow = "", exDefaultNow = "";
     try {
@@ -7690,6 +7690,11 @@
                 j.nm.textContent = r.name || platform.basename(r.path);
                 j.nm.title = r.path;
                 if (r.mode === "ame") { ame = true; j.sm.textContent = "в Media Encoder"; } else { j.sm.textContent = exSizeText(r.size); }
+                // Битрейт, с которым сохранили; без Media Encoder — ближайший шаблон AE (5, 15 или 40).
+                if (r.mbps > 0) {
+                    j.sm.textContent += " · " + r.mbps + " Мбит/с";
+                    if (j.mbps && r.mbps !== j.mbps) { j.sm.title = "Без Media Encoder After Effects умеет только 5, 15 и 40 Мбит/с — взят ближайший"; }
+                }
                 j.row.appendChild(exShowBtn(r.path));
             } catch (e) {
                 failed++;
