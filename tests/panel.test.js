@@ -5729,8 +5729,28 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("RB1 «3D-кольцо»: the ring's own settings, the ribbon's ones hide; letters in the preview, the far ones dimmer", (await vis(p, "#rbRingSl")) && !(await vis(p, "#rbRibbonSl")) && !(await vis(p, "#rbForm")) && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать кольцо" &&
       (await p.page.locator("#rbStage .rb-ringrow").count()) === 2 && (await p.page.locator('#rbStage .rb-ringrow span[style*="opacity"]').count()) > 5);
     await p.page.click('#rbMode [data-v="ribbon"]');
+    check("RB10 colours: «Лента / Текст» on the preview picks what is painted; swatches with gradients, ready pairs; no gradient row for a plain colour",
+      (await vis(p, "#rbPaint")) && (await p.page.getAttribute('#rbPaint [data-v="ribbon"]', "aria-pressed")) === "true" && (await p.page.locator("#rbRibColors button").count()) === 10 &&
+      (await p.page.locator("#rbPairs button").count()) === 6 && !(await vis(p, "#rbGradRow")) && !(await vis(p, "#rbRingColorRow")));
+    await p.page.locator("#rbStage text").first().evaluate((el) => el.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    check("RB10 a click on the letters in the preview paints the text", (await p.page.getAttribute('#rbPaint [data-v="text"]', "aria-pressed")) === "true");
+    await p.page.click('#rbRibColors [data-v="#ffcc33"]');
+    check("RB10 a swatch paints the chosen part only", /#ffcc33/.test(await p.page.getAttribute("#rbStage text", "fill")) && (await p.page.getAttribute("#rbPrevPath", "stroke")) === "#3aa0e8", await p.page.getAttribute("#rbStage text", "fill"));
+    await p.page.click('#rbPaint [data-v="ribbon"]');
+    await p.page.click('#rbRibColors [data-v="#f953c6>#7b5cff"]');
+    check("RB10 a gradient swatch: the ribbon gets a gradient in the preview, the row with two colours and the direction shows",
+      (await p.page.getAttribute("#rbPrevPath", "stroke")) === "url(#rbGR)" && (await p.page.locator("#rbStage linearGradient#rbGR stop").count()) === 2 && (await vis(p, "#rbGradRow")) && (await p.page.inputValue("#rbGradB")) === "#7b5cff");
+    await p.page.click('#rbGradDir [data-v="90"]');
+    await p.page.locator("#rbGradA").evaluate((el) => { el.value = "#00ff00"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+    check("RB10 the gradient's colours and direction can be changed", Number(await p.page.getAttribute("#rbStage linearGradient#rbGR", "x1")) === 0 && Number(await p.page.getAttribute("#rbStage linearGradient#rbGR", "y2")) > 500 && (await p.page.getAttribute("#rbStage linearGradient#rbGR stop", "stop-color")) === "#00ff00");
+    await p.page.screenshot({ path: path.join(SHOTS, "rb-colors.png") });
     await p.page.click("#rbBtn"); await p.idle();
     let T = L(p, "Текст ленты"), R = L(p, "Лента");
+    check("RB10 «Создать ленту» with a gradient ribbon: a Gradient Ramp top to bottom on the ribbon, the text in its plain colour",
+      acAt(R, "ADBE Effect Parade").children.some((e) => e.matchName === "ADBE Ramp" && /var a=90\*/.test(e.children.find((c) => c.matchName === "ADBE Ramp-0001").expression)) &&
+      !acAt(T, "ADBE Effect Parade").children.some((e) => e.matchName === "ADBE Ramp"));
+    await p.page.click('#rbPairs button[data-r="#3aa0e8"]');
+    check("RB10 a ready pair sets both colours", (await p.page.getAttribute("#rbPrevPath", "stroke")) === "#3aa0e8" && (await p.page.getAttribute("#rbStage text", "fill")) === "#ffffff" && (await p.page.getAttribute('#rbPairs button[data-r="#3aa0e8"]', "aria-pressed")) === "true");
     check("RB2 «Создать ленту»: the text above the ribbon, one undo step; the text repeats with its separator", names(p) === "Текст ленты,Лента,BG" && p.ae.log.undo.join() === "begin:Sayframe: text ribbon,end" && /^(WEST LOOP • ){5,}/.test(docText(T)) && /Лента готова/.test(await p.status()), names(p) + " | " + p.ae.log.undo.join() + " | " + await p.status());
     check("RB2 the text runs on its own mask (the same line) and is centred on it; the ribbon is a thick round stroke", acAt(T, "ADBE Mask Parade").children.length === 1 && acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text Path").value === 1 &&
       acAt(T, "ADBE Text Properties", "ADBE Text Animators").children.length === 1 && JSON.stringify(acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length) === "19");
@@ -5741,6 +5761,17 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       T.parent === R && (!rbMt || (rbMt.parent === R && rbPath(rbMt).expression === 'thisComp.layer("Лента").content(1).content(1).path')) && R.selected === true && T.selected === false && rbPath(R).selected === true,
       String(rbMt && rbMt.name) + " | " + acAt(T, "ADBE Mask Parade").children[0].children.find((c) => c.matchName === "ADBE Mask Shape").expression);
     check("RB8 the line has few points with smooth handles (easy to bend by hand)", rbPath(R).value.outTangents.slice(0, -1).every((t) => Math.hypot(t[0], t[1]) > 1) && rbPath(R).value.inTangents.slice(1).every((t) => Math.hypot(t[0], t[1]) > 1));
+    {
+      const before = p.ae.log.dcMain.list.length;
+      const rbRes = await p.page.evaluate(() => new Promise((done) => window.__adobe_cep__.evalScript('sayframeHost.ribbonMake({mode:"ribbon",form:"wave",text:"GRAD",sep:"",width:120,textSize:60,speed:0,run:false,ribbonColor:[1,0,0],textColor:[1,1,1],ribbonGrad:{a:[1,0.3,0.4],b:[0.5,0.3,1],angle:0},textGrad:{a:[1,1,1],b:[1,0.8,0.2],angle:90}},{ribbon:"\\u0413-\\u043b\\u0435\\u043d\\u0442\\u0430",text:"\\u0413-\\u0442\\u0435\\u043a\\u0441\\u0442",grad:"\\u0413\\u0440\\u0430\\u0434\\u0438\\u0435\\u043d\\u0442",gradMatte:"\\u0413\\u0440\\u0430\\u0434\\u0438\\u0435\\u043d\\u0442: \\u0444\\u043e\\u0440\\u043c\\u0430"})', done)));
+      const GR = L(p, "Г-лента"), GT = L(p, "Г-текст"), fx = (l) => acAt(l, "ADBE Effect Parade").children;
+      const ramp = GR && fx(GR).find((e) => e.matchName === "ADBE Ramp"), sm = GR && fx(GR).find((e) => e.matchName === "ADBE Set Matte3");
+      check("RB9 a gradient: a Gradient Ramp across the frame, kept inside the ribbon by Set Matte from itself; the text gets its own",
+        p.ae.log.dcMain.list.length > before && ramp && ramp.name === "Градиент" && JSON.stringify(ramp.children.find((c) => c.matchName === "ADBE Ramp-0002").value) === "[1,0.3,0.4,1]" &&
+        /fromComp\(c - d\*r\)/.test(ramp.children.find((c) => c.matchName === "ADBE Ramp-0001").expression) && sm && sm.children.find((c) => c.matchName === "ADBE Set Matte3-0002").value === 4 &&
+        GT && fx(GT).some((e) => e.matchName === "ADBE Ramp" && /var a=90\*/.test(e.children.find((c) => c.matchName === "ADBE Ramp-0003").expression)),
+        GR ? fx(GR).map((e) => e.matchName).join() : "no layer " + rbRes);
+    }
     check("RB2 settings in Effect Controls of the text; the ribbon reads width and colour from there; the text runs with time", fxNames(T) === "Толщина ленты,Скорость,Цвет ленты" &&
       /effect\("Толщина ленты"\)/.test(acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Width").expression) &&
       /time\*effect\("Скорость"\)/.test(acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin").expression), fxNames(T));

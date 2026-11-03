@@ -3696,7 +3696,7 @@ var sayframeHost = (function () {
     // R and T are the ribbon and its text, already made; top is the highest layer of the ribbon so far.
     function ribOverlap(comp, o, labels, R, T, Mt, sh, ctx) {
         var W = ctx.width, fs = ctx.fs, L = ctx.len, cut = ribCuts(sh, W), cuts = cut.cuts, n = cuts.length + 1, i, a, b, Rk, Tk, Sk, top = Mt || T;
-        var adv, d = W / 2 + fs / 2, sTo, s0, s1, pieces = [], shadows = [], tf, k, gi = 1, matte = Mt && typeof Mt.enabled !== "undefined" && !Mt.enabled && typeof T.setTrackMatte === "function";
+        var adv, d = W / 2 + fs / 2, sTo, s0, s1, texts = [], pieces = [], shadows = [], tf, k, gi = 1, matte = Mt && typeof Mt.enabled !== "undefined" && !Mt.enabled && typeof T.setTrackMatte === "function";
         if (n < 2) { return { pieces: 1, crossings: 0 }; }
         adv = ribAdvances(comp, ctx.unit, fs, ctx.tc, ctx.uw);
         if (ctx.closed && adv.period > 0) {
@@ -3757,9 +3757,29 @@ var sayframeHost = (function () {
             for (k = 0; k < ctx.tr.length; k++) { try { orbitSet(Tk, ctx.tr[k][0], ctx.tr[k][1]); } catch (eP) {} }
             Tk.moveBefore(top);
             top = Tk;
+            texts.push(Tk);
             try { Tk.selected = false; Rk.selected = false; } catch (eS) {}
         }
-        return { pieces: n, crossings: cut.crossings };
+        return { pieces: n, crossings: cut.crossings, ribbons: pieces, texts: texts };
+    }
+
+    // A gradient on a ribbon or text layer: a Gradient Ramp across the frame at the given angle, then
+    // Set Matte with the layer's own alpha, so the colours stay inside the ribbon or the letters.
+    function ribGrad(l, g, labels) {
+        var e, m, a = Number(g.angle) || 0, F = ["ADBE Effect Parade"];
+        var half = "var a=" + a + "*Math.PI/180, d=[Math.cos(a),Math.sin(a)], c=[thisComp.width/2,thisComp.height/2], r=Math.abs(d[0])*thisComp.width/2+Math.abs(d[1])*thisComp.height/2;";
+        e = acAdd(l, F, "ADBE Ramp");
+        try { acP(l, F.concat([e])).name = labels.grad || "Gradient"; } catch (eN) {}
+        acP(l, F.concat([e, "ADBE Ramp-0002"])).setValue([g.a[0], g.a[1], g.a[2], 1]);
+        acP(l, F.concat([e, "ADBE Ramp-0004"])).setValue([g.b[0], g.b[1], g.b[2], 1]);
+        try { acP(l, F.concat([e, "ADBE Ramp-0005"])).setValue(1); } catch (eS) {}
+        acP(l, F.concat([e, "ADBE Ramp-0001"])).expression = half + " fromComp(c - d*r)";
+        acP(l, F.concat([e, "ADBE Ramp-0003"])).expression = half + " fromComp(c + d*r)";
+        m = acAdd(l, F, "ADBE Set Matte3");
+        try { acP(l, F.concat([m])).name = labels.gradMatte || "Gradient: shape"; } catch (eM) {}
+        try { acP(l, F.concat([m, "ADBE Set Matte3-0001"])).setValue(l.index); } catch (eL) {}
+        try { acP(l, F.concat([m, "ADBE Set Matte3-0002"])).setValue(4); } catch (eU) {}
+        return e;
     }
 
     function ribBuild(comp, o, labels) {
@@ -3864,6 +3884,16 @@ var sayframeHost = (function () {
             try { acP(T, ["ADBE Mask Parade", tmi, "ADBE Mask Shape"]).expression = lineExpr; } catch (eL1) { linked = false; }
             if (Mt) { try { acGP(Mt, gi, ["ADBE Vectors Group", 1, "ADBE Vector Shape"]).expression = lineExpr; Mt.parent = R; } catch (eL2) {} }
             try { T.parent = R; } catch (eL3) {}
+        }
+        // Gradients go on last, when every layer sits at its final index (Set Matte points at the layer itself).
+        var gi2;
+        if (o.ribbonGrad && o.ribbonGrad.a && o.ribbonGrad.b) {
+            ribGrad(R, o.ribbonGrad, labels);
+            if (ov && ov.ribbons) { for (gi2 = 0; gi2 < ov.ribbons.length; gi2++) { ribGrad(ov.ribbons[gi2], o.ribbonGrad, labels); } }
+        }
+        if (o.textGrad && o.textGrad.a && o.textGrad.b) {
+            ribGrad(T, o.textGrad, labels);
+            if (ov && ov.texts) { for (gi2 = 0; gi2 < ov.texts.length; gi2++) { ribGrad(ov.texts[gi2], o.textGrad, labels); } }
         }
         try { T.selected = false; } catch (eS) {}
         R.selected = true;

@@ -1324,7 +1324,7 @@
         tbShadow: el("tbShadow"), tbBtn: el("tbBtn"),
         phPhone: el("phPhone"), phModel: el("phModel"), phColors: el("phColors"), phPose: el("phPose"), phSize: el("phSize"), phSizeVal: el("phSizeVal"),
         rbStage: el("rbStage"), rbSeedRow: el("rbSeedRow"), rbSeed: el("rbSeed"), rbDice: el("rbDice"), rbDirRow: el("rbDirRow"), rbDir: el("rbDir"), rbAngle: el("rbAngle"), rbAngleVal: el("rbAngleVal"), rbRunDir: el("rbRunDir"), rbMode: el("rbMode"), rbRibbonOpts: el("rbRibbonOpts"), rbForm: el("rbForm"), rbText: el("rbText"), rbSep: el("rbSep"),
-        rbRibColorRow: el("rbRibColorRow"), rbRibColors: el("rbRibColors"), rbTextColors: el("rbTextColors"), rbRibbonSl: el("rbRibbonSl"), rbRingSl: el("rbRingSl"),
+        rbRibColorRow: el("rbRibColorRow"), rbRibColors: el("rbRibColors"), rbTextColors: el("rbTextColors"), rbPaint: el("rbPaint"), rbCustom: el("rbCustom"), rbGradRow: el("rbGradRow"), rbGradA: el("rbGradA"), rbGradB: el("rbGradB"), rbGradBar: el("rbGradBar"), rbGradDir: el("rbGradDir"), rbPairs: el("rbPairs"), rbRingColorRow: el("rbRingColorRow"), rbRibbonSl: el("rbRibbonSl"), rbRingSl: el("rbRingSl"),
         rbRibbonSw: el("rbRibbonSw"), rbRingSw: el("rbRingSw"), rbRun: el("rbRun"), rbOverlap: el("rbOverlap"), rbShadow: el("rbShadow"), rbShadowRow: el("rbShadowRow"), rbBack: el("rbBack"), rbCamera: el("rbCamera"), rbBtn: el("rbBtn"),
         rbWidth: el("rbWidth"), rbWidthVal: el("rbWidthVal"), rbSize: el("rbSize"), rbSizeVal: el("rbSizeVal"), rbSpeed: el("rbSpeed"), rbSpeedVal: el("rbSpeedVal"),
         rbRings: el("rbRings"), rbRingsVal: el("rbRingsVal"), rbRadius: el("rbRadius"), rbRadiusVal: el("rbRadiusVal"), rbTilt: el("rbTilt"), rbTiltVal: el("rbTiltVal"),
@@ -8709,21 +8709,42 @@
 
     // ---- Текст по ленте (Анимация › Макеты): лента с бегущим текстом по линии или 3D-кольцо из букв.
     var RB_KEY = "sayframe.ribbon.v1";
-    var RB_DEFAULTS = { mode: "ribbon", form: "loops", text: "WEST LOOP", sep: "•", ribbonColor: "#3aa0e8", textColor: "#e8672c", ringColor: "#ffffff",
+    var RB_DEFAULTS = { mode: "ribbon", form: "loops", text: "WEST LOOP", sep: "•", ribbonColor: "#3aa0e8", textColor: "#e8672c", ringColor: "#ffffff", paint: "ribbon", gAngle: 0,
         width: 120, size: 60, speed: 35, run: true, rings: 2, radius: 560, tilt: 12, ringSpeed: 40, back: true, camera: true, seed: 4127, angle: 0, dir: "fwd", overlap: false, shadow: true };
-    var RB_RANGES = { width: [10, 400], size: [20, 100], speed: [0, 100], rings: [1, 5], radius: [100, 1500], tilt: [0, 60], ringSpeed: [0, 100], seed: [1, 99999], angle: [-90, 90] };
-    var RB_CHOICES = { mode: ["ribbon", "ring"], form: ["path", "wave", "loops", "circle", "spiral", "random"], dir: ["fwd", "back"] };
+    var RB_RANGES = { gAngle: [-90, 90], width: [10, 400], size: [20, 100], speed: [0, 100], rings: [1, 5], radius: [100, 1500], tilt: [0, 60], ringSpeed: [0, 100], seed: [1, 99999], angle: [-90, 90] };
+    var RB_CHOICES = { mode: ["ribbon", "ring"], form: ["path", "wave", "loops", "circle", "spiral", "random"], dir: ["fwd", "back"], paint: ["ribbon", "text"] };
 
     function rbClean(src) {
         var o = {}, k;
         for (k in RB_DEFAULTS) { if (RB_DEFAULTS.hasOwnProperty(k)) { o[k] = src && typeof src === "object" && typeof src[k] === typeof RB_DEFAULTS[k] ? src[k] : RB_DEFAULTS[k]; } }
         for (k in RB_RANGES) { if (RB_RANGES.hasOwnProperty(k)) { o[k] = Math.max(RB_RANGES[k][0], Math.min(RB_RANGES[k][1], Math.round(Number(o[k]) || 0))); } }
         for (k in RB_CHOICES) { if (RB_CHOICES.hasOwnProperty(k) && RB_CHOICES[k].indexOf(o[k]) < 0) { o[k] = RB_DEFAULTS[k]; } }
-        ["ribbonColor", "textColor", "ringColor"].forEach(function (c) { o[c] = parseHex(o[c]) ? parseHex(o[c]).hex : RB_DEFAULTS[c]; });
+        ["ribbonColor", "textColor", "ringColor"].forEach(function (c) { o[c] = rbFill(o[c], c !== "ringColor") || RB_DEFAULTS[c]; });
         o.text = String(o.text).slice(0, 60);
         o.sep = String(o.sep).slice(0, 2);
         return o;
     }
+
+    // Цвет ленты или текста: "#rrggbb" или градиент "#rrggbb>#rrggbb".
+    function rbFill(v, grad) {
+        var p = String(v || "").split(">"), a = parseHex(p[0]), b = p.length === 2 ? parseHex(p[1]) : null;
+        if (!a || p.length > 2 || (p.length === 2 && (!b || !grad))) { return ""; }
+        return b ? a.hex + ">" + b.hex : a.hex;
+    }
+    function rbStops(v) { var p = String(v).split(">"); return [p[0], p[1] || p[0]]; }
+    // Краска для SVG превью: цвет или ссылка на градиент поперёк кадра (как Gradient Ramp в host.jsx).
+    function rbGradDefs() {
+        var a = rb.gAngle * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a), r = Math.abs(dx) * 960 + Math.abs(dy) * 540, out = "";
+        [["rbGR", rb.ribbonColor], ["rbGT", rb.textColor]].forEach(function (d) {
+            var st = rbStops(d[1]);
+            if (d[1].indexOf(">") < 0) { return; }
+            out += "<linearGradient id=\"" + d[0] + "\" gradientUnits=\"userSpaceOnUse\" x1=\"" + (-dx * r).toFixed(1) + "\" y1=\"" + (-dy * r).toFixed(1) + "\" x2=\"" + (dx * r).toFixed(1) + "\" y2=\"" + (dy * r).toFixed(1) +
+                "\"><stop offset=\"0\" stop-color=\"" + st[0] + "\"/><stop offset=\"1\" stop-color=\"" + st[1] + "\"/></linearGradient>";
+        });
+        return out ? "<defs>" + out + "</defs>" : "";
+    }
+    function rbPaintOf(which) { var v = which === "text" ? rb.textColor : rb.ribbonColor; return v.indexOf(">") < 0 ? v : "url(#" + (which === "text" ? "rbGT" : "rbGR") + ")"; }
+    function rbCss(v) { return v.indexOf(">") < 0 ? v : "linear-gradient(135deg," + v.replace(">", ",") + ")"; }
 
     var rb = (function () { try { return rbClean(JSON.parse(window.localStorage.getItem(RB_KEY) || "null")); } catch (e) { return rbClean(null); } })();
 
@@ -8922,8 +8943,8 @@
             for (q = 0; q < n; q++) { sp += q >= G[0] && q < G[1] ? rbEsc(txt.charAt(q)) : "<tspan fill-opacity=\"0\">" + rbEsc(txt.charAt(q)) + "</tspan>"; }
             el = document.createElementNS(NS, "g");
             el.setAttribute("class", "rb-piece");
-            el.innerHTML = "<use href=\"#rbPrevPath\" fill=\"none\" stroke=\"" + rb.ribbonColor + "\" stroke-width=\"" + W + "\" stroke-linecap=\"" + (k === 0 || k === groups.length - 1 ? "round" : "butt") + "\" stroke-dasharray=\"0 " + G[2] + " " + (len + 0.8) + " " + L * 3 + "\"/>" +
-                "<text fill=\"" + rb.textColor + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + sp + "</textPath></text>";
+            el.innerHTML = "<use href=\"#rbPrevPath\" fill=\"none\" stroke=\"" + rbPaintOf("ribbon") + "\" stroke-width=\"" + W + "\" stroke-linecap=\"" + (k === 0 || k === groups.length - 1 ? "round" : "butt") + "\" stroke-dasharray=\"0 " + G[2] + " " + (len + 0.8) + " " + L * 3 + "\"/>" +
+                "<text fill=\"" + rbPaintOf("text") + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + sp + "</textPath></text>";
             g.appendChild(el);
         });
     }
@@ -8935,8 +8956,8 @@
         if (rb.mode === "ribbon") {
             for (i = 0; i < 60; i++) { txt += unit; }
             fs = Math.max(6, Math.round(rb.width * rb.size / 100));
-            st.innerHTML = "<svg viewBox=\"-1100 -560 2200 1120\" preserveAspectRatio=\"xMidYMid meet\"><path id=\"rbPrevPath\" d=\"" + rbSvgPath(rbSample(rb.form, 1920, 1080, { seed: rb.seed, angle: rb.angle })) + "\" fill=\"none\" stroke=\"" + rb.ribbonColor +
-                "\" stroke-width=\"" + rb.width + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><text fill=\"" + rb.textColor + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + rbEsc(txt) + "</textPath></text></svg>";
+            st.innerHTML = "<svg viewBox=\"-1100 -560 2200 1120\" preserveAspectRatio=\"xMidYMid meet\">" + rbGradDefs() + "<path id=\"rbPrevPath\" class=\"rb-hit-r\" d=\"" + rbSvgPath(rbSample(rb.form, 1920, 1080, { seed: rb.seed, angle: rb.angle })) + "\" fill=\"none\" stroke=\"" + rbPaintOf("ribbon") +
+                "\" stroke-width=\"" + rb.width + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><text class=\"rb-hit-t\" fill=\"" + rbPaintOf("text") + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + rbEsc(txt) + "</textPath></text></svg>";
             if (rb.overlap) { rbOverlapPreview(st.querySelector("svg"), txt, fs); }
             return;
         }
@@ -8964,12 +8985,23 @@
         if (!ui.rbStage) { return; }
         pressGroupV(ui.rbMode, rb.mode);
         Array.prototype.forEach.call(ui.rbForm.querySelectorAll("button[data-v]"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === rb.form ? "true" : "false"); });
-        ui.rbRibbonOpts.hidden = ui.rbRibbonSl.hidden = ui.rbRibbonSw.hidden = ui.rbRibColorRow.hidden = ring;
+        ui.rbRibbonOpts.hidden = ui.rbRibbonSl.hidden = ui.rbRibbonSw.hidden = ui.rbRibColorRow.hidden = ui.rbPairs.hidden = ui.rbPaint.hidden = ring;
+        ui.rbRingColorRow.hidden = !ring;
         ui.rbRingSl.hidden = ui.rbRingSw.hidden = !ring;
         if (document.activeElement !== ui.rbText) { ui.rbText.value = rb.text; }
         if (document.activeElement !== ui.rbSep) { ui.rbSep.value = rb.sep; }
-        Array.prototype.forEach.call(ui.rbRibColors.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === rb.ribbonColor ? "true" : "false"); });
-        Array.prototype.forEach.call(ui.rbTextColors.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === (ring ? rb.ringColor : rb.textColor) ? "true" : "false"); });
+        var cur = rb.paint === "text" ? rb.textColor : rb.ribbonColor, st = rbStops(cur);
+        pressGroupV(ui.rbPaint, rb.paint);
+        Array.prototype.forEach.call(ui.rbRibColors.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === cur ? "true" : "false"); });
+        Array.prototype.forEach.call(ui.rbTextColors.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === rb.ringColor ? "true" : "false"); });
+        Array.prototype.forEach.call(ui.rbPairs.querySelectorAll("button"), function (b) {
+            b.setAttribute("aria-pressed", b.getAttribute("data-r") === rb.ribbonColor && b.getAttribute("data-t") === rb.textColor ? "true" : "false");
+            b.querySelector("span").textContent = String(rb.text || "TEXT").split(" ")[0].slice(0, 9).toUpperCase() + (rb.sep ? " " + rb.sep : "");
+        });
+        ui.rbGradRow.hidden = ring || cur.indexOf(">") < 0;
+        ui.rbCustom.value = st[0]; ui.rbGradA.value = st[0]; ui.rbGradB.value = st[1];
+        ui.rbGradBar.style.background = "linear-gradient(90deg," + st[0] + "," + st[1] + ")";
+        Array.prototype.forEach.call(ui.rbGradDir.querySelectorAll("button[data-v]"), function (b) { b.setAttribute("aria-pressed", Number(b.getAttribute("data-v")) === rb.gAngle ? "true" : "false"); });
         [["Width", "width", ""], ["Size", "size", "%"], ["Speed", "speed", ""], ["Rings", "rings", ""], ["Radius", "radius", ""], ["Tilt", "tilt", "°"], ["RingSpeed", "ringSpeed", ""]].forEach(function (d) {
             ui["rb" + d[0]].value = String(rb[d[1]]);
             ui["rb" + d[0] + "Val"].textContent = rb[d[1]] + d[2];
@@ -9002,10 +9034,12 @@
         setStatus(ring ? "Собираю кольцо…" : "Собираю ленту…", "busy");
         try {
             res = await host("ribbonMake", [{ mode: rb.mode, form: rb.form, text: rb.text || "TEXT", sep: rb.sep, width: rb.width, textSize: rb.size, speed: ring ? rb.ringSpeed : rb.speed, run: rb.run, seed: rb.seed, angle: rb.angle, dir: rb.dir, overlap: rb.overlap, shadow: rb.shadow,
-                ribbonColor: tbRgb(rb.ribbonColor), textColor: tbRgb(ring ? rb.ringColor : rb.textColor), rings: rb.rings, radius: rb.radius, tilt: rb.tilt,
+                ribbonColor: tbRgb(rbStops(rb.ribbonColor)[0]), textColor: tbRgb(ring ? rb.ringColor : rbStops(rb.textColor)[0]),
+                ribbonGrad: !ring && rb.ribbonColor.indexOf(">") > 0 ? { a: tbRgb(rbStops(rb.ribbonColor)[0]), b: tbRgb(rbStops(rb.ribbonColor)[1]), angle: rb.gAngle } : null,
+                textGrad: !ring && rb.textColor.indexOf(">") > 0 ? { a: tbRgb(rbStops(rb.textColor)[0]), b: tbRgb(rbStops(rb.textColor)[1]), angle: rb.gAngle } : null, rings: rb.rings, radius: rb.radius, tilt: rb.tilt,
                 backDark: rb.back, camera: rb.camera },
                 { ribbon: "Лента", path: "Линия", text: "Текст ленты", width: "Толщина ленты", speed: "Скорость", color: "Цвет ленты",
-                    piece: "кусок", shadow: "тень", ring: "Кольцо", tilt: "Кольцо: наклон", spin: "Кольцо: вращение", camera: "Камера кольца" }]);
+                    piece: "кусок", shadow: "тень", grad: "Градиент", gradMatte: "Градиент: форма", ring: "Кольцо", tilt: "Кольцо: наклон", spin: "Кольцо: вращение", camera: "Камера кольца" }]);
             setBusy(false);
             r = res.ribbonMake || res;
             if (r.mode === "ring") {
@@ -9023,11 +9057,22 @@
         if (!ui.rbStage) { return; }
         ui.rbMode.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ mode: b.getAttribute("data-v") }); } });
         ui.rbForm.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ form: b.getAttribute("data-v") }); } });
-        ui.rbRibColors.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ ribbonColor: b.getAttribute("data-v") }); } });
-        ui.rbTextColors.addEventListener("click", function (e) {
-            var b = e.target.closest ? e.target.closest("button[data-v]") : null;
-            if (b) { setRibbon(rb.mode === "ring" ? { ringColor: b.getAttribute("data-v") } : { textColor: b.getAttribute("data-v") }); }
+        // Красим то, что выбрано на превью: ленту или текст.
+        function paintSet(v) { var ch = {}; ch[rb.paint === "text" ? "textColor" : "ribbonColor"] = v; setRibbon(ch); }
+        function paintCur() { return rb.paint === "text" ? rb.textColor : rb.ribbonColor; }
+        ui.rbRibColors.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { paintSet(b.getAttribute("data-v")); } });
+        ui.rbTextColors.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ ringColor: b.getAttribute("data-v") }); } });
+        ui.rbPaint.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ paint: b.getAttribute("data-v") }); } });
+        ui.rbStage.addEventListener("click", function (e) {
+            if (rb.mode !== "ribbon" || !e.target.closest) { return; }
+            if (e.target.closest("text")) { setRibbon({ paint: "text" }); }
+            else if (e.target.closest("path, use")) { setRibbon({ paint: "ribbon" }); }
         });
+        ui.rbPairs.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-r]") : null; if (b) { setRibbon({ ribbonColor: b.getAttribute("data-r"), textColor: b.getAttribute("data-t") }); } });
+        ui.rbCustom.addEventListener("input", function () { paintSet(ui.rbCustom.value); });
+        ui.rbGradA.addEventListener("input", function () { paintSet(ui.rbGradA.value + ">" + rbStops(paintCur())[1]); });
+        ui.rbGradB.addEventListener("input", function () { paintSet(rbStops(paintCur())[0] + ">" + ui.rbGradB.value); });
+        ui.rbGradDir.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ gAngle: Number(b.getAttribute("data-v")) }); } });
         ui.rbText.addEventListener("input", function () { setRibbon({ text: ui.rbText.value }); });
         ui.rbSep.addEventListener("input", function () { setRibbon({ sep: ui.rbSep.value }); });
         [["Width", "width"], ["Size", "size"], ["Speed", "speed"], ["Rings", "rings"], ["Radius", "radius"], ["Tilt", "tilt"], ["RingSpeed", "ringSpeed"]].forEach(function (d) {
