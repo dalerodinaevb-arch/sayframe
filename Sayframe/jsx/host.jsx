@@ -4614,8 +4614,9 @@ var sayframeHost = (function () {
     // ------------------------------------------------------- quick export
     // H.264 template of the output module by quality: light 5, normal 15, max 40 Mbps (the names
     // After Effects 2023+ ships). Falls back to any H.264 template, then to anything MP4.
-    function exTemplate(list, quality) {
-        var want = quality === "light" ? 5 : (quality === "max" ? 40 : 15), i, m, best = "", any = "", mp4 = "", d, bestD = 1e9;
+    // mbps (optional) asks for that bitrate; the nearest H.264 template wins.
+    function exTemplate(list, quality, mbps) {
+        var want = Number(mbps) > 0 ? Number(mbps) : (quality === "light" ? 5 : (quality === "max" ? 40 : 15)), i, m, best = "", any = "", mp4 = "", d, bestD = 1e9;
         list = list || [];
         for (i = 0; i < list.length; i++) {
             m = /H\.?264.*?(\d+)\s*Mbps/i.exec(String(list[i]));
@@ -6450,7 +6451,7 @@ var sayframeHost = (function () {
                     }
                     om = it.outputModule(1);
                     try { tpls = om.templates; } catch (e3) {}
-                    tpl = exTemplate(tpls, o.quality);
+                    tpl = exTemplate(tpls, o.quality, o.mbps);
                     if (tpl) { om.applyTemplate(tpl); }
                     file = exFreeFile(dir.fsName, base, ".mp4");
                     om.file = file;

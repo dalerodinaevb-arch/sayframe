@@ -5578,6 +5578,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await exOpen(p);
     t = await tileBox(p, "normal");
     check("EX9 a vertical comp -> vertical tiles, in one row", t.height > t.width * 1.3 && Math.abs((await tileBox(p, "custom")).y - t.y) < 2, JSON.stringify(t));
+    m = await p.page.evaluate(() => { const b = document.querySelector('#exTargets [data-t="normal"]'), r = b.querySelector(".ex-rate").getBoundingClientRect(), bb = b.getBoundingClientRect(); return [r.right <= bb.right - 4, b.querySelector(".ex-mb").getBoundingClientRect().right <= bb.right, b.querySelector(".ex-rate em").textContent]; });
+    check("EX9 narrow vertical tile: − 15 + fits inside", m[0] && m[1] && m[2] === "15", JSON.stringify(m));
     await p.page.screenshot({ path: path.join(SHOTS, "92-export-vertical.png") });
     await p.close();
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
@@ -5585,6 +5587,26 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await exOpen(p);
     t = await tileBox(p, "normal");
     check("EX9 a square comp -> square tiles", Math.abs(t.width - t.height) < 3, JSON.stringify(t));
+    await p.close();
+
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    await exOpen(p);
+    const rateOf = (id) => p.page.locator('#exTargets [data-t="' + id + '"] .ex-rate em').evaluate((e) => e.textContent + getComputedStyle(e, "::after").content.replace(/"/g, ""));
+    check("EX10 every tile shows its bitrate; − and + only on the picked one", (await rateOf("light")) === "5 Мбит/с" && (await rateOf("normal")) === "15 Мбит/с" && (await rateOf("max")) === "40 Мбит/с" &&
+      (await vis(p, '#exTargets [data-t="normal"] .ex-rate [data-d="1"]')) && !(await vis(p, '#exTargets [data-t="light"] .ex-rate [data-d="1"]')) && (await overflow(p)) <= 0);
+    await p.page.click('#exTargets [data-t="normal"] .ex-rate [data-d="1"]');
+    check("EX10 + on «Среднее» -> 18 Мбит/с, MB and the button follow, the tile stays picked", (await rateOf("normal")) === "18 Мбит/с" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
+      (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 23 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 23 МБ");
+    await p.page.click('#exTargets [data-t="light"]');
+    check("EX10 − on a tile that is not picked just picks it", (await pressed(p, "#exTargets .ex-t")) === "light" && (await rateOf("light")) === "5 Мбит/с");
+    for (let i = 0; i < 6; i++) await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="-1"]');
+    check("EX10 − stops at 1 Мбит/с", (await rateOf("light")) === "1 Мбит/с" && (await p.page.locator('#exTargets [data-t="light"] .ex-rate [data-d="-1"]').getAttribute("class")) === "off");
+    await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="1"]'); await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="1"]');
+    await exRun(p);
+    check("EX10 the bitrate goes to After Effects: 3 Мбит/с -> the nearest H.264 template (5 Mbps)", p.ae.log.rq.rendered.length === 1 && /5 Mbps$/.test(p.ae.log.rq.rendered[0].tpl), JSON.stringify(p.ae.log.rq.rendered));
+    await p.page.click("#exResults .ex-again .ghost");
+    await p.page.keyboard.press("Escape"); await exOpen(p);
+    check("EX10 the bitrates are remembered", (await rateOf("light")) === "3 Мбит/с" && (await rateOf("normal")) === "18 Мбит/с");
     await p.close();
 
     const exProj = fs.mkdtempSync(path.join(os.tmpdir(), "exproj-"));

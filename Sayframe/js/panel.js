@@ -7474,7 +7474,9 @@
     // Окошки качества: размер видео = размер композиции, отличается только качество (битрейт H.264 из host.jsx).
     var EX_LEVELS = { light: { label: "Низкое", mbps: 5 }, normal: { label: "Среднее", mbps: 15 }, max: { label: "Высокое", mbps: 40 }, custom: { label: "Своё" } };
     var EX_ORDER = ["light", "normal", "max", "custom"];
-    var exState = { level: "normal", quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080 };
+    // Битрейт каждого качества меняется − и + на выбранном окошке, шагами EX_RATES.
+    var EX_RATES = [1, 2, 3, 5, 8, 10, 12, 15, 18, 20, 25, 30, 40, 50, 60, 80];
+    var exState = { level: "normal", quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {} };
     var exInfo = null, exFolderNow = "", exDefaultNow = "";
     try {
         (function () {
@@ -7487,6 +7489,9 @@
             if (typeof v.ame === "boolean") { exState.ame = v.ame; }
             if (v.cw > 0) { exState.cw = Math.round(v.cw); }
             if (v.ch > 0) { exState.ch = Math.round(v.ch); }
+            if (v.rates && typeof v.rates === "object") {
+                ["light", "normal", "max"].forEach(function (k) { if (EX_RATES.indexOf(v.rates[k]) >= 0) { exState.rates[k] = v.rates[k]; } });
+            }
         })();
     } catch (e) {}
 
@@ -7503,12 +7508,22 @@
 
     function exQualityOf(level) { return level === "custom" ? exState.quality : level; }
 
+    // Битрейт (Мбит/с) окошка: свой, если меняли − и +, иначе стандартный.
+    function exRate(level) { var q = exQualityOf(level); return exState.rates[q] || EX_LEVELS[q].mbps; }
+
+    function exStepRate(level, d) {
+        var q = exQualityOf(level), r = exRate(level), i, next = r;
+        if (d > 0) { for (i = 0; i < EX_RATES.length; i++) { if (EX_RATES[i] > r) { next = EX_RATES[i]; break; } } }
+        else { for (i = EX_RATES.length - 1; i >= 0; i--) { if (EX_RATES[i] < r) { next = EX_RATES[i]; break; } } }
+        if (next === EX_LEVELS[q].mbps) { delete exState.rates[q]; } else { exState.rates[q] = next; }
+    }
+
     // Примерный размер файла: битрейт видео + звук (~320 кбит/с) × длина.
     function exMB(level) {
         var c = exInfo && exInfo.comp, dur, mb;
         if (!c) { return ""; }
         dur = exState.span === "work" && c.waDur > 0 ? c.waDur : c.dur;
-        mb = (EX_LEVELS[exQualityOf(level)].mbps + 0.32) * dur / 8;
+        mb = (exRate(level) + 0.32) * dur / 8;
         return mb < 1 ? "< 1 МБ" : "≈ " + (mb < 10 ? (Math.round(mb * 10) / 10).toString().replace(".", ",") : Math.round(mb)) + " МБ";
     }
 
@@ -7535,6 +7550,11 @@
             var id = b.getAttribute("data-t");
             b.setAttribute("aria-pressed", exState.level === id ? "true" : "false");
             b.querySelector(".ex-mb").textContent = id === "custom" ? (custom ? exState.cw + "×" + exState.ch : "") : exMB(id);
+            if (id !== "custom") {
+                b.querySelector(".ex-rate em").textContent = String(exRate(id));
+                b.querySelector('.ex-rate [data-d="-1"]').classList.toggle("off", exRate(id) <= EX_RATES[0]);
+                b.querySelector('.ex-rate [data-d="1"]').classList.toggle("off", exRate(id) >= EX_RATES[EX_RATES.length - 1]);
+            }
         });
         ui.exCustom.hidden = ui.exQualRow.hidden = !custom;
         if (document.activeElement !== ui.exW) { ui.exW.value = exState.cw; }
@@ -7631,7 +7651,7 @@
         folder = exFolderNow || exDefaultNow;
         jobs = [exState.level].map(function (id) {
             var s = exSize();
-            return { id: id, w: s.w, h: s.h, label: id === "custom" ? s.w + "x" + s.h : EX_LEVELS[id].label, quality: exQualityOf(id) };
+            return { id: id, w: s.w, h: s.h, label: id === "custom" ? s.w + "x" + s.h : EX_LEVELS[id].label, quality: exQualityOf(id), mbps: exRate(id) };
         });
         setBusy(true);
         ui.exSetup.hidden = true;
@@ -7661,7 +7681,7 @@
             j.st.textContent = "●"; j.sm.textContent = "сохраняю…";
             bar.firstChild.style.width = Math.round(i / jobs.length * 100) + "%";
             try {
-                r = await host("exportOne", [{ w: j.w, h: j.h, label: j.label, fit: exState.fit, quality: j.quality, span: exState.span,
+                r = await host("exportOne", [{ w: j.w, h: j.h, label: j.label, fit: exState.fit, quality: j.quality, mbps: j.mbps, span: exState.span,
                     folder: folder, ame: !!(exInfo.ame && exState.ame), bin: "Sayframe Экспорт" }]);
                 done++;
                 last = r.path;
@@ -7714,8 +7734,14 @@
         ui.exBrowse.addEventListener("click", onExBrowse);
         ui.exGo.addEventListener("click", runExport);
         ui.exTargets.addEventListener("click", function (e) {
-            var b = e.target.closest ? e.target.closest(".ex-t") : null;
+            var b = e.target.closest ? e.target.closest(".ex-t") : null, st = e.target.closest ? e.target.closest(".ex-rate [data-d]") : null;
             if (!b) { return; }
+            if (st && b.getAttribute("aria-pressed") === "true") {
+                if (!st.classList.contains("off")) { exStepRate(b.getAttribute("data-t"), Number(st.getAttribute("data-d"))); }
+                storeExport();
+                drawExport();
+                return;
+            }
             exState.level = b.getAttribute("data-t");
             storeExport();
             drawExport();
