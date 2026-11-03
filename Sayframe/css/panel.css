@@ -2269,3 +2269,58 @@ html[data-design="ae"] .ph-stage { border-radius: 4px; }
 html[data-design="ae"] .rb-stage { border-radius: 4px; }
 .tool-look { display: flex; flex-direction: column; gap: inherit; }
 .tool-look[hidden] { display: none; }
+
+/* ---- Раздел AI в «Студии»: режимы сверху, поле с примером и стилем внутри, быстрые задачи плитками. */
+.prompt-wrap { display: contents; }
+.ai-modes, .quick-new, .quick-ic, .prompt-foot { display: none; }
+#viewClaude.ai-v3:not([hidden]), [data-fit="on"] #viewClaude.ai-v3:not([hidden]) { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+#viewClaude.ai-v3 > .claude-main, #viewClaude.ai-v3 > .claude-side, [data-fit="on"] #viewClaude.ai-v3 > .claude-main, [data-fit="on"] #viewClaude.ai-v3 > .claude-side { display: contents; }
+#viewClaude.ai-v3 .ai-modes:not([hidden]) { display: flex; gap: 3px; padding: 3px; border-radius: 10px; background: #101014; border: 1px solid #24242c; order: 0; }
+#viewClaude.ai-v3 .ai-mode { flex: 1; padding: 8px 0; border-radius: 7px; border: 0; background: transparent; color: var(--muted); font: 500 13px/1.2 var(--plain); cursor: pointer; }
+#viewClaude.ai-v3 .ai-mode:hover { color: var(--text); }
+#viewClaude.ai-v3 .ai-mode[aria-selected="true"] { background: rgba(var(--accent-rgb), .2); color: #fff; }
+#viewClaude.ai-v3 .composer { order: 1; background: transparent !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; gap: 10px; }
+#viewClaude.ai-v3 .composer::before, #viewClaude.ai-v3 .composer::after { display: none; }
+#viewClaude.ai-v3 .status-slot { order: 2; }
+#viewClaude.ai-v3 .row-actions { order: 3; }
+#viewClaude.ai-v3 .reply { order: 4; }
+#viewClaude.ai-v3 .quick { order: 5; margin-top: 6px; }
+#viewClaude.ai-v3 .expr, #viewClaude.ai-v3 .scripts, #viewClaude.ai-v3 .scripts-empty { order: 1; }
+#viewClaude.ai-v3[data-ai="create"] .expr, #viewClaude.ai-v3[data-ai="create"] .scripts, #viewClaude.ai-v3[data-ai="create"] .scripts-empty { display: none; }
+#viewClaude.ai-v3[data-ai="expr"] .composer, #viewClaude.ai-v3[data-ai="expr"] .row-actions, #viewClaude.ai-v3[data-ai="expr"] .reply, #viewClaude.ai-v3[data-ai="expr"] .quick,
+#viewClaude.ai-v3[data-ai="expr"] .scripts, #viewClaude.ai-v3[data-ai="expr"] .scripts-empty { display: none; }
+#viewClaude.ai-v3[data-ai="mine"] .composer, #viewClaude.ai-v3[data-ai="mine"] .row-actions, #viewClaude.ai-v3[data-ai="mine"] .reply, #viewClaude.ai-v3[data-ai="mine"] .quick,
+#viewClaude.ai-v3[data-ai="mine"] .expr { display: none; }
+#viewClaude.ai-v3 .expr .scripts-head, #viewClaude.ai-v3 .scripts .scripts-head { display: none; }
+#viewClaude.ai-v3 .expr .expr-body, #viewClaude.ai-v3 .scripts .scripts-list { display: flex !important; }
+#viewClaude.ai-v3 .scripts-empty { margin: 18px 4px; color: var(--muted); font-size: 12.5px; line-height: 1.5; text-align: center; }
+/* поле: одна рамка вокруг текста и нижней строки */
+#viewClaude.ai-v3 .prompt-wrap { display: flex; flex-direction: column; position: relative; border: 1px solid #2a2b33; border-radius: 12px; background: #0f0f13; }
+#viewClaude.ai-v3 .prompt-wrap:focus-within { border-color: rgba(var(--accent-rgb), .6); }
+#viewClaude.ai-v3 .prompt-wrap #prompt { border: 0 !important; background: transparent !important; box-shadow: none !important; min-height: 110px; resize: vertical; }
+#viewClaude.ai-v3 .prompt-foot:not([hidden]) { display: flex; align-items: center; gap: 6px; padding: 0 8px 8px; }
+#viewClaude.ai-v3 .attach-row #refBtn, #viewClaude.ai-v3 .attach-row #refLinkBtn { display: none; }
+#viewClaude.ai-v3 .attach-row:not(:has(#refChip:not([hidden]))) { display: none; }
+.pf-pop-wrap { position: relative; }
+.pf-pill { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #2c2d36; border-radius: 999px; padding: 5px 10px; background: transparent; color: #cfd0da; font: 500 12px/1.2 var(--plain); cursor: pointer; }
+.pf-pill:hover, .pf-pill[aria-expanded="true"] { border-color: rgba(var(--accent-rgb), .6); color: #fff; }
+.pf-at { margin-left: auto; color: var(--muted); font-size: 11.5px; cursor: help; }
+.pf-menu { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 30; min-width: 230px; display: flex; flex-direction: column; gap: 2px; padding: 5px; border-radius: 10px; background: #1c1c23; border: 1px solid #30313a; box-shadow: 0 12px 30px rgba(0, 0, 0, .5); }
+.pf-menu[hidden] { display: none; }
+.pf-menu > button { text-align: left; border: 0; background: transparent; color: var(--text); padding: 8px 10px; border-radius: 7px; font: 500 12.5px/1.2 var(--plain); cursor: pointer; }
+.pf-menu > button:hover { background: rgba(var(--accent-rgb), .18); }
+.pf-style { min-width: 0; width: 250px; }
+.pf-style .style-row { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; }
+.pf-style .style-label { display: none; }
+/* быстрые задачи — плитки */
+#viewClaude.ai-v3 .quick-head #quickAdd { display: none; }
+#viewClaude.ai-v3 .quick-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+#viewClaude.ai-v3 .quick-list[hidden] { display: none; }
+#viewClaude.ai-v3 .quick-chip, #viewClaude.ai-v3 .quick-new { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 11px 12px !important; min-height: 66px; border-radius: 12px !important; background: #18181e !important; border: 1px solid #26272e !important; color: var(--text) !important; font: 500 12.5px/1.3 var(--plain) !important; text-align: left; cursor: pointer; position: relative; }
+#viewClaude.ai-v3 .quick-chip span { white-space: normal; }
+#viewClaude.ai-v3 .quick-chip:hover:not(:disabled), #viewClaude.ai-v3 .quick-new:hover:not(:disabled) { border-color: rgba(var(--accent-rgb), .55) !important; }
+#viewClaude.ai-v3 .quick-new { border-style: dashed !important; color: var(--muted) !important; }
+#viewClaude.ai-v3 .quick-ic { display: block; font-style: normal; font-size: 16px; line-height: 1; color: rgba(var(--accent-rgb), 1); font-weight: 600; }
+#viewClaude.ai-v3 .quick-new .quick-ic { color: var(--muted); }
+#viewClaude.ai-v3 .quick-chip .quick-del { position: absolute; top: 6px; right: 8px; margin: 0; }
+#viewClaude.ai-v3 .quick-link { grid-column: 1 / -1; }

@@ -23,6 +23,7 @@
     var QUICK_KEY = "sayframe.quick.v1";      // быстрые задачи: { open, items: [{ id, name, text }] }
     var MAX_QUICK = 30;
     // Стандартные быстрые задачи. Текст написан подробно: так нейросеть точнее понимает, что нужно.
+    var QUICK_ICONS = { "q-text": "T↑", "q-lower": "▭", "q-logo": "◎", "q-tidy": "▤" };
     var QUICK_DEFAULTS = [
         { id: "q-text", name: "Появление текста",
           text: "Сделай плавное появление текста: у выделенных текстовых слоёв (если ничего не выделено — у всех текстовых слоёв открытой композиции) буквы проявляются по очереди, слегка поднимаясь снизу и из прозрачности. Начало — текущее время, длительность около 1 секунды, с плавным замедлением в конце." },
@@ -926,6 +927,7 @@
             c.classList.toggle("tool-off", toolsHidden.indexOf(c.getAttribute("data-tool")) >= 0);
         });
         relayoutTools();
+        aiLayout();
         stickTop();
     }
 
@@ -1011,7 +1013,7 @@
         refBtn: el("refBtn"), refChip: el("refChip"), refText: el("refText"), refClear: el("refClear"),
         exprCard: el("exprCard"), exprToggle: el("exprToggle"), exprBody: el("exprBody"), exprWish: el("exprWish"),
         exprApplyBtn: el("exprApplyBtn"), exprFixBtn: el("exprFixBtn"),
-        quickBox: el("quickBox"), quickToggle: el("quickToggle"), quickAdd: el("quickAdd"), quickEdit: el("quickEdit"), quickList: el("quickList"),
+        quickBox: el("quickBox"), aiModes: el("aiModes"), promptFoot: el("promptFoot"), aiExample: el("aiExample"), aiExampleMenu: el("aiExampleMenu"), aiStyleBtn: el("aiStyleBtn"), aiStylePop: el("aiStylePop"), scriptsEmpty: el("scriptsEmpty"), quickToggle: el("quickToggle"), quickAdd: el("quickAdd"), quickEdit: el("quickEdit"), quickList: el("quickList"),
         quickForm: el("quickForm"), quickName: el("quickName"), quickText: el("quickText"), quickSave: el("quickSave"), quickCancel: el("quickCancel"),
         saveRow: el("saveRow"), saveScriptBtn: el("saveScriptBtn"), saveForm: el("saveForm"), saveName: el("saveName"),
         saveConfirm: el("saveConfirm"), saveCancel: el("saveCancel"),
@@ -2286,6 +2288,7 @@
     function drawScripts() {
         var n = scripts.items.length;
         ui.scriptsCard.hidden = n === 0;
+        if (ui.scriptsEmpty) { ui.scriptsEmpty.hidden = n > 0; }
         ui.scriptsCount.textContent = n ? String(n) : "";
         ui.scriptsToggle.setAttribute("aria-expanded", scripts.open ? "true" : "false");
         ui.scriptsList.hidden = !scripts.open;
@@ -2696,11 +2699,16 @@
         quick.items.forEach(function (q) {
             var b = document.createElement("button");
             var label = document.createElement("span");
-            var del;
+            var del, ic;
             b.className = "quick-chip";
             b.setAttribute("data-id", q.id);
             b.title = quickEditing ? "Изменить «" + q.name + "»" : q.text;
             label.textContent = q.name;
+            ic = document.createElement("i");
+            ic.className = "quick-ic";
+            ic.setAttribute("aria-hidden", "true");
+            ic.textContent = QUICK_ICONS[q.id] || "✦";
+            b.appendChild(ic);
             b.appendChild(label);
             if (quickEditing) {
                 del = document.createElement("span");
@@ -2714,6 +2722,16 @@
             b.disabled = busy;
             ui.quickList.appendChild(b);
         });
+        if (!quickEditing && flowOn()) {
+            // «Студия»: последняя плитка — «Своя задача» (в других дизайнах для этого «+» в заголовке).
+            reset = document.createElement("button");
+            reset.className = "quick-new";
+            reset.setAttribute("data-act", "new");
+            reset.innerHTML = "<i class=\"quick-ic\" aria-hidden=\"true\">+</i><span>Своя задача</span>";
+            reset.title = "Сохранить свою задачу: текст из поля станет плиткой";
+            reset.disabled = busy;
+            ui.quickList.appendChild(reset);
+        }
         if (quickEditing && missingDefaults().length) {
             reset = document.createElement("button");
             reset.className = "quick-link";
@@ -2807,10 +2825,12 @@
         });
         ui.quickList.addEventListener("click", function (e) {
             var t = e.target;
-            var act = t.getAttribute ? t.getAttribute("data-act") : null;
+            var nw = t.closest ? t.closest(".quick-new") : null;
+            var act = nw ? "new" : t.getAttribute ? t.getAttribute("data-act") : null;
             var chip = t.closest ? t.closest(".quick-chip") : null;
             var q = chip ? quickById(chip.getAttribute("data-id")) : null;
             if (busy) { return; }
+            if (act === "new") { openQuickForm(null); return; }
             if (act === "reset") {
                 missingDefaults().forEach(function (d) { quick.items.push({ id: d.id, name: d.name, text: d.text }); });
                 storeQuick();
@@ -9797,9 +9817,11 @@
 
     // Ряд «Стиль:» над полем AI. Выбор запоминается и действует на все запросы.
     function renderMotionStyles() {
+        var st = motionStyleOf(settings.motionStyle) || MOTION_STYLES[0];
         Array.prototype.forEach.call(ui.styleRow.querySelectorAll(".style-chip"), function (b) {
             b.setAttribute("aria-checked", b.getAttribute("data-style") === settings.motionStyle ? "true" : "false");
         });
+        if (ui.aiStyleBtn) { ui.aiStyleBtn.textContent = st.label + " ▾"; }
     }
     function initMotionStyles() {
         MOTION_STYLES.forEach(function (st) {
@@ -9812,6 +9834,7 @@
                 settings.motionStyle = st.id;
                 storeSettings(settings);
                 renderMotionStyles();
+                aiPop(null);
                 setStatus(st.id === "normal" ? "Стиль анимации: обычный." : "Стиль анимации: «" + st.label + "» — для всех следующих запросов.", "");
             });
             ui.styleRow.appendChild(b);
@@ -10889,6 +10912,69 @@
     var FLOW_SHAPE_ORDER = ["split", "pathfinder"];
 
     function flowOn() { return document.documentElement.getAttribute("data-design") === "studio"; }
+
+    // ---- Раздел AI в «Студии»: режимы Создать / Выражение / Мои, пример и стиль внутри поля, быстрые задачи плитками внизу.
+    var AI_MODE_KEY = "sayframe.aiMode.v1";
+    var aiMode = (function () { var m = ""; try { m = window.localStorage.getItem(AI_MODE_KEY) || ""; } catch (e) {} return ["create", "expr", "mine"].indexOf(m) >= 0 ? m : "create"; })();
+
+    function aiPop(which) {
+        [[ui.aiExample, ui.aiExampleMenu], [ui.aiStyleBtn, ui.aiStylePop]].forEach(function (d) {
+            if (!d[0]) { return; }
+            d[1].hidden = d[1] !== which;
+            d[0].setAttribute("aria-expanded", d[1] === which ? "true" : "false");
+        });
+    }
+
+    function setAiMode(m) {
+        aiMode = m;
+        try { window.localStorage.setItem(AI_MODE_KEY, m); } catch (e) {}
+        ui.viewClaude.setAttribute("data-ai", m);
+        Array.prototype.forEach.call(ui.aiModes.querySelectorAll(".ai-mode"), function (b) {
+            b.setAttribute("aria-selected", b.getAttribute("data-m") === m ? "true" : "false");
+        });
+        aiPop(null);
+    }
+
+    function aiLayout() {
+        var on, composer, main, wrap;
+        if (!ui || !ui.aiModes || !ui.prompt) { return; }
+        on = flowOn(); composer = ui.prompt.closest(".composer"); main = ui.viewClaude.querySelector(".claude-main"); wrap = ui.prompt.parentNode;
+        if (!composer || !main) { return; }
+        ui.viewClaude.classList.toggle("ai-v3", on);
+        ui.aiModes.hidden = !on;
+        ui.promptFoot.hidden = !on;
+        if (!ui.prompt.getAttribute("data-ph")) { ui.prompt.setAttribute("data-ph", ui.prompt.placeholder); }
+        ui.prompt.placeholder = on ? "Что сделать в композиции?" : ui.prompt.getAttribute("data-ph");
+        if (on) {
+            if (ui.styleRow.parentNode !== ui.aiStylePop) { ui.aiStylePop.appendChild(ui.styleRow); }
+            if (ui.quickBox.parentNode !== main) { main.appendChild(ui.quickBox); }
+            setAiMode(aiMode || "create");
+        } else {
+            if (ui.styleRow.parentNode !== composer) { composer.insertBefore(ui.styleRow, wrap); }
+            if (ui.quickBox.parentNode !== composer) { composer.insertBefore(ui.quickBox, composer.firstChild); }
+            ui.viewClaude.removeAttribute("data-ai");
+            aiPop(null);
+        }
+        if (quick && ui.quickList) { drawQuick(); }
+    }
+
+    function initAiModes() {
+        if (!ui.aiModes) { return; }
+        ui.aiModes.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest(".ai-mode") : null; if (b) { setAiMode(b.getAttribute("data-m")); } });
+        ui.aiExample.addEventListener("click", function (e) { e.stopPropagation(); aiPop(ui.aiExampleMenu.hidden ? ui.aiExampleMenu : null); });
+        ui.aiStyleBtn.addEventListener("click", function (e) { e.stopPropagation(); aiPop(ui.aiStylePop.hidden ? ui.aiStylePop : null); });
+        ui.aiExampleMenu.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("[data-ex]") : null;
+            if (!b) { return; }
+            aiPop(null);
+            (b.getAttribute("data-ex") === "link" ? ui.refLinkBtn : ui.refBtn).click();
+        });
+        document.addEventListener("mousedown", function (e) {
+            if (e.target.closest && e.target.closest(".pf-pop-wrap")) { return; }
+            aiPop(null);
+        });
+        aiLayout();
+    }
 
     function flowFolded(g) {
         return String(g.st.flowFold || "").split(",").filter(function (n) { return !!FLOW_ICONS[n]; });
@@ -12004,6 +12090,7 @@
     ui.versionText.textContent = "Sayframe " + VERSION;
     document.addEventListener("paste", onPasteEvent);
     initMotionStyles();
+    initAiModes();
     ui.prompt.addEventListener("keydown", function (e) {
         // Cmd/Ctrl+Enter запускает задачу.
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onRun(); }

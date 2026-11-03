@@ -83,6 +83,12 @@
 
     <!-- Раздел AI (внутреннее имя claude): задача словами, референс, запуск и ответ -->
     <div id="viewClaude" class="view" role="tabpanel" aria-labelledby="tabClaude">
+    <!-- «Студия»: три режима раздела AI — создать по описанию, выражение для свойства, сохранённые скрипты -->
+    <div id="aiModes" class="ai-modes" role="tablist" aria-label="Что делает AI" hidden>
+      <button type="button" class="ai-mode" data-m="create" role="tab" data-info="Создать|Опишите словами, что сделать в композиции, — AI напишет скрипт и выполнит его.">✦ Создать</button>
+      <button type="button" class="ai-mode" data-m="expr" role="tab" data-info="Выражение|Выделите свойство на таймлайне и напишите, что оно должно делать, — AI поставит выражение. Или почините выражения с ошибками.">ƒ Выражение</button>
+      <button type="button" class="ai-mode" data-m="mine" role="tab" data-info="Мои скрипты|Удачные скрипты, сохранённые звёздочкой ☆ после ответа AI. Запускаются одной кнопкой, без AI и бесплатно.">☆ Мои</button>
+    </div>
     <div class="claude-main">
     <section class="card composer">
       <!-- Быстрые задачи: готовые просьбы одной кнопкой; свои тоже можно сохранить -->
@@ -106,7 +112,23 @@
         </div>
       </div>
       <div id="styleRow" class="style-row" role="radiogroup" aria-label="Стиль анимации"><span class="style-label">Стиль:</span></div>
-      <textarea id="prompt" rows="4" placeholder="Опишите, что сделать в композиции. @ — логотип, цвет или иконка из брендбука" aria-label="Задача для нейросети"></textarea>
+      <div class="prompt-wrap">
+        <textarea id="prompt" rows="4" placeholder="Опишите, что сделать в композиции. @ — логотип, цвет или иконка из брендбука" aria-label="Задача для нейросети"></textarea>
+      <div id="promptFoot" class="prompt-foot" hidden>
+        <div class="pf-pop-wrap">
+          <button type="button" id="aiExample" class="pf-pill" aria-haspopup="menu" aria-expanded="false" title="Пример: картинка, видео или ссылка — AI сделает похоже">📎 Пример</button>
+          <div id="aiExampleMenu" class="pf-menu" role="menu" hidden>
+            <button type="button" role="menuitem" data-ex="file">Картинка или видео с компьютера</button>
+            <button type="button" role="menuitem" data-ex="link">Ссылка (Pinterest, Behance…)</button>
+          </div>
+        </div>
+        <div class="pf-pop-wrap">
+          <button type="button" id="aiStyleBtn" class="pf-pill" aria-haspopup="true" aria-expanded="false" title="Как двигается анимация — для всех следующих запросов">Обычный ▾</button>
+          <div id="aiStylePop" class="pf-menu pf-style" hidden></div>
+        </div>
+        <span class="pf-at" title="Напишите @ в поле — вставится логотип, цвет или иконка из брендбука (вкладка «Проекты»)">@ брендбук</span>
+      </div>
+      </div>
       <div id="mentionList" class="mention-list" role="listbox" aria-label="Из брендбука" hidden></div>
       <div id="brandHits" class="brand-hits" aria-live="polite" hidden></div>
       <div class="attach-row">
@@ -176,6 +198,7 @@
       </div>
     </section>
 
+    <p id="scriptsEmpty" class="scripts-empty" hidden>Здесь будут ваши скрипты. После удачного ответа AI нажмите «☆ Сохранить скрипт».</p>
     <!-- Мои скрипты: сохранённые удачные скрипты, запускаются одной кнопкой, без нейросети -->
     <section id="scriptsCard" class="card scripts" hidden>
       <button id="scriptsToggle" class="scripts-head" aria-expanded="true" aria-controls="scriptsList">

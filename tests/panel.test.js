@@ -5673,6 +5673,40 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
+  // AI in «Студия»: modes Создать / Выражение / Мои, example and style inside the field, quick tasks as tiles.
+  {
+    p = await open({ settings: { design: "studio", designSet: 2 } });
+    await p.page.click("#tabClaude");
+    check("SA1 «Студия»: three modes on top, «Создать» first; the field with «Пример» and the style inside; quick tasks as tiles with «Своя задача»", (await vis(p, "#aiModes")) && (await p.page.getAttribute('#aiModes [data-m="create"]', "aria-selected")) === "true" &&
+      (await vis(p, "#aiExample")) && (await p.page.innerText("#aiStyleBtn")).trim() === "Обычный ▾" && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && (await p.page.getAttribute("#prompt", "placeholder")) === "Что сделать в композиции?" &&
+      (await p.page.locator("#quickList .quick-chip").count()) === 4 && (await vis(p, "#quickList .quick-new")) && (await p.page.locator("#quickList .quick-chip .quick-ic").first().innerText()) === "T↑" && !(await vis(p, "#exprWish")) && p.errors.length === 0, p.errors.join("|"));
+    await p.page.click("#aiStyleBtn");
+    const popOpen = await vis(p, "#aiStylePop");
+    await p.page.click('#aiStylePop .style-chip[data-style="smooth"]');
+    check("SA2 the style pill opens the styles; a pick is kept for the next requests and closes the list", popOpen && (await p.page.innerText("#aiStyleBtn")).trim() === "Плавный ▾" && !(await vis(p, "#aiStylePop")) &&
+      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).motionStyle)) === "smooth");
+    await p.page.click("#aiExample");
+    const exOpen = await vis(p, "#aiExampleMenu");
+    await p.page.click('#aiExampleMenu [data-ex="link"]');
+    check("SA3 «📎 Пример»: a picture or video from the computer, or a link; the link row opens", exOpen && (await vis(p, "#refLinkRow")) && !(await vis(p, "#aiExampleMenu")));
+    await p.page.click("#refLinkCancel");
+    await p.page.click("#quickList .quick-new");
+    check("SA6 the «Своя задача» tile opens the form for a new quick task", await vis(p, "#quickForm"));
+    await p.page.click("#quickCancel");
+    await p.page.click('#aiModes [data-m="expr"]');
+    check("SA4 «Выражение»: only the expression card (no title bar) and the status; the request field is gone", (await vis(p, "#exprWish")) && (await vis(p, "#exprApplyBtn")) && !(await vis(p, "#prompt")) && !(await vis(p, "#quickList")) && !(await vis(p, "#exprToggle")) && (await vis(p, "#status")));
+    await p.page.click('#aiModes [data-m="mine"]');
+    check("SA5 «Мои» without saved scripts: a short note on how to save one", (await vis(p, "#scriptsEmpty")) && !(await vis(p, "#exprWish")) && !(await vis(p, "#prompt")));
+    await p.page.click('#aiModes [data-m="expr"]');
+    await p.restart(); await p.page.click("#tabClaude");
+    check("SA4 the open mode survives a restart", (await p.page.getAttribute('#aiModes [data-m="expr"]', "aria-selected")) === "true" && (await vis(p, "#exprWish")));
+    await p.page.evaluate(() => { const s = JSON.parse(localStorage.getItem("sayframe.settings.v1")); s.design = "glass"; localStorage.setItem("sayframe.settings.v1", JSON.stringify(s)); });
+    await p.restart(); await p.page.click("#tabClaude");
+    check("SA7 other designs keep the old AI layout: style row, attach buttons and quick chips over the field, no modes", !(await vis(p, "#aiModes")) && (await vis(p, "#styleRow")) && (await vis(p, "#refBtn")) && (await vis(p, "#prompt")) && (await vis(p, "#exprWish")) &&
+      (await p.page.locator("#quickList .quick-new").count()) === 0 && (await p.page.evaluate(() => document.querySelector(".composer").firstElementChild.id)) === "quickBox" && p.errors.length === 0, p.errors.join("|"));
+    await p.close();
+  }
+
   // Decompose: the layers of a selected precomp come out into the open comp, in its place.
   {
     const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
