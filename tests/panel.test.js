@@ -5523,59 +5523,68 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const scaleOf = (l) => acAt(l, "ADBE Transform Group", "ADBE Scale").value;
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { queued: ["Old"] } });
     const exDir = path.join(p.home, "Desktop", "Sayframe Экспорт");
+    const tileBox = (q, id) => q.page.locator('#exTargets [data-t="' + id + '"]').boundingBox();
     await exOpen(p);
-    check("EX1 the ⤓ button opens «Быстрый экспорт»: comp line, 6 platform tiles, Reels picked, quality «Обычное», «Всю композицию»", (await p.page.locator("#exCompName").innerText()) === "Main" && (await p.page.locator("#exCompMeta").innerText()) === "1920×1080 · 10 с" &&
-      (await p.page.locator("#exTargets .ex-t span").allInnerTexts()).join() === "Reels / Stories,YouTube,Telegram,Пост 4:5,TikTok,Свой" && (await pressed(p, "#exTargets .ex-t")) === "reels" &&
-      (await pressed(p, "#exQuality button")) === "normal" && (await pressed(p, "#exSpan button")) === "all" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео" && (await overflow(p)) <= 0, await pressed(p, "#exTargets .ex-t"));
-    check("EX1 16:9 comp and Reels 9:16 -> the sheet asks how, «Размытый фон по краям» by default", (await vis(p, "#exFitRow")) && (await p.page.locator("#exFitText").innerText()) === "Композиция горизонтальная, а Reels — вертикальный. Как сделать?" && (await pressed(p, "#exFit button")) === "blur", await p.page.locator("#exFitText").innerText());
+    check("EX1 the ⤓ button opens «Быстрый экспорт»: comp line, quality tiles Низкое / Среднее / Высокое / Своё with the size in MB, «Среднее» picked, «Всю композицию»", (await p.page.locator("#exCompName").innerText()) === "Main" && (await p.page.locator("#exCompMeta").innerText()) === "1920×1080 · 10 с" &&
+      (await p.page.locator("#exTargets .ex-t span").allInnerTexts()).join() === "Низкое,Среднее,Высокое,Своё" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
+      (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() === "≈ 6,7 МБ,≈ 19 МБ,≈ 50 МБ," && (await pressed(p, "#exSpan button")) === "all" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 19 МБ" && (await overflow(p)) <= 0,
+      (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() + " | " + await p.page.locator("#exGo").innerText());
+    t = await tileBox(p, "normal");
+    check("EX1 a horizontal comp -> horizontal tiles; no size question, no quality row (the tile is the quality)", t.width > t.height * 1.3 && !(await vis(p, "#exFitRow")) && !(await vis(p, "#exQualRow")), JSON.stringify(t));
     check("EX1 unsaved project -> Desktop › «Sayframe Экспорт»; no Media Encoder switch when there is no Media Encoder", (await p.page.getAttribute("#exFolder", "title")) === exDir && !(await vis(p, "#exAmeRow")), await p.page.getAttribute("#exFolder", "title"));
     await p.page.screenshot({ path: path.join(SHOTS, "90-export-sheet.png") });
-    await p.page.click('#exTargets [data-t="youtube"]');
-    check("EX2 two platforms -> «Сохранить 2 видео»", (await p.page.locator("#exGo").innerText()).trim() === "Сохранить 2 видео");
     await exRun(p);
     t = p.ae.log.rq.rendered;
-    check("EX2 one MP4 per platform, named «Comp — Platform.mp4», in the folder", mp4s(exDir).join() === "Main — Reels.mp4,Main — YouTube.mp4", mp4s(exDir).join());
-    check("EX2 Reels goes through a 1080×1920 comp, YouTube is the comp itself; H.264 15 Mbps; whole comp", t.length === 2 && t[0].w === 1080 && t[0].h === 1920 && t[1].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 15 Mbps" && t[1].tpl === t[0].tpl && t[0].span[1] === 10, JSON.stringify(t));
-    const wr = p.ae.log.orbitComps[0];
-    check("EX2 the 9:16 comp: the source fits the width over a blurred, silent copy that covers the frame", wr.list.map((l) => l.name).join() === "Main,Blur" && Math.abs(scaleOf(wr.list[0])[0] - 56.25) < 0.01 && Math.abs(scaleOf(wr.list[1])[0] - 1920 / 1080 * 106) < 0.1 &&
-      wr.list[1].audioEnabled === false && !!acAt(wr.list[1], "ADBE Effect Parade").children.find((e) => e.matchName === "ADBE Gaussian Blur 2"), wr.list.map((l) => l.name + ":" + scaleOf(l)).join(" "));
-    check("EX2 items already in the Render Queue sit the render out and come back; ours and the helper comp are removed after", t.every((r) => r.others === 0) && p.ae.project.renderQueue.numItems === 1 && p.ae.project.renderQueue.item(1).render === true && p.ae.log.rq.removed === 2 && p.ae.log.compsRemoved === 1, JSON.stringify([t.map((r) => r.others), p.ae.log.rq.removed, p.ae.log.compsRemoved]));
-    check("EX2 the list shows ✓, the size and «Показать»; the status names the folder", (await p.page.locator("#exResults .ex-row.done").count()) === 2 && (await p.page.locator("#exResults .ex-row small").allInnerTexts()).join() === "2,4 МБ,2,4 МБ" &&
-      (await p.page.locator("#exResults .ex-row .ghost").count()) === 2 && (await p.page.locator("#exResults .ex-now").innerText()) === "Готово, 2 видео" && (await p.status()) === "Видео сохранены в папку «Sayframe Экспорт».", await p.status());
+    check("EX2 one MP4 at the comp's size, named «Comp — Среднее.mp4»; H.264 15 Mbps; whole comp; no helper comp", mp4s(exDir).join() === "Main — Среднее.mp4" && t.length === 1 && t[0].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 15 Mbps" && t[0].span[1] === 10 && p.ae.log.orbitComps.length === 0, mp4s(exDir).join() + JSON.stringify(t));
+    check("EX2 items already in the Render Queue sit the render out and come back; ours is removed after", t.every((r) => r.others === 0) && p.ae.project.renderQueue.numItems === 1 && p.ae.project.renderQueue.item(1).render === true && p.ae.log.rq.removed === 1, JSON.stringify([t.map((r) => r.others), p.ae.log.rq.removed]));
+    check("EX2 the list shows ✓, the size and «Показать»; the status names the folder", (await p.page.locator("#exResults .ex-row.done").count()) === 1 && (await p.page.locator("#exResults .ex-row small").allInnerTexts()).join() === "2,4 МБ" &&
+      (await p.page.locator("#exResults .ex-row .ghost").count()) === 1 && (await p.page.locator("#exResults .ex-now").innerText()) === "Готово" && (await p.status()) === "Видео сохранены в папку «Sayframe Экспорт».", await p.status());
     await p.page.screenshot({ path: path.join(SHOTS, "91-export-done.png") });
     await p.page.click("#exResults .ex-row .ghost"); await p.page.waitForTimeout(200);
     check("EX3 «Показать» opens the folder", (p.ae.log.executed || []).join() === exDir, JSON.stringify(p.ae.log.executed));
     await p.page.click("#exResults .ex-again .ghost");
     check("EX3 «Назад к настройкам» brings the sheet back", await vis(p, "#exGo"));
-    await p.page.click("#exGo"); await p.page.waitForFunction(() => document.querySelectorAll("#exResults .ex-row.done").length === 2);
-    check("EX3 a second run does not overwrite: «Main — Reels 2.mp4»", mp4s(exDir).indexOf("Main — Reels 2.mp4") >= 0, mp4s(exDir).join());
+    await p.page.click("#exGo"); await p.page.waitForFunction(() => document.querySelectorAll("#exResults .ex-row.done").length === 1);
+    check("EX3 a second run does not overwrite: «Main — Среднее 2.mp4»", mp4s(exDir).indexOf("Main — Среднее 2.mp4") >= 0, mp4s(exDir).join());
     await p.close();
 
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
     p.ae.log.dcMain.workAreaStart = 2; p.ae.log.dcMain.workAreaDuration = 3;
     await exOpen(p);
-    await p.page.click('#exTargets [data-t="reels"]'); await p.page.click('#exTargets [data-t="telegram"]');
-    await p.page.click('#exQuality [data-v="max"]'); await p.page.click('#exSpan [data-v="work"]');
-    check("EX4 Telegram alone keeps the comp's shape: nothing to ask", !(await vis(p, "#exFitRow")));
+    await p.page.click('#exTargets [data-t="light"]'); await p.page.click('#exSpan [data-v="work"]');
+    check("EX4 «Рабочую область»: the MB follow the work area's length", (await p.page.locator('#exTargets [data-t="light"] .ex-mb').innerText()) === "≈ 2 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 2 МБ", await p.page.locator("#exGo").innerText());
     await exRun(p);
     t = p.ae.log.rq.rendered;
-    check("EX4 Telegram is always the light file (5 Mbps) at the comp's size; «Рабочую область» renders the work area", t.length === 1 && t[0].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 5 Mbps" && t[0].span.join() === "2,3", JSON.stringify(t));
+    check("EX4 «Низкое» = 5 Mbps at the comp's size; «Рабочую область» renders the work area; the file says the quality", t.length === 1 && t[0].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 5 Mbps" && t[0].span.join() === "2,3" && /Main — Низкое\.mp4$/.test(t[0].file), JSON.stringify(t));
     await p.restart();
     await exOpen(p);
-    check("EX4 the choice is remembered", (await pressed(p, "#exTargets .ex-t")) === "telegram" && (await pressed(p, "#exQuality button")) === "max" && (await pressed(p, "#exSpan button")) === "work");
-    await p.page.click('#exTargets [data-t="telegram"]'); await p.page.click('#exTargets [data-t="post"]'); await p.page.click('#exFit [data-v="crop"]');
+    check("EX4 the choice is remembered", (await pressed(p, "#exTargets .ex-t")) === "light" && (await pressed(p, "#exSpan button")) === "work");
+    await p.page.click('#exTargets [data-t="max"]');
     await exRun(p);
-    t = p.ae.log.rq.rendered;
-    t = t.slice(1);
-    check("EX5 «Обрезать»: the 4:5 comp is filled (cover), no blur copy; «Максимум» = 40 Mbps", t.length === 1 && t[0].w === 1080 && t[0].h === 1350 && t[0].tpl === "H.264 - Match Render Settings - 40 Mbps" && p.ae.log.orbitComps[0].list.length === 1 && Math.abs(scaleOf(p.ae.log.orbitComps[0].list[0])[0] - 125) < 0.01, JSON.stringify(t));
+    t = p.ae.log.rq.rendered.slice(1);
+    check("EX5 «Высокое» = 40 Mbps", t.length === 1 && t[0].tpl === "H.264 - Match Render Settings - 40 Mbps" && t[0].comp === "Main", JSON.stringify(t));
     await p.page.click("#exResults .ex-again .ghost");
-    await p.page.click('#exTargets [data-t="post"]'); await p.page.click('#exTargets [data-t="custom"]');
-    check("EX6 «Свой» shows width × height", await vis(p, "#exCustom"));
-    await p.page.fill("#exW", "1080"); await p.page.fill("#exH", "1080"); await p.page.click('#exFit [data-v="black"]');
-    check("EX6 the tile shows the size; square vs 16:9 is asked about", (await p.page.locator('#exTargets [data-t="custom"] small').innerText()) === "1080×1080" && (await p.page.locator("#exFitText").innerText()) === "Композиция горизонтальная, а 1080×1080 — квадратный. Как сделать?", await p.page.locator("#exFitText").innerText());
+    await p.page.click('#exTargets [data-t="custom"]');
+    check("EX6 «Своё» shows width × height and the quality", (await vis(p, "#exCustom")) && (await vis(p, "#exQualRow")));
+    await p.page.fill("#exW", "1080"); await p.page.fill("#exH", "1080"); await p.page.click('#exFit [data-v="black"]'); await p.page.click('#exQuality [data-v="light"]');
+    check("EX6 the tile shows the size; square vs 16:9 is asked about", (await p.page.locator('#exTargets [data-t="custom"] .ex-mb').innerText()) === "1080×1080" && (await p.page.locator("#exFitText").innerText()) === "Композиция горизонтальная, а видео 1080×1080 — квадратное. Как сделать?", await p.page.locator("#exFitText").innerText());
     await exRun(p);
     t = p.ae.log.rq.rendered;
-    check("EX6 «Чёрные поля»: the source fits inside, one layer; the file is «Main — 1080x1080.mp4»", t.length === 3 && t[2].w === 1080 && t[2].h === 1080 && /Main — 1080x1080\.mp4$/.test(t[2].file) && p.ae.log.orbitComps[1].list.length === 1 && Math.abs(scaleOf(p.ae.log.orbitComps[1].list[0])[0] - 56.25) < 0.01, JSON.stringify(t[2]));
+    check("EX6 «Чёрные поля»: the source fits inside, one layer; the file is «Main — 1080x1080.mp4»; its own quality", t.length === 3 && t[2].w === 1080 && t[2].h === 1080 && /Main — 1080x1080\.mp4$/.test(t[2].file) && t[2].tpl === "H.264 - Match Render Settings - 5 Mbps" && p.ae.log.orbitComps[0].list.length === 1 && Math.abs(scaleOf(p.ae.log.orbitComps[0].list[0])[0] - 56.25) < 0.01, JSON.stringify(t[2]));
+    await p.close();
+
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    p.ae.log.dcMain.width = 1080; p.ae.log.dcMain.height = 1920;
+    await exOpen(p);
+    t = await tileBox(p, "normal");
+    check("EX9 a vertical comp -> vertical tiles, in one row", t.height > t.width * 1.3 && Math.abs((await tileBox(p, "custom")).y - t.y) < 2, JSON.stringify(t));
+    await p.page.screenshot({ path: path.join(SHOTS, "92-export-vertical.png") });
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    p.ae.log.dcMain.width = 1080; p.ae.log.dcMain.height = 1080;
+    await exOpen(p);
+    t = await tileBox(p, "normal");
+    check("EX9 a square comp -> square tiles", Math.abs(t.width - t.height) < 3, JSON.stringify(t));
     await p.close();
 
     const exProj = fs.mkdtempSync(path.join(os.tmpdir(), "exproj-"));

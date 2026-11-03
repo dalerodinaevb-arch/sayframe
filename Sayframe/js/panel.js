@@ -1292,7 +1292,7 @@
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
         winPicker: el("winPicker"), winNote: el("winNote"), exHead: el("exHead"),
         exportBtn: el("exportBtn"), exportBar: el("exportBar"), exClose: el("exClose"), exSetup: el("exSetup"), exCompName: el("exCompName"), exCompMeta: el("exCompMeta"),
-        exTargets: el("exTargets"), exCustom: el("exCustom"), exW: el("exW"), exH: el("exH"), exFitRow: el("exFitRow"), exFitText: el("exFitText"), exFit: el("exFit"),
+        exTargets: el("exTargets"), exCustom: el("exCustom"), exQualRow: el("exQualRow"), exW: el("exW"), exH: el("exH"), exFitRow: el("exFitRow"), exFitText: el("exFitText"), exFit: el("exFit"),
         exQuality: el("exQuality"), exSpan: el("exSpan"), exFolder: el("exFolder"), exBrowse: el("exBrowse"), exAmeRow: el("exAmeRow"), exAme: el("exAme"), exGo: el("exGo"), exResults: el("exResults"),
         fxBtn: el("fxBtn"), snapBtn: el("snapBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
         orbitPane: el("orbitPane"), orbitStage: el("orbitStage"), orbitRing: el("orbitRing"), orbitLayout: el("orbitLayout"), orbitShape: el("orbitShape"),
@@ -1644,7 +1644,7 @@
         ui.fxBtn.disabled = on;
         ui.snapBtn.disabled = on;
         ui.exportBtn.disabled = on;
-        ui.exGo.disabled = on || !exInfo || !(exState && exState.targets.length);
+        ui.exGo.disabled = on || !exInfo;
         ui.exBrowse.disabled = on;
         ui.snapSave.disabled = on;
         ui.snapBrowse.disabled = on;
@@ -7471,21 +7471,15 @@
 
     // ---- Быстрый экспорт: MP4 для площадок. Окно-плашка под шапкой, кнопка ⤓ в шапке.
     var EXPORT_KEY = "sayframe.export.v1";
-    var EX_TARGETS = {
-        reels: { label: "Reels", w: 1080, h: 1920 },
-        youtube: { label: "YouTube", w: 1920, h: 1080 },
-        telegram: { label: "Telegram", light: true },
-        post: { label: "Пост 4x5", w: 1080, h: 1350 },
-        tiktok: { label: "TikTok", w: 1080, h: 1920 },
-        custom: { label: "" }
-    };
-    var EX_ORDER = ["reels", "youtube", "telegram", "post", "tiktok", "custom"];
-    var exState = { targets: ["reels"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080 };
+    // Окошки качества: размер видео = размер композиции, отличается только качество (битрейт H.264 из host.jsx).
+    var EX_LEVELS = { light: { label: "Низкое", mbps: 5 }, normal: { label: "Среднее", mbps: 15 }, max: { label: "Высокое", mbps: 40 }, custom: { label: "Своё" } };
+    var EX_ORDER = ["light", "normal", "max", "custom"];
+    var exState = { level: "normal", quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080 };
     var exInfo = null, exFolderNow = "", exDefaultNow = "";
     try {
         (function () {
             var v = JSON.parse(window.localStorage.getItem(EXPORT_KEY) || "{}") || {};
-            if (Array.isArray(v.targets)) { exState.targets = v.targets.filter(function (t) { return EX_TARGETS[t]; }); }
+            if (EX_LEVELS[v.level]) { exState.level = v.level; }
             if (/^(light|normal|max)$/.test(v.quality)) { exState.quality = v.quality; }
             if (/^(all|work)$/.test(v.span)) { exState.span = v.span; }
             if (/^(blur|black|crop)$/.test(v.fit)) { exState.fit = v.fit; }
@@ -7498,31 +7492,30 @@
 
     function storeExport() { try { window.localStorage.setItem(EXPORT_KEY, JSON.stringify(exState)); } catch (e) {} }
 
-    // Размер для площадки: у Telegram — размер композиции (длинная сторона не больше 1920), у «Своего» — введённый.
-    function exSize(id) {
-        var t = EX_TARGETS[id], c = exInfo ? exInfo.comp : { w: 1920, h: 1080 }, k;
-        if (id === "custom") { return { w: exState.cw, h: exState.ch }; }
-        if (t.light) {
-            k = Math.min(1, 1920 / Math.max(c.w, c.h));
-            return { w: Math.round(c.w * k / 2) * 2, h: Math.round(c.h * k / 2) * 2 };
-        }
-        return { w: t.w, h: t.h };
+    // Размер видео: как у композиции, у «Своего» — введённый.
+    function exSize() {
+        var c = exInfo ? exInfo.comp : { w: 1920, h: 1080 };
+        if (exState.level === "custom") { return { w: exState.cw, h: exState.ch }; }
+        return { w: Math.round(c.w / 2) * 2, h: Math.round(c.h / 2) * 2 };
     }
 
     function exShape(w, h) { return Math.abs(w / h - 1) < 0.02 ? "квадратн" : (w > h ? "горизонтальн" : "вертикальн"); }
 
-    function exOrder(ids) { return EX_ORDER.filter(function (id) { return ids.indexOf(id) >= 0; }); }
+    function exQualityOf(level) { return level === "custom" ? exState.quality : level; }
 
-    function exMismatch() {
-        var c = exInfo && exInfo.comp;
-        if (!c) { return null; }
-        return exOrder(exState.targets).filter(function (id) {
-            var s = exSize(id);
-            return Math.abs(s.w / s.h - c.w / c.h) > 0.01;
-        })[0] || null;
+    // Примерный размер файла: битрейт видео + звук (~320 кбит/с) × длина.
+    function exMB(level) {
+        var c = exInfo && exInfo.comp, dur, mb;
+        if (!c) { return ""; }
+        dur = exState.span === "work" && c.waDur > 0 ? c.waDur : c.dur;
+        mb = (EX_LEVELS[exQualityOf(level)].mbps + 0.32) * dur / 8;
+        return mb < 1 ? "< 1 МБ" : "≈ " + (mb < 10 ? (Math.round(mb * 10) / 10).toString().replace(".", ",") : Math.round(mb)) + " МБ";
     }
 
-    function exTargetName(id) { return id === "custom" ? exState.cw + "×" + exState.ch : (id === "reels" ? "Reels" : id === "post" ? "пост 4:5" : EX_TARGETS[id].label); }
+    function exMismatch() {
+        var c = exInfo && exInfo.comp, s = exSize();
+        return c && exState.level === "custom" && Math.abs(s.w / s.h - c.w / c.h) > 0.01;
+    }
 
     function showExFolder(path) {
         var parts = String(path || "").split(/[\\\/]/).filter(Boolean);
@@ -7533,13 +7526,17 @@
     }
 
     function drawExport() {
-        var n = exState.targets.length, mis = exMismatch(), c = exInfo && exInfo.comp, s;
+        var c = exInfo && exInfo.comp, s, ar = c ? c.w / c.h : 16 / 9, mb = exMB(exState.level), custom = exState.level === "custom";
+        ui.exTargets.classList.toggle("ex-h", ar > 1.02);
+        ui.exTargets.classList.toggle("ex-v", ar < 0.98);
+        ui.exTargets.classList.toggle("ex-sq", ar >= 0.98 && ar <= 1.02);
+        ui.exTargets.style.setProperty("--ar", String(Math.max(9 / 16, Math.min(16 / 9, ar))));
         Array.prototype.forEach.call(ui.exTargets.querySelectorAll(".ex-t"), function (b) {
             var id = b.getAttribute("data-t");
-            b.setAttribute("aria-pressed", exState.targets.indexOf(id) >= 0 ? "true" : "false");
-            if (id === "custom") { b.querySelector("small").textContent = exState.targets.indexOf("custom") >= 0 ? exState.cw + "×" + exState.ch : "свой размер"; }
+            b.setAttribute("aria-pressed", exState.level === id ? "true" : "false");
+            b.querySelector(".ex-mb").textContent = id === "custom" ? (custom ? exState.cw + "×" + exState.ch : "") : exMB(id);
         });
-        ui.exCustom.hidden = exState.targets.indexOf("custom") < 0;
+        ui.exCustom.hidden = ui.exQualRow.hidden = !custom;
         if (document.activeElement !== ui.exW) { ui.exW.value = exState.cw; }
         if (document.activeElement !== ui.exH) { ui.exH.value = exState.ch; }
         [["exQuality", "quality"], ["exSpan", "span"], ["exFit", "fit"]].forEach(function (p) {
@@ -7547,15 +7544,15 @@
                 b.setAttribute("aria-pressed", b.getAttribute("data-v") === exState[p[1]] ? "true" : "false");
             });
         });
-        ui.exFitRow.hidden = !mis;
-        if (mis && c) {
-            s = exSize(mis);
-            ui.exFitText.textContent = "Композиция " + exShape(c.w, c.h) + "ая, а " + exTargetName(mis) + " — " + exShape(s.w, s.h) + "ый. Как сделать?";
+        ui.exFitRow.hidden = !exMismatch();
+        if (exMismatch()) {
+            s = exSize();
+            ui.exFitText.textContent = "Композиция " + exShape(c.w, c.h) + "ая, а видео " + s.w + "×" + s.h + " — " + exShape(s.w, s.h) + "ое. Как сделать?";
         }
         ui.exAmeRow.hidden = !(exInfo && exInfo.ame);
         ui.exAme.checked = exState.ame;
-        ui.exGo.textContent = n > 1 ? "Сохранить " + n + " видео" : "Сохранить видео";
-        ui.exGo.disabled = busy || !n || !exInfo;
+        ui.exGo.textContent = "Сохранить видео" + (mb ? " · " + mb : "");
+        ui.exGo.disabled = busy || !exInfo;
     }
 
     async function onExport() {
@@ -7630,12 +7627,11 @@
 
     async function runExport() {
         var jobs, folder, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null;
-        if (busy || !exInfo || !exState.targets.length) { return; }
+        if (busy || !exInfo) { return; }
         folder = exFolderNow || exDefaultNow;
-        jobs = exOrder(exState.targets).map(function (id) {
-            var s = exSize(id);
-            return { id: id, w: s.w, h: s.h, label: id === "custom" ? s.w + "x" + s.h : EX_TARGETS[id].label,
-                quality: EX_TARGETS[id].light ? "light" : exState.quality };
+        jobs = [exState.level].map(function (id) {
+            var s = exSize();
+            return { id: id, w: s.w, h: s.h, label: id === "custom" ? s.w + "x" + s.h : EX_LEVELS[id].label, quality: exQualityOf(id) };
         });
         setBusy(true);
         ui.exSetup.hidden = true;
@@ -7718,11 +7714,9 @@
         ui.exBrowse.addEventListener("click", onExBrowse);
         ui.exGo.addEventListener("click", runExport);
         ui.exTargets.addEventListener("click", function (e) {
-            var b = e.target.closest ? e.target.closest(".ex-t") : null, id, k;
+            var b = e.target.closest ? e.target.closest(".ex-t") : null;
             if (!b) { return; }
-            id = b.getAttribute("data-t");
-            k = exState.targets.indexOf(id);
-            if (k >= 0) { exState.targets.splice(k, 1); } else { exState.targets.push(id); }
+            exState.level = b.getAttribute("data-t");
             storeExport();
             drawExport();
         });

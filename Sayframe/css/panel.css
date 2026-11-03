@@ -2355,7 +2355,17 @@ html[data-design="ae"] .rb-stage { border-radius: 4px; }
 .ex-comp { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 9px; background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .08); }
 .ex-comp span { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ex-comp small { flex: none; font-size: 10.5px; color: var(--muted); }
-.ex-targets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ex-targets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; align-items: start; }
+.ex-targets.ex-v { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ex-targets .ex-t.kr-b { aspect-ratio: var(--ar, 1.78); justify-content: flex-end; min-height: 0; height: auto; overflow: hidden; }
+.ex-targets.ex-h .ex-t.kr-b { min-height: 92px; }
+.ex-t .ex-mb { font-size: 16px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+.ex-t .ex-bars { position: absolute; left: 9px; top: 9px; display: flex; gap: 2px; }
+.ex-t .ex-bars b { width: 4px; height: 11px; border-radius: 2px; background: color-mix(in srgb, currentColor 22%, transparent); }
+.ex-t[data-t="light"] .ex-bars b:nth-child(-n+1), .ex-t[data-t="normal"] .ex-bars b:nth-child(-n+2), .ex-t[data-t="max"] .ex-bars b { background: var(--accent-hi, var(--accent)); }
+.ex-t[data-t="custom"] svg { position: absolute; left: 8px; top: 8px; }
+.ex-qualrow { display: contents; }
+.ex-qualrow[hidden] { display: none; }
 .ex-t.kr-b { align-items: flex-start; text-align: left; padding: 8px 9px 7px; gap: 2px; position: relative; }
 .ex-t svg { width: 16px; height: 16px; margin-bottom: 4px; stroke-width: 1.7; }
 .ex-t span { font-size: 12px; font-weight: 600; }
@@ -2391,7 +2401,7 @@ html[data-design="ae"] .rb-stage { border-radius: 4px; }
 html[data-design="ae"] .ex-comp, html[data-design="ae"] .ex-folder, html[data-design="ae"] .ex-fit, html[data-design="ae"] .ex-custom input { border-radius: 4px; }
 .ex-setup .kr-seg.tb-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ex-results.finished .ex-bar-track { display: none; }
-@media (min-width: 700px) { .ex-targets { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (min-width: 600px) { .ex-targets { grid-template-columns: repeat(4, minmax(0, 1fr)); } .ex-targets.ex-v { grid-template-columns: repeat(4, minmax(0, 150px)); } }
 
 /* Кнопка ↗ «Открыть отдельным окном»: в углу блока, видна под курсором. */
 .win-open { position: absolute; top: 2px; right: 53px; z-index: 2; width: 22px; height: 20px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px;
