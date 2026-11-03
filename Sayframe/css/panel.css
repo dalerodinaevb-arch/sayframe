@@ -2370,3 +2370,32 @@ html[data-design="ae"] .ex-comp, html[data-design="ae"] .ex-folder, html[data-de
 .ex-setup .kr-seg.tb-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ex-results.finished .ex-bar-track { display: none; }
 @media (min-width: 700px) { .ex-targets { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+
+/* Кнопка ↗ «Открыть отдельным окном»: в углу блока, видна под курсором. */
+.win-open { position: absolute; top: 2px; right: 53px; z-index: 2; width: 22px; height: 20px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px;
+  background: transparent; color: var(--muted); cursor: pointer; transition: opacity 0.15s; }
+.win-open svg { width: 11px; height: 11px; }
+.win-open:hover { color: var(--text); background: rgba(255, 255, 255, .08); }
+.win-open:focus-visible { outline: 2px solid rgba(var(--accent-rgb), 0.9); outline-offset: -2px; }
+.motion-tools > .tool-card:not(:hover):not(:focus-within) > .win-open { opacity: 0; }
+.tool-card[data-icons] > .win-open, .arranging .win-open, .tool-flow .flow-tiles .win-open { display: none; }
+.tool-flow .flow-cols .win-open { top: 8px; left: auto; right: 38px; width: 26px; height: 26px; border-radius: 8px; }
+.snap-head .win-open { position: static; margin-left: auto; opacity: .8; }
+html[data-design="ae"] .win-open { color: var(--ae-faint, var(--muted)); border-radius: 3px; }
+/* Настройки › «Окна» */
+.win-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; margin-bottom: 8px; }
+.win-list .switch { min-width: 0; }
+.win-note { display: block; color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+/* Отдельное окно: без шапки, вкладок и подвала; блок — один на всю ширину. */
+html[data-solo] .top, html[data-solo] #tabs, html[data-solo] #topShade, html[data-solo] .win-open, html[data-solo] #exClose, html[data-solo] .snap-bar { display: none !important; }
+html[data-solo] #app { --app-pad: 8px; --app-gap: 8px; }
+html[data-solo-kind="tool"] .motion-tools { display: block !important; height: auto !important; }
+html[data-solo-kind="tool"] .motion-tools > :not(.solo-card) { display: none !important; }
+html[data-solo-kind="tool"] .motion-tools > .solo-card { position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important; min-height: 0 !important; grid-area: auto !important; }
+html[data-solo-kind="tool"] .motion-tools > .solo-card > .tool-grip,
+html[data-solo-kind="tool"] .motion-tools > .solo-card > .tool-pin,
+html[data-solo-kind="tool"] .motion-tools > .solo-card > [class^="tool-resize"] { display: none !important; }
+html[data-solo-kind="export"] .ex-bar { border: 0; background: transparent; box-shadow: none; padding: 4px 2px; }
+html[data-solo-kind="tool"] .motion-tools > .solo-card { border: 0 !important; background: transparent !important; box-shadow: none !important; padding: 4px 2px !important; }
+html[data-solo-kind="tool"] .motion-tools > .solo-card > .tool-head, html[data-solo-kind="tool"] .motion-tools > .solo-card > .tool-toggle { display: none !important; }

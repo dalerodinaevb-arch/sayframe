@@ -823,7 +823,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     });
 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false, design: "glass", designSet: 2 }, opts.settings || {});
-    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin }) => {
+    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin, extId }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
       window.__SAYFRAME_TEST_UPDATE_KEY__ = updateKey;
       window.__SAYFRAME_TEST_RETRY_MS__ = [40, 40, 40];
@@ -848,10 +848,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       if (updateState && firstOpen) localStorage.setItem("sayframe.update.v1", JSON.stringify(updateState));
       window.__keyInterest = [];
       window.__cepListeners = {};
+      window.__openedExt = [];
       window.__adobe_cep__ = { evalScript(script, cb) { window.__hostEval(script).then(cb); },
         registerKeyEventsInterest(json) { window.__keyInterest.push(json); },
         addEventListener(type, fn) { window.__cepListeners[type] = fn; },
         getSystemPath() { return withSystemPath ? "file://" + hostPath : ""; },
+        // opts.extId: the panel runs as one of the separate windows (com.sayframe.ae.win.<key>).
+        getExtensionId() { return extId || "com.sayframe.ae.panel"; },
+        requestOpenExtension(id, params) { window.__openedExt.push(id); },
         getHostEnvironment() { const env = { appName: "AEFT", appVersion: "25.0.1" }; const k = window.__skin;
           // opts.skin: the colours of After Effects' own panels, as CEP reports them ({ bg: [r, g, b], hi: [r, g, b] }).
           if (k) env.appSkinInfo = { panelBackgroundColor: { antialiasLevel: 0, color: { red: k.bg[0], green: k.bg[1], blue: k.bg[2], alpha: 255 } },
@@ -881,7 +885,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           return { kill() { s.killed = true; } };
         };
       }
-    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null });
+    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null, extId: opts.extId || "" });
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
     // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
@@ -2848,7 +2852,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.locator("#models button", { hasText: "Opus 5.5" }).click();
   check("S0 settings open on the AI section: provider, key, model, checks and reference frames; colours and shortcuts are under 'General'", (await p.page.locator("#setTabAI").getAttribute("aria-selected")) === "true" && (await p.page.locator("#apiKey").isVisible()) && (await p.page.locator("#frames").isVisible()) && (await p.page.locator("#selfCheck").isVisible() || await p.page.locator("label.switch", { hasText: "проверяет результат" }).isVisible()) && (await p.page.locator("#accentSwatches").isHidden()) && (await p.page.locator("#hotkeys").isHidden()));
   await p.page.click("#setTabTheme");
-  check("S0 five sections with icons: AI, Темы, Блоки, Клавиши, Прочее", (await p.page.locator("#setTabs button").allInnerTexts()).join() === "AI,Темы,Блоки,Клавиши,Прочее" && (await p.page.locator("#setTabs button svg").count()) === 5);
+  check("S0 six sections with icons: AI, Темы, Блоки, Окна, Клавиши, Прочее", (await p.page.locator("#setTabs button").allInnerTexts()).join() === "AI,Темы,Блоки,Окна,Клавиши,Прочее" && (await p.page.locator("#setTabs button svg").count()) === 6);
   check("S0 «Темы»: three theme cards and the width; «Студия» has its own colours, so no accent or section backgrounds; the AI fields are hidden", (await p.page.locator("#designPick button").count()) === 3 && (await p.page.locator("#panelFit").isVisible()) && !(await p.page.locator("#accentSwatches").isVisible()) && !(await p.page.locator("#bgSwatches").isVisible()) && /свои цвета/.test(await p.page.locator("#themeNote").innerText()) && (await p.page.locator("#apiKey").isHidden()) && (await p.page.locator("#setTabTheme").getAttribute("aria-selected")) === "true");
   await p.page.click('#designPick [data-value="ae"]');
   check("S0 «After Effects» has its own colours too", !(await p.page.locator("#accentSwatches").isVisible()) && /After Effects/.test(await p.page.locator("#themeNote").innerText()));
@@ -5593,6 +5597,64 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
+
+  // Separate windows: each section or block can be its own After Effects panel (Window › Extensions › «Sayframe — …»).
+  {
+    const man = (q) => fs.readFileSync(path.join(q.extDir, "CSXS", "manifest.xml"), "utf8");
+    const wins = (text) => (text.match(/<Extension Id="com\.sayframe\.ae\.win\.([^"]+)" Version="[^"]*"\/>/g) || []).map((x) => /win\.([^"]+)"/.exec(x)[1]).join();
+    const shipped = fs.readFileSync(path.join(EXT, "CSXS", "manifest.xml"), "utf8");
+    check("WN1 the shipped manifest has the main panel and 10 windows: 4 sections, 5 blocks and the export", wins(shipped) === "anim,tools,shape,projects,ease,align,anchor,stagger,easecopy,export" &&
+      (shipped.match(/<Menu>[^<]+<\/Menu>/g) || []).join().indexOf("<Menu>Sayframe</Menu>,<Menu>Sayframe — Анимация</Menu>") === 0 && (shipped.match(/<DispatchInfo>/g) || []).length === 11, wins(shipped));
+    p = await open({ ownExt: true });
+    await p.page.waitForTimeout(600);
+    check("WN1 with the standard choice the panel leaves its manifest as it is", man(p) === shipped);
+    await p.close();
+
+    p = await open({ extId: "com.sayframe.ae.win.ease", settings: { design: "studio", designSet: 2 } });
+    await p.page.waitForTimeout(500);
+    t = await p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll(".tool-card"), (c) => c.offsetParent !== null).map((c) => c.getAttribute("data-tool")).join());
+    check("WN2 «Sayframe — Плавность»: only the ease block, in the After Effects look, no header, tabs or block title", t === "ease" && (await p.page.getAttribute("html", "data-design")) === "ae" && !(await vis(p, ".top")) && !(await vis(p, "#tabs")) &&
+      !(await vis(p, '.tool-card[data-tool="ease"] .tool-head')) && (await vis(p, "#easeIn")) && (await overflow(p)) <= 0, t);
+    check("WN2 a separate window does not listen to shortcuts or check for updates (the big Sayframe does)", (await p.page.evaluate(() => window.__keyInterest.length === 0 && !window.__cepListeners["com.sayframe.hotkey"])) && (await p.status()) === "Готов.", await p.status());
+    await p.close();
+
+    p = await open({ extId: "com.sayframe.ae.win.tools" });
+    await p.page.waitForTimeout(500);
+    check("WN3 «Sayframe — Инструменты»: the whole section without the header and tabs", (await vis(p, "#viewMotion")) && !(await vis(p, "#viewClaude")) && !(await vis(p, "#tabs")) && (await p.page.locator(".tool-card:visible").count()) > 5);
+    await p.close();
+
+    p = await open({ extId: "com.sayframe.ae.win.export", orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    await p.page.waitForFunction(() => /×/.test(document.getElementById("exCompMeta").textContent));
+    check("WN4 «Sayframe — Экспорт»: the export sheet is the window — no close button, Esc does not close it", (await vis(p, "#exGo")) && !(await vis(p, "#exClose")) && !(await vis(p, "#viewClaude")) && (await p.page.locator("#exCompName").innerText()) === "Main");
+    await p.page.keyboard.press("Escape");
+    check("WN4 Esc keeps it open", await vis(p, "#exportBar"));
+    await p.close();
+
+    p = await open({ ownExt: true, settings: { design: "ae", designSet: 2 } });
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabWin");
+    t = await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#winPicker input"), (i) => (i.checked ? "+" : "-") + i.getAttribute("data-win")).join());
+    check("WN5 Settings › «Окна»: a switch per section and block, the standard ones on", t === "+anim,+tools,+shape,+projects,+ease,+align,+anchor,+stagger,+easecopy,-paste,-organize,-decompose,-cache,-nullp,-unused,-cutout,-pathfinder,-split,+export", t);
+    await p.page.click('#winPicker label:has(input[data-win="stagger"])'); await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
+    check("WN5 switching rewrites the manifest: Лесенка out, Кэш in; the note asks to restart After Effects", wins(man(p)) === "anim,tools,shape,projects,ease,align,anchor,easecopy,cache,export" && /Перезапустите After Effects/.test(await p.page.locator("#winNote").innerText()) &&
+      /<Menu>Sayframe — Кэш<\/Menu>/.test(man(p)) && !/Лесенка/.test(man(p)), wins(man(p)));
+    await p.page.click('#winPicker label:has(input[data-win="stagger"])'); await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
+    check("WN5 back as it was -> the same manifest as shipped, nothing to restart", man(p) === shipped && /такое же/.test(await p.page.locator("#winNote").innerText()));
+    await p.page.click("#settingsClose");
+    await p.page.click("#tabMotion"); await p.page.hover('section[data-tool="ease"]'); await p.page.click('section[data-tool="ease"] .win-open');
+    check("WN6 ↗ on a block opens its window when After Effects has it", (await p.page.evaluate(() => window.__openedExt.join())) === "com.sayframe.ae.win.ease");
+    await p.page.hover('section[data-tool="cache"]'); await p.page.click('section[data-tool="cache"] .win-open'); await p.page.waitForTimeout(400);
+    check("WN6 ↗ on a block without a window yet adds it to the menu and says to restart", wins(man(p)).indexOf("cache") >= 0 && (await p.page.evaluate(() => window.__openedExt.length)) === 1 &&
+      (await p.status()) === "Окно «Кэш» появится после перезапуска After Effects: Window › Extensions › Sayframe — Кэш.", await p.status());
+    await p.page.click("#exportBtn");
+    check("WN6 the export sheet has ↗ too", await vis(p, '#exHead .win-open[data-win="export"]'));
+    await p.close();
+
+    p = await open({ ownExt: true, signedExt: true, settings: { design: "ae", designSet: 2 } });
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabWin");
+    await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
+    check("WN7 a signed copy cannot change its manifest: it says so and the switches lock", man(p) === shipped && /подписанного пакета/.test(await p.page.locator("#winNote").innerText()) && (await p.page.locator('#winPicker input[data-win="ease"]').isDisabled()));
+    await p.close();
+  }
 
   // Phone mockup (Animation › «Макеты»): an iPhone or Android phone of shapes; the screen is a comp of the real resolution or the selected layer.
   {

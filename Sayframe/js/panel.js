@@ -129,6 +129,7 @@
         panelWidth: 380,    // ширина содержимого в пикселях, когда panelFit выключен
         toolSize: "100",    // масштаб блоков раздела «Инструменты» в процентах: "100", "90", "80", "70", "60" или "50"
         toolTitles: true,   // показывать ли названия блоков раздела «Инструменты»
+        windows: "default", // отдельные окна в меню Window › Extensions, через запятую: "ease,align"; "default" — стандартный набор
         hiddenTools: "",    // спрятанные блоки «Инструментов» и «Шейпа», через запятую: "cache,nullp"
         stats: true,        // отправлять ли автору анонимный сигнал «установлено» и «открыто сегодня»
         infoTips: true,     // подсказки-окошки при наведении курсора на секунду
@@ -685,6 +686,231 @@
 
     var platform = window.__SAYFRAME_TEST_PLATFORM__ || makePlatform();
 
+    // ---------------------------------------------------------------- отдельные окна
+    // Раздел или блок можно открыть своим окном After Effects (Window › Extensions › «Sayframe — …»).
+    // Каждое окно — своё расширение в manifest.xml с Id com.sayframe.ae.win.<key>; панель узнаёт по Id,
+    // что ей показать. Какие окна есть в меню, выбирают в Настройках › «Окна»: панель переписывает manifest.xml,
+    // After Effects читает его при запуске.
+    var WIN_PREFIX = "com.sayframe.ae.win.";
+    var WINDOWS = [
+        { key: "anim", tab: "tools", label: "Анимация", w: 380, h: 720 },
+        { key: "tools", tab: "motion", label: "Инструменты", w: 380, h: 720 },
+        { key: "shape", tab: "shape", label: "Шейп", w: 380, h: 560 },
+        { key: "projects", tab: "brand", label: "Проекты", w: 380, h: 640 },
+        { key: "ease", tool: "ease", label: "Плавность", w: 300, h: 330 },
+        { key: "align", tool: "align", label: "Выровнять", w: 300, h: 300 },
+        { key: "anchor", tool: "anchor", label: "Якорь", w: 300, h: 300 },
+        { key: "stagger", tool: "stagger", label: "Лесенка", w: 300, h: 340 },
+        { key: "easecopy", tool: "easecopy", label: "Копия", w: 300, h: 330 },
+        { key: "paste", tool: "paste", label: "Картинка", w: 300, h: 180 },
+        { key: "organize", tool: "organize", label: "Порядок", w: 300, h: 200 },
+        { key: "decompose", tool: "decompose", label: "Декомпоз", w: 300, h: 200 },
+        { key: "cache", tool: "cache", label: "Кэш", w: 300, h: 200 },
+        { key: "nullp", tool: "nullp", label: "Null", w: 300, h: 200 },
+        { key: "unused", tool: "unused", label: "Чистка", w: 300, h: 200 },
+        { key: "cutout", tool: "cutout", label: "Вырезка", w: 300, h: 200 },
+        { key: "pathfinder", tool: "pathfinder", label: "Pathfinder", w: 300, h: 260 },
+        { key: "split", tool: "split", label: "Разделить", w: 300, h: 200 },
+        { key: "export", label: "Экспорт", w: 340, h: 640 }
+    ];
+    var WIN_DEFAULT = ["anim", "tools", "shape", "projects", "ease", "align", "anchor", "stagger", "easecopy", "export"];
+
+    function winByKey(key) {
+        var i;
+        for (i = 0; i < WINDOWS.length; i++) { if (WINDOWS[i].key === key) { return WINDOWS[i]; } }
+        return null;
+    }
+    function winByTool(tool) {
+        var i;
+        for (i = 0; i < WINDOWS.length; i++) { if (WINDOWS[i].tool === tool) { return WINDOWS[i]; } }
+        return null;
+    }
+
+    // Это окно — отдельный раздел или блок? null — большой Sayframe.
+    var SOLO = (function () {
+        var id = "";
+        try { id = String(window.__adobe_cep__ && window.__adobe_cep__.getExtensionId ? window.__adobe_cep__.getExtensionId() : ""); } catch (e) {}
+        return id.indexOf(WIN_PREFIX) === 0 ? winByKey(id.slice(WIN_PREFIX.length)) : null;
+    })();
+
+    function windowList(text) {
+        var out = [];
+        if (text === "default" || typeof text !== "string") { return WIN_DEFAULT.slice(); }
+        text.split(",").forEach(function (k) { if (winByKey(k) && out.indexOf(k) < 0) { out.push(k); } });
+        return WINDOWS.map(function (w) { return w.key; }).filter(function (k) { return out.indexOf(k) >= 0; });
+    }
+
+    // manifest.xml с нужными окнами: прежние окна убираются, новые встают после большой панели.
+    function windowsManifest(text, keys) {
+        var list = "", disp = "";
+        text = String(text).replace(/\r?\n[ \t]*<Extension Id="com\.sayframe\.ae\.win\.[^"]+" Version="[^"]*"\/>/g, "")
+            .replace(/\r?\n[ \t]*<Extension Id="com\.sayframe\.ae\.win\.[^"]+">[\s\S]*?\n[ \t]*<\/Extension>/g, "");
+        keys.forEach(function (k) {
+            var w = winByKey(k);
+            if (!w) { return; }
+            list += '\n    <Extension Id="' + WIN_PREFIX + k + '" Version="1.0.0"/>';
+            disp += "\n    <Extension Id=\"" + WIN_PREFIX + k + "\">\n      <DispatchInfo>\n        <Resources>\n          <MainPath>./index.html</MainPath>\n" +
+                "          <ScriptPath>./jsx/host.jsx</ScriptPath>\n          <CEFCommandLine>\n            <Parameter>--enable-nodejs</Parameter>\n" +
+                "            <Parameter>--mixed-context</Parameter>\n          </CEFCommandLine>\n        </Resources>\n        <Lifecycle>\n" +
+                "          <AutoVisible>true</AutoVisible>\n        </Lifecycle>\n        <UI>\n          <Type>Panel</Type>\n" +
+                "          <Menu>Sayframe — " + w.label + "</Menu>\n          <Geometry>\n" +
+                "            <Size>\n              <Height>" + w.h + "</Height>\n              <Width>" + w.w + "</Width>\n            </Size>\n" +
+                "            <MinSize>\n              <Height>120</Height>\n              <Width>200</Width>\n            </MinSize>\n" +
+                "            <MaxSize>\n              <Height>2400</Height>\n              <Width>1200</Width>\n            </MaxSize>\n" +
+                "          </Geometry>\n        </UI>\n      </DispatchInfo>\n    </Extension>";
+        });
+        text = text.replace(/(<Extension Id="com\.sayframe\.ae\.panel" Version="[^"]*"\/>)/, function (m) { return m + list; });
+        return text.replace(/(\r?\n[ \t]*<\/DispatchInfoList>)/, function (m) { return disp + m; });
+    }
+
+    // Окна, которые After Effects прочитал при запуске (их можно открыть сразу), и есть ли запрет на запись.
+    var winLoaded = null, winLocked = "";
+
+    function manifestPath() { return platform.join(extensionDir(), "CSXS", "manifest.xml"); }
+
+    function loadedWindows(text) {
+        var re = /<Extension Id="com\.sayframe\.ae\.win\.([^"]+)" Version="[^"]*"\/>/g, m, out = [];
+        while ((m = re.exec(String(text))) !== null) { out.push(m[1]); }
+        return out;
+    }
+
+    // Приводит manifest.xml к выбору из настроек. Возвращает "same" (уже так), "written" (нужен перезапуск AE),
+    // "signed" / "noaccess" / "nofile" — переписать нельзя.
+    async function syncWindowsManifest() {
+        var dir = extensionDir(), text, next;
+        if (!dir || !platform.available) { return "nofile"; }
+        try { text = await platform.readText(manifestPath()); } catch (e) { return "nofile"; }
+        if (winLoaded === null) { winLoaded = loadedWindows(text); }
+        next = windowsManifest(text, windowList(settings.windows));
+        if (next === text) { return "same"; }
+        try { if (await platform.exists(platform.join(dir, "META-INF", "signatures.xml"))) { winLocked = "signed"; return "signed"; } } catch (e1) {}
+        try { await platform.writeText(manifestPath(), next); } catch (e2) { winLocked = "noaccess"; return "noaccess"; }
+        return "written";
+    }
+
+    function openWindow(key) {
+        var w = winByKey(key), list;
+        if (!w) { return; }
+        if (winLoaded && winLoaded.indexOf(key) >= 0 && window.__adobe_cep__ && typeof window.__adobe_cep__.requestOpenExtension === "function") {
+            try { window.__adobe_cep__.requestOpenExtension(WIN_PREFIX + key, ""); return; } catch (e) {}
+        }
+        list = windowList(settings.windows);
+        if (list.indexOf(key) < 0) { list.push(key); }
+        settings.windows = windowList(list.join(",")).join(",");
+        if (draft) { draft.windows = settings.windows; }
+        storeSettings(settings);
+        showWindowPicker();
+        syncWindowsManifest().then(function (r) {
+            if (r === "signed" || r === "noaccess" || r === "nofile") { setStatus(winLockText(r), "error"); return; }
+            setStatus("Окно «" + w.label + "» появится после перезапуска After Effects: Window › Extensions › Sayframe — " + w.label + ".", "done");
+        });
+    }
+
+    function winLockText(r) {
+        return r === "signed" ? "Эта копия панели установлена из подписанного пакета: список окон поменять нельзя." :
+            "Нет доступа к папке панели: список окон поменять не получилось. Переустановите панель установщиком.";
+    }
+
+    // Настройки › «Окна»: переключатели разделов и блоков.
+    function buildWindowPicker() {
+        [["Разделы", function (w) { return !!w.tab; }], ["Блоки", function (w) { return !w.tab; }]].forEach(function (g) {
+            var head = document.createElement("span"), box = document.createElement("div");
+            head.className = "label";
+            head.textContent = g[0];
+            box.className = "win-list";
+            WINDOWS.filter(g[1]).forEach(function (w) {
+                var lab = document.createElement("label"), inp = document.createElement("input"), tr = document.createElement("span"), tx = document.createElement("span");
+                lab.className = "switch";
+                inp.type = "checkbox";
+                inp.setAttribute("data-win", w.key);
+                tr.className = "track";
+                tx.className = "text";
+                tx.textContent = w.label;
+                lab.appendChild(inp); lab.appendChild(tr); lab.appendChild(tx);
+                inp.addEventListener("change", onWindowPick);
+                box.appendChild(lab);
+            });
+            ui.winPicker.appendChild(head);
+            ui.winPicker.appendChild(box);
+        });
+    }
+
+    function showWindowPicker() {
+        var list = windowList((draft || settings).windows);
+        Array.prototype.forEach.call(ui.winPicker.querySelectorAll("input[data-win]"), function (i) {
+            i.checked = list.indexOf(i.getAttribute("data-win")) >= 0;
+            i.disabled = !!winLocked;
+        });
+        if (winLocked) { ui.winNote.textContent = winLockText(winLocked); }
+    }
+
+    async function onWindowPick(e) {
+        var list = [], r;
+        e.stopPropagation();
+        Array.prototype.forEach.call(ui.winPicker.querySelectorAll("input[data-win]"), function (i) { if (i.checked) { list.push(i.getAttribute("data-win")); } });
+        settings.windows = list.join(",");
+        if (draft) { draft.windows = settings.windows; }
+        storeSettings(settings);
+        r = await syncWindowsManifest();
+        if (r === "signed" || r === "noaccess" || r === "nofile") { ui.winNote.textContent = winLockText(r); showWindowPicker(); return; }
+        ui.winNote.textContent = sameList(list, winLoaded || []) ? "Меню Window › Extensions такое же, как сейчас." :
+            "Сохранено. Перезапустите After Effects — меню Window › Extensions обновится.";
+    }
+
+    function sameList(a, b) { return a.slice().sort().join() === b.slice().sort().join(); }
+
+    // Кнопка ↗ у каждого блока большого Sayframe: открыть его отдельным окном.
+    function addWindowButtons() {
+        Array.prototype.forEach.call(document.querySelectorAll(".motion-tools .tool-card[data-tool]"), function (card) {
+            var w = winByTool(card.getAttribute("data-tool")), b;
+            if (!w || card.querySelector(".win-open")) { return; }
+            b = winButton(w);
+            card.appendChild(b);
+        });
+        ui.exHead.insertBefore(winButton(winByKey("export")), ui.exClose);
+    }
+
+    function winButton(w) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "win-open";
+        b.setAttribute("data-win", w.key);
+        b.title = "Открыть «" + w.label + "» отдельным окном";
+        b.setAttribute("aria-label", b.title);
+        b.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5 3 9"/></svg>';
+        b.addEventListener("mousedown", function (e) { e.stopPropagation(); });
+        b.addEventListener("click", function (e) { e.stopPropagation(); e.preventDefault(); openWindow(w.key); });
+        return b;
+    }
+
+    // Само отдельное окно: тема «After Effects», без шапки и вкладок; блок — один, раздел — целиком.
+    function startSolo() {
+        var root = document.documentElement, card;
+        root.setAttribute("data-solo", SOLO.key);
+        if (SOLO.tab) {
+            root.setAttribute("data-solo-kind", "tab");
+            showTab(SOLO.tab);
+        } else if (SOLO.tool) {
+            root.setAttribute("data-solo-kind", "tool");
+            card = document.querySelector('.motion-tools .tool-card[data-tool="' + SOLO.tool + '"]');
+            if (card) {
+                card.classList.add("solo-card");
+                card.classList.remove("tool-off");
+                card.removeAttribute("style");
+                showTab(card.closest("#shapeTools") ? "shape" : "motion");
+            }
+        } else {
+            root.setAttribute("data-solo-kind", "export");
+            Object.keys(TABS).forEach(function (k) { TABS[k].view.hidden = true; });
+            ui.exportBar.parentNode.insertBefore(ui.statusBox, ui.exportBar.nextSibling);
+            onExport();
+            // Вернулись в окно — композиция могла смениться.
+            window.addEventListener("focus", function () { if (!busy && !ui.exSetup.hidden) { exLoadInfo(); } });
+        }
+        applyTheme(settings);
+        setStatus("Готов.", "");
+    }
+
     // ---------------------------------------------------------------- host
 
     // JSON только из ASCII: так строку можно без искажений передать в ExtendScript.
@@ -921,12 +1147,12 @@
         root.setProperty("--on-accent", lum > 0.5 ? "#0b0c12" : "#ffffff");
         root.setProperty("--bg", bg.hex);
         root.setProperty("--panel-w", clampPanelWidth(s.panelWidth) + "px");
-        document.documentElement.setAttribute("data-design", DESIGNS.indexOf(s.design) >= 0 ? s.design : "studio");
+        document.documentElement.setAttribute("data-design", SOLO ? "ae" : (DESIGNS.indexOf(s.design) >= 0 ? s.design : "studio"));
         document.documentElement.setAttribute("data-fit", s.panelFit === false ? "off" : "on");
         document.documentElement.setAttribute("data-tools", cleanToolSize(s.toolSize));
         root.setProperty("--tz", String(Number(cleanToolSize(s.toolSize)) / 100));
         document.documentElement.setAttribute("data-titles", s.toolTitles === false ? "off" : "on");
-        applyHostSkin(s.design === "ae");
+        applyHostSkin(SOLO ? true : s.design === "ae");
         toolsHidden = hiddenToolList(s.hiddenTools);
         Array.prototype.forEach.call(document.querySelectorAll(".motion-tools .tool-card[data-tool]"), function (c) {
             c.classList.toggle("tool-off", toolsHidden.indexOf(c.getAttribute("data-tool")) >= 0);
@@ -1038,6 +1264,7 @@
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
+        winPicker: el("winPicker"), winNote: el("winNote"), exHead: el("exHead"),
         exportBtn: el("exportBtn"), exportBar: el("exportBar"), exClose: el("exClose"), exSetup: el("exSetup"), exCompName: el("exCompName"), exCompMeta: el("exCompMeta"),
         exTargets: el("exTargets"), exCustom: el("exCustom"), exW: el("exW"), exH: el("exH"), exFitRow: el("exFitRow"), exFitText: el("exFitText"), exFit: el("exFit"),
         exQuality: el("exQuality"), exSpan: el("exSpan"), exFolder: el("exFolder"), exBrowse: el("exBrowse"), exAmeRow: el("exAmeRow"), exAme: el("exAme"), exGo: el("exGo"), exResults: el("exResults"),
@@ -1160,7 +1387,7 @@
         document.documentElement.setAttribute("data-tab", name);
         applyTheme(draft || settings);
         if (name === "motion" || name === "shape") { relayoutTools(); }
-        try { window.localStorage.setItem(TAB_KEY, name); } catch (e) {}
+        if (!SOLO) { try { window.localStorage.setItem(TAB_KEY, name); } catch (e) {} }
     }
 
     function savedTab() {
@@ -3443,7 +3670,7 @@
     }
 
     // Настройки разбиты на пять разделов: AI, Темы, Инструменты, Клавиши, Прочее.
-    var SET_PANES = ["ai", "theme", "tools", "keys", "more"];
+    var SET_PANES = ["ai", "theme", "tools", "win", "keys", "more"];
     var setPane = "ai";
 
     function showSetPane(name) {
@@ -3504,6 +3731,7 @@
         pressGroup(ui.previewPlay, draft.previewPlay === "hover" ? "hover" : "always");
         ui.toolTitles.checked = draft.toolTitles;
         showToolPicker();
+        showWindowPicker();
         ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
         pressGroup(ui.fxWhere, draft.fxWhere === "cursor" ? "cursor" : "panel");
         pressGroup(ui.designPick, DESIGNS.indexOf(draft.design) >= 0 ? draft.design : "studio");
@@ -7305,7 +7533,6 @@
     }
 
     async function onExport() {
-        var res, c;
         if (busy) { return; }
         if (!ui.exportBar.hidden) { closeExport(); return; }
         closeFxConsole();
@@ -7317,6 +7544,13 @@
         ui.exCompName.textContent = "Композиция";
         ui.exCompMeta.textContent = "";
         drawExport();
+        await exLoadInfo();
+        try { ui.exGo.focus(); } catch (e2) {}
+    }
+
+    // Что за композиция открыта и куда сохранять по умолчанию.
+    async function exLoadInfo() {
+        var res, c;
         try {
             res = await host("exportInfo", []);
             exInfo = res;
@@ -7331,10 +7565,10 @@
         }
         showExFolder(exState.folder || exDefaultNow);
         drawExport();
-        try { ui.exGo.focus(); } catch (e2) {}
     }
 
-    function closeExport() { ui.exportBar.hidden = true; }
+    // В отдельном окне «Экспорт» закрывать нечего: окно и есть экспорт.
+    function closeExport() { if (SOLO && !SOLO.tool && !SOLO.tab) { return; } ui.exportBar.hidden = true; }
 
     async function onExBrowse() {
         var res, start = exFolderNow || exDefaultNow;
@@ -7893,6 +8127,8 @@
 
     function registerHotkeys() {
         var cep = window.__adobe_cep__, map = parseHotkeys(settings.hotkeys), list = [], k, parts, code;
+        // Сочетания по всему After Effects слушает только большой Sayframe, иначе одно нажатие сработает в каждом окне.
+        if (SOLO) { return; }
         watchHostHotkeys(map);
         if (!cep || typeof cep.registerKeyEventsInterest !== "function") { return; }
         for (k in map) {
@@ -8079,8 +8315,10 @@
     function listenHostHotkeys() {
         var cep = window.__adobe_cep__;
         if (cep && typeof cep.addEventListener === "function") {
-            try { cep.addEventListener(HOST_KEY_EVENT, onHostHotkey); } catch (e) {}
-            try { cep.addEventListener(FX_EVENT, onFxPopupApplied); } catch (e2) {}
+            if (!SOLO) {
+                try { cep.addEventListener(HOST_KEY_EVENT, onHostHotkey); } catch (e) {}
+                try { cep.addEventListener(FX_EVENT, onFxPopupApplied); } catch (e2) {}
+            }
             // В After Effects поменяли яркость интерфейса — тема «After Effects» перекрашивается сразу.
             try { cep.addEventListener("com.adobe.csxs.events.ThemeColorChanged", function () { applyHostSkin(document.documentElement.getAttribute("data-design") === "ae"); }); } catch (e3) {}
         }
@@ -11172,6 +11410,8 @@
     function relayoutTools() {
         var keep = G;
         if (!toolGridReady) { return; }
+        // Отдельное окно блока: блок один, сетка не нужна.
+        if (SOLO && SOLO.tool) { return; }
         GRIDS.forEach(function (g) {
             G = g;
             if (g.flowOrder && flowOn()) { layoutFlow(g); return; }
@@ -12385,10 +12625,17 @@
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onRun(); }
     });
 
-    if (!aiKey()) {
+    if (!aiKey() && !SOLO) {
         setStatus("Сначала откройте настройки (значок шестерёнки) и вставьте " + providerOf().keyLabel.replace(/^Ключ/, "ключ") + ".", "");
     }
-    announceUpdate();
+    buildWindowPicker();
+    if (SOLO) {
+        startSolo();
+    } else {
+        addWindowButtons();
+        announceUpdate();
+        syncWindowsManifest().catch(function () {});
+    }
     ensureHost().catch(function (e) { setStatus(humanError(e), "error"); });
     // Проверка обновлений идёт в фоне и не мешает работе: об ошибках сети молчим.
     // Раньше панель спрашивала сервер только при запуске и не чаще раза в шесть часов, поэтому
@@ -12400,7 +12647,7 @@
         backgroundChecking = true;
         checkForUpdate(false).catch(function () {}).then(function () { backgroundChecking = false; });
     }
-    setTimeout(backgroundUpdateCheck, 1200);
+    if (!SOLO) { setTimeout(backgroundUpdateCheck, 1200); }
 
     // Анонимная статистика: один раз после установки — «install», потом не чаще раза в день — «day».
     // Уходят только случайный номер установки, версия Sayframe, система и версия After Effects.
@@ -12428,7 +12675,10 @@
             })
             .catch(function () {});
     }
-    setTimeout(statsPing, 4000);
-    setInterval(backgroundUpdateCheck, UPDATE_CHECK_EVERY_MS);
-    window.addEventListener("focus", backgroundUpdateCheck);
+    // Отдельные окна не проверяют обновления и не шлют статистику: это делает большой Sayframe.
+    if (!SOLO) {
+        setTimeout(statsPing, 4000);
+        setInterval(backgroundUpdateCheck, UPDATE_CHECK_EVERY_MS);
+        window.addEventListener("focus", backgroundUpdateCheck);
+    }
 })();
