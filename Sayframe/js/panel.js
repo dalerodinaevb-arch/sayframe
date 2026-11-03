@@ -788,11 +788,37 @@
         return "written";
     }
 
+    // Окна, которые After Effects знает прямо сейчас: он читает manifest.xml только при запуске,
+    // поэтому после обновления или смены списка новые окна появляются лишь после перезапуска AE.
+    // null — After Effects не сказал (тогда верим файлу, каким он был при запуске панели).
+    function hostWindows() {
+        var cep = window.__adobe_cep__, list, out = [], mine = false, i, id;
+        if (!cep || typeof cep.getExtensions !== "function") { return null; }
+        try { list = JSON.parse(cep.getExtensions(JSON.stringify([]))); } catch (e) { return null; }
+        if (!list || typeof list.length !== "number") { return null; }
+        for (i = 0; i < list.length; i++) {
+            id = String(list[i] && list[i].id || "");
+            if (id.indexOf("com.sayframe.ae.") === 0) { mine = true; }
+            if (id.indexOf(WIN_PREFIX) === 0) { out.push(id.slice(WIN_PREFIX.length)); }
+        }
+        return mine ? out : null;
+    }
+
     function openWindow(key) {
-        var w = winByKey(key), list;
+        var w = winByKey(key), list, known = hostWindows() || winLoaded || [], inFile;
         if (!w) { return; }
-        if (winLoaded && winLoaded.indexOf(key) >= 0 && window.__adobe_cep__ && typeof window.__adobe_cep__.requestOpenExtension === "function") {
-            try { window.__adobe_cep__.requestOpenExtension(WIN_PREFIX + key, ""); return; } catch (e) {}
+        if (known.indexOf(key) >= 0 && window.__adobe_cep__ && typeof window.__adobe_cep__.requestOpenExtension === "function") {
+            try {
+                window.__adobe_cep__.requestOpenExtension(WIN_PREFIX + key, "");
+                setStatus("Открываю окно «" + w.label + "». Если оно не появилось: Window › Extensions › Sayframe \u2014 " + w.label + ".", "done");
+                return;
+            } catch (e) {}
+        }
+        inFile = windowList(settings.windows).indexOf(key) >= 0;
+        if (inFile && winLocked === "") {
+            setStatus("Окно «" + w.label + "» уже добавлено, но After Effects его ещё не видит. Перезапустите After Effects один раз — потом ↗ откроет его сразу.", "");
+            syncWindowsManifest().catch(function () {});
+            return;
         }
         list = windowList(settings.windows);
         if (list.indexOf(key) < 0) { list.push(key); }

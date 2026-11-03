@@ -823,7 +823,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     });
 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false, design: "glass", designSet: 2 }, opts.settings || {});
-    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin, extId }) => {
+    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin, extId, hostExts }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
       window.__SAYFRAME_TEST_UPDATE_KEY__ = updateKey;
       window.__SAYFRAME_TEST_RETRY_MS__ = [40, 40, 40];
@@ -856,6 +856,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         // opts.extId: the panel runs as one of the separate windows (com.sayframe.ae.win.<key>).
         getExtensionId() { return extId || "com.sayframe.ae.panel"; },
         requestOpenExtension(id, params) { window.__openedExt.push(id); },
+        // opts.hostExts: the extensions After Effects loaded at its start (it reads the manifest only then).
+        getExtensions: hostExts ? () => JSON.stringify(hostExts.map((id) => ({ id }))) : undefined,
         getHostEnvironment() { const env = { appName: "AEFT", appVersion: "25.0.1" }; const k = window.__skin;
           // opts.skin: the colours of After Effects' own panels, as CEP reports them ({ bg: [r, g, b], hi: [r, g, b] }).
           if (k) env.appSkinInfo = { panelBackgroundColor: { antialiasLevel: 0, color: { red: k.bg[0], green: k.bg[1], blue: k.bg[2], alpha: 255 } },
@@ -885,7 +887,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           return { kill() { s.killed = true; } };
         };
       }
-    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null, extId: opts.extId || "" });
+    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null, extId: opts.extId || "", hostExts: opts.hostExts || null });
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
     // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
@@ -5650,6 +5652,16 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       (await p.status()) === "Окно «Кэш» появится после перезапуска After Effects: Window › Extensions › Sayframe — Кэш.", await p.status());
     await p.page.click("#exportBtn");
     check("WN6 the export sheet has ↗ too", await vis(p, '#exHead .win-open[data-win="export"]'));
+    await p.close();
+
+    p = await open({ ownExt: true, settings: { design: "ae", designSet: 2 }, hostExts: ["com.sayframe.ae.panel"] });
+    await p.page.click("#tabMotion"); await p.page.hover('section[data-tool="ease"]'); await p.page.click('section[data-tool="ease"] .win-open'); await p.page.waitForTimeout(300);
+    check("WN8 After Effects has not been restarted since the update (it does not know the window yet): ↗ says to restart instead of doing nothing", (await p.page.evaluate(() => window.__openedExt.length)) === 0 &&
+      /ещё не видит\. Перезапустите After Effects/.test(await p.status()), await p.status());
+    await p.close();
+    p = await open({ ownExt: true, settings: { design: "ae", designSet: 2 }, hostExts: ["com.sayframe.ae.panel", "com.sayframe.ae.win.ease"] });
+    await p.page.click("#tabMotion"); await p.page.hover('section[data-tool="ease"]'); await p.page.click('section[data-tool="ease"] .win-open'); await p.page.waitForTimeout(300);
+    check("WN8 after the restart ↗ opens it and says where it is", (await p.page.evaluate(() => window.__openedExt.join())) === "com.sayframe.ae.win.ease" && /^Открываю окно «Плавность»/.test(await p.status()), await p.status());
     await p.close();
 
     p = await open({ ownExt: true, signedExt: true, settings: { design: "ae", designSet: 2 } });
