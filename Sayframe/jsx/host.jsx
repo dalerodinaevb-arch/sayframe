@@ -2826,8 +2826,8 @@ var sayframeHost = (function () {
 
     // The camera steps back and a little up, like the panel's preview: the whole carousel in the frame with room
     // around it. Zoom (px) and the comp size give how far the camera has to be for the widest part and the nearest card.
-    function orbitFrame(comp, camL, spots, w, h, cx, cy) {
-        var zoom = 0, ex = 0, ey = 0, near = 0, i, d, tilt = 18 * Math.PI / 180;
+    function orbitFrame(comp, camL, spots, w, h, cx, cy, tiltDeg) {
+        var zoom = 0, ex = 0, ey = 0, near = 0, i, d, tilt = (tiltDeg === undefined ? 18 : tiltDeg) * Math.PI / 180;
         try { zoom = Number(acP(camL, ["ADBE Camera Options Group", "ADBE Camera Zoom"]).value); } catch (e0) { zoom = 0; }
         if (!(zoom > 0)) { zoom = comp.width * 1.389; }
         for (i = 0; i < spots.length; i++) {
@@ -2844,6 +2844,31 @@ var sayframeHost = (function () {
 
     // The number shows only from the front of its card: from behind (the card turned away from the camera) it is hidden.
     // Dan Ebberts' two-sided layer test: the layer's own Z axis in comp space points away from the camera when facing it.
+    // A mask of the card's shape on the card comp layer, in the layer's own pixels (the comp is w x h).
+    function orbitCardMask(L, kind, t, w, h) {
+        var m, s, pl, i, k = 0.5523;
+        try {
+            if (kind === "rect") {
+                s = gridMaskShape(w / 2, h / 2, w, h, t * Math.min(w, h) / 2);
+            } else if (kind === "circle") {
+                s = new Shape();
+                s.vertices = [[w / 2, 0], [w, h / 2], [w / 2, h], [0, h / 2]];
+                s.inTangents = [[-w / 2 * k, 0], [0, -h / 2 * k], [w / 2 * k, 0], [0, h / 2 * k]];
+                s.outTangents = [[w / 2 * k, 0], [0, h / 2 * k], [-w / 2 * k, 0], [0, -h / 2 * k]];
+                s.closed = true;
+            } else {
+                pl = orbitPoly(ORBIT_SIDES[kind], t, w, h);
+                s = new Shape();
+                s.vertices = [];
+                for (i = 0; i < pl.vertices.length; i++) { s.vertices.push([pl.vertices[i][0] + w / 2, pl.vertices[i][1] + h / 2]); }
+                s.inTangents = pl.inTangents; s.outTangents = pl.outTangents; s.closed = true;
+            }
+            m = acAdd(L, ["ADBE Mask Parade"], "ADBE Mask Atom");
+            try { acP(L, ["ADBE Mask Parade", m]).name = "Card"; } catch (e0) {}
+            acP(L, ["ADBE Mask Parade", m, "ADBE Mask Shape"]).setValue(s);
+        } catch (eM) {}
+    }
+
     function orbitHideBack(numLayer, cardRef) {
         try {
             acP(numLayer, ["ADBE Transform Group", "ADBE Opacity"]).expression =
@@ -2851,60 +2876,164 @@ var sayframeHost = (function () {
         } catch (e0) {}
     }
 
+
+    // ---- Live carousel: settings in Effect Controls of the controller null. Expressions read them, so after
+    // "Create carousel" the count, ring radius, card size, corners and the back side still change.
+    // Expressions are plain JavaScript run by After Effects (not this ES3 file), so they may use createPath.
+    function orbitFx(ctrlName, labels) {
+        var c = "thisComp.layer(" + tbQ(ctrlName) + ")";
+        return { c: c, n: c + ".effect(" + tbQ(labels.fxCount || "Cards") + ")(1)", r: c + ".effect(" + tbQ(labels.fxRadius || "Radius") + ")(1)",
+            w: c + ".effect(" + tbQ(labels.fxW || "Width") + ")(1)", h: c + ".effect(" + tbQ(labels.fxH || "Height") + ")(1)",
+            t: c + ".effect(" + tbQ(labels.fxCorners || "Corners %") + ")(1)/100", b: c + ".effect(" + tbQ(labels.fxBack || "Back visible") + ")(1)" };
+    }
+
+    // The angle (and height) of card i on the ring, the same as orbitSpot.
+    function orbitSpotExpr(F, i, layout) {
+        var e = "var n=Math.max(1,Math.round(" + F.n + ")),R=" + F.r + ",H=" + F.h + ",i=" + i + ",a,y=0;";
+        if (layout === "half") { e += "a=n>1?-90+180*i/(n-1):0;"; }
+        else if (layout === "spiral") { e += "a=i*540/n;y=(i-(n-1)/2)*H*0.3;"; }
+        else { e += "a=i*360/n;"; if (layout === "wave") { e += "y=Math.sin(a*2*Math.PI/180)*H*0.25;"; } }
+        return e;
+    }
+
+    // A card's outline as an expression path: rounded rect, ellipse or rounded polygon (orbitPoly), w x h, centred on ox, oy.
+    function orbitPathExpr(kind, wE, hE, tE, ox, oy) {
+        if (kind === "rect") {
+            return "var w=" + wE + ",h=" + hE + ",r=Math.max(0,Math.min(1," + tE + "))*Math.min(w,h)/2,c=r*0.5523,x0=" + ox + "-w/2,x1=" + ox + "+w/2,y0=" + oy + "-h/2,y1=" + oy + "+h/2;" +
+                "r<0.01?createPath([[x0,y0],[x1,y0],[x1,y1],[x0,y1]],[],[],true):createPath([[x0+r,y0],[x1-r,y0],[x1,y0+r],[x1,y1-r],[x1-r,y1],[x0+r,y1],[x0,y1-r],[x0,y0+r]]," +
+                "[[-c,0],[0,0],[0,-c],[0,0],[c,0],[0,0],[0,c],[0,0]],[[0,0],[c,0],[0,0],[0,c],[0,0],[-c,0],[0,0],[0,-c]],true)";
+        }
+        if (kind === "circle") {
+            return "var w=" + wE + ",h=" + hE + ",k=0.5523;createPath([[" + ox + "," + oy + "-h/2],[" + ox + "+w/2," + oy + "],[" + ox + "," + oy + "+h/2],[" + ox + "-w/2," + oy + "]]," +
+                "[[-w/2*k,0],[0,-h/2*k],[w/2*k,0],[0,h/2*k]],[[w/2*k,0],[0,h/2*k],[-w/2*k,0],[0,-h/2*k]],true)";
+        }
+        return "var S=" + ORBIT_SIDES[kind] + ",w=" + wE + ",h=" + hE + ",t=Math.max(0,Math.min(1," + tE + ")),V=[],i,mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;" +
+            "for(i=0;i<S;i++){var q=-Math.PI/2+i*2*Math.PI/S;V.push([Math.cos(q),Math.sin(q)]);mnx=Math.min(mnx,V[i][0]);mxx=Math.max(mxx,V[i][0]);mny=Math.min(mny,V[i][1]);mxy=Math.max(mxy,V[i][1]);}" +
+            "var sx=w/(mxx-mnx),sy=h/(mxy-mny),cx=(mnx+mxx)/2,cy=(mny+mxy)/2,r=t*Math.cos(Math.PI/S),d=r*Math.tan(Math.PI/S),k=4/3*Math.tan(Math.PI/S/2)*r,P=[],I=[],O=[];" +
+            "function pt(p){return [(p[0]-cx)*sx+" + ox + ",(p[1]-cy)*sy+" + oy + "];}function vc(p){return [p[0]*sx,p[1]*sy];}" +
+            "for(i=0;i<S;i++){var A=V[(i+S-1)%S],B=V[i],N=V[(i+1)%S],L=Math.sqrt((A[0]-B[0])*(A[0]-B[0])+(A[1]-B[1])*(A[1]-B[1])),ua=[(A[0]-B[0])/L,(A[1]-B[1])/L],ub=[(N[0]-B[0])/L,(N[1]-B[1])/L];" +
+            "if(r<=0){P.push(pt(B));I.push([0,0]);O.push([0,0]);continue;}" +
+            "P.push(pt([B[0]+ua[0]*d,B[1]+ua[1]*d]));I.push([0,0]);O.push(vc([-ua[0]*k,-ua[1]*k]));" +
+            "P.push(pt([B[0]+ub[0]*d,B[1]+ub[1]*d]));I.push(vc([-ub[0]*k,-ub[1]*k]));O.push([0,0]);}createPath(P,I,O,true)";
+    }
+
+    // The card group's outline in a shape layer follows the controls: rect size and roundness, ellipse size or the polygon path.
+    function orbitLiveShape(l, kind, F, wE, hE) {
+        var g = acP(l, ["ADBE Root Vectors Group", 1, "ADBE Vectors Group"]), p;
+        try {
+            if (kind === "rect") {
+                g.property("ADBE Vector Shape - Rect").property("ADBE Vector Rect Size").expression = "[" + wE + "," + hE + "]";
+                g.property("ADBE Vector Shape - Rect").property("ADBE Vector Rect Roundness").expression = "Math.max(0,Math.min(1," + F.t + "))*Math.min(" + wE + "," + hE + ")/2";
+            } else if (kind === "circle") {
+                g.property("ADBE Vector Shape - Ellipse").property("ADBE Vector Ellipse Size").expression = "[" + wE + "," + hE + "]";
+            } else {
+                p = g.property("ADBE Vector Shape - Group").property("ADBE Vector Shape");
+                p.expression = orbitPathExpr(kind, wE, hE, F.t, 0, 0);
+            }
+        } catch (e0) {}
+    }
+
+    function orbitExpr(l, name, e) { try { acP(l, ["ADBE Transform Group", name]).expression = e; } catch (e0) {} }
+
     function orbitBuild(comp, o, labels) {
         var n = Math.round(orbitNum(o.count, 2, 36, 8)), layout = ORBIT_LAYOUTS[o.layout] ? o.layout : "ring";
         var kind = ORBIT_SIDES.hasOwnProperty(o.shape) ? o.shape : "rect", t = orbitNum(o.corners, 0, 100, 20) / 100;
         var radius = orbitNum(o.radius, 0, 10000, 600), w = Math.round(orbitNum(o.w, 4, 8000, 400)), h = Math.round(orbitNum(o.h, 4, 8000, 560));
         var pre = o.mode === "precomp", cx = comp.width / 2, cy = comp.height / 2, fs = Math.round(Math.min(w, h) * 0.32);
-        var ctrl, cam = "", had = false, cards = [], nums = [], i, j, sp, L, txt, cc, inner, folder = null, base, camL, rig = null;
+        var ctrl, cam = "", had = false, cards = [], nums = [], backs = [], bk, i, j, sp, L, txt, cc, inner, folder = null, base, camL, rig = null;
+        var showBack = o.back !== false, ctrlName = labels.ctrl || "Carousel Control", F, Fin, an, sx, face, k;
+        // A few spare cards past the chosen count, hidden: the "Cards" control can show them later without building again.
+        var nAll = Math.min(36, Math.max(n, 12));
         base = labels.card || "Card ";
         var spots = [];
         if (pre) {
             try { folder = app.project.items.addFolder(labels.folder || "Carousel"); } catch (eF) { folder = null; }
         }
-        for (i = n - 1; i >= 0; i--) {
-            sp = orbitSpot(i, n, layout, radius, h);
-            spots.push(sp);
+        F = orbitFx(ctrlName, labels);
+        Fin = orbitFx(ctrlName, labels);
+        for (k in Fin) { if (Fin.hasOwnProperty(k)) { Fin[k] = Fin[k].replace("thisComp.layer(", "comp(" + tbQ(comp.name) + ").layer("); } }
+        for (i = nAll - 1; i >= 0; i--) {
+            sp = orbitSpot(i, i < n ? n : nAll, layout, radius, h);
+            if (i < n) { spots.push(sp); }
             if (pre) {
                 cc = app.project.items.addComp(base + (i + 1), w, h, comp.pixelAspect || 1, comp.duration, comp.frameRate);
                 if (folder) { try { cc.parentFolder = folder; } catch (eP) {} }
                 inner = cc.layers.addShape();
                 inner.name = labels.shape || "Shape";
                 orbitCardShape(inner, kind, t, w, h, orbitColor(i));
+                orbitLiveShape(inner, kind, Fin, String(w), String(h));
                 orbitSet(inner, "ADBE Position", [w / 2, h / 2]);
                 if (o.numbers) {
                     txt = orbitNumber(cc, String(i + 1), fs);
                     orbitSet(txt, "ADBE Position", [w / 2, h / 2 + fs * 0.35]);
                 }
                 L = comp.layers.add(cc);
-                // Inside the card comp the number asks the card layer in the main comp which way it faces.
-                if (o.numbers && o.back === false) { orbitHideBack(txt, "comp(" + tbQ(comp.name) + ").layer(" + tbQ(base + (i + 1)) + ")"); }
+                // Whatever is put inside the card comp (a photo, a video) gets the card's own shape and corners.
+                orbitCardMask(L, kind, t, w, h);
+                try { acP(L, ["ADBE Mask Parade", 1, "ADBE Mask Shape"]).expression = orbitPathExpr(kind, w, h, F.t, w / 2, h / 2); } catch (eMx) {}
             } else {
                 L = comp.layers.addShape();
                 orbitCardShape(L, kind, t, w, h, orbitColor(i));
+                orbitLiveShape(L, kind, F, F.w, F.h);
             }
             L.name = base + (i + 1);
             L.threeDLayer = true;
             orbitSet(L, "ADBE Position", [cx + sp.x, cy + sp.y, sp.z]);
             orbitSet(L, "ADBE Rotate Y", sp.ry);
             cards.unshift(L);
+            if (pre) {
+                // From behind a card can show only its back: the card comp (number, picture) hides when it faces away,
+                // and a plain back of the same shape and colour shows instead (the "Back visible" checkbox decides).
+                bk = comp.layers.addShape();
+                orbitCardShape(bk, kind, t, w, h, orbitColor(i));
+                orbitLiveShape(bk, kind, F, String(w), String(h));
+                bk.name = base + (i + 1) + ": " + (labels.back || "back");
+                bk.threeDLayer = true;
+                bk.parent = L;
+                orbitSet(bk, "ADBE Position", [w / 2, h / 2, 0]);
+                orbitSet(bk, "ADBE Rotate Y", 0);
+                bk.moveAfter(L);
+                backs.unshift(bk);
+            } else {
+                backs.unshift(null);
+            }
             if (o.numbers && !pre) {
                 txt = orbitNumber(comp, String(i + 1), fs);
                 txt.name = (labels.number || "Number ") + (i + 1);
                 txt.threeDLayer = true;
                 orbitSet(txt, "ADBE Position", [cx + sp.x, cy + sp.y + fs * 0.35, sp.z]);
                 orbitSet(txt, "ADBE Rotate Y", sp.ry);
-                if (o.back === false) { orbitHideBack(txt, "thisLayer"); }
                 nums.unshift(txt);
             }
         }
         ctrl = comp.layers.addNull(comp.duration);
-        ctrl.name = labels.ctrl || "Carousel Control";
+        ctrl.name = ctrlName;
         ctrl.threeDLayer = true;
         orbitSet(ctrl, "ADBE Position", [cx, cy, 0]);
+        kitControl(ctrl, "ADBE Slider Control", labels.fxCount || "Cards", n);
+        kitControl(ctrl, "ADBE Slider Control", labels.fxRadius || "Radius", radius);
+        kitControl(ctrl, "ADBE Slider Control", labels.fxW || "Width", w);
+        kitControl(ctrl, "ADBE Slider Control", labels.fxH || "Height", h);
+        kitControl(ctrl, "ADBE Slider Control", labels.fxCorners || "Corners %", Math.round(t * 100));
+        kitControl(ctrl, "ADBE Checkbox Control", labels.fxBack || "Back visible", showBack ? 1 : 0);
+        an = [0, 0, 0];
+        try { an = acP(ctrl, ["ADBE Transform Group", "ADBE Anchor Point"]).value; } catch (eA) {}
+        an = [Number(an && an[0]) || 0, Number(an && an[1]) || 0, Number(an && an[2]) || 0];
+        face = "thisLayer.toCompVec([0,0,1])[2]>0";
         for (i = 0; i < cards.length; i++) {
             if (nums[i]) { nums[i].parent = cards[i]; }
             cards[i].parent = ctrl;
+            sx = orbitSpotExpr(F, i, layout);
+            orbitExpr(cards[i], "ADBE Position", sx + "var q=degreesToRadians(a);[R*Math.sin(q)+" + an[0] + ",y+" + an[1] + ",-R*Math.cos(q)+" + an[2] + "]");
+            orbitExpr(cards[i], "ADBE Rotate Y", sx + "a===0?0:-a");
+            if (pre) {
+                orbitExpr(cards[i], "ADBE Scale", "[" + F.w + "/" + w + "*100," + F.h + "/" + h + "*100,100]");
+                orbitExpr(cards[i], "ADBE Opacity", sx + "i<n&&(" + F.b + "==1||" + face + ")?value:0");
+                orbitExpr(backs[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n&&" + F.b + "!=1&&!(" + face + ")?value:0");
+            } else {
+                orbitExpr(cards[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n?value:0");
+            }
+            if (nums[i]) { orbitExpr(nums[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n&&(" + F.b + "==1||" + face + ")?value:0"); }
         }
         if (o.camera) {
             for (j = 1; j <= comp.numLayers; j++) { if (comp.layer(j) instanceof CameraLayer) { had = true; break; } }
@@ -2923,8 +3052,9 @@ var sayframeHost = (function () {
         }
         for (i = 0; i < cards.length; i++) { try { cards[i].selected = false; } catch (eS) {} }
         for (i = 0; i < nums.length; i++) { try { nums[i].selected = false; } catch (eT) {} }
+        for (i = 0; i < backs.length; i++) { try { if (backs[i]) { backs[i].selected = false; } } catch (eB) {} }
         ctrl.selected = true;
-        return { cards: n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, camRig: rig ? rig.name : "", hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
+        return { cards: n, spare: nAll - n, layout: layout, shape: kind, ctrl: ctrl.name, camera: cam, camRig: rig ? rig.name : "", hadCamera: had, precomp: pre, folder: folder ? folder.name : "" };
     }
 
     // ---- Grid (section "Layouts"): a bento grid of rounded tiles. rows x cols cells; with "rand" some
@@ -3220,8 +3350,46 @@ var sayframeHost = (function () {
     // ---- Text on a ribbon (section "Layouts"). "ribbon": a thick stroke along a line with a text running on it
     // (the line is the selected mask/shape path, or a ready form); "ring": letters stand on a circle in 3D and turn.
     // The forms are sampled points joined by smooth curves (Catmull-Rom); the panel draws its preview the same way.
-    function ribSample(form, W, H) {
+    // Same numbers in the panel's preview and here: a Park-Miller generator (exact in doubles, no Math.imul in ES3).
+    function ribRng(seed) {
+        var s = Math.floor(Math.abs(Number(seed) || 1)) % 2147483646 + 1;
+        return function () { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+    }
+
+    // A random line across the frame: 4-6 bends, some of them with a loop. The same number gives the same line.
+    function ribRandom(seed, W, H) {
+        var r = ribRng(seed), pts = [], n = 4 + Math.floor(r() * 3), i, k, x, y, rad, dir, cy, t, step = W * 1.1 / n;
+        for (i = 0; i <= n; i++) {
+            x = -W * 0.55 + i * step;
+            y = (r() - 0.5) * H * 0.5;
+            pts.push([x, y]);
+            if (i > 0 && i < n && r() < 0.5) {
+                rad = H * (0.08 + r() * 0.07);
+                dir = r() < 0.5 ? 1 : -1;
+                cy = y - dir * rad;
+                for (k = 1; k < 8; k++) { t = k / 8 * 2 * Math.PI; pts.push([x + rad * Math.sin(t) + k / 8 * step * 0.12, cy + dir * rad * Math.cos(t)]); }
+                pts.push([x + step * 0.14, y]);
+            }
+        }
+        return pts;
+    }
+
+    // Line forms, turned by angle (degrees, 0 = left to right, -90 = bottom to top). A turned line is drawn
+    // for the frame turned with it, so a vertical wave still runs the whole height.
+    function ribSample(form, W, H, o) {
+        var a = (o && Number(o.angle)) || 0, sm, i, c, sn, rw, rh, p;
+        if (form === "circle" || !a) { return ribSample0(form, W, H, o); }
+        c = Math.cos(a * Math.PI / 180); sn = Math.sin(a * Math.PI / 180);
+        rw = Math.abs(c) * W + Math.abs(sn) * H; rh = H + Math.abs(sn) * (W - H);
+        rw = Math.min(rw, Math.sqrt(W * W + H * H));
+        sm = ribSample0(form, rw, rh, o);
+        for (i = 0; i < sm.pts.length; i++) { p = sm.pts[i]; sm.pts[i] = [p[0] * c - p[1] * sn, p[0] * sn + p[1] * c]; }
+        return sm;
+    }
+
+    function ribSample0(form, W, H, o) {
         var pts = [], i, n, t, u, m = Math.min(W, H), x, y, r, xs = [], ys = [], s, x0, x1, y0, y1;
+        if (form === "random") { return { pts: ribRandom(o && o.seed, W, H), closed: false }; }
         if (form === "circle") {
             r = m * 0.3;
             for (i = 0; i < 24; i++) { t = i / 24 * 2 * Math.PI; pts.push([r * Math.sin(t), -r * Math.cos(t)]); }
@@ -3331,12 +3499,207 @@ var sayframeHost = (function () {
         return mi;
     }
 
+    // ---- Overlaps for the text ribbon: where the ribbon passes over itself, the later pass covers the earlier
+    // one with its letters. The line is cut into pieces between the crossings; each piece is its own ribbon and
+    // its own copy of the text that shows only the letters on that piece, stacked in order along the line.
+
+    // Points along a bezier path with the distance travelled to each one.
+    function ribPolyline(sh, steps) {
+        var v = sh.vertices, n = v.length, segs = sh.closed ? n : n - 1, pts = [], arc = [], len = 0, i, j, a, b, c1, c2, t, q, x, y;
+        if (!n) { return { pts: pts, arc: arc, len: 0 }; }
+        pts.push([v[0][0], v[0][1]]); arc.push(0);
+        for (i = 0; i < segs; i++) {
+            a = v[i]; b = v[(i + 1) % n];
+            c1 = [a[0] + sh.outTangents[i][0], a[1] + sh.outTangents[i][1]];
+            c2 = [b[0] + sh.inTangents[(i + 1) % n][0], b[1] + sh.inTangents[(i + 1) % n][1]];
+            for (j = 1; j <= steps; j++) {
+                t = j / steps; q = 1 - t;
+                x = q * q * q * a[0] + 3 * q * q * t * c1[0] + 3 * q * t * t * c2[0] + t * t * t * b[0];
+                y = q * q * q * a[1] + 3 * q * q * t * c1[1] + 3 * q * t * t * c2[1] + t * t * t * b[1];
+                len += Math.sqrt((x - pts[pts.length - 1][0]) * (x - pts[pts.length - 1][0]) + (y - pts[pts.length - 1][1]) * (y - pts[pts.length - 1][1]));
+                pts.push([x, y]); arc.push(len);
+            }
+        }
+        return { pts: pts, arc: arc, len: len };
+    }
+
+    // Where the ribbon (width W) runs over itself: pairs of places far apart along the line but close on screen.
+    // Returns the cut points along the line: one between every two neighbouring overlap places, so the two passes
+    // of every crossing end up in different pieces. Empty when the ribbon never meets itself.
+    function ribCuts(sh, W) {
+        var pl = ribPolyline(sh, 12), L = pl.len, step = Math.max(W / 4, L / 500), sp = [], i, j, k, d, dx, dy, far = W * 2.5, near = W * 0.85;
+        var pairs = [], cl = [], c, pos = [], cuts = [], m, closed = !!sh.closed;
+        if (!(L > 0)) { return { cuts: [], len: 0 }; }
+        // Even steps along the line.
+        for (i = 0, k = 0; i * step <= L; i++) {
+            d = i * step;
+            while (k < pl.arc.length - 2 && pl.arc[k + 1] < d) { k++; }
+            m = pl.arc[k + 1] - pl.arc[k];
+            m = m > 0 ? (d - pl.arc[k]) / m : 0;
+            sp.push({ x: pl.pts[k][0] + (pl.pts[k + 1][0] - pl.pts[k][0]) * m, y: pl.pts[k][1] + (pl.pts[k + 1][1] - pl.pts[k][1]) * m, s: d });
+        }
+        for (i = 0; i < sp.length; i++) {
+            for (j = i + 1; j < sp.length; j++) {
+                d = sp[j].s - sp[i].s;
+                if (closed) { d = Math.min(d, L - d); }
+                if (d < far) { continue; }
+                dx = sp[i].x - sp[j].x; dy = sp[i].y - sp[j].y;
+                if (dx * dx + dy * dy < near * near) { pairs.push([sp[i].s, sp[j].s]); }
+            }
+        }
+        // Neighbouring close pairs are one crossing: its middle on each pass.
+        for (i = 0; i < pairs.length; i++) {
+            for (k = 0; k < cl.length; k++) {
+                c = cl[k];
+                if (Math.abs(c.a / c.n - pairs[i][0]) < W * 1.5 && Math.abs(c.b / c.n - pairs[i][1]) < W * 1.5) { c.a += pairs[i][0]; c.b += pairs[i][1]; c.n++; break; }
+            }
+            if (k === cl.length) { cl.push({ a: pairs[i][0], b: pairs[i][1], n: 1 }); }
+        }
+        for (k = 0; k < cl.length; k++) { pos.push(cl[k].a / cl[k].n); pos.push(cl[k].b / cl[k].n); }
+        pos.sort(function (p, q) { return p - q; });
+        // Places close together along the line are the same spot; a cut goes halfway to the next one.
+        for (i = 1; i < pos.length; i++) {
+            if (pos[i] - pos[i - 1] > W) { cuts.push(Math.round((pos[i] + pos[i - 1]) / 2 * 10) / 10); }
+        }
+        return { cuts: cuts, len: L, crossings: cl.length };
+    }
+
+    // Where each letter of one repeat (unit) sits along the line, from the start of the repeat: measured with a
+    // helper text (each prefix plus a bar), falling back to even spacing when the sizes can't be read.
+    function ribAdvances(comp, unit, fs, tc, guess) {
+        var n = unit.length, A = [], off = [], i, t = null, bar = 0, ok = true, p, doc;
+        function w(s) {
+            doc = p.value; doc.text = s; p.setValue(doc);
+            return Number(t.sourceRectAtTime(comp.time, false).width) || 0;
+        }
+        try {
+            t = ribText(comp, "|", fs, tc, "measure");
+            p = acP(t, ["ADBE Text Properties", "ADBE Text Document"]);
+            bar = w("|");
+            A.push(0);
+            for (i = 1; i <= n; i++) { A.push(w(unit.substring(0, i) + "|") - bar); }
+        } catch (e0) { ok = false; }
+        try { if (t) { t.remove(); } } catch (eR) {}
+        for (i = 1; ok && i <= n; i++) { if (!(A[i] > A[i - 1])) { ok = false; } }
+        if (!ok || !(bar > 0)) {
+            A = [];
+            for (i = 0; i <= n; i++) { A.push(guess * i / n); }
+        }
+        for (i = 0; i < n; i++) { off.push(Math.round((A[i] + A[i + 1]) / 2 * 10) / 10); }
+        return { off: off, period: A[n] };
+    }
+
+    // The expression that shows only the letters whose middle is on [a, b) of the line (cut points; -1 / -1 for open ends).
+    function ribPieceExpr(adv, a, b, L, closed, hideOff) {
+        var e = "var m=text.pathOption.firstMargin, P=" + adv.period + ", O=[" + adv.off.join(",") + "], n=O.length, i=textIndex-1, s=m+Math.floor(i/n)*P+O[i%n], L=" + Math.round(L * 10) / 10 + ";";
+        if (closed) { e += "s=((s%L)+L)%L;"; }
+        e += "var on=" + (a < 0 ? "true" : "s>=" + a) + "&&" + (b < 0 ? "true" : "s<" + b) + (hideOff ? "&&s>=0&&s<=L" : "") + ";on?[0,0,0]:[100,100,100]";
+        return e;
+    }
+
+    function ribPieceSel(T, expr) {
+        var base = ["ADBE Text Properties", "ADBE Text Animators"], ai = acAdd(T, base, "ADBE Text Animator"), pi, si;
+        try { acP(T, base.concat([ai])).name = "Piece"; } catch (eN) {}
+        pi = acAdd(T, base.concat([ai, "ADBE Text Animator Properties"]), "ADBE Text Opacity");
+        acP(T, base.concat([ai, "ADBE Text Animator Properties", pi])).setValue(0);
+        si = acAdd(T, base.concat([ai, "ADBE Text Selectors"]), "ADBE Text Expressible Selector");
+        acP(T, base.concat([ai, "ADBE Text Selectors", si, "ADBE Text Expressible Amount"])).expression = expr;
+    }
+
+    function ribTrim(R, startPct, endPct) {
+        var gi = 1, ti = acIn(R, gi, "ADBE Vector Filter - Trim");
+        acGP(R, gi, ["ADBE Vectors Group", ti, "ADBE Vector Trim Start"]).setValue(Math.max(0, Math.min(100, startPct)));
+        acGP(R, gi, ["ADBE Vectors Group", ti, "ADBE Vector Trim End"]).setValue(Math.max(0, Math.min(100, endPct)));
+    }
+
+    // One more ribbon on the same line, reading width and colour from the text's Effect Controls like the first.
+    function ribRibbonLayer(comp, name, sh, rc, width, labels, Tname) {
+        var l = comp.layers.addShape(), gi = acGroup(l), i, si;
+        l.name = name;
+        try { acP(l, ["ADBE Root Vectors Group", gi]).name = labels.path || "Line"; } catch (eG) {}
+        i = acIn(l, gi, "ADBE Vector Shape - Group");
+        acGP(l, gi, ["ADBE Vectors Group", i, "ADBE Vector Shape"]).setValue(sh);
+        si = acStroke(l, gi, rc, width);
+        try { acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Line Join"]).setValue(2); } catch (eJ) {}
+        acGP(l, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Width"]).expression = "thisComp.layer(" + tbQ(Tname) + ").effect(" + tbQ(labels.width || "Width") + ")(1)";
+        return { layer: l, stroke: si };
+    }
+
+    // R and T are the ribbon and its text, already made; top is the highest layer of the ribbon so far.
+    function ribOverlap(comp, o, labels, R, T, Mt, sh, ctx) {
+        var W = ctx.width, fs = ctx.fs, L = ctx.len, cut = ribCuts(sh, W), cuts = cut.cuts, n = cuts.length + 1, i, a, b, Rk, Tk, Sk, top = Mt || T;
+        var adv, d = W / 2 + fs / 2, sTo, s0, s1, pieces = [], shadows = [], tf, k, gi = 1, matte = Mt && typeof Mt.enabled !== "undefined" && !Mt.enabled && typeof T.setTrackMatte === "function";
+        if (n < 2) { return { pieces: 1, crossings: 0 }; }
+        adv = ribAdvances(comp, ctx.unit, fs, ctx.tc, ctx.uw);
+        if (ctx.closed && adv.period > 0) {
+            // Around a circle the repeats are spread by tracking to fill exactly one lap.
+            k = (L / ctx.reps) / adv.period;
+            for (i = 0; i < adv.off.length; i++) { adv.off[i] = Math.round(adv.off[i] * k * 10) / 10; }
+            adv.period = Math.round(L / ctx.reps * 100) / 100;
+        }
+        // Copies of the ribbon first, before the first piece is trimmed.
+        for (i = 1; i < n; i++) {
+            k = ribRibbonLayer(comp, (labels.ribbon || "Ribbon") + ": " + (labels.piece || "piece") + " " + (i + 1), sh, ctx.rc, W, labels, T.name);
+            acGP(k.layer, gi, ["ADBE Vectors Group", k.stroke, "ADBE Vector Stroke Color"]).expression = "thisComp.layer(" + tbQ(T.name) + ").effect(" + tbQ(labels.color || "Ribbon colour") + ")(1)";
+            pieces.push(k.layer);
+            if (o.shadow) {
+                k = ribRibbonLayer(comp, (labels.ribbon || "Ribbon") + ": " + (labels.shadow || "shadow") + " " + (i + 1), sh, [0, 0, 0], W, labels, T.name);
+                shadows[i - 1] = k.layer;
+            }
+            for (k = 0; k < ctx.tr.length; k++) {
+                try { orbitSet(pieces[i - 1], ctx.tr[k][0], ctx.tr[k][1]); if (shadows[i - 1]) { orbitSet(shadows[i - 1], ctx.tr[k][0], ctx.tr[k][1]); } } catch (eP) {}
+            }
+        }
+        // The text of the first piece is the main text; the copies follow its words and its run.
+        ribPieceSel(T, ribPieceExpr(adv, -1, cuts[0], L, ctx.closed, false));
+        ribTrim(R, 0, (cuts[0] + d) / L * 100);
+        for (i = 1; i < n; i++) {
+            a = cuts[i - 1]; b = i < n - 1 ? cuts[i] : -1;
+            Rk = pieces[i - 1];
+            s0 = (a + d) / L * 100; s1 = b < 0 ? 100 : (b + d) / L * 100;
+            ribTrim(Rk, s0, s1);
+            Sk = shadows[i - 1] || null;
+            if (Sk) {
+                // A soft dark copy under the piece, kept away from the piece's own ends so no band shows at the seams;
+                // the full ribbon is its matte, so the shadow falls only on the ribbon under it.
+                sTo = (b < 0 ? L : b + d) - W;
+                if (sTo - (a + d + W) > W * 0.5) {
+                    ribTrim(Sk, (a + d + W) / L * 100, sTo / L * 100);
+                    k = acAdd(Sk, ["ADBE Effect Parade"], "ADBE Gaussian Blur 2");
+                    try { acP(Sk, ["ADBE Effect Parade", k, "ADBE Gaussian Blur 2-0001"]).setValue(Math.round(W * 0.3)); } catch (eB) {}
+                    try { acP(Sk, ["ADBE Transform Group", "ADBE Opacity"]).setValue(55); } catch (eO) {}
+                    Sk.moveBefore(top);
+                    top = Sk;
+                    if (matte) { try { Sk.setTrackMatte(Mt, TrackMatteType.ALPHA); } catch (eM) {} }
+                } else {
+                    try { Sk.remove(); } catch (eX) {}
+                }
+            }
+            Rk.moveBefore(top);
+            top = Rk;
+            Tk = ribText(comp, ctx.str, fs, ctx.tc, (labels.text || "Ribbon text") + ": " + (labels.piece || "piece") + " " + (i + 1));
+            try {
+                tf = acP(Tk, ["ADBE Text Properties", "ADBE Text Document"]);
+                var dc = tf.value; dc.tracking = ctx.track; tf.setValue(dc);
+                tf.expression = "thisComp.layer(" + tbQ(T.name) + ").text.sourceText";
+            } catch (eD) {}
+            ribOnPath(Tk, sh, fs, false);
+            acP(Tk, ["ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin"]).expression = "thisComp.layer(" + tbQ(T.name) + ").text.pathOption.firstMargin";
+            ribPieceSel(Tk, ribPieceExpr(adv, a, b, L, ctx.closed, !ctx.closed));
+            for (k = 0; k < ctx.tr.length; k++) { try { orbitSet(Tk, ctx.tr[k][0], ctx.tr[k][1]); } catch (eP) {} }
+            Tk.moveBefore(top);
+            top = Tk;
+            try { Tk.selected = false; Rk.selected = false; } catch (eS) {}
+        }
+        return { pieces: n, crossings: cut.crossings };
+    }
+
     function ribBuild(comp, o, labels) {
         var W = comp.width, H = comp.height, cx = W / 2, cy = H / 2, src = null, srcName = "", sh, len, list, i, j;
         var width = orbitNum(o.width, 4, 1000, 120), fs = Math.max(6, Math.round(width * orbitNum(o.textSize, 10, 100, 65) / 100));
         var speed = orbitNum(o.speed, 0, 100, 35), word = String(o.text || "TEXT"), sep = String(o.sep === undefined ? "\u2022" : o.sep);
-        var unit = word + " " + (sep ? sep + " " : ""), cw = fs * 0.66 + 40 * fs / 1000, need, str = "", R, T, gi, si, fx, tr, pos = null, anc = null, sc = null, rot = 0;
-        var rc = o.ribbonColor || [0.23, 0.63, 0.91], tc = o.textColor || [0.91, 0.4, 0.17], form = o.form || "wave";
+        var unit = word + " " + (sep ? sep + " " : ""), cw = fs * 0.66 + 40 * fs / 1000, need, str = "", R, T, gi, si, fx, tr, pos = null, anc = null, sc = null, rot = 0, uw, track, Mt = null;
+        var rc = o.ribbonColor || [0.23, 0.63, 0.91], tc = o.textColor || [0.91, 0.4, 0.17], form = o.form || "wave", ov = null;
         if (form === "path") {
             list = comp.selectedLayers || [];
             for (i = 0; i < list.length && !sh; i++) {
@@ -3346,12 +3709,9 @@ var sayframeHost = (function () {
             if (!sh) { throw new Error("RB_NO_PATH"); }
             try { pos = acTransform(src, "ADBE Position").value; anc = acTransform(src, "ADBE Anchor Point").value; sc = acTransform(src, "ADBE Scale").value; rot = acTransform(src, "ADBE Rotate Z").value; } catch (eT) {}
         } else {
-            sh = ribShape(ribSample(form, W, H));
+            sh = ribShape(ribSample(form, W, H, { seed: o.seed, angle: o.angle }));
         }
         len = ribLength(sh);
-        // Enough text for the whole line and for everything that runs past during the comp.
-        need = len + (o.run ? speed * 10 * comp.duration : 0);
-        for (j = 0; j < 400 && str.length * cw < need; j++) { str += unit; }
         R = comp.layers.addShape();
         R.name = labels.ribbon || "Ribbon";
         gi = acGroup(R);
@@ -3360,7 +3720,29 @@ var sayframeHost = (function () {
         acGP(R, gi, ["ADBE Vectors Group", i, "ADBE Vector Shape"]).setValue(sh);
         si = acStroke(R, gi, rc, width);
         try { acGP(R, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Line Join"]).setValue(2); } catch (eJ) {}
-        T = ribText(comp, str, fs, tc, labels.text || "Ribbon text");
+        // The text is measured first (one word with its separator), so the repeats fit the line.
+        T = ribText(comp, unit, fs, tc, labels.text || "Ribbon text");
+        uw = 0;
+        try { uw = T.sourceRectAtTime(comp.time, false).width; } catch (eW) { uw = 0; }
+        if (!(uw > 0)) { uw = unit.length * cw; }
+        if (sh.closed) {
+            // A closed line (a circle): exactly as many repeats as fit once around, the rest spread by tracking.
+            // More text would go round a second time and pile up on the first.
+            j = Math.max(1, Math.floor(len / uw));
+            for (i = 0; i < j; i++) { str += unit; }
+            track = 40 + (len - j * uw) / (j * unit.length) / fs * 1000;
+        } else {
+            // An open line: enough for the whole line and for everything that runs past during the comp.
+            need = len + (o.run ? speed * 10 * comp.duration : 0) + uw;
+            for (j = 0; j < 400 && j * uw < need; j++) { str += unit; }
+            track = 40;
+        }
+        try {
+            var tp = acP(T, ["ADBE Text Properties", "ADBE Text Document"]), doc = tp.value;
+            doc.text = str;
+            try { doc.tracking = Math.round(track * 10) / 10; } catch (eT2) {}
+            tp.setValue(doc);
+        } catch (eD) {}
         ribOnPath(T, sh, fs, false);
         // Settings in Effect Controls of the text: the ribbon reads its width and colour from there.
         kitControl(T, "ADBE Slider Control", labels.width || "Width", width);
@@ -3369,7 +3751,13 @@ var sayframeHost = (function () {
         acGP(R, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Width"]).expression = "thisComp.layer(" + tbQ(T.name) + ").effect(" + tbQ(labels.width || "Width") + ")(1)";
         acGP(R, gi, ["ADBE Vectors Group", si, "ADBE Vector Stroke Color"]).expression = "thisComp.layer(" + tbQ(T.name) + ").effect(" + tbQ(labels.color || "Ribbon colour") + ")(1)";
         if (o.run) {
-            acP(T, ["ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin"]).expression = "value-time*effect(" + tbQ(labels.speed || "Speed") + ")(1)*10";
+            // On a circle the text goes round and round: the margin wraps at the circle's length.
+            // Backward runs the other way; on an open line it starts as far back as it will travel, so no gap opens.
+            var back = o.dir === "back", sg = back ? "+" : "-", fm = acP(T, ["ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin"]);
+            if (back && !sh.closed) { try { fm.setValue(-speed * 10 * comp.duration); } catch (eB) {} }
+            fm.expression = sh.closed ?
+                "var L=" + Math.round(len * 10) / 10 + ", m=value" + sg + "time*effect(" + tbQ(labels.speed || "Speed") + ")(1)*10; ((m%L)+L)%L" :
+                "value" + sg + "time*effect(" + tbQ(labels.speed || "Speed") + ")(1)*10";
         }
         T.moveBefore(R);
         if (src) {
@@ -3383,22 +3771,43 @@ var sayframeHost = (function () {
             orbitSet(R, "ADBE Position", [cx, cy]);
             orbitSet(T, "ADBE Position", [cx, cy]);
         }
+        // Letters that run past the ends of an open line would stick out of the ribbon: a copy of the ribbon
+        // above the text is its alpha matte, so the text shows only on the ribbon.
+        if (!sh.closed) {
+            try {
+                Mt = R.duplicate();
+                Mt.name = (labels.ribbon || "Ribbon") + ": " + (labels.matte || "matte");
+                Mt.moveBefore(T);
+                if (typeof T.setTrackMatte === "function") { T.setTrackMatte(Mt, TrackMatteType.ALPHA); try { Mt.enabled = false; } catch (eH) {} }
+                else { T.trackMatteType = TrackMatteType.ALPHA; }
+            } catch (eMt) { Mt = null; }
+        }
+        if (o.overlap) {
+            var trs = [];
+            try { trs = [["ADBE Anchor Point", acTransform(T, "ADBE Anchor Point").value], ["ADBE Position", acTransform(T, "ADBE Position").value], ["ADBE Scale", acTransform(T, "ADBE Scale").value], ["ADBE Rotate Z", acTransform(T, "ADBE Rotate Z").value]]; } catch (eTr) {}
+            ov = ribOverlap(comp, o, labels, R, T, Mt, sh, { width: width, fs: fs, len: len, unit: unit, uw: uw, tc: tc, rc: rc, str: str, track: Math.round(track * 10) / 10, closed: !!sh.closed, reps: j, tr: trs });
+        }
         try { R.selected = false; } catch (eS) {}
         T.selected = true;
-        return { mode: "ribbon", form: form, ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j };
+        return { mode: "ribbon", pieces: ov ? ov.pieces : 0, form: form, seed: form === "random" ? Math.floor(Number(o.seed) || 1) : 0, angle: form === "path" ? 0 : Number(o.angle) || 0, dir: o.dir === "back" ? "back" : "fwd", ribbon: R.name, text: T.name, from: srcName, length: Math.round(len), repeats: j, matte: Mt ? Mt.name : "" };
     }
 
     function ringBuild(comp, o, labels) {
         var cx = comp.width / 2, cy = comp.height / 2, n = Math.round(orbitNum(o.rings, 1, 5, 2)), R = orbitNum(o.radius, 50, 5000, 560);
         var fs = Math.max(8, Math.round(R * 0.2)), word = String(o.text || "TEXT"), sep = String(o.sep === undefined ? "\u2022" : o.sep);
         var unit = word + " " + (sep ? sep + " " : ""), cw = fs * 0.66, str = "", reps, tilt, spin, rings = [], i, T, k, base, ai, pi, si, cam = "", had = false, gap = fs * 1.35;
-        var tc = o.textColor || [1, 1, 1], circle = new Shape(), c = R * 0.5523;
+        var tc = o.textColor || [1, 1, 1], circle = new Shape(), c = R * 0.5523, spots = [], camL;
         // A circle starting at the top, clockwise: on the flat ring "top" is the far side.
         circle.vertices = [[0, -R], [R, 0], [0, R], [-R, 0]];
         circle.inTangents = [[-c, 0], [0, -c], [c, 0], [0, c]];
         circle.outTangents = [[c, 0], [0, c], [-c, 0], [0, -c]];
         circle.closed = true;
-        reps = Math.max(1, Math.round(2 * Math.PI * R / (unit.length * cw)));
+        // Measured, not guessed: as many words as fit once around (forced alignment spreads them evenly; too many would squeeze together).
+        var uw = 0, tmp = ribText(comp, unit, fs, tc, "measure");
+        try { uw = tmp.sourceRectAtTime(comp.time, false).width; } catch (eW) { uw = 0; }
+        try { tmp.remove(); } catch (eR) {}
+        if (!(uw > 0)) { uw = unit.length * cw; }
+        reps = Math.max(1, Math.floor(2 * Math.PI * R / uw));
         for (i = 0; i < reps; i++) { str += unit; }
         tilt = comp.layers.addNull(comp.duration);
         tilt.name = labels.tilt || "Ring tilt";
@@ -3423,13 +3832,15 @@ var sayframeHost = (function () {
             acP(T, base.concat([ai, "ADBE Text Animator Properties", pi])).setValue(-90);
             if (o.backDark) {
                 // Letters on the far half are dimmer: an expression selector picks them by where they are on the ring now.
+                // The path starts at the near side (the ring lies flat: layer y becomes depth), so a letter at angle
+                // a on the path, with the ring turned by r, is at depth -R*cos(a - r): far when cos(a - r) < 0.
                 ai = acAdd(T, base, "ADBE Text Animator");
                 try { acP(T, base.concat([ai])).name = "Back side"; } catch (eB) {}
                 pi = acAdd(T, base.concat([ai, "ADBE Text Animator Properties"]), "ADBE Text Opacity");
                 acP(T, base.concat([ai, "ADBE Text Animator Properties", pi])).setValue(35);
                 si = acAdd(T, base.concat([ai, "ADBE Text Selectors"]), "ADBE Text Expressible Selector");
                 acP(T, base.concat([ai, "ADBE Text Selectors", si, "ADBE Text Expressible Amount"])).expression =
-                    "var a=degreesToRadians((textIndex-0.5)/textTotal*360+thisComp.layer(" + tbQ(spin.name) + ").transform.yRotation);Math.cos(a)>0?[100,100,100]:[0,0,0]";
+                    "var a=degreesToRadians((textIndex-0.5)/textTotal*360-thisComp.layer(" + tbQ(spin.name) + ").transform.yRotation);Math.cos(a)<0?[100,100,100]:[0,0,0]";
             }
             orbitSet(T, "ADBE Position", [cx, cy + (i - (n - 1) / 2) * gap, 0]);
             orbitSet(T, "ADBE Rotate X", 90);
@@ -3440,7 +3851,14 @@ var sayframeHost = (function () {
         orbitSet(tilt, "ADBE Rotate X", -orbitNum(o.tilt, -80, 80, 12));
         if (o.camera) {
             for (k = 1; k <= comp.numLayers; k++) { if (comp.layer(k) instanceof CameraLayer) { had = true; break; } }
-            if (!had) { cam = comp.layers.addCamera(labels.camera || "Ring camera", [cx, cy]).name; }
+            if (!had) {
+                // Far enough back that the whole ring (its near side too) is in the frame with room around it.
+                camL = comp.layers.addCamera(labels.camera || "Ring camera", [cx, cy]);
+                cam = camL.name;
+                for (k = 0; k < 16; k++) { spots.push({ x: R * Math.sin(k * Math.PI / 8), y: 0, z: -R * Math.cos(k * Math.PI / 8) }); }
+                orbitFrame(comp, camL, spots, fs * 1.2, (n - 1) * gap + fs * 1.4, cx, cy, 0);
+                try { camL.selected = false; } catch (eC) {}
+            }
         }
         for (i = 0; i < rings.length; i++) { try { rings[i].selected = false; } catch (eS) {} }
         try { spin.selected = false; } catch (eS2) {}
@@ -4082,6 +4500,69 @@ var sayframeHost = (function () {
         var item = app.project.activeItem;
         if (!item || !(item instanceof CompItem)) { throw new Error("NO_ACTIVE_COMP"); }
         return item;
+    }
+
+    // ------------------------------------------------------- quick export
+    // H.264 template of the output module by quality: light 5, normal 15, max 40 Mbps (the names
+    // After Effects 2023+ ships). Falls back to any H.264 template, then to anything MP4.
+    function exTemplate(list, quality) {
+        var want = quality === "light" ? 5 : (quality === "max" ? 40 : 15), i, m, best = "", any = "", mp4 = "", d, bestD = 1e9;
+        list = list || [];
+        for (i = 0; i < list.length; i++) {
+            m = /H\.?264.*?(\d+)\s*Mbps/i.exec(String(list[i]));
+            if (m) {
+                d = Math.abs(Number(m[1]) - want);
+                if (d < bestD) { bestD = d; best = String(list[i]); }
+            }
+            if (!any && /H\.?264/i.test(String(list[i]))) { any = String(list[i]); }
+            if (!mp4 && /mp4/i.test(String(list[i]))) { mp4 = String(list[i]); }
+        }
+        return best || any || mp4;
+    }
+
+    function exSafe(s) { return String(s).replace(/[\\\/:\*\?"<>\|]/g, "_").replace(/^\s+|\s+$/g, ""); }
+
+    // A file name that is not taken yet: "Name.mp4", "Name 2.mp4", ...
+    function exFreeFile(folder, base, ext) {
+        var f = new File(folder + "/" + base + ext), n = 2;
+        while (f.exists && n < 500) { f = new File(folder + "/" + base + " " + n + ext); n++; }
+        return f;
+    }
+
+    function exBin(name) {
+        var proj = app.project, i;
+        for (i = 1; i <= proj.numItems; i++) {
+            if (proj.item(i) instanceof FolderItem && String(proj.item(i).name) === name) { return proj.item(i); }
+        }
+        return proj.items.addFolder(name);
+    }
+
+    function exScale(layer, s) {
+        try { layer.property("ADBE Transform Group").property("ADBE Scale").setValue([s, s]); } catch (e) {}
+    }
+
+    // A comp of the platform's size with the source comp inside: fit (black bars), crop (cover),
+    // or blur (fit, over a blurred cover copy that fills the edges).
+    function exWrap(comp, w, h, fit, name, binName) {
+        var proj = app.project, c, bg, L, fx, sx = w / comp.width, sy = h / comp.height;
+        var fitS = Math.min(sx, sy) * 100, cover = Math.max(sx, sy) * 100;
+        c = proj.items.addComp(name, w, h, 1, comp.duration, comp.frameRate);
+        try { c.parentFolder = exBin(binName); } catch (e0) {}
+        try { c.bgColor = [0, 0, 0]; } catch (e1) {}
+        if (fit === "blur") {
+            bg = c.layers.add(comp);
+            try { bg.name = "Blur"; } catch (e2) {}
+            exScale(bg, cover * 1.06);
+            try { bg.audioEnabled = false; } catch (e3) {}
+            try {
+                fx = bg.property("ADBE Effect Parade").addProperty("ADBE Gaussian Blur 2");
+                fx.property("ADBE Gaussian Blur 2-0001").setValue(Math.max(30, Math.round(Math.max(w, h) / 28)));
+                fx.property("ADBE Gaussian Blur 2-0003").setValue(1);
+            } catch (e4) {}
+        }
+        L = c.layers.add(comp);
+        exScale(L, fit === "crop" ? cover : fitS);
+        return c;
     }
 
     function clampInfluence(v) {
@@ -4883,26 +5364,26 @@ var sayframeHost = (function () {
     }
 
     // Moves every keyframe of the layer by dt seconds (the "in" and the "out" animation together).
-    // An edge of the layer that the animation touches moves with it; a key that would fall outside the layer stretches it.
+    // The layer itself stays; a key that would fall outside the layer stretches it.
     function shiftAllKeys(layer, dt, frame, out) {
         var a = findTransition(layer, "in");
         var b = findTransition(layer, "out");
         var span = a.span;
         var before = out.keys;
-        var first, last, atStart, atEnd, start, end, lists, i;
+        var first, last, start, end, lists, i;
         if (!a.count && !b.count) { return "none"; }
         if (Math.abs(dt) < frame / 1000) { return "same"; }
         first = a.count ? a.first : b.first;
         last = b.count ? b.last : a.last;
-        atStart = Math.abs(first - span.start) <= frame * EDGE_FRAMES;
-        atEnd = Math.abs(last - span.end) <= frame * EDGE_FRAMES;
         // Far side first, so that no key has to jump over one that is still waiting to move.
         lists = dt > 0 ? b.list.concat(a.list) : a.list.concat(b.list);
         for (i = 0; i < lists.length; i++) { moveKeysOf(lists[i], dt, frame / 4, out); }
         if (out.keys === before) { return "failed"; }
-        start = atStart ? span.start + dt : Math.min(span.start, first + dt);
-        end = atEnd ? span.end + dt : Math.max(span.end, last + dt + frame);
-        trimLayer(layer, start, end);
+        // Only the keys move: the layer keeps its place and its edges. It grows only when a key would leave it
+        // (otherwise After Effects would not play that key).
+        start = Math.min(span.start, first + dt);
+        end = Math.max(span.end, last + dt + frame);
+        if (start < span.start - frame / 4 || end > span.end + frame / 4) { trimLayer(layer, start, end); }
         return "moved";
     }
 
@@ -5814,6 +6295,88 @@ var sayframeHost = (function () {
         // fav and recent are item ids ("e:<matchName>" or "p:<path>"). The same key again closes it.
         fxPopup: function (x, y, fav, recent) {
             return reply(function () { return fxPopupShow(x, y, fav || [], recent || []); });
+        },
+
+        // Quick export. What the export sheet needs to know about the open comp and the machine.
+        exportInfo: function () {
+            return reply(function () {
+                var comp = activeComp(), proj = app.project, rq = proj.renderQueue, ame = false;
+                try { ame = !!(rq && rq.canQueueInAME); } catch (e0) {}
+                return { comp: { name: String(comp.name), w: comp.width, h: comp.height, dur: comp.duration, fps: comp.frameRate,
+                    waStart: comp.workAreaStart, waDur: comp.workAreaDuration },
+                    projectFolder: proj.file && proj.file.parent ? proj.file.parent.fsName : "", ame: ame };
+            });
+        },
+
+        // Saves the open comp as one MP4 (H.264): o = { w, h, label, fit: blur|black|crop, quality: light|normal|max,
+        // span: all|work, folder, ame, bin }. Another size than the comp's goes through a wrapper comp.
+        // In After Effects the render runs here and blocks until done; with ame it is sent to Media Encoder.
+        exportOne: function (o) {
+            return reply(function () {
+                var comp = activeComp(), proj = app.project, rq = proj.renderQueue, w, h, wrap = null, it, om, tpl, file, dir;
+                var parked = [], i, q, mode, base, size = 0, tpls = [];
+                if (!o || typeof o !== "object") { throw new Error("BAD_EXPORT"); }
+                if (!rq || !rq.items) { throw new Error("NO_RENDER_QUEUE"); }
+                if (rq.rendering) { throw new Error("EXPORT_BUSY"); }
+                w = Math.round(Number(o.w) || comp.width); h = Math.round(Number(o.h) || comp.height);
+                w -= w % 2; h -= h % 2;
+                if (w < 16 || h < 16 || w > 16384 || h > 16384) { throw new Error("BAD_EXPORT_SIZE"); }
+                dir = new Folder(String(o.folder));
+                if (!dir.exists) { try { dir.create(); } catch (e0) {} }
+                if (!dir.exists) { throw new Error("EXPORT_NO_FOLDER"); }
+                base = exSafe(String(comp.name) + (o.label ? " \u2014 " + o.label : ""));
+                app.beginUndoGroup("Sayframe: export");
+                try {
+                    if (w !== comp.width || h !== comp.height) {
+                        wrap = exWrap(comp, w, h, o.fit === "crop" ? "crop" : (o.fit === "black" ? "black" : "blur"), base, String(o.bin || "Sayframe Export"));
+                    }
+                    // Other items already waiting in the Render Queue stay there but sit this render out.
+                    for (i = 1; i <= rq.numItems; i++) {
+                        q = rq.item(i);
+                        try { if (q.render) { q.render = false; parked.push(q); } } catch (e1) {}
+                    }
+                    it = rq.items.add(wrap || comp);
+                    if (o.span === "work") {
+                        try { it.timeSpanStart = comp.workAreaStart; it.timeSpanDuration = comp.workAreaDuration; } catch (e2) {}
+                    }
+                    om = it.outputModule(1);
+                    try { tpls = om.templates; } catch (e3) {}
+                    tpl = exTemplate(tpls, o.quality);
+                    if (tpl) { om.applyTemplate(tpl); }
+                    file = exFreeFile(dir.fsName, base, ".mp4");
+                    om.file = file;
+                    if (!tpl && !o.ame) { throw new Error("NO_H264"); }
+                    if (o.ame && rq.canQueueInAME) {
+                        rq.queueInAME(true);
+                        mode = "ame";
+                        try { it.render = false; } catch (e4) {}
+                    } else {
+                        rq.render();
+                        mode = "ae";
+                        try { size = new File(file.fsName).length; } catch (e5) {}
+                        try { it.remove(); } catch (e6) {}
+                        if (wrap) { try { wrap.remove(); } catch (e7) {} wrap = null; }
+                    }
+                } catch (err) {
+                    if (it && mode !== "ame") { try { it.remove(); } catch (e8) {} }
+                    if (wrap && mode !== "ame") { try { wrap.remove(); } catch (e9) {} }
+                    throw err;
+                } finally {
+                    for (i = 0; i < parked.length; i++) { try { parked[i].render = true; } catch (e10) {} }
+                    app.endUndoGroup();
+                }
+                return { path: file.fsName, name: decodeURI(file.name), size: size, mode: mode, w: w, h: h, wrapped: !!wrap || (w !== comp.width || h !== comp.height), template: tpl };
+            });
+        },
+
+        // Opens the folder of an exported file in Finder / Explorer.
+        exportReveal: function (path) {
+            return reply(function () {
+                var f = new File(String(path)), d = f.parent;
+                if (!d || !d.exists) { throw new Error("EXPORT_NO_FOLDER"); }
+                d.execute();
+                return { folder: d.fsName };
+            });
         },
 
         // Saves the frame at the time indicator of the open comp as a PNG in the given folder.

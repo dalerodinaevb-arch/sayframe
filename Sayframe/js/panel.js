@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.67.0";
+    var VERSION = "1.70.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -23,6 +23,7 @@
     var QUICK_KEY = "sayframe.quick.v1";      // быстрые задачи: { open, items: [{ id, name, text }] }
     var MAX_QUICK = 30;
     // Стандартные быстрые задачи. Текст написан подробно: так нейросеть точнее понимает, что нужно.
+    var QUICK_ICONS = { "q-text": "T↑", "q-lower": "▭", "q-logo": "◎", "q-tidy": "▤" };
     var QUICK_DEFAULTS = [
         { id: "q-text", name: "Появление текста",
           text: "Сделай плавное появление текста: у выделенных текстовых слоёв (если ничего не выделено — у всех текстовых слоёв открытой композиции) буквы проявляются по очереди, слегка поднимаясь снизу и из прозрачности. Начало — текущее время, длительность около 1 секунды, с плавным замедлением в конце." },
@@ -128,6 +129,7 @@
         panelWidth: 380,    // ширина содержимого в пикселях, когда panelFit выключен
         toolSize: "100",    // масштаб блоков раздела «Инструменты» в процентах: "100", "90", "80", "70", "60" или "50"
         toolTitles: true,   // показывать ли названия блоков раздела «Инструменты»
+        windows: "default", // отдельные окна в меню Window › Extensions, через запятую: "ease,align"; "default" — стандартный набор
         hiddenTools: "",    // спрятанные блоки «Инструментов» и «Шейпа», через запятую: "cache,nullp"
         stats: true,        // отправлять ли автору анонимный сигнал «установлено» и «открыто сегодня»
         infoTips: true,     // подсказки-окошки при наведении курсора на секунду
@@ -684,6 +686,231 @@
 
     var platform = window.__SAYFRAME_TEST_PLATFORM__ || makePlatform();
 
+    // ---------------------------------------------------------------- отдельные окна
+    // Раздел или блок можно открыть своим окном After Effects (Window › Extensions › «Sayframe — …»).
+    // Каждое окно — своё расширение в manifest.xml с Id com.sayframe.ae.win.<key>; панель узнаёт по Id,
+    // что ей показать. Какие окна есть в меню, выбирают в Настройках › «Окна»: панель переписывает manifest.xml,
+    // After Effects читает его при запуске.
+    var WIN_PREFIX = "com.sayframe.ae.win.";
+    var WINDOWS = [
+        { key: "anim", tab: "tools", label: "Анимация", w: 380, h: 720 },
+        { key: "tools", tab: "motion", label: "Инструменты", w: 380, h: 720 },
+        { key: "shape", tab: "shape", label: "Шейп", w: 380, h: 560 },
+        { key: "projects", tab: "brand", label: "Проекты", w: 380, h: 640 },
+        { key: "ease", tool: "ease", label: "Плавность", w: 300, h: 330 },
+        { key: "align", tool: "align", label: "Выровнять", w: 300, h: 300 },
+        { key: "anchor", tool: "anchor", label: "Якорь", w: 300, h: 300 },
+        { key: "stagger", tool: "stagger", label: "Лесенка", w: 300, h: 340 },
+        { key: "easecopy", tool: "easecopy", label: "Копия", w: 300, h: 330 },
+        { key: "paste", tool: "paste", label: "Картинка", w: 300, h: 180 },
+        { key: "organize", tool: "organize", label: "Порядок", w: 300, h: 200 },
+        { key: "decompose", tool: "decompose", label: "Декомпоз", w: 300, h: 200 },
+        { key: "cache", tool: "cache", label: "Кэш", w: 300, h: 200 },
+        { key: "nullp", tool: "nullp", label: "Null", w: 300, h: 200 },
+        { key: "unused", tool: "unused", label: "Чистка", w: 300, h: 200 },
+        { key: "cutout", tool: "cutout", label: "Вырезка", w: 300, h: 200 },
+        { key: "pathfinder", tool: "pathfinder", label: "Pathfinder", w: 300, h: 260 },
+        { key: "split", tool: "split", label: "Разделить", w: 300, h: 200 },
+        { key: "export", label: "Экспорт", w: 340, h: 640 }
+    ];
+    var WIN_DEFAULT = ["anim", "tools", "shape", "projects", "ease", "align", "anchor", "stagger", "easecopy", "export"];
+
+    function winByKey(key) {
+        var i;
+        for (i = 0; i < WINDOWS.length; i++) { if (WINDOWS[i].key === key) { return WINDOWS[i]; } }
+        return null;
+    }
+    function winByTool(tool) {
+        var i;
+        for (i = 0; i < WINDOWS.length; i++) { if (WINDOWS[i].tool === tool) { return WINDOWS[i]; } }
+        return null;
+    }
+
+    // Это окно — отдельный раздел или блок? null — большой Sayframe.
+    var SOLO = (function () {
+        var id = "";
+        try { id = String(window.__adobe_cep__ && window.__adobe_cep__.getExtensionId ? window.__adobe_cep__.getExtensionId() : ""); } catch (e) {}
+        return id.indexOf(WIN_PREFIX) === 0 ? winByKey(id.slice(WIN_PREFIX.length)) : null;
+    })();
+
+    function windowList(text) {
+        var out = [];
+        if (text === "default" || typeof text !== "string") { return WIN_DEFAULT.slice(); }
+        text.split(",").forEach(function (k) { if (winByKey(k) && out.indexOf(k) < 0) { out.push(k); } });
+        return WINDOWS.map(function (w) { return w.key; }).filter(function (k) { return out.indexOf(k) >= 0; });
+    }
+
+    // manifest.xml с нужными окнами: прежние окна убираются, новые встают после большой панели.
+    function windowsManifest(text, keys) {
+        var list = "", disp = "";
+        text = String(text).replace(/\r?\n[ \t]*<Extension Id="com\.sayframe\.ae\.win\.[^"]+" Version="[^"]*"\/>/g, "")
+            .replace(/\r?\n[ \t]*<Extension Id="com\.sayframe\.ae\.win\.[^"]+">[\s\S]*?\n[ \t]*<\/Extension>/g, "");
+        keys.forEach(function (k) {
+            var w = winByKey(k);
+            if (!w) { return; }
+            list += '\n    <Extension Id="' + WIN_PREFIX + k + '" Version="1.0.0"/>';
+            disp += "\n    <Extension Id=\"" + WIN_PREFIX + k + "\">\n      <DispatchInfo>\n        <Resources>\n          <MainPath>./index.html</MainPath>\n" +
+                "          <ScriptPath>./jsx/host.jsx</ScriptPath>\n          <CEFCommandLine>\n            <Parameter>--enable-nodejs</Parameter>\n" +
+                "            <Parameter>--mixed-context</Parameter>\n          </CEFCommandLine>\n        </Resources>\n        <Lifecycle>\n" +
+                "          <AutoVisible>true</AutoVisible>\n        </Lifecycle>\n        <UI>\n          <Type>Panel</Type>\n" +
+                "          <Menu>Sayframe — " + w.label + "</Menu>\n          <Geometry>\n" +
+                "            <Size>\n              <Height>" + w.h + "</Height>\n              <Width>" + w.w + "</Width>\n            </Size>\n" +
+                "            <MinSize>\n              <Height>120</Height>\n              <Width>200</Width>\n            </MinSize>\n" +
+                "            <MaxSize>\n              <Height>2400</Height>\n              <Width>1200</Width>\n            </MaxSize>\n" +
+                "          </Geometry>\n        </UI>\n      </DispatchInfo>\n    </Extension>";
+        });
+        text = text.replace(/(<Extension Id="com\.sayframe\.ae\.panel" Version="[^"]*"\/>)/, function (m) { return m + list; });
+        return text.replace(/(\r?\n[ \t]*<\/DispatchInfoList>)/, function (m) { return disp + m; });
+    }
+
+    // Окна, которые After Effects прочитал при запуске (их можно открыть сразу), и есть ли запрет на запись.
+    var winLoaded = null, winLocked = "";
+
+    function manifestPath() { return platform.join(extensionDir(), "CSXS", "manifest.xml"); }
+
+    function loadedWindows(text) {
+        var re = /<Extension Id="com\.sayframe\.ae\.win\.([^"]+)" Version="[^"]*"\/>/g, m, out = [];
+        while ((m = re.exec(String(text))) !== null) { out.push(m[1]); }
+        return out;
+    }
+
+    // Приводит manifest.xml к выбору из настроек. Возвращает "same" (уже так), "written" (нужен перезапуск AE),
+    // "signed" / "noaccess" / "nofile" — переписать нельзя.
+    async function syncWindowsManifest() {
+        var dir = extensionDir(), text, next;
+        if (!dir || !platform.available) { return "nofile"; }
+        try { text = await platform.readText(manifestPath()); } catch (e) { return "nofile"; }
+        if (winLoaded === null) { winLoaded = loadedWindows(text); }
+        next = windowsManifest(text, windowList(settings.windows));
+        if (next === text) { return "same"; }
+        try { if (await platform.exists(platform.join(dir, "META-INF", "signatures.xml"))) { winLocked = "signed"; return "signed"; } } catch (e1) {}
+        try { await platform.writeText(manifestPath(), next); } catch (e2) { winLocked = "noaccess"; return "noaccess"; }
+        return "written";
+    }
+
+    function openWindow(key) {
+        var w = winByKey(key), list;
+        if (!w) { return; }
+        if (winLoaded && winLoaded.indexOf(key) >= 0 && window.__adobe_cep__ && typeof window.__adobe_cep__.requestOpenExtension === "function") {
+            try { window.__adobe_cep__.requestOpenExtension(WIN_PREFIX + key, ""); return; } catch (e) {}
+        }
+        list = windowList(settings.windows);
+        if (list.indexOf(key) < 0) { list.push(key); }
+        settings.windows = windowList(list.join(",")).join(",");
+        if (draft) { draft.windows = settings.windows; }
+        storeSettings(settings);
+        showWindowPicker();
+        syncWindowsManifest().then(function (r) {
+            if (r === "signed" || r === "noaccess" || r === "nofile") { setStatus(winLockText(r), "error"); return; }
+            setStatus("Окно «" + w.label + "» появится после перезапуска After Effects: Window › Extensions › Sayframe — " + w.label + ".", "done");
+        });
+    }
+
+    function winLockText(r) {
+        return r === "signed" ? "Эта копия панели установлена из подписанного пакета: список окон поменять нельзя." :
+            "Нет доступа к папке панели: список окон поменять не получилось. Переустановите панель установщиком.";
+    }
+
+    // Настройки › «Окна»: переключатели разделов и блоков.
+    function buildWindowPicker() {
+        [["Разделы", function (w) { return !!w.tab; }], ["Блоки", function (w) { return !w.tab; }]].forEach(function (g) {
+            var head = document.createElement("span"), box = document.createElement("div");
+            head.className = "label";
+            head.textContent = g[0];
+            box.className = "win-list";
+            WINDOWS.filter(g[1]).forEach(function (w) {
+                var lab = document.createElement("label"), inp = document.createElement("input"), tr = document.createElement("span"), tx = document.createElement("span");
+                lab.className = "switch";
+                inp.type = "checkbox";
+                inp.setAttribute("data-win", w.key);
+                tr.className = "track";
+                tx.className = "text";
+                tx.textContent = w.label;
+                lab.appendChild(inp); lab.appendChild(tr); lab.appendChild(tx);
+                inp.addEventListener("change", onWindowPick);
+                box.appendChild(lab);
+            });
+            ui.winPicker.appendChild(head);
+            ui.winPicker.appendChild(box);
+        });
+    }
+
+    function showWindowPicker() {
+        var list = windowList((draft || settings).windows);
+        Array.prototype.forEach.call(ui.winPicker.querySelectorAll("input[data-win]"), function (i) {
+            i.checked = list.indexOf(i.getAttribute("data-win")) >= 0;
+            i.disabled = !!winLocked;
+        });
+        if (winLocked) { ui.winNote.textContent = winLockText(winLocked); }
+    }
+
+    async function onWindowPick(e) {
+        var list = [], r;
+        e.stopPropagation();
+        Array.prototype.forEach.call(ui.winPicker.querySelectorAll("input[data-win]"), function (i) { if (i.checked) { list.push(i.getAttribute("data-win")); } });
+        settings.windows = list.join(",");
+        if (draft) { draft.windows = settings.windows; }
+        storeSettings(settings);
+        r = await syncWindowsManifest();
+        if (r === "signed" || r === "noaccess" || r === "nofile") { ui.winNote.textContent = winLockText(r); showWindowPicker(); return; }
+        ui.winNote.textContent = sameList(list, winLoaded || []) ? "Меню Window › Extensions такое же, как сейчас." :
+            "Сохранено. Перезапустите After Effects — меню Window › Extensions обновится.";
+    }
+
+    function sameList(a, b) { return a.slice().sort().join() === b.slice().sort().join(); }
+
+    // Кнопка ↗ у каждого блока большого Sayframe: открыть его отдельным окном.
+    function addWindowButtons() {
+        Array.prototype.forEach.call(document.querySelectorAll(".motion-tools .tool-card[data-tool]"), function (card) {
+            var w = winByTool(card.getAttribute("data-tool")), b;
+            if (!w || card.querySelector(".win-open")) { return; }
+            b = winButton(w);
+            card.appendChild(b);
+        });
+        ui.exHead.insertBefore(winButton(winByKey("export")), ui.exClose);
+    }
+
+    function winButton(w) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "win-open";
+        b.setAttribute("data-win", w.key);
+        b.title = "Открыть «" + w.label + "» отдельным окном";
+        b.setAttribute("aria-label", b.title);
+        b.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5 3 9"/></svg>';
+        b.addEventListener("mousedown", function (e) { e.stopPropagation(); });
+        b.addEventListener("click", function (e) { e.stopPropagation(); e.preventDefault(); openWindow(w.key); });
+        return b;
+    }
+
+    // Само отдельное окно: тема «After Effects», без шапки и вкладок; блок — один, раздел — целиком.
+    function startSolo() {
+        var root = document.documentElement, card;
+        root.setAttribute("data-solo", SOLO.key);
+        if (SOLO.tab) {
+            root.setAttribute("data-solo-kind", "tab");
+            showTab(SOLO.tab);
+        } else if (SOLO.tool) {
+            root.setAttribute("data-solo-kind", "tool");
+            card = document.querySelector('.motion-tools .tool-card[data-tool="' + SOLO.tool + '"]');
+            if (card) {
+                card.classList.add("solo-card");
+                card.classList.remove("tool-off");
+                card.removeAttribute("style");
+                showTab(card.closest("#shapeTools") ? "shape" : "motion");
+            }
+        } else {
+            root.setAttribute("data-solo-kind", "export");
+            Object.keys(TABS).forEach(function (k) { TABS[k].view.hidden = true; });
+            ui.exportBar.parentNode.insertBefore(ui.statusBox, ui.exportBar.nextSibling);
+            onExport();
+            // Вернулись в окно — композиция могла смениться.
+            window.addEventListener("focus", function () { if (!busy && !ui.exSetup.hidden) { exLoadInfo(); } });
+        }
+        applyTheme(settings);
+        setStatus("Готов.", "");
+    }
+
     // ---------------------------------------------------------------- host
 
     // JSON только из ASCII: так строку можно без искажений передать в ExtendScript.
@@ -778,6 +1005,11 @@
             return "After Effects не ответил панели. Закройте и снова откройте её в меню Window > Extensions.";
         }
         if (m === "NODE_UNAVAILABLE") { return "Панель не получила доступ к файлам (Node.js выключен)."; }
+        if (m === "NO_H264") { return "В After Effects нет настройки H.264 (MP4) — нужен After Effects 2023 или новее. Или включите «Через Media Encoder»."; }
+        if (m === "EXPORT_NO_FOLDER") { return "Не получилось создать папку для видео. " + FILE_ACCESS_HINT; }
+        if (m === "EXPORT_BUSY") { return "After Effects уже что-то сохраняет (Render Queue). Дождитесь конца и попробуйте снова."; }
+        if (m === "BAD_EXPORT_SIZE") { return "Размер видео — от 16 до 16384 пикселей."; }
+        if (m === "NO_RENDER_QUEUE") { return "У After Effects не нашлось Render Queue."; }
         if (m === "FRAME_NOT_SAVED") { return "After Effects не сохранил кадр. " + FILE_ACCESS_HINT; }
         if (m === "NO_PICTURE_IN_FILE") { return "В этом файле нет изображения — нужен ролик или картинка."; }
         if (m === "NOT_AN_IMAGE") { return "Скопированный файл не является изображением."; }
@@ -915,17 +1147,18 @@
         root.setProperty("--on-accent", lum > 0.5 ? "#0b0c12" : "#ffffff");
         root.setProperty("--bg", bg.hex);
         root.setProperty("--panel-w", clampPanelWidth(s.panelWidth) + "px");
-        document.documentElement.setAttribute("data-design", DESIGNS.indexOf(s.design) >= 0 ? s.design : "studio");
+        document.documentElement.setAttribute("data-design", SOLO ? "ae" : (DESIGNS.indexOf(s.design) >= 0 ? s.design : "studio"));
         document.documentElement.setAttribute("data-fit", s.panelFit === false ? "off" : "on");
         document.documentElement.setAttribute("data-tools", cleanToolSize(s.toolSize));
         root.setProperty("--tz", String(Number(cleanToolSize(s.toolSize)) / 100));
         document.documentElement.setAttribute("data-titles", s.toolTitles === false ? "off" : "on");
-        applyHostSkin(s.design === "ae");
+        applyHostSkin(SOLO ? true : s.design === "ae");
         toolsHidden = hiddenToolList(s.hiddenTools);
         Array.prototype.forEach.call(document.querySelectorAll(".motion-tools .tool-card[data-tool]"), function (c) {
             c.classList.toggle("tool-off", toolsHidden.indexOf(c.getAttribute("data-tool")) >= 0);
         });
         relayoutTools();
+        aiLayout();
         stickTop();
     }
 
@@ -1011,7 +1244,7 @@
         refBtn: el("refBtn"), refChip: el("refChip"), refText: el("refText"), refClear: el("refClear"),
         exprCard: el("exprCard"), exprToggle: el("exprToggle"), exprBody: el("exprBody"), exprWish: el("exprWish"),
         exprApplyBtn: el("exprApplyBtn"), exprFixBtn: el("exprFixBtn"),
-        quickBox: el("quickBox"), quickToggle: el("quickToggle"), quickAdd: el("quickAdd"), quickEdit: el("quickEdit"), quickList: el("quickList"),
+        quickBox: el("quickBox"), aiModes: el("aiModes"), promptFoot: el("promptFoot"), aiExample: el("aiExample"), aiExampleMenu: el("aiExampleMenu"), aiStyleBtn: el("aiStyleBtn"), aiStylePop: el("aiStylePop"), scriptsEmpty: el("scriptsEmpty"), quickToggle: el("quickToggle"), quickAdd: el("quickAdd"), quickEdit: el("quickEdit"), quickList: el("quickList"),
         quickForm: el("quickForm"), quickName: el("quickName"), quickText: el("quickText"), quickSave: el("quickSave"), quickCancel: el("quickCancel"),
         saveRow: el("saveRow"), saveScriptBtn: el("saveScriptBtn"), saveForm: el("saveForm"), saveName: el("saveName"),
         saveConfirm: el("saveConfirm"), saveCancel: el("saveCancel"),
@@ -1031,6 +1264,10 @@
         infoTip: el("infoTip"), infoTipTitle: el("infoTipTitle"), infoTipText: el("infoTipText"), infoTipHint: el("infoTipHint"),
         pasteOptsToggle: el("pasteOptsToggle"), pasteHint: el("pasteHint"),
         snapBar: el("snapBar"), snapClose: el("snapClose"), snapImport: el("snapImport"), snapBrowse: el("snapBrowse"), snapSave: el("snapSave"), snapFolder: el("snapFolder"),
+        winPicker: el("winPicker"), winNote: el("winNote"), exHead: el("exHead"),
+        exportBtn: el("exportBtn"), exportBar: el("exportBar"), exClose: el("exClose"), exSetup: el("exSetup"), exCompName: el("exCompName"), exCompMeta: el("exCompMeta"),
+        exTargets: el("exTargets"), exCustom: el("exCustom"), exW: el("exW"), exH: el("exH"), exFitRow: el("exFitRow"), exFitText: el("exFitText"), exFit: el("exFit"),
+        exQuality: el("exQuality"), exSpan: el("exSpan"), exFolder: el("exFolder"), exBrowse: el("exBrowse"), exAmeRow: el("exAmeRow"), exAme: el("exAme"), exGo: el("exGo"), exResults: el("exResults"),
         fxBtn: el("fxBtn"), snapBtn: el("snapBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
         orbitPane: el("orbitPane"), orbitStage: el("orbitStage"), orbitRing: el("orbitRing"), orbitLayout: el("orbitLayout"), orbitShape: el("orbitShape"),
         orbitCornerRow: el("orbitCornerRow"), orbitCornerIco: el("orbitCornerIco"), orbitCorners: el("orbitCorners"), orbitCornersVal: el("orbitCornersVal"),
@@ -1060,9 +1297,9 @@
         tbStroke: el("tbStroke"), tbStrokeVal: el("tbStrokeVal"), tbSkew: el("tbSkew"), tbSkewVal: el("tbSkewVal"), tbOpacity: el("tbOpacity"), tbOpacityVal: el("tbOpacityVal"),
         tbShadow: el("tbShadow"), tbBtn: el("tbBtn"),
         phPhone: el("phPhone"), phModel: el("phModel"), phColors: el("phColors"), phPose: el("phPose"), phSize: el("phSize"), phSizeVal: el("phSizeVal"),
-        rbStage: el("rbStage"), rbMode: el("rbMode"), rbRibbonOpts: el("rbRibbonOpts"), rbForm: el("rbForm"), rbText: el("rbText"), rbSep: el("rbSep"),
+        rbStage: el("rbStage"), rbSeedRow: el("rbSeedRow"), rbSeed: el("rbSeed"), rbDice: el("rbDice"), rbDirRow: el("rbDirRow"), rbDir: el("rbDir"), rbAngle: el("rbAngle"), rbAngleVal: el("rbAngleVal"), rbRunDir: el("rbRunDir"), rbMode: el("rbMode"), rbRibbonOpts: el("rbRibbonOpts"), rbForm: el("rbForm"), rbText: el("rbText"), rbSep: el("rbSep"),
         rbRibColorRow: el("rbRibColorRow"), rbRibColors: el("rbRibColors"), rbTextColors: el("rbTextColors"), rbRibbonSl: el("rbRibbonSl"), rbRingSl: el("rbRingSl"),
-        rbRibbonSw: el("rbRibbonSw"), rbRingSw: el("rbRingSw"), rbRun: el("rbRun"), rbBack: el("rbBack"), rbCamera: el("rbCamera"), rbBtn: el("rbBtn"),
+        rbRibbonSw: el("rbRibbonSw"), rbRingSw: el("rbRingSw"), rbRun: el("rbRun"), rbOverlap: el("rbOverlap"), rbShadow: el("rbShadow"), rbShadowRow: el("rbShadowRow"), rbBack: el("rbBack"), rbCamera: el("rbCamera"), rbBtn: el("rbBtn"),
         rbWidth: el("rbWidth"), rbWidthVal: el("rbWidthVal"), rbSize: el("rbSize"), rbSizeVal: el("rbSizeVal"), rbSpeed: el("rbSpeed"), rbSpeedVal: el("rbSpeedVal"),
         rbRings: el("rbRings"), rbRingsVal: el("rbRingsVal"), rbRadius: el("rbRadius"), rbRadiusVal: el("rbRadiusVal"), rbTilt: el("rbTilt"), rbTiltVal: el("rbTiltVal"),
         rbRingSpeed: el("rbRingSpeed"), rbRingSpeedVal: el("rbRingSpeedVal"),
@@ -1099,7 +1336,7 @@
         brandColorPick: el("brandColorPick"), brandColorHex: el("brandColorHex"), brandColorName: el("brandColorName"), brandColorAdd: el("brandColorAdd"),
         brandRigBtn: el("brandRigBtn"), brandFontList: el("brandFontList"), brandFontHead: el("brandFontHead"), brandFontBody: el("brandFontBody"),
         brandFontHeadApply: el("brandFontHeadApply"), brandFontBodyApply: el("brandFontBodyApply"), brandTexts: el("brandTexts"),
-        brandTop: el("brandTop"), brandSubs: el("brandSubs"), brandShareRow: el("brandShareRow"), brandExport: el("brandExport"), brandImport: el("brandImport"),
+        brandTop: el("brandTop"), brandSubs: el("brandSubs"), brandBar: el("brandBar"), brandMore: el("brandMore"), brandMenu: el("brandMenu"), brandSubChips: el("brandSubChips"), brandLogoCap: el("brandLogoCap"), brandShareRow: el("brandShareRow"), brandExport: el("brandExport"), brandImport: el("brandImport"),
         brandFirstImport: el("brandFirstImport"), brandAsk: el("brandAsk"), brandAskText: el("brandAskText"), brandAskUpdate: el("brandAskUpdate"),
         brandAskCopy: el("brandAskCopy"), brandAskCancel: el("brandAskCancel"),
         brandTextName: el("brandTextName"), brandTextValue: el("brandTextValue"), brandTextAdd: el("brandTextAdd"), brandFormats: el("brandFormats"),
@@ -1150,7 +1387,7 @@
         document.documentElement.setAttribute("data-tab", name);
         applyTheme(draft || settings);
         if (name === "motion" || name === "shape") { relayoutTools(); }
-        try { window.localStorage.setItem(TAB_KEY, name); } catch (e) {}
+        if (!SOLO) { try { window.localStorage.setItem(TAB_KEY, name); } catch (e) {} }
     }
 
     function savedTab() {
@@ -1380,6 +1617,9 @@
         ui.cutoutBtn.disabled = on;
         ui.fxBtn.disabled = on;
         ui.snapBtn.disabled = on;
+        ui.exportBtn.disabled = on;
+        ui.exGo.disabled = on || !exInfo || !(exState && exState.targets.length);
+        ui.exBrowse.disabled = on;
         ui.snapSave.disabled = on;
         ui.snapBrowse.disabled = on;
         ui.ecCopy.disabled = on;
@@ -2286,6 +2526,7 @@
     function drawScripts() {
         var n = scripts.items.length;
         ui.scriptsCard.hidden = n === 0;
+        if (ui.scriptsEmpty) { ui.scriptsEmpty.hidden = n > 0; }
         ui.scriptsCount.textContent = n ? String(n) : "";
         ui.scriptsToggle.setAttribute("aria-expanded", scripts.open ? "true" : "false");
         ui.scriptsList.hidden = !scripts.open;
@@ -2696,12 +2937,17 @@
         quick.items.forEach(function (q) {
             var b = document.createElement("button");
             var label = document.createElement("span");
-            var del;
+            var del, ic;
             b.className = "quick-chip";
             b.setAttribute("data-id", q.id);
             b.title = quickEditing ? "Изменить «" + q.name + "»" : q.text;
             label.textContent = q.name;
+            ic = document.createElement("i");
+            ic.className = "quick-ic";
+            ic.setAttribute("aria-hidden", "true");
+            ic.textContent = QUICK_ICONS[q.id] || "✦";
             b.appendChild(label);
+            b.appendChild(ic);
             if (quickEditing) {
                 del = document.createElement("span");
                 del.className = "quick-del";
@@ -2714,6 +2960,16 @@
             b.disabled = busy;
             ui.quickList.appendChild(b);
         });
+        if (!quickEditing && flowOn()) {
+            // «Студия»: последняя плитка — «Своя задача» (в других дизайнах для этого «+» в заголовке).
+            reset = document.createElement("button");
+            reset.className = "quick-new";
+            reset.setAttribute("data-act", "new");
+            reset.innerHTML = "<span>Своя задача</span><i class=\"quick-ic\" aria-hidden=\"true\">+</i>";
+            reset.title = "Сохранить свою задачу: текст из поля станет плиткой";
+            reset.disabled = busy;
+            ui.quickList.appendChild(reset);
+        }
         if (quickEditing && missingDefaults().length) {
             reset = document.createElement("button");
             reset.className = "quick-link";
@@ -2807,10 +3063,12 @@
         });
         ui.quickList.addEventListener("click", function (e) {
             var t = e.target;
-            var act = t.getAttribute ? t.getAttribute("data-act") : null;
+            var nw = t.closest ? t.closest(".quick-new") : null;
+            var act = nw ? "new" : t.getAttribute ? t.getAttribute("data-act") : null;
             var chip = t.closest ? t.closest(".quick-chip") : null;
             var q = chip ? quickById(chip.getAttribute("data-id")) : null;
             if (busy) { return; }
+            if (act === "new") { openQuickForm(null); return; }
             if (act === "reset") {
                 missingDefaults().forEach(function (d) { quick.items.push({ id: d.id, name: d.name, text: d.text }); });
                 storeQuick();
@@ -3412,7 +3670,7 @@
     }
 
     // Настройки разбиты на пять разделов: AI, Темы, Инструменты, Клавиши, Прочее.
-    var SET_PANES = ["ai", "theme", "tools", "keys", "more"];
+    var SET_PANES = ["ai", "theme", "tools", "win", "keys", "more"];
     var setPane = "ai";
 
     function showSetPane(name) {
@@ -3473,6 +3731,7 @@
         pressGroup(ui.previewPlay, draft.previewPlay === "hover" ? "hover" : "always");
         ui.toolTitles.checked = draft.toolTitles;
         showToolPicker();
+        showWindowPicker();
         ui.pasteAnywhere.checked = draft.pasteAnywhere !== false;
         pressGroup(ui.fxWhere, draft.fxWhere === "cursor" ? "cursor" : "panel");
         pressGroup(ui.designPick, DESIGNS.indexOf(draft.design) >= 0 ? draft.design : "studio");
@@ -6393,6 +6652,52 @@
             if (b) { b.setAttribute("aria-expanded", String(!on)); b.setAttribute("aria-label", on ? "Развернуть" : "Свернуть"); }
         });
         if (ui.orbitPane) { ui.orbitPane.classList.toggle("mk-wide", ui.orbitPane.clientWidth >= 664); }
+        mkMasonry();
+    }
+
+    // Несколько колонок «Макетов» — как кирпичная кладка: каждый блок встаёт в самую короткую колонку,
+    // так под свёрнутым блоком не остаётся пустого места рядом с высоким. В одну колонку — обычный порядок.
+    var mkLaying = false;
+    function mkMasonry() {
+        var pane = ui.orbitPane, cards, cs, padL, padT, W, gap = 12, n, cw, hs, i;
+        if (!pane || pane.hidden || mkLaying) { return; }
+        cards = Array.prototype.slice.call(pane.querySelectorAll(":scope > .mk-card"));
+        cs = getComputedStyle(pane);
+        padL = parseFloat(cs.paddingLeft) || 0; padT = parseFloat(cs.paddingTop) || 0;
+        W = pane.clientWidth - padL - (parseFloat(cs.paddingRight) || 0);
+        if (!(W > 0)) { return; }
+        n = Math.max(1, Math.floor((W + gap) / (320 + gap)));
+        mkLaying = true;
+        if (n === 1) {
+            pane.classList.remove("mk-masonry");
+            if (pane.mkSpacer) { pane.mkSpacer.style.height = "0px"; }
+            cards.forEach(function (c) { c.style.position = c.style.left = c.style.top = c.style.width = ""; });
+            mkLaying = false;
+            return;
+        }
+        pane.classList.add("mk-masonry");
+        cw = Math.min(420, (W - gap * (n - 1)) / n);
+        hs = [];
+        for (i = 0; i < n; i++) { hs.push(0); }
+        cards.forEach(function (c) {
+            var k = 0, j;
+            for (j = 1; j < n; j++) { if (hs[j] < hs[k] - 1) { k = j; } }
+            c.style.position = "absolute";
+            c.style.width = cw + "px";
+            c.style.left = (padL + k * (cw + gap)) + "px";
+            c.style.top = (padT + hs[k]) + "px";
+            hs[k] += c.offsetHeight + gap;
+        });
+        // Блоки стоят поверх потока; распорка внизу держит высоту раздела (и прокрутку).
+        if (!pane.mkSpacer) { pane.mkSpacer = document.createElement("div"); pane.mkSpacer.className = "mk-spacer"; pane.mkSpacer.setAttribute("aria-hidden", "true"); }
+        pane.appendChild(pane.mkSpacer);
+        pane.mkSpacer.style.height = Math.max(0, Math.max.apply(null, hs) - gap) + "px";
+        mkLaying = false;
+    }
+    var mkLayAt = 0;
+    function mkMasonrySoon() {
+        if (mkLayAt) { return; }
+        mkLayAt = requestAnimationFrame(function () { mkLayAt = 0; mkMasonry(); });
     }
 
     // Порядок блоков «Макетов»: блок перетаскивают за заголовок, порядок запоминается.
@@ -6423,9 +6728,10 @@
             if (!over || over === drag.card || over.parentNode !== pane) { return; }
             r = over.getBoundingClientRect();
             // Рядом (в одной строке) решает левая/правая половина, одна под другой — верхняя/нижняя.
-            side = Math.abs(r.top - drag.card.getBoundingClientRect().top) < 4;
+            side = pane.classList.contains("mk-masonry") ? Math.abs(r.left - drag.card.getBoundingClientRect().left) >= 4 : Math.abs(r.top - drag.card.getBoundingClientRect().top) < 4;
             before = side ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2;
             pane.insertBefore(drag.card, before ? over : over.nextSibling);
+            mkMasonry();
         }
         function onUp() {
             var d = drag;
@@ -6473,6 +6779,12 @@
             });
         });
         window.addEventListener("resize", function () { if (ui.orbitPane && !ui.orbitPane.hidden) { drawMkFolds(); drawOrbitPreview(); drawGridPreview(); } });
+        // Блок стал выше или ниже (переключили режим, показалась строка) или панель открылась — кладка заново.
+        if (typeof ResizeObserver === "function" && ui.orbitPane) {
+            var ro = new ResizeObserver(mkMasonrySoon);
+            ro.observe(ui.orbitPane);
+            Array.prototype.forEach.call(ui.orbitPane.querySelectorAll(":scope > .mk-card"), function (c) { ro.observe(c); });
+        }
         drawMkFolds();
     }
 
@@ -6600,7 +6912,7 @@
         ui.orbitNumbers.checked = orbit.numbers;
         ui.orbitCamera.checked = orbit.camera;
         ui.orbitBack.checked = orbit.back;
-        ui.orbitBackRow.hidden = !orbit.numbers;
+        ui.orbitBackRow.hidden = !orbit.numbers && orbit.mode !== "precomp";   // в прекомпе сзади может быть видна и картинка
         drawOrbitPreview();
     }
 
@@ -6620,11 +6932,12 @@
         try {
             res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: orbit.mode,
                 radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera, back: orbit.back },
-                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма" }]);
+                { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма", back: "обратная сторона",
+                    fxCount: "Карточек", fxRadius: "Радиус", fxW: "Ширина", fxH: "Высота", fxCorners: "Углы %", fxBack: "Сзади видно цифру и картинку" }]);
             setBusy(false);
             setStatus("Карусель готова: " + plural(res.cards, "карточка", "карточки", "карточек") + ", " + ORBIT_LAYOUT_NAMES[res.layout] + ". " +
-                "Крутите её слоем «" + res.ctrl + "» (Y Rotation)." +
-                (res.precomp ? " Каждая карточка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео." : "") +
+                "Крутите её слоем «" + res.ctrl + "» (Y Rotation); там же, в Effect Controls, — сколько карточек (до " + (res.cards + (res.spare || 0)) + "), радиус, размер, углы и что видно сзади." +
+                (res.precomp ? " Каждая карточка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео — она обрежется по форме карточки." : "") +
                 (res.camera ? " Добавлена камера «" + res.camera + "»" + (res.camRig ? " на 3D-нуле «" + res.camRig + "»: крутите или двигайте его, чтобы облететь карусель." : ".") : (res.hadCamera ? " Камера в композиции уже была." : "")) +
                 " Отменить — Cmd/Ctrl+Z.", "done");
         } catch (e) {
@@ -7130,6 +7443,289 @@
         });
     }
 
+    // ---- Быстрый экспорт: MP4 для площадок. Окно-плашка под шапкой, кнопка ⤓ в шапке.
+    var EXPORT_KEY = "sayframe.export.v1";
+    var EX_TARGETS = {
+        reels: { label: "Reels", w: 1080, h: 1920 },
+        youtube: { label: "YouTube", w: 1920, h: 1080 },
+        telegram: { label: "Telegram", light: true },
+        post: { label: "Пост 4x5", w: 1080, h: 1350 },
+        tiktok: { label: "TikTok", w: 1080, h: 1920 },
+        custom: { label: "" }
+    };
+    var EX_ORDER = ["reels", "youtube", "telegram", "post", "tiktok", "custom"];
+    var exState = { targets: ["reels"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080 };
+    var exInfo = null, exFolderNow = "", exDefaultNow = "";
+    try {
+        (function () {
+            var v = JSON.parse(window.localStorage.getItem(EXPORT_KEY) || "{}") || {};
+            if (Array.isArray(v.targets)) { exState.targets = v.targets.filter(function (t) { return EX_TARGETS[t]; }); }
+            if (/^(light|normal|max)$/.test(v.quality)) { exState.quality = v.quality; }
+            if (/^(all|work)$/.test(v.span)) { exState.span = v.span; }
+            if (/^(blur|black|crop)$/.test(v.fit)) { exState.fit = v.fit; }
+            if (typeof v.folder === "string") { exState.folder = v.folder; }
+            if (typeof v.ame === "boolean") { exState.ame = v.ame; }
+            if (v.cw > 0) { exState.cw = Math.round(v.cw); }
+            if (v.ch > 0) { exState.ch = Math.round(v.ch); }
+        })();
+    } catch (e) {}
+
+    function storeExport() { try { window.localStorage.setItem(EXPORT_KEY, JSON.stringify(exState)); } catch (e) {} }
+
+    // Размер для площадки: у Telegram — размер композиции (длинная сторона не больше 1920), у «Своего» — введённый.
+    function exSize(id) {
+        var t = EX_TARGETS[id], c = exInfo ? exInfo.comp : { w: 1920, h: 1080 }, k;
+        if (id === "custom") { return { w: exState.cw, h: exState.ch }; }
+        if (t.light) {
+            k = Math.min(1, 1920 / Math.max(c.w, c.h));
+            return { w: Math.round(c.w * k / 2) * 2, h: Math.round(c.h * k / 2) * 2 };
+        }
+        return { w: t.w, h: t.h };
+    }
+
+    function exShape(w, h) { return Math.abs(w / h - 1) < 0.02 ? "квадратн" : (w > h ? "горизонтальн" : "вертикальн"); }
+
+    function exOrder(ids) { return EX_ORDER.filter(function (id) { return ids.indexOf(id) >= 0; }); }
+
+    function exMismatch() {
+        var c = exInfo && exInfo.comp;
+        if (!c) { return null; }
+        return exOrder(exState.targets).filter(function (id) {
+            var s = exSize(id);
+            return Math.abs(s.w / s.h - c.w / c.h) > 0.01;
+        })[0] || null;
+    }
+
+    function exTargetName(id) { return id === "custom" ? exState.cw + "×" + exState.ch : (id === "reels" ? "Reels" : id === "post" ? "пост 4:5" : EX_TARGETS[id].label); }
+
+    function showExFolder(path) {
+        var parts = String(path || "").split(/[\\\/]/).filter(Boolean);
+        exFolderNow = path;
+        ui.exFolder.textContent = path === exDefaultNow && exInfo && exInfo.projectFolder ? "Рядом с проектом / Экспорт" :
+            "📁 " + (parts.length > 2 ? "…/" : "/") + parts.slice(-2).join("/");
+        ui.exFolder.title = path;
+    }
+
+    function drawExport() {
+        var n = exState.targets.length, mis = exMismatch(), c = exInfo && exInfo.comp, s;
+        Array.prototype.forEach.call(ui.exTargets.querySelectorAll(".ex-t"), function (b) {
+            var id = b.getAttribute("data-t");
+            b.setAttribute("aria-pressed", exState.targets.indexOf(id) >= 0 ? "true" : "false");
+            if (id === "custom") { b.querySelector("small").textContent = exState.targets.indexOf("custom") >= 0 ? exState.cw + "×" + exState.ch : "свой размер"; }
+        });
+        ui.exCustom.hidden = exState.targets.indexOf("custom") < 0;
+        if (document.activeElement !== ui.exW) { ui.exW.value = exState.cw; }
+        if (document.activeElement !== ui.exH) { ui.exH.value = exState.ch; }
+        [["exQuality", "quality"], ["exSpan", "span"], ["exFit", "fit"]].forEach(function (p) {
+            Array.prototype.forEach.call(ui[p[0]].querySelectorAll("button[data-v]"), function (b) {
+                b.setAttribute("aria-pressed", b.getAttribute("data-v") === exState[p[1]] ? "true" : "false");
+            });
+        });
+        ui.exFitRow.hidden = !mis;
+        if (mis && c) {
+            s = exSize(mis);
+            ui.exFitText.textContent = "Композиция " + exShape(c.w, c.h) + "ая, а " + exTargetName(mis) + " — " + exShape(s.w, s.h) + "ый. Как сделать?";
+        }
+        ui.exAmeRow.hidden = !(exInfo && exInfo.ame);
+        ui.exAme.checked = exState.ame;
+        ui.exGo.textContent = n > 1 ? "Сохранить " + n + " видео" : "Сохранить видео";
+        ui.exGo.disabled = busy || !n || !exInfo;
+    }
+
+    async function onExport() {
+        if (busy) { return; }
+        if (!ui.exportBar.hidden) { closeExport(); return; }
+        closeFxConsole();
+        closeSnapBar();
+        ui.exportBar.hidden = false;
+        ui.exSetup.hidden = false;
+        ui.exResults.hidden = true;
+        exInfo = null;
+        ui.exCompName.textContent = "Композиция";
+        ui.exCompMeta.textContent = "";
+        drawExport();
+        await exLoadInfo();
+        try { ui.exGo.focus(); } catch (e2) {}
+    }
+
+    // Что за композиция открыта и куда сохранять по умолчанию.
+    async function exLoadInfo() {
+        var res, c;
+        try {
+            res = await host("exportInfo", []);
+            exInfo = res;
+            c = res.comp;
+            ui.exCompName.textContent = c.name;
+            ui.exCompMeta.textContent = c.w + "×" + c.h + " · " + (Math.round(c.dur * 10) / 10) + " с";
+            exDefaultNow = res.projectFolder ? platform.join(res.projectFolder, "Экспорт") : platform.join(platform.homedir(), "Desktop", "Sayframe Экспорт");
+        } catch (e) {
+            exInfo = null;
+            ui.exCompName.textContent = e && e.message === "NO_ACTIVE_COMP" ? "Откройте композицию, которую сохранить" : "Нет связи с After Effects";
+            exDefaultNow = platform.join(platform.homedir(), "Desktop", "Sayframe Экспорт");
+        }
+        showExFolder(exState.folder || exDefaultNow);
+        drawExport();
+    }
+
+    // В отдельном окне «Экспорт» закрывать нечего: окно и есть экспорт.
+    function closeExport() { if (SOLO && !SOLO.tool && !SOLO.tab) { return; } ui.exportBar.hidden = true; }
+
+    async function onExBrowse() {
+        var res, start = exFolderNow || exDefaultNow;
+        if (busy) { return; }
+        try {
+            if (start === exDefaultNow) { try { await platform.mkdirp(start); } catch (e1) {} }
+            res = await host("snapPickFolder", [start, "Папка для видео"]);
+            if (res.folder) {
+                exState.folder = res.folder;
+                storeExport();
+                showExFolder(res.folder);
+            }
+        } catch (e) {
+            setStatus("Не удалось выбрать папку: " + humanError(e), "error");
+        }
+    }
+
+    function exSizeText(b) {
+        if (!(b > 0)) { return ""; }
+        return b >= 1048576 ? (Math.round(b / 104857.6) / 10).toString().replace(".", ",") + " МБ" : Math.max(1, Math.round(b / 1024)) + " КБ";
+    }
+
+    function exRow(job) {
+        var row = document.createElement("div"), st = document.createElement("span"), nm = document.createElement("span"), sm = document.createElement("small");
+        row.className = "ex-row";
+        st.className = "ex-st"; st.textContent = "○";
+        nm.className = "ex-nm"; nm.textContent = exInfo.comp.name + " — " + job.label + ".mp4";
+        sm.textContent = "ждёт";
+        row.appendChild(st); row.appendChild(nm); row.appendChild(sm);
+        job.row = row; job.st = st; job.nm = nm; job.sm = sm;
+        return row;
+    }
+
+    async function runExport() {
+        var jobs, folder, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null;
+        if (busy || !exInfo || !exState.targets.length) { return; }
+        folder = exFolderNow || exDefaultNow;
+        jobs = exOrder(exState.targets).map(function (id) {
+            var s = exSize(id);
+            return { id: id, w: s.w, h: s.h, label: id === "custom" ? s.w + "x" + s.h : EX_TARGETS[id].label,
+                quality: EX_TARGETS[id].light ? "light" : exState.quality };
+        });
+        setBusy(true);
+        ui.exSetup.hidden = true;
+        ui.exResults.hidden = false;
+        ui.exResults.textContent = "";
+        ui.exResults.classList.remove("finished");
+        now = document.createElement("div"); now.className = "ex-now";
+        bar = document.createElement("div"); bar.className = "ex-bar-track"; bar.appendChild(document.createElement("i"));
+        ui.exResults.appendChild(now); ui.exResults.appendChild(bar);
+        jobs.forEach(function (job) { ui.exResults.appendChild(exRow(job)); });
+        setStatus("Сохраняю видео…", "busy");
+        try {
+            if (!(await host("info", [])).fileAccess) { throw new Error(FILE_ACCESS_HINT); }
+            await platform.mkdirp(folder);
+        } catch (e0) {
+            jobs.forEach(function (job) { job.row.classList.add("fail"); job.st.textContent = "!"; job.sm.textContent = ""; });
+            now.textContent = "Не получилось начать";
+            ui.exResults.classList.add("finished");
+            setBusy(false);
+            exBackRow();
+            setStatus("Не удалось сохранить видео: " + humanError(e0), "error");
+            return;
+        }
+        for (i = 0; i < jobs.length; i++) {
+            j = jobs[i];
+            now.textContent = "Сохраняю «" + exInfo.comp.name + "» — " + j.label + (jobs.length > 1 ? " (" + (i + 1) + " из " + jobs.length + ")" : "");
+            j.st.textContent = "●"; j.sm.textContent = "сохраняю…";
+            bar.firstChild.style.width = Math.round(i / jobs.length * 100) + "%";
+            try {
+                r = await host("exportOne", [{ w: j.w, h: j.h, label: j.label, fit: exState.fit, quality: j.quality, span: exState.span,
+                    folder: folder, ame: !!(exInfo.ame && exState.ame), bin: "Sayframe Экспорт" }]);
+                done++;
+                last = r.path;
+                j.row.classList.add("done");
+                j.st.textContent = "✓";
+                j.nm.textContent = r.name || platform.basename(r.path);
+                j.nm.title = r.path;
+                if (r.mode === "ame") { ame = true; j.sm.textContent = "в Media Encoder"; } else { j.sm.textContent = exSizeText(r.size); }
+                j.row.appendChild(exShowBtn(r.path));
+            } catch (e) {
+                failed++;
+                j.row.classList.add("fail");
+                j.st.textContent = "!";
+                j.sm.textContent = "";
+                j.nm.title = humanError(e);
+                j.nm.textContent = j.label + ": " + humanError(e);
+                if (e && (e.message === "NO_ACTIVE_COMP" || e.message === "HOST_ERROR")) { break; }
+            }
+        }
+        ui.exResults.classList.add("finished");
+        setBusy(false);
+        now.textContent = failed ? (done ? "Сохранено " + done + " из " + jobs.length : "Не получилось сохранить") :
+            (ame ? "Отправлено в Media Encoder — он сохранит видео в фоне" : (done > 1 ? "Готово, " + done + " видео" : "Готово"));
+        exBackRow();
+        setStatus(failed ? "Сохранить получилось не всё — причина в строке с ошибкой." :
+            (ame ? "Видео ушли в Media Encoder. Папка: " + platform.basename(folder) + "." : "Видео сохранены в папку «" + platform.basename(folder) + "»."), failed ? "error" : "done");
+    }
+
+    function exShowBtn(path) {
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "ghost"; b.textContent = "Показать"; b.title = "Открыть папку с видео";
+        b.addEventListener("click", function () {
+            host("exportReveal", [path]).catch(function (e) { setStatus("Не удалось открыть папку: " + humanError(e), "error"); });
+        });
+        return b;
+    }
+
+    function exBackRow() {
+        var row = document.createElement("div"), b = document.createElement("button");
+        row.className = "ex-again";
+        b.type = "button"; b.className = "ghost"; b.textContent = "Назад к настройкам";
+        b.addEventListener("click", function () { ui.exResults.hidden = true; ui.exSetup.hidden = false; drawExport(); try { ui.exGo.focus(); } catch (e) {} });
+        row.appendChild(b);
+        ui.exResults.appendChild(row);
+    }
+
+    function enableExport() {
+        ui.exportBtn.addEventListener("click", onExport);
+        ui.exClose.addEventListener("click", closeExport);
+        ui.exBrowse.addEventListener("click", onExBrowse);
+        ui.exGo.addEventListener("click", runExport);
+        ui.exTargets.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest(".ex-t") : null, id, k;
+            if (!b) { return; }
+            id = b.getAttribute("data-t");
+            k = exState.targets.indexOf(id);
+            if (k >= 0) { exState.targets.splice(k, 1); } else { exState.targets.push(id); }
+            storeExport();
+            drawExport();
+        });
+        [["exQuality", "quality"], ["exSpan", "span"], ["exFit", "fit"]].forEach(function (p) {
+            ui[p[0]].addEventListener("click", function (e) {
+                var b = e.target.closest ? e.target.closest("button[data-v]") : null;
+                if (!b) { return; }
+                exState[p[1]] = b.getAttribute("data-v");
+                storeExport();
+                drawExport();
+            });
+        });
+        ["exW", "exH"].forEach(function (id) {
+            ui[id].addEventListener("input", function () {
+                var v = Math.round(Number(ui[id].value));
+                if (v >= 16 && v <= 8192) { exState[id === "exW" ? "cw" : "ch"] = v; storeExport(); drawExport(); }
+            });
+        });
+        ui.exAme.addEventListener("change", function () { exState.ame = ui.exAme.checked; storeExport(); });
+        // Esc закрывает окно, пока фокус в нём или нигде (например, после «Назад к настройкам»).
+        document.addEventListener("keydown", function (e) {
+            var a = document.activeElement;
+            if (e.key !== "Escape" || ui.exportBar.hidden || busy) { return; }
+            if (a && a !== document.body && !ui.exportBar.contains(a)) { return; }
+            e.preventDefault(); e.stopPropagation(); closeExport();
+        }, true);
+        drawExport();
+    }
+
     async function copyPngToClipboard(path) {
         var r;
         try {
@@ -7531,6 +8127,8 @@
 
     function registerHotkeys() {
         var cep = window.__adobe_cep__, map = parseHotkeys(settings.hotkeys), list = [], k, parts, code;
+        // Сочетания по всему After Effects слушает только большой Sayframe, иначе одно нажатие сработает в каждом окне.
+        if (SOLO) { return; }
         watchHostHotkeys(map);
         if (!cep || typeof cep.registerKeyEventsInterest !== "function") { return; }
         for (k in map) {
@@ -7717,8 +8315,10 @@
     function listenHostHotkeys() {
         var cep = window.__adobe_cep__;
         if (cep && typeof cep.addEventListener === "function") {
-            try { cep.addEventListener(HOST_KEY_EVENT, onHostHotkey); } catch (e) {}
-            try { cep.addEventListener(FX_EVENT, onFxPopupApplied); } catch (e2) {}
+            if (!SOLO) {
+                try { cep.addEventListener(HOST_KEY_EVENT, onHostHotkey); } catch (e) {}
+                try { cep.addEventListener(FX_EVENT, onFxPopupApplied); } catch (e2) {}
+            }
             // В After Effects поменяли яркость интерфейса — тема «After Effects» перекрашивается сразу.
             try { cep.addEventListener("com.adobe.csxs.events.ThemeColorChanged", function () { applyHostSkin(document.documentElement.getAttribute("data-design") === "ae"); }); } catch (e3) {}
         }
@@ -8084,9 +8684,9 @@
     // ---- Текст по ленте (Анимация › Макеты): лента с бегущим текстом по линии или 3D-кольцо из букв.
     var RB_KEY = "sayframe.ribbon.v1";
     var RB_DEFAULTS = { mode: "ribbon", form: "loops", text: "WEST LOOP", sep: "•", ribbonColor: "#3aa0e8", textColor: "#e8672c", ringColor: "#ffffff",
-        width: 120, size: 60, speed: 35, run: true, rings: 2, radius: 560, tilt: 12, ringSpeed: 40, back: true, camera: true };
-    var RB_RANGES = { width: [10, 400], size: [20, 100], speed: [0, 100], rings: [1, 5], radius: [100, 1500], tilt: [0, 60], ringSpeed: [0, 100] };
-    var RB_CHOICES = { mode: ["ribbon", "ring"], form: ["path", "wave", "loops", "circle", "spiral"] };
+        width: 120, size: 60, speed: 35, run: true, rings: 2, radius: 560, tilt: 12, ringSpeed: 40, back: true, camera: true, seed: 4127, angle: 0, dir: "fwd", overlap: false, shadow: true };
+    var RB_RANGES = { width: [10, 400], size: [20, 100], speed: [0, 100], rings: [1, 5], radius: [100, 1500], tilt: [0, 60], ringSpeed: [0, 100], seed: [1, 99999], angle: [-90, 90] };
+    var RB_CHOICES = { mode: ["ribbon", "ring"], form: ["path", "wave", "loops", "circle", "spiral", "random"], dir: ["fwd", "back"] };
 
     function rbClean(src) {
         var o = {}, k;
@@ -8102,8 +8702,44 @@
     var rb = (function () { try { return rbClean(JSON.parse(window.localStorage.getItem(RB_KEY) || "null")); } catch (e) { return rbClean(null); } })();
 
     // Те же формы, что в host.jsx (ribSample + плавные кривые ribShape): превью совпадает с композицией.
-    function rbSample(form, W, H) {
+    function rbRng(seed) {
+        var s = Math.floor(Math.abs(Number(seed) || 1)) % 2147483646 + 1;
+        return function () { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+    }
+
+    // «Случайная»: 4–6 изгибов, на части — петля. Тот же номер варианта — та же линия (как ribRandom в host.jsx).
+    function rbRandom(seed, W, H) {
+        var r = rbRng(seed), pts = [], n = 4 + Math.floor(r() * 3), i, k, x, y, rad, dir, cy, t, step = W * 1.1 / n;
+        for (i = 0; i <= n; i++) {
+            x = -W * 0.55 + i * step;
+            y = (r() - 0.5) * H * 0.5;
+            pts.push([x, y]);
+            if (i > 0 && i < n && r() < 0.5) {
+                rad = H * (0.08 + r() * 0.07);
+                dir = r() < 0.5 ? 1 : -1;
+                cy = y - dir * rad;
+                for (k = 1; k < 8; k++) { t = k / 8 * 2 * Math.PI; pts.push([x + rad * Math.sin(t) + k / 8 * step * 0.12, cy + dir * rad * Math.cos(t)]); }
+                pts.push([x + step * 0.14, y]);
+            }
+        }
+        return pts;
+    }
+
+    // Направление линии: форма строится для повёрнутого кадра и поворачивается (как ribSample в host.jsx).
+    function rbSample(form, W, H, o) {
+        var a = (o && Number(o.angle)) || 0, sm, c, sn, rw, rh;
+        if (form === "circle" || form === "path" || !a) { return rbSample0(form, W, H, o); }
+        c = Math.cos(a * Math.PI / 180); sn = Math.sin(a * Math.PI / 180);
+        rw = Math.min(Math.abs(c) * W + Math.abs(sn) * H, Math.sqrt(W * W + H * H));
+        rh = H + Math.abs(sn) * (W - H);
+        sm = rbSample0(form, rw, rh, o);
+        sm.pts = sm.pts.map(function (p) { return [p[0] * c - p[1] * sn, p[0] * sn + p[1] * c]; });
+        return sm;
+    }
+
+    function rbSample0(form, W, H, o) {
         var pts = [], i, n, t, u, m = Math.min(W, H), r, xs = [], ys = [], s, x0, x1, y0, y1;
+        if (form === "random") { return { pts: rbRandom(o && o.seed, W, H), closed: false }; }
         if (form === "circle") { r = m * 0.3; for (i = 0; i < 24; i++) { t = i / 24 * 2 * Math.PI; pts.push([r * Math.sin(t), -r * Math.cos(t)]); } return { pts: pts, closed: true }; }
         if (form === "spiral") { n = 44; for (i = 0; i <= n; i++) { t = i / n * 5 * Math.PI; r = m * 0.4 * (0.12 + 0.88 * i / n); pts.push([r * Math.cos(t), r * Math.sin(t)]); } return { pts: pts, closed: false }; }
         if (form === "loops" || form === "path") {
@@ -8136,6 +8772,57 @@
 
     function rbUnit() { return rb.text + " " + (rb.sep ? rb.sep + " " : ""); }
 
+    // «Перекрытия 3D» в превью: лента режется по словам, каждый кусок рисуется поверх предыдущих вместе со своими буквами.
+    function rbOverlapPreview(svg, txt, fs) {
+        var NS = "http://www.w3.org/2000/svg", P = svg.querySelector("path"), W = rb.width, L, tmp, n, adv = [], x = 0, j, w, cuts = [0], groups = [], g, defs, sh;
+        try { L = P.getTotalLength(); } catch (e) { return; }
+        if (!(L > 0)) { return; }
+        txt = txt.replace(/\s+$/, "");
+        tmp = document.createElementNS(NS, "text");
+        tmp.setAttribute("style", "font-size:" + fs + "px");
+        tmp.textContent = txt;
+        svg.appendChild(tmp);
+        try { n = Math.min(txt.length, tmp.getNumberOfChars()); for (j = 0; j < n; j++) { w = tmp.getSubStringLength(j, 1); adv.push([x, w]); x += w; } } catch (e2) { n = 0; }
+        svg.removeChild(tmp);
+        if (!n) { return; }
+        for (j = 1; j < n; j++) { if (txt.charAt(j - 1) === " ") { cuts.push(j); } }
+        for (j = 0; j < cuts.length; j++) {
+            var s0 = cuts[j], e0 = j + 1 < cuts.length ? cuts[j + 1] : n, a = s0 ? adv[s0][0] - adv[s0 - 1][1] / 2 : 0, b = e0 < n ? adv[e0][0] - adv[e0 - 1][1] / 2 : x;
+            if (a >= L) { break; }
+            groups.push([s0, e0, a, Math.min(b, L)]);
+        }
+        if (groups.length) { groups[groups.length - 1][3] = L; }
+        ["stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"].forEach(function (a) { P.removeAttribute(a); });
+        svg.querySelector("text").remove();
+        defs = document.createElementNS(NS, "defs");
+        defs.innerHTML = "<filter id=\"rbSh\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\"><feGaussianBlur stdDeviation=\"" + Math.round(W * 0.18) + "\"/></filter>";
+        svg.appendChild(defs);
+        g = document.createElementNS(NS, "g");
+        g.setAttribute("class", "rb-pieces");
+        svg.appendChild(g);
+        groups.forEach(function (G, k) {
+            var len = G[3] - G[2], sp = "", q, el;
+            if (rb.shadow && k > 0) {
+                // Тень только на ленте под куском: маска — вся лента минус сам кусок с запасом.
+                sh = document.createElementNS(NS, "mask");
+                sh.setAttribute("id", "rbM" + k); sh.setAttribute("maskUnits", "userSpaceOnUse");
+                sh.setAttribute("x", "-1200"); sh.setAttribute("y", "-700"); sh.setAttribute("width", "2400"); sh.setAttribute("height", "1400");
+                sh.innerHTML = "<use href=\"#rbPrevPath\" fill=\"none\" stroke=\"#fff\" stroke-width=\"" + W + "\"/><use href=\"#rbPrevPath\" fill=\"none\" stroke=\"#000\" stroke-width=\"" + (W + 8) + "\" stroke-dasharray=\"0 " + Math.max(0, G[2] - W * 1.6) + " " + (len + W * 3.2) + " " + L * 3 + "\"/>";
+                defs.appendChild(sh);
+                el = document.createElementNS(NS, "g");
+                el.setAttribute("mask", "url(#rbM" + k + ")");
+                el.innerHTML = "<use href=\"#rbPrevPath\" fill=\"none\" stroke=\"#000\" stroke-opacity=\".55\" stroke-width=\"" + (W + 10) + "\" stroke-dasharray=\"0 " + G[2] + " " + len + " " + L * 3 + "\" filter=\"url(#rbSh)\"/>";
+                g.appendChild(el);
+            }
+            for (q = 0; q < n; q++) { sp += q >= G[0] && q < G[1] ? rbEsc(txt.charAt(q)) : "<tspan fill-opacity=\"0\">" + rbEsc(txt.charAt(q)) + "</tspan>"; }
+            el = document.createElementNS(NS, "g");
+            el.setAttribute("class", "rb-piece");
+            el.innerHTML = "<use href=\"#rbPrevPath\" fill=\"none\" stroke=\"" + rb.ribbonColor + "\" stroke-width=\"" + W + "\" stroke-linecap=\"" + (k === 0 || k === groups.length - 1 ? "round" : "butt") + "\" stroke-dasharray=\"0 " + G[2] + " " + (len + 0.8) + " " + L * 3 + "\"/>" +
+                "<text fill=\"" + rb.textColor + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + sp + "</textPath></text>";
+            g.appendChild(el);
+        });
+    }
+
     function drawRibbonPreview() {
         var st = ui.rbStage, unit = rbUnit(), txt = "", i, fs, html = "", n, R, rows, j, k, a, back;
         if (!st) { return; }
@@ -8143,8 +8830,9 @@
         if (rb.mode === "ribbon") {
             for (i = 0; i < 60; i++) { txt += unit; }
             fs = Math.max(6, Math.round(rb.width * rb.size / 100));
-            st.innerHTML = "<svg viewBox=\"-1100 -560 2200 1120\" preserveAspectRatio=\"xMidYMid meet\"><path id=\"rbPrevPath\" d=\"" + rbSvgPath(rbSample(rb.form, 1920, 1080)) + "\" fill=\"none\" stroke=\"" + rb.ribbonColor +
+            st.innerHTML = "<svg viewBox=\"-1100 -560 2200 1120\" preserveAspectRatio=\"xMidYMid meet\"><path id=\"rbPrevPath\" d=\"" + rbSvgPath(rbSample(rb.form, 1920, 1080, { seed: rb.seed, angle: rb.angle })) + "\" fill=\"none\" stroke=\"" + rb.ribbonColor +
                 "\" stroke-width=\"" + rb.width + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><text fill=\"" + rb.textColor + "\" style=\"font-size:" + fs + "px\"><textPath href=\"#rbPrevPath\">" + rbEsc(txt) + "</textPath></text></svg>";
+            if (rb.overlap) { rbOverlapPreview(st.querySelector("svg"), txt, fs); }
             return;
         }
         // Кольцо: буквы по кругу в CSS 3D, задняя сторона — зеркально и бледнее.
@@ -8181,7 +8869,15 @@
             ui["rb" + d[0]].value = String(rb[d[1]]);
             ui["rb" + d[0] + "Val"].textContent = rb[d[1]] + d[2];
         });
-        ui.rbRun.checked = rb.run; ui.rbBack.checked = rb.back; ui.rbCamera.checked = rb.camera;
+        ui.rbRun.checked = rb.run; ui.rbOverlap.checked = rb.overlap; ui.rbShadow.checked = rb.shadow; ui.rbShadowRow.hidden = !rb.overlap; ui.rbBack.checked = rb.back; ui.rbCamera.checked = rb.camera;
+        ui.rbSeedRow.hidden = ring || rb.form !== "random";
+        ui.rbDirRow.hidden = ring || rb.form === "path" || rb.form === "circle";
+        ui.rbRunDir.hidden = ring || !rb.run;
+        if (document.activeElement !== ui.rbSeed) { ui.rbSeed.value = String(rb.seed); }
+        ui.rbAngle.value = String(rb.angle);
+        ui.rbAngleVal.textContent = rb.angle + "°";
+        Array.prototype.forEach.call(ui.rbDir.querySelectorAll("button[data-v]"), function (b) { b.setAttribute("aria-pressed", Number(b.getAttribute("data-v")) === rb.angle ? "true" : "false"); });
+        pressGroupV(ui.rbRunDir, rb.dir);
         ui.rbBtn.textContent = ring ? "Создать кольцо" : "Создать ленту";
         drawRibbonPreview();
     }
@@ -8200,18 +8896,18 @@
         setBusy(true);
         setStatus(ring ? "Собираю кольцо…" : "Собираю ленту…", "busy");
         try {
-            res = await host("ribbonMake", [{ mode: rb.mode, form: rb.form, text: rb.text || "TEXT", sep: rb.sep, width: rb.width, textSize: rb.size, speed: ring ? rb.ringSpeed : rb.speed, run: rb.run,
+            res = await host("ribbonMake", [{ mode: rb.mode, form: rb.form, text: rb.text || "TEXT", sep: rb.sep, width: rb.width, textSize: rb.size, speed: ring ? rb.ringSpeed : rb.speed, run: rb.run, seed: rb.seed, angle: rb.angle, dir: rb.dir, overlap: rb.overlap, shadow: rb.shadow,
                 ribbonColor: tbRgb(rb.ribbonColor), textColor: tbRgb(ring ? rb.ringColor : rb.textColor), rings: rb.rings, radius: rb.radius, tilt: rb.tilt,
                 backDark: rb.back, camera: rb.camera },
                 { ribbon: "Лента", path: "Линия", text: "Текст ленты", width: "Толщина ленты", speed: "Скорость", color: "Цвет ленты",
-                    ring: "Кольцо", tilt: "Кольцо: наклон", spin: "Кольцо: вращение", camera: "Камера кольца" }]);
+                    piece: "кусок", shadow: "тень", ring: "Кольцо", tilt: "Кольцо: наклон", spin: "Кольцо: вращение", camera: "Камера кольца" }]);
             setBusy(false);
             r = res.ribbonMake || res;
             if (r.mode === "ring") {
                 setStatus("Кольцо готово: " + plural(r.rings, "кольцо", "кольца", "колец") + ". Наклон — слоем «" + r.ctrl + "», скорость вращения — в Effect Controls слоя «" + r.spin + "»." +
                     (r.camera ? " Добавлена камера «" + r.camera + "»." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
             } else {
-                setStatus("Лента готова" + (r.from ? " по линии «" + r.from + "» (сама линия выключена)" : "") + ". Текст — слой «" + r.text + "»: поменяйте слова прямо в нём. Толщина, цвет ленты и скорость — в Effect Controls текста. Отменить — Cmd/Ctrl+Z.", "done");
+                setStatus("Лента готова" + (r.from ? " по линии «" + r.from + "» (сама линия выключена)" : "") + (rb.overlap ? (r.pieces > 1 ? ", " + plural(r.pieces, "кусок", "куска", "кусков") + " для перекрытий" : ", перекрёстков нет — перекрытия не понадобились") : "") + ". Текст — слой «" + r.text + "»: поменяйте слова прямо в нём. Толщина, цвет ленты и скорость — в Effect Controls текста. Отменить — Cmd/Ctrl+Z.", "done");
             }
         } catch (e) {
             toolFailed(e);
@@ -8234,7 +8930,18 @@
         });
         ui.rbRun.addEventListener("change", function () { setRibbon({ run: ui.rbRun.checked }); });
         ui.rbBack.addEventListener("change", function () { setRibbon({ back: ui.rbBack.checked }); });
+        ui.rbOverlap.addEventListener("change", function () { setRibbon({ overlap: ui.rbOverlap.checked }); });
+        ui.rbShadow.addEventListener("change", function () { setRibbon({ shadow: ui.rbShadow.checked }); });
         ui.rbCamera.addEventListener("change", function () { setRibbon({ camera: ui.rbCamera.checked }); });
+        ui.rbDice.addEventListener("click", function () {
+            var v = rb.seed;
+            while (v === rb.seed) { v = 1 + Math.floor(Math.random() * 99999); }
+            setRibbon({ form: "random", seed: v });
+        });
+        ui.rbSeed.addEventListener("change", function () { setRibbon({ seed: Number(ui.rbSeed.value) || 1 }); });
+        ui.rbDir.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ angle: Number(b.getAttribute("data-v")) }); } });
+        ui.rbAngle.addEventListener("input", function () { setRibbon({ angle: Number(ui.rbAngle.value) }); });
+        ui.rbRunDir.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest("button[data-v]") : null; if (b) { setRibbon({ dir: b.getAttribute("data-v") }); } });
         ui.rbBtn.addEventListener("click", onRibbon);
         drawRibbon();
     }
@@ -8505,16 +9212,22 @@
             ui.brandSelect.appendChild(o);
         }
         ui.brandSelect.value = pr ? pr.active : "";
-        ui.brandPickRow.hidden = !has || brandNaming !== null;
-        ui.brandShareRow.hidden = !has || brandNaming !== null || !!brandPending;
+        // Сверху — одна строка: разделы, «Поделиться» и ⋯. Карточка над брендбуком видна, только пока вводят название,
+        // спрашивают про импорт или просят нажать «Удалить» ещё раз.
+        ui.brandPickRow.hidden = true;
+        ui.brandShareRow.hidden = true;
         ui.brandAsk.hidden = !brandPending;
-        ui.brandTop.hidden = !has && brandNaming === null && !brandPending;
+        ui.brandTop.hidden = brandNaming === null && !brandPending && !brandDelAt;
+        ui.brandExport.hidden = !has;
+        ui.brandRename.hidden = ui.brandDelete.hidden = !has;
         ui.brandNameRow.hidden = brandNaming === null;
         ui.brandEmpty.hidden = has || brandNaming !== null;
         ui.brandBody.hidden = !b;
         ui.brandDeleteNote.hidden = !brandDelAt;
         ui.brandSubs.hidden = !brands.items.length;   // пока проектов нет, хватает большой кнопки «Создать первый проект»
+        ui.brandBar.hidden = ui.brandSubs.hidden;
         renderBrandSubs();
+        renderBrandSubChips(pr);
         renderBrandHits();
         if (!b) { return; }
         renderBrandLogos(b);
@@ -8524,6 +9237,57 @@
         if (document.activeElement !== ui.brandFontHead) { ui.brandFontHead.value = b.fonts.head; }
         if (document.activeElement !== ui.brandFontBody) { ui.brandFontBody.value = b.fonts.body; }
         renderBrandTexts(b);
+        renderBrandPreviews(b);
+    }
+
+    // Подбренды раздела (Alif, Alif Shop, Alif Business…) — кнопки в «Логотипах»; «+» создаёт новый.
+    function renderBrandSubChips(pr) {
+        var box = ui.brandSubChips, add;
+        box.innerHTML = "";
+        (pr ? pr.subs : []).forEach(function (sb) {
+            var on = sb.id === pr.active, c = mkEl("button", "brand-subb", sb.name);
+            c.type = "button";
+            c.setAttribute("role", "tab");
+            c.setAttribute("data-sub", sb.id);
+            c.setAttribute("aria-selected", on ? "true" : "false");
+            c.title = on ? "Двойной щелчок — переименовать" : "Открыть «" + sb.name + "»";
+            c.addEventListener("click", function () {
+                if (pr.active === sb.id) { return; }
+                pr.active = sb.id; brandDelAt = 0; brandNaming = null; storeBrands(); renderBrand();
+            });
+            c.addEventListener("dblclick", function () { if (pr.active === sb.id) { brandAskName("rename"); } });
+            box.appendChild(c);
+        });
+        add = mkEl("button", "brand-subb brand-subb-add", "+");
+        add.type = "button";
+        add.title = "Новый подбренд";
+        add.setAttribute("aria-label", add.title);
+        add.addEventListener("click", function () { brandAskName("new"); });
+        box.appendChild(add);
+    }
+
+    // Свёрнутый раздел — одна строка: название, маленькое превью и число.
+    function renderBrandPreviews(b) {
+        var pv = {}, n = {}, i;
+        function sw(css) { var e = mkEl("i"); e.style.background = css; return e; }
+        function txt(t) { return mkEl("span", "brand-pv-t", t); }
+        pv.logos = []; n.logos = b.logos.length;
+        pv.icons = b.icons.length ? [] : [txt("пусто")]; n.icons = b.icons.length;
+        pv.colors = b.colors.slice(0, 6).map(function (c) { return sw(c.hex); }); n.colors = b.colors.length;
+        pv.grads = b.gradients.slice(0, 2).map(function (g) { var e = sw(gradientCss(g)); e.className = "brand-pv-grad"; return e; });
+        if (!b.gradients.length) { pv.grads = [txt("пусто")]; }
+        n.grads = b.gradients.length;
+        pv.fonts = b.fonts.head || b.fonts.body ? [mkEl("b", "", "Aa"), txt([b.fonts.head, b.fonts.body].filter(Boolean).map(function (f) { return f.replace(/-.*$/, ""); }).join(" · "))] : [txt("не выбраны")];
+        n.fonts = (b.fonts.head ? 1 : 0) + (b.fonts.body ? 1 : 0);
+        pv.texts = [txt(b.texts.length ? b.texts.slice(0, 3).map(function (t) { return t.text; }).join(" · ") : "пусто")]; n.texts = b.texts.length;
+        pv.formats = [txt("16:9 · 9:16 · 1:1 · 4:5")]; n.formats = "";
+        brandSecs().forEach(function (sec) {
+            var id = sec.getAttribute("data-sec"), box = sec.querySelector(".brand-pv"), cnt = sec.querySelector(".brand-n");
+            if (!box) { return; }
+            box.innerHTML = "";
+            for (i = 0; pv[id] && i < pv[id].length; i++) { box.appendChild(pv[id][i]); }
+            cnt.textContent = n[id] === undefined ? "" : String(n[id]);
+        });
     }
 
     // Разделы — ряд кнопок над проектом: «+» добавляет раздел, двойной щелчок переименовывает, × удаляет.
@@ -8609,6 +9373,7 @@
     function renderBrandLogos(b) {
         var box = ui.brandLogos;
         box.innerHTML = "";
+        ui.brandLogoCap.textContent = b.logos.length ? b.logos[0].name : "";
         box.setAttribute("data-empty", "Пока пусто: нажмите «+ Добавить» и выберите файл логотипа.");
         b.logos.forEach(function (l) {
             var tile = mkEl("div", "brand-logo");
@@ -8627,6 +9392,8 @@
                 pic.appendChild(mkEl("span", "", (l.file.match(/\.([a-z0-9]+)$/i) || ["", "file"])[1]));
             }
             pic.addEventListener("click", function () { brandPlaceLogo(l); });
+            pic.addEventListener("mouseenter", function () { ui.brandLogoCap.textContent = l.name; });
+            pic.addEventListener("focus", function () { ui.brandLogoCap.textContent = l.name; });
             LOGO_VARIANTS.forEach(function (v) {
                 var o = mkEl("option", "", v[1]);
                 o.value = v[0];
@@ -9024,7 +9791,7 @@
     function brandDelete() {
         var g = activeProject(), b = activeBrand();
         if (!g || !b) { return; }
-        if (!brandArmDelete("project", "Нажмите корзину ещё раз, чтобы удалить «" + b.name + "» вместе с его логотипами.")) { return; }
+        if (!brandArmDelete("project", "Нажмите «Удалить подбренд» ещё раз, чтобы удалить «" + b.name + "» вместе с его логотипами.")) { return; }
         brandForget(b);
         g.subs = g.subs.filter(function (x) { return x.id !== b.id; });
         g.active = g.subs.length ? g.subs[0].id : "";
@@ -9266,6 +10033,63 @@
         if (sec.scrollIntoView) { sec.scrollIntoView({ block: "nearest" }); }
     }
 
+    // Разделы сворачиваются в строку (щелчок по заголовку); какие открыты — запоминается. Сначала открыты только «Логотипы».
+    var BRAND_OPEN_KEY = "sayframe.brandOpen.v1";
+    function brandOpenList() {
+        var v = null;
+        try { v = JSON.parse(window.localStorage.getItem(BRAND_OPEN_KEY) || "null"); } catch (e) {}
+        return v instanceof Array ? v : ["logos"];
+    }
+    function brandSetOpen(sec, on) {
+        var id = sec.getAttribute("data-sec"), list = brandOpenList().filter(function (x) { return x !== id; });
+        sec.classList.toggle("open", on);
+        sec.querySelector(".brand-fold").setAttribute("aria-expanded", on ? "true" : "false");
+        if (on) { list.push(id); }
+        try { window.localStorage.setItem(BRAND_OPEN_KEY, JSON.stringify(list)); } catch (e) {}
+    }
+    function brandFoldInit(sec, head, name) {
+        var title = head.querySelector("b"), hint = sec.querySelector(":scope > small.hint"), fold = mkEl("button", "brand-fold"), add;
+        var pv = mkEl("span", "brand-pv"), n = mkEl("span", "brand-n");
+        head.insertBefore(pv, title.nextSibling);
+        head.insertBefore(n, pv.nextSibling);
+        // Пояснение — не серым текстом в блоке, а подсказкой при наведении на название.
+        if (hint) { title.title = hint.textContent; title.setAttribute("data-info", name + "|" + hint.textContent); }
+        add = head.querySelector(".brand-add");
+        if (add) { add.setAttribute("aria-label", add.title); add.textContent = "+"; }
+        if (!add) {
+            // «+» у раздела без своей кнопки: раскрывает раздел и ставит курсор в первое поле.
+            add = mkEl("button", "ghost brand-add brand-plus", "+");
+            add.type = "button";
+            add.title = "Добавить: " + name.toLowerCase();
+            add.setAttribute("aria-label", add.title);
+            add.addEventListener("click", function (e) {
+                var f;
+                e.stopPropagation();
+                brandSetOpen(sec, true);
+                f = sec.querySelector(".brand-addrow input:not([type=color]), .brand-font input");
+                if (f) { f.focus(); }
+            });
+            if (sec.getAttribute("data-sec") !== "formats") { head.appendChild(add); }
+        }
+        fold.type = "button";
+        fold.setAttribute("aria-label", "Свернуть или раскрыть раздел «" + name + "»");
+        fold.title = "Свернуть / раскрыть";
+        fold.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5L6 7.5 9 4.5"/></svg>';
+        fold.addEventListener("click", function (e) { e.stopPropagation(); brandSetOpen(sec, !sec.classList.contains("open")); });
+        head.appendChild(fold);
+        head.addEventListener("click", function (e) {
+            if (e.target.closest("button, input, select")) { return; }
+            brandSetOpen(sec, !sec.classList.contains("open"));
+        });
+        sec.classList.toggle("open", brandOpenList().indexOf(sec.getAttribute("data-sec")) >= 0);
+        fold.setAttribute("aria-expanded", sec.classList.contains("open") ? "true" : "false");
+    }
+
+    function brandMenu(on) {
+        ui.brandMenu.hidden = !on;
+        ui.brandMore.setAttribute("aria-expanded", on ? "true" : "false");
+    }
+
     function initBrandOrder() {
         var saved = null;
         try { saved = JSON.parse(window.localStorage.getItem(BRAND_ORDER_KEY) || "null"); } catch (e) {}
@@ -9283,6 +10107,7 @@
                 box.appendChild(b);
             });
             head.insertBefore(box, head.querySelector("b").nextSibling);
+            brandFoldInit(sec, head, name);
         });
         if (saved instanceof Array) {
             var def = brandSecs().map(function (x) { return x.getAttribute("data-sec"); });
@@ -9518,9 +10343,11 @@
 
     // Ряд «Стиль:» над полем AI. Выбор запоминается и действует на все запросы.
     function renderMotionStyles() {
+        var st = motionStyleOf(settings.motionStyle) || MOTION_STYLES[0];
         Array.prototype.forEach.call(ui.styleRow.querySelectorAll(".style-chip"), function (b) {
             b.setAttribute("aria-checked", b.getAttribute("data-style") === settings.motionStyle ? "true" : "false");
         });
+        if (ui.aiStyleBtn) { ui.aiStyleBtn.textContent = st.label + " ▾"; }
     }
     function initMotionStyles() {
         MOTION_STYLES.forEach(function (st) {
@@ -9533,6 +10360,7 @@
                 settings.motionStyle = st.id;
                 storeSettings(settings);
                 renderMotionStyles();
+                aiPop(null);
                 setStatus(st.id === "normal" ? "Стиль анимации: обычный." : "Стиль анимации: «" + st.label + "» — для всех следующих запросов.", "");
             });
             ui.styleRow.appendChild(b);
@@ -9543,10 +10371,14 @@
     function initBrand() {
         initBrandOrder();
         initMentions();
+        ui.brandMore.addEventListener("click", function (e) { e.stopPropagation(); brandMenu(ui.brandMenu.hidden); });
+        document.addEventListener("mousedown", function (e) { if (!ui.brandMenu.hidden && !e.target.closest(".brand-tools")) { brandMenu(false); } });
+        [ui.brandNew, ui.brandRename, ui.brandImport].forEach(function (b) { b.addEventListener("click", function () { brandMenu(false); }); });
         ui.brandNew.addEventListener("click", function () { brandAskName("new"); });
         ui.brandFirst.addEventListener("click", function () { brandAskName("new"); });
         ui.brandRename.addEventListener("click", function () { if (activeBrand()) { brandAskName("rename"); } });
         ui.brandDelete.addEventListener("click", brandDelete);
+        ui.brandDelete.addEventListener("click", function () { if (!brandDelAt) { brandMenu(false); } });   // удалено — меню закрывается
         ui.brandNameOk.addEventListener("click", function () { brandNameDone(true); });
         ui.brandNameCancel.addEventListener("click", function () { brandNaming = null; renderBrand(); });
         ui.brandName.addEventListener("keydown", function (e) {
@@ -10578,6 +11410,8 @@
     function relayoutTools() {
         var keep = G;
         if (!toolGridReady) { return; }
+        // Отдельное окно блока: блок один, сетка не нужна.
+        if (SOLO && SOLO.tool) { return; }
         GRIDS.forEach(function (g) {
             G = g;
             if (g.flowOrder && flowOn()) { layoutFlow(g); return; }
@@ -10606,6 +11440,69 @@
     var FLOW_SHAPE_ORDER = ["split", "pathfinder"];
 
     function flowOn() { return document.documentElement.getAttribute("data-design") === "studio"; }
+
+    // ---- Раздел AI в «Студии»: режимы Создать / Выражение / Мои, пример и стиль внутри поля, быстрые задачи плитками внизу.
+    var AI_MODE_KEY = "sayframe.aiMode.v1";
+    var aiMode = (function () { var m = ""; try { m = window.localStorage.getItem(AI_MODE_KEY) || ""; } catch (e) {} return ["create", "expr", "mine"].indexOf(m) >= 0 ? m : "create"; })();
+
+    function aiPop(which) {
+        [[ui.aiExample, ui.aiExampleMenu], [ui.aiStyleBtn, ui.aiStylePop]].forEach(function (d) {
+            if (!d[0]) { return; }
+            d[1].hidden = d[1] !== which;
+            d[0].setAttribute("aria-expanded", d[1] === which ? "true" : "false");
+        });
+    }
+
+    function setAiMode(m) {
+        aiMode = m;
+        try { window.localStorage.setItem(AI_MODE_KEY, m); } catch (e) {}
+        ui.viewClaude.setAttribute("data-ai", m);
+        Array.prototype.forEach.call(ui.aiModes.querySelectorAll(".ai-mode"), function (b) {
+            b.setAttribute("aria-selected", b.getAttribute("data-m") === m ? "true" : "false");
+        });
+        aiPop(null);
+    }
+
+    function aiLayout() {
+        var on, composer, main, wrap;
+        if (!ui || !ui.aiModes || !ui.prompt) { return; }
+        on = flowOn(); composer = ui.prompt.closest(".composer"); main = ui.viewClaude.querySelector(".claude-main"); wrap = ui.prompt.parentNode;
+        if (!composer || !main) { return; }
+        ui.viewClaude.classList.toggle("ai-v3", on);
+        ui.aiModes.hidden = !on;
+        ui.promptFoot.hidden = !on;
+        if (!ui.prompt.getAttribute("data-ph")) { ui.prompt.setAttribute("data-ph", ui.prompt.placeholder); }
+        ui.prompt.placeholder = on ? "Что сделать в композиции?" : ui.prompt.getAttribute("data-ph");
+        if (on) {
+            if (ui.styleRow.parentNode !== ui.aiStylePop) { ui.aiStylePop.appendChild(ui.styleRow); }
+            if (ui.quickBox.parentNode !== main) { main.appendChild(ui.quickBox); }
+            setAiMode(aiMode || "create");
+        } else {
+            if (ui.styleRow.parentNode !== composer) { composer.insertBefore(ui.styleRow, wrap); }
+            if (ui.quickBox.parentNode !== composer) { composer.insertBefore(ui.quickBox, composer.firstChild); }
+            ui.viewClaude.removeAttribute("data-ai");
+            aiPop(null);
+        }
+        if (quick && ui.quickList) { drawQuick(); }
+    }
+
+    function initAiModes() {
+        if (!ui.aiModes) { return; }
+        ui.aiModes.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest(".ai-mode") : null; if (b) { setAiMode(b.getAttribute("data-m")); } });
+        ui.aiExample.addEventListener("click", function (e) { e.stopPropagation(); aiPop(ui.aiExampleMenu.hidden ? ui.aiExampleMenu : null); });
+        ui.aiStyleBtn.addEventListener("click", function (e) { e.stopPropagation(); aiPop(ui.aiStylePop.hidden ? ui.aiStylePop : null); });
+        ui.aiExampleMenu.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("[data-ex]") : null;
+            if (!b) { return; }
+            aiPop(null);
+            (b.getAttribute("data-ex") === "link" ? ui.refLinkBtn : ui.refBtn).click();
+        });
+        document.addEventListener("mousedown", function (e) {
+            if (e.target.closest && e.target.closest(".pf-pop-wrap")) { return; }
+            aiPop(null);
+        });
+        aiLayout();
+    }
 
     function flowFolded(g) {
         return String(g.st.flowFold || "").split(",").filter(function (n) { return !!FLOW_ICONS[n]; });
@@ -11675,6 +12572,7 @@
     ui.fxSnap.addEventListener("click", onSnapshot);
     ui.snapBtn.addEventListener("click", onSnapshot);
     enableSnapBar();
+    enableExport();
     enableInfoTips();
     ui.fxKeys.addEventListener("mousedown", function (e) { e.preventDefault(); });
     ui.fxKeys.addEventListener("click", onFxKeys);
@@ -11721,15 +12619,23 @@
     ui.versionText.textContent = "Sayframe " + VERSION;
     document.addEventListener("paste", onPasteEvent);
     initMotionStyles();
+    initAiModes();
     ui.prompt.addEventListener("keydown", function (e) {
         // Cmd/Ctrl+Enter запускает задачу.
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onRun(); }
     });
 
-    if (!aiKey()) {
+    if (!aiKey() && !SOLO) {
         setStatus("Сначала откройте настройки (значок шестерёнки) и вставьте " + providerOf().keyLabel.replace(/^Ключ/, "ключ") + ".", "");
     }
-    announceUpdate();
+    buildWindowPicker();
+    if (SOLO) {
+        startSolo();
+    } else {
+        addWindowButtons();
+        announceUpdate();
+        syncWindowsManifest().catch(function () {});
+    }
     ensureHost().catch(function (e) { setStatus(humanError(e), "error"); });
     // Проверка обновлений идёт в фоне и не мешает работе: об ошибках сети молчим.
     // Раньше панель спрашивала сервер только при запуске и не чаще раза в шесть часов, поэтому
@@ -11741,7 +12647,7 @@
         backgroundChecking = true;
         checkForUpdate(false).catch(function () {}).then(function () { backgroundChecking = false; });
     }
-    setTimeout(backgroundUpdateCheck, 1200);
+    if (!SOLO) { setTimeout(backgroundUpdateCheck, 1200); }
 
     // Анонимная статистика: один раз после установки — «install», потом не чаще раза в день — «day».
     // Уходят только случайный номер установки, версия Sayframe, система и версия After Effects.
@@ -11769,7 +12675,10 @@
             })
             .catch(function () {});
     }
-    setTimeout(statsPing, 4000);
-    setInterval(backgroundUpdateCheck, UPDATE_CHECK_EVERY_MS);
-    window.addEventListener("focus", backgroundUpdateCheck);
+    // Отдельные окна не проверяют обновления и не шлют статистику: это делает большой Sayframe.
+    if (!SOLO) {
+        setTimeout(statsPing, 4000);
+        setInterval(backgroundUpdateCheck, UPDATE_CHECK_EVERY_MS);
+        window.addEventListener("focus", backgroundUpdateCheck);
+    }
 })();

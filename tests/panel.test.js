@@ -462,7 +462,7 @@ function mkOrbitComp(log, name, w, h, layers) {
   Object.defineProperty(c, "numLayers", { get: () => c.list.length });
   c.layer = (i) => c.list[i - 1] || null;
   Object.defineProperty(c, "selectedLayers", { get: () => c.list.filter((l) => l.selected) });
-  const put = (l) => { c.list.unshift(l); l.containingComp = c; return moveAfter(l); };
+  const put = (l) => { c.list.unshift(l); l.containingComp = c; l.remove = () => { const i = c.list.indexOf(l); if (i >= 0) c.list.splice(i, 1); }; return moveAfter(l); };
   const moveAfter = (l) => { l.moveAfter = (o) => { const a = c.list.indexOf(l), b = c.list.indexOf(o); if (a < 0 || b < 0) return; c.list.splice(a, 1); c.list.splice(c.list.indexOf(o) + 1, 0, l); };
     l.moveBefore = (o) => { const a = c.list.indexOf(l), b = c.list.indexOf(o); if (a < 0 || b < 0) return; c.list.splice(a, 1); c.list.splice(c.list.indexOf(o), 0, l); }; return l; };
   (layers || []).forEach((l) => {
@@ -583,7 +583,7 @@ function makeAE(opts, tmpDir) {
     items: { addFolder(name) { const f = new FolderItem(name); f.id = 900 + log.bins.length; projItems.push(f); log.bins.push(name);
         f.remove = () => { projItems.splice(projItems.indexOf(f), 1); log.bins.splice(log.bins.lastIndexOf(name), 1); log.undo.push("mark"); }; return f; },
       addComp(name, w, h, par, dur, fps) {
-        if (opts.orbit) { const oc = mkOrbitComp(log, name, w, h); Object.assign(oc, { duration: dur, frameRate: fps }); projItems.push(oc); log.orbitComps.push(oc); return oc; }
+        if (opts.orbit) { const oc = mkOrbitComp(log, name, w, h); Object.assign(oc, { duration: dur, frameRate: fps, remove() { projItems.splice(projItems.indexOf(oc), 1); log.compsRemoved = (log.compsRemoved || 0) + 1; } }); projItems.push(oc); log.orbitComps.push(oc); return oc; }
         const c = Object.assign(new CompItem(), { name, width: w, height: h, duration: dur, frameRate: fps, saved: [], scaleSet: null,
           openInViewer() { log.opened++; project.activeItem = c; },
           layers: { add(it) { c.added = it; c.addedLayer = { collapseTransformation: false, property() { return { property() { return { setValue(v) { c.scaleSet = v; } }; } }; } }; return c.addedLayer; },
@@ -592,11 +592,35 @@ function makeAE(opts, tmpDir) {
           remove() { log.removed.push("comp"); } });
         log.refComps.push(c); return c;
       } } };
+  // opts.rq: the Render Queue for «Быстрый экспорт». rq.queued — names of items already waiting; rq.ame — Media Encoder is there;
+  // rq.templates — output module templates (default: the H.264 ones of AE 2023+). render() writes a 2.5 MB file per item.
+  if (opts.rq) {
+    const rqo = opts.rq, items = [];
+    log.rq = { added: [], rendered: [], ame: [], removed: 0 };
+    (rqo.queued || []).forEach((n) => items.push({ name: n, render: true, comp: { name: n } }));
+    project.renderQueue = { rendering: !!rqo.rendering, canQueueInAME: !!rqo.ame, get numItems() { return items.length; }, item(i) { return items[i - 1]; },
+      items: { add(c) {
+        const om = { templates: rqo.templates || ["Best Settings", "H.264 - Match Render Settings - 15 Mbps", "H.264 - Match Render Settings - 40 Mbps", "H.264 - Match Render Settings - 5 Mbps", "Lossless"],
+          tpl: "", file: null, applyTemplate(t) { om.tpl = t; } };
+        const it = { comp: c, render: true, timeSpanStart: 0, timeSpanDuration: c.duration, om, outputModule() { return om; },
+          remove() { items.splice(items.indexOf(it), 1); log.rq.removed++; } };
+        items.push(it); log.rq.added.push(it); return it;
+      } },
+      render() {
+        if (rqo.renderThrows) throw new Error("render failed");
+        items.filter((i) => i.render && i.om).forEach((i) => {
+          log.rq.rendered.push({ comp: i.comp.name, w: i.comp.width, h: i.comp.height, file: i.om.file.fsName, tpl: i.om.tpl, span: [i.timeSpanStart, i.timeSpanDuration], others: items.filter((x) => x !== i && x.render).length });
+          fs.writeFileSync(i.om.file.fsName, Buffer.alloc(2500000));
+        });
+      },
+      queueInAME(now) { items.filter((i) => i.render && i.om).forEach((i) => log.rq.ame.push({ comp: i.comp.name, file: i.om.file.fsName, now, others: items.filter((x) => x !== i && x.render).length })); } };
+  }
   // A small After Effects install on disk for FX Console: shipped presets beside the app, user presets in Documents.
   function Folder(p) { this.fsName = p; this.name = encodeURI(path.basename(p)); }
   Object.defineProperty(Folder.prototype, "exists", { get() { return fs.existsSync(this.fsName) && fs.statSync(this.fsName).isDirectory(); } });
   Object.defineProperty(Folder.prototype, "parent", { get() { return new Folder(path.dirname(this.fsName)); } });
   Folder.prototype.selectDlg = function (prompt) { log.folderDlg.push({ path: this.fsName, prompt }); return opts.pickFolder === null ? null : new Folder(opts.pickFolder || this.fsName); };
+  Folder.prototype.execute = function () { log.executed = (log.executed || []).concat([this.fsName]); return true; };
   Folder.prototype.create = function () { fs.mkdirSync(this.fsName, { recursive: true }); return true; };
   Folder.prototype.getFiles = function () { return fs.readdirSync(this.fsName).sort().map((n) => { const f = path.join(this.fsName, n); return fs.statSync(f).isDirectory() ? new Folder(f) : new File(f); }); };
   const aeRoot = path.join(tmpDir, "Applications", "Adobe After Effects 2026");
@@ -799,7 +823,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     });
 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false, design: "glass", designSet: 2 }, opts.settings || {});
-    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin }) => {
+    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin, extId }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
       window.__SAYFRAME_TEST_UPDATE_KEY__ = updateKey;
       window.__SAYFRAME_TEST_RETRY_MS__ = [40, 40, 40];
@@ -815,6 +839,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       // A new install (opts.fresh) gets the layout of 1.40.0 instead.
       if (firstOpen && !fresh) {
         localStorage.setItem("sayframe.tabOrder.v1", JSON.stringify(["claude", "tools", "motion", "shape", "brand"]));
+        // Scenarios written before the brand book's sections folded into rows: every section open.
+        localStorage.setItem("sayframe.brandOpen.v1", JSON.stringify(["logos", "icons", "colors", "grads", "fonts", "texts", "formats"]));
         localStorage.setItem("sayframe.tab.v1", "claude");
         localStorage.setItem("sayframe.motion.v1", JSON.stringify({ order: "ease,anchor,align,paste,organize,easecopy,decompose,cache,nullp,unused", sizes: "", places: "", pins: "", grid: 2, curve: true,
           anchorOpts: true, alignOpts: true, shiftOpts: true, pasteOpts: true, organizeOpts: true, ecOpts: true, decomposeOpts: true, cacheOpts: true, nullpOpts: true, unusedOpts: true }));
@@ -822,10 +848,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       if (updateState && firstOpen) localStorage.setItem("sayframe.update.v1", JSON.stringify(updateState));
       window.__keyInterest = [];
       window.__cepListeners = {};
+      window.__openedExt = [];
       window.__adobe_cep__ = { evalScript(script, cb) { window.__hostEval(script).then(cb); },
         registerKeyEventsInterest(json) { window.__keyInterest.push(json); },
         addEventListener(type, fn) { window.__cepListeners[type] = fn; },
         getSystemPath() { return withSystemPath ? "file://" + hostPath : ""; },
+        // opts.extId: the panel runs as one of the separate windows (com.sayframe.ae.win.<key>).
+        getExtensionId() { return extId || "com.sayframe.ae.panel"; },
+        requestOpenExtension(id, params) { window.__openedExt.push(id); },
         getHostEnvironment() { const env = { appName: "AEFT", appVersion: "25.0.1" }; const k = window.__skin;
           // opts.skin: the colours of After Effects' own panels, as CEP reports them ({ bg: [r, g, b], hi: [r, g, b] }).
           if (k) env.appSkinInfo = { panelBackgroundColor: { antialiasLevel: 0, color: { red: k.bg[0], green: k.bg[1], blue: k.bg[2], alpha: 255 } },
@@ -855,7 +885,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           return { kill() { s.killed = true; } };
         };
       }
-    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null });
+    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null, extId: opts.extId || "" });
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
     // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
@@ -1910,7 +1940,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   t = pngs(snapProj);
   check("SN5 with a saved project the default folder is the project's; Enter saves", t.length === 1 && (await p.status()).indexOf("Кадр сохранён: " + path.basename(snapProj) + " › ") === 0, await p.status());
   t = await p.page.evaluate(() => Array.from(document.querySelector(".top-actions").children).map((c) => c.id).join());
-  check("SN5 the camera is in the header next to the search, and in FX Console", t === "snapBtn,fxBtn,settingsBtn");
+  check("SN5 the camera is in the header next to the search (after the export button), and in FX Console", t === "exportBtn,snapBtn,fxBtn,settingsBtn", t);
   await p.close();
   p = await open({ copyFails: true });
   await p.page.click("#snapBtn"); await p.page.waitForFunction(() => !document.getElementById("snapBar").hidden); await p.page.click("#snapSave"); await p.idle();
@@ -1924,6 +1954,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#snapBtn"); await p.page.waitForFunction(() => !document.getElementById("snapBar").hidden); await p.page.click("#snapSave"); await p.idle();
   check("SN6 no comp -> a hint", /^Откройте композицию/.test(await p.status()), await p.status());
   await p.close();
+
 
   console.log("\n=== hotkeys ===");
   p = await open({ selectedLayers: [mkFxLayer("A")] });
@@ -2821,7 +2852,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.locator("#models button", { hasText: "Opus 5.5" }).click();
   check("S0 settings open on the AI section: provider, key, model, checks and reference frames; colours and shortcuts are under 'General'", (await p.page.locator("#setTabAI").getAttribute("aria-selected")) === "true" && (await p.page.locator("#apiKey").isVisible()) && (await p.page.locator("#frames").isVisible()) && (await p.page.locator("#selfCheck").isVisible() || await p.page.locator("label.switch", { hasText: "проверяет результат" }).isVisible()) && (await p.page.locator("#accentSwatches").isHidden()) && (await p.page.locator("#hotkeys").isHidden()));
   await p.page.click("#setTabTheme");
-  check("S0 five sections with icons: AI, Темы, Блоки, Клавиши, Прочее", (await p.page.locator("#setTabs button").allInnerTexts()).join() === "AI,Темы,Блоки,Клавиши,Прочее" && (await p.page.locator("#setTabs button svg").count()) === 5);
+  check("S0 six sections with icons: AI, Темы, Блоки, Окна, Клавиши, Прочее", (await p.page.locator("#setTabs button").allInnerTexts()).join() === "AI,Темы,Блоки,Окна,Клавиши,Прочее" && (await p.page.locator("#setTabs button svg").count()) === 6);
   check("S0 «Темы»: three theme cards and the width; «Студия» has its own colours, so no accent or section backgrounds; the AI fields are hidden", (await p.page.locator("#designPick button").count()) === 3 && (await p.page.locator("#panelFit").isVisible()) && !(await p.page.locator("#accentSwatches").isVisible()) && !(await p.page.locator("#bgSwatches").isVisible()) && /свои цвета/.test(await p.page.locator("#themeNote").innerText()) && (await p.page.locator("#apiKey").isHidden()) && (await p.page.locator("#setTabTheme").getAttribute("aria-selected")) === "true");
   await p.page.click('#designPick [data-value="ae"]');
   check("S0 «After Effects» has its own colours too", !(await p.page.locator("#accentSwatches").isVisible()) && /After Effects/.test(await p.page.locator("#themeNote").innerText()));
@@ -3041,7 +3072,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.close();
 
   console.log("\n=== tabs ===");
-  const vis = (p, sel) => p.page.locator(sel).isVisible();
+  const vis = (p, sel) => p.page.locator(sel).isVisible(); const bmClick = async (p, sel) => { if (!(await p.page.locator(sel).isVisible())) await p.page.click("#brandMore"); await p.page.click(sel); };
   p = await open({ replies: [msg("Создаю слой.\n```javascript\napp.__ran('one');\n```")], clip: "png", footage: IMG });
   check("T1 opens on the Claude tab", (await vis(p, "#prompt")) && (await vis(p, "#runBtn")) && (await vis(p, "#refBtn")) && (await vis(p, "#newBtn")) && !(await vis(p, "#viewTools #acGrid")) && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "true");
   check("T1 status line is inside the Claude tab", (await p.page.locator("#viewClaude #statusBox").count()) === 1 && (await vis(p, "#status")));
@@ -3221,7 +3252,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("M1 no horizontal overflow at 380px", t <= 0, t);
   await p.page.screenshot({ path: path.join(SHOTS, "21-tab-motion.png") });
   check("M2 sliders start linked at 60", (await p.page.inputValue("#easeIn")) === "60" && (await p.page.inputValue("#easeOut")) === "60" && (await p.page.isChecked("#easeLink")) && (await p.page.inputValue("#easeInVal")) === "60" && (await p.page.inputValue("#easeOutVal")) === "60");
-  check("M2 the easing block: a title, the apply button, the curve toggle, the keyboard handle and the graph switch, no slider labels", (await p.page.locator("#viewMotion .ease-card button:not(#easeView button)").count()) === 4 && (await p.page.locator("#easeView button").count()) === 2 && (await p.page.locator("#viewMotion .ease-card .tool-pin").count()) === 1 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link)").count()) === 0 && (await p.page.locator(".ease-card .tool-head b").innerText()) === "Плавность" && (await p.page.locator("#showCurve").count()) === 0);
+  check("M2 the easing block: a title, the apply button, the curve toggle, the keyboard handle, ↗ (own window) and the graph switch, no slider labels", (await p.page.locator("#viewMotion .ease-card button:not(#easeView button)").count()) === 5 && (await p.page.locator("#easeView button").count()) === 2 && (await p.page.locator("#viewMotion .ease-card .tool-pin").count()) === 1 && (await p.page.locator("#easeInBtn, #easeOutBtn").count()) === 0 && (await p.page.locator(".ease-card label:not(.ease-link)").count()) === 0 && (await p.page.locator(".ease-card .tool-head b").innerText()) === "Плавность" && (await p.page.locator("#showCurve").count()) === 0);
   t = await p.page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); const a = r("easeIn"), b = r("easeBothBtn"), c = r("easeOut"), n1 = r("easeInVal"), l = document.querySelector(".ease-link").getBoundingClientRect(), n2 = r("easeOutVal"); return { row: a.right <= b.left && b.right <= c.left && Math.abs((a.top + a.bottom) - (c.top + c.bottom)) < 2, equal: Math.abs(a.width - c.width) < 2, nums: n1.right <= l.left && l.right <= n2.left && n1.top >= b.bottom - 1, centered: Math.abs((l.left + l.right) / 2 - (b.left + b.right) / 2) < 2, rtl: getComputedStyle(document.getElementById("easeIn")).direction }; });
   check("M2 layout: slider, button, slider in one row; numbers and link centred under the button", t.row && t.equal && t.nums && t.centered, JSON.stringify(t));
   check("M2 the left slider grows away from the button", t.rtl === "rtl" && (await fillOf(p, "easeIn")) === "0.6" && (await fillOf(p, "easeOut")) === "0.6", t.rtl);
@@ -4439,7 +4470,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   L2 = mkLayer(clock, { name: "plain", index: 2, inPoint: 1, outPoint: 5 });   // no keys: sits between the first and the second
   p = await open({ selectedLayers: [bx[0], L2, bx[1], bx[2]] });
   await motionTab(p); await pickSeg(p, "staggerWhat", "keys"); await setStep(p, "staggerStep", "4"); await press(p, "staggerBtn");
-  check("T7 staircase of keys: every key of each next layer moves, the layer stays, its edges follow the animation; a layer without keys takes no step", bx.map((l) => times(R(l))).join(" | ") === "30,45,135,149 | 34,49,139,153 | 38,53,143,157" && starts(bx) === "0,0,0" && close2(fr(bx[2].inPoint), 38) && close2(fr(bx[2].outPoint), 158) && close2(fr(bx[0].inPoint), 30) && L2.inPoint === 1, bx.map((l) => times(R(l)) + "@" + fr(l.inPoint) + "-" + fr(l.outPoint)).join(" | "));
+  check("T7 staircase of keys: only the keys move — the layers keep their place and their start; the end grows only where a key would leave the layer; a layer without keys takes no step", bx.map((l) => times(R(l))).join(" | ") === "30,45,135,149 | 34,49,139,153 | 38,53,143,157" && starts(bx) === "0,0,0" && close2(fr(bx[2].inPoint), 30) && close2(fr(bx[1].inPoint), 30) && close2(fr(bx[2].outPoint), 158) && close2(fr(bx[0].inPoint), 30) && L2.inPoint === 1, bx.map((l) => times(R(l)) + "@" + fr(l.inPoint) + "-" + fr(l.outPoint)).join(" | "));
   check("T7 the skipped layer is named in the report", (await p.status()) === "Лесенка: 3 слоя, шаг 4 кадра. Пропущено: 1 слой (у слоя нет ключей).\nОтменить: Cmd/Ctrl+Z.", await p.status());
   t = [JSON.parse(await hostCall(p, 'sayframeHost.stagger("in",4,"asc")')), JSON.parse(await hostCall(p, 'sayframeHost.stagger("keys",4,"selection")'))];
   check("T7 the host still knows «in», «out» and «as picked» (for the AI and older panels)", t.every((x) => x.ok), JSON.stringify(t));
@@ -5113,6 +5144,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
   // «3D» on the Animation tab: the carousel — N cards around a 3D null, with a live preview.
   {
+    // Runs a carousel expression the way After Effects would: the controller's Effect Controls, the card's facing, createPath.
+    const runX = (expr, fx, o = {}) => vm.runInNewContext("var value=" + JSON.stringify(o.value === undefined ? 100 : o.value) + ";function degreesToRadians(d){return d*Math.PI/180}" +
+      "function createPath(P,I,O,c){return {P:P,I:I,O:O,c:c}}var thisLayer={toCompVec:function(){return [0,0," + (o.facing === false ? -1 : 1) + "]}};" +
+      "var FX=" + JSON.stringify(fx) + ";var thisComp={layer:function(){return {effect:function(n){return function(){return FX[n]}}}}};function comp(){return thisComp}" + expr);
+    const FX0 = { "Карточек": 8, "Радиус": 600, "Ширина": 400, "Высота": 560, "Углы %": 20, "Сзади видно цифру и картинку": 1 };
     const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
     const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
     const tf = (l, n) => acAt(l, "ADBE Transform Group", n).value;
@@ -5144,17 +5180,24 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await orbitTab(p); await p.page.click("#orbitBtn"); await p.idle();
     const ctrl = Lx(p, "Карусель: управление"), c1 = Lx(p, "Карточка 1"), c3 = Lx(p, "Карточка 3"), n1 = Lx(p, "Номер 1");
-    check("OR2 «Создать карусель»: a camera on its own 3D null, the controller null, 8 cards with their numbers, one undo step", names(p) === "Карусель: управление камерой,Карусель: камера,Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8].map((i) => "Номер " + i + ",Карточка " + i).join(",") + ",BG" &&
+    check("OR2 «Создать карусель»: a camera on its own 3D null, the controller null, 8 cards with their numbers, one undo step", names(p) === "Карусель: управление камерой,Карусель: камера,Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => "Номер " + i + ",Карточка " + i).join(",") + ",BG" &&
       p.ae.log.undo.join() === "begin:Sayframe: carousel,end", names(p));
     check("OR2 the camera stands back and a little above, looking at the middle: the whole ring fits (3642 px away, 18° up); numbers show from behind too (default)", near(tf(Lx(p, "Карусель: камера"), "ADBE Position"), [960, -585, -3464]) && near(tf(Lx(p, "Карусель: камера"), "ADBE Camera Point of Interest"), [960, 540, 0]) &&
-      !(acAt(Lx(p, "Номер 1"), "ADBE Transform Group", "ADBE Opacity") || {}).expression && (await p.page.isChecked("#orbitBack")), JSON.stringify(tf(Lx(p, "Карусель: камера"), "ADBE Position")) + " " + await p.status());
+      runX((acAt(Lx(p, "Номер 1"), "ADBE Transform Group", "ADBE Opacity") || {}).expression, FX0, { facing: false }) === 100 && (await p.page.isChecked("#orbitBack")), JSON.stringify(tf(Lx(p, "Карусель: камера"), "ADBE Position")) + " " + await p.status());
     check("OR2 the cards are 3D, on a ring of 600 around the middle, turned to face out, hanging on the null", c1.threeDLayer && ctrl.threeDLayer && ctrl.nullLayer && c1.parent === ctrl && c3.parent === ctrl && near(tf(ctrl, "ADBE Position"), [960, 540, 0]) &&
       near(tf(c1, "ADBE Position"), [960, 540, -600]) && tf(c1, "ADBE Rotate Y") === 0 && near(tf(c3, "ADBE Position"), [1560, 540, 0]) && tf(c3, "ADBE Rotate Y") === -90 &&
       Lx(p, "Карусель: камера").parent === Lx(p, "Карусель: управление камерой") && Lx(p, "Карусель: управление камерой").threeDLayer && near(tf(Lx(p, "Карусель: управление камерой"), "ADBE Position"), [960, 540, 0]), JSON.stringify(tf(c3, "ADBE Position")));
     check("OR2 a card: a 400×560 rectangle, corners 20% (40 px), its own colour; the number hangs on its card", JSON.stringify(acAt(c1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[400,560]" &&
       acAt(c1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Roundness").value === 40 && !!acAt(c1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Graphic - Fill") &&
       n1.parent === c1 && n1.threeDLayer && ctrl.selected && !c1.selected);
-    check("OR2 the report", /^Карусель готова: 8 карточек, кольцо\. Крутите её слоем «Карусель: управление»/.test(await p.status()) && /камера «Карусель: камера»/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+    const ex = (l, n) => (acAt(l, "ADBE Transform Group", n) || {}).expression, rectX = (l, n) => acAt(l, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", n).expression;
+    check("OR5 after «Создать карусель» it stays live: Effect Controls of «Карусель: управление» hold count, radius, size, corners and the back switch", acAt(ctrl, "ADBE Effect Parade").children.map((e) => e.name).join() === "Карточек,Радиус,Ширина,Высота,Углы %,Сзади видно цифру и картинку", acAt(ctrl, "ADBE Effect Parade").children.map((e) => e.name).join());
+    const pos3 = (fx) => runX(ex(c3, "ADBE Position"), fx).map((v) => Math.round(v));
+    check("OR5 the cards follow the controls: card 3 at 90° of 8 on a 600 ring; with 4 cards it moves to 180°, with a 900 radius it goes out; it turns with them", JSON.stringify(pos3(FX0)) === "[600,0,0]" && JSON.stringify(pos3({ ...FX0, "Карточек": 4 })) === "[0,0,600]" && JSON.stringify(pos3({ ...FX0, "Радиус": 900 })) === "[900,0,0]" &&
+      runX(ex(c3, "ADBE Rotate Y"), FX0) === -90 && runX(ex(c3, "ADBE Rotate Y"), { ...FX0, "Карточек": 4 }) === -180, JSON.stringify(pos3(FX0)) + JSON.stringify(pos3({ ...FX0, "Карточек": 4 })));
+    check("OR5 4 spare cards wait hidden: card 9 shows only when «Карточек» is 9 or more", runX(ex(Lx(p, "Карточка 9"), "ADBE Opacity"), FX0) === 0 && runX(ex(Lx(p, "Карточка 9"), "ADBE Opacity"), { ...FX0, "Карточек": 10 }) === 100 && runX(ex(Lx(p, "Номер 9"), "ADBE Opacity"), FX0) === 0 && runX(ex(c3, "ADBE Opacity"), FX0) === 100);
+    check("OR5 size and corners follow too", JSON.stringify(runX(rectX(c1, "ADBE Vector Rect Size"), { ...FX0, "Ширина": 500 })) === "[500,560]" && runX(rectX(c1, "ADBE Vector Rect Roundness"), { ...FX0, "Ширина": 500, "Углы %": 50 }) === 125);
+    check("OR2 the report", /^Карусель готова: 8 карточек, кольцо\. Крутите её слоем «Карусель: управление»/.test(await p.status()) && /до 12\), радиус, размер, углы/.test(await p.status()) && /камера «Карусель: камера»/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
     await p.close();
 
     p = await open({ orbit: { layers: [{ name: "Cam", kind: "camera" }, { name: "BG" }] } });
@@ -5166,9 +5209,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click("#orbitBtn"); await p.idle();
     const comps = p.ae.log.orbitComps || [];
     t = Lx(p, "Карточка 1");
-    check("OR3 «Шейп + прекомп»: 3 card comps in a «Карусель» folder, each with the shape (a rounded triangle path) and no number", comps.map((c) => c.name).sort().join() === "Карточка 1,Карточка 2,Карточка 3" && p.ae.log.bins.indexOf("Карусель") >= 0 &&
+    check("OR3 «Шейп + прекомп»: 3 card comps (and 9 spare ones) in a «Карусель» folder, each with the shape (a rounded triangle path) and no number", comps.length === 12 && comps.map((c) => c.name).indexOf("Карточка 3") >= 0 && p.ae.log.bins.indexOf("Карусель") >= 0 &&
       comps.every((c) => c.list.length === 1 && c.list[0].name === "Форма" && acAt(c.list[0], "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length === 6), comps.map((c) => c.name + ":" + c.list.map((l) => l.name)).join(" "));
-    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one; numbers off — no «Цифра видна сзади» switch", !(await vis(p, "#orbitBackRow")) && !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление,Карточка 1,Карточка 2,Карточка 3,Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
+    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one; numbers off — the back switch still shows, a picture can be inside", (await vis(p, "#orbitBackRow")) && !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => "Карточка " + i + ",Карточка " + i + ": обратная сторона").join(",") + ",Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
+    const fx3 = { ...FX0, "Карточек": 3, "Углы %": 50 }, inShape = comps[0].list[0], tpath = acAt(inShape, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").expression;
+    const mpath = acAt(t, "ADBE Mask Parade").children[0].children.find((c) => c.matchName === "ADBE Mask Shape").expression;
+    check("OR5 in «Шейп + прекомп» the triangle's corners follow «Углы %» (inside the card comp and in its mask): 6 points rounded, 3 sharp; the card comp layer scales to «Ширина» × «Высота»", runX(tpath, fx3).P.length === 6 && runX(tpath, { ...fx3, "Углы %": 0 }).P.length === 3 && runX(mpath, fx3).P.length === 6 &&
+      JSON.stringify(runX(ex(t, "ADBE Scale"), { ...fx3, "Ширина": 800 })) === "[200,100,100]", String(tpath).slice(0, 80));
     await p.close();
   }
 
@@ -5226,8 +5273,13 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
-  // Carousel: «Цифра видна сзади» off — a number hides when its card turns away from the camera.
+  // Carousel: «Сзади видно цифру и картинку» off — a number (or the whole card comp) hides when its card turns away from the camera.
   {
+    // Runs a carousel expression the way After Effects would: the controller's Effect Controls, the card's facing, createPath.
+    const runX = (expr, fx, o = {}) => vm.runInNewContext("var value=" + JSON.stringify(o.value === undefined ? 100 : o.value) + ";function degreesToRadians(d){return d*Math.PI/180}" +
+      "function createPath(P,I,O,c){return {P:P,I:I,O:O,c:c}}var thisLayer={toCompVec:function(){return [0,0," + (o.facing === false ? -1 : 1) + "]}};" +
+      "var FX=" + JSON.stringify(fx) + ";var thisComp={layer:function(){return {effect:function(n){return function(){return FX[n]}}}}};function comp(){return thisComp}" + expr);
+    const FX0 = { "Карточек": 8, "Радиус": 600, "Ширина": 400, "Высота": 560, "Углы %": 20, "Сзади видно цифру и картинку": 1 };
     const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]');
@@ -5236,11 +5288,16 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const spans1 = await p.page.locator("#orbitRing .kr-it span").count();
     await p.page.click("#orbitBtn"); await p.idle();
     const ex = (acAt(Lx(p, "Номер 3"), "ADBE Transform Group", "ADBE Opacity") || {}).expression;
-    check("OR4 «Цифра видна сзади» off: the preview drops the numbers of the back cards; each number layer hides when its card faces away", spans0 === 8 && spans1 < 8 && spans1 > 0 && ex === "var L=thisLayer;L.toCompVec([0,0,1])[2]>0?value:0" && /toCompVec/.test((acAt(Lx(p, "Номер 1"), "ADBE Transform Group", "ADBE Opacity") || {}).expression), spans0 + " " + spans1 + " " + ex);
+    check("OR4 «Цифра видна сзади» off: the preview drops the numbers of the back cards; each number layer hides when its card faces away", spans0 === 8 && spans1 < 8 && spans1 > 0 && runX(ex, { ...FX0, "Сзади видно цифру и картинку": 0 }, { facing: false }) === 0 && runX(ex, { ...FX0, "Сзади видно цифру и картинку": 0 }) === 100, spans0 + " " + spans1 + " " + ex);
     await p.page.click('#orbitMode [data-v="precomp"]'); await p.page.click("#orbitBtn"); await p.idle();
-    const inner = (p.ae.log.orbitComps || []).find((c) => c.name === "Карточка 2");
-    const num = inner && inner.list.find((l) => /^2$/.test(l.name));
-    check("OR4 …in «Шейп + прекомп» the number inside the card comp asks its card layer in the main comp", !!num && (acAt(num, "ADBE Transform Group", "ADBE Opacity") || {}).expression === 'var L=comp("Main").layer("Карточка 2");L.toCompVec([0,0,1])[2]>0?value:0', num ? (acAt(num, "ADBE Transform Group", "ADBE Opacity") || {}).expression : "no number");
+    const cardL = p.ae.log.dcMain.list.find((l) => l.name === "Карточка 2" && l.source), backL = Lx(p, "Карточка 2: обратная сторона");
+    const op = (l) => (acAt(l, "ADBE Transform Group", "ADBE Opacity") || {}).expression;
+    const off = { ...FX0, "Сзади видно цифру и картинку": 0 };
+    check("OR4 …in «Шейп + прекомп» the whole card comp (number, picture) hides when it faces away; a plain back of the same shape shows instead; the switch in Effect Controls flips it live", !!cardL && runX(op(cardL), off, { facing: false }) === 0 && runX(op(cardL), off) === 100 &&
+      !!backL && backL.parent === cardL && runX(op(backL), off, { facing: false }) === 100 && runX(op(backL), off) === 0 && runX(op(backL), FX0, { facing: false }) === 0 && runX(op(cardL), FX0, { facing: false }) === 100 && backL.threeDLayer, (cardL ? op(cardL) : "no card") + " | " + (backL ? op(backL) : "no back"));
+    const mk = cardL && acAt(cardL, "ADBE Mask Parade").children[0];
+    check("OR4 …and a picture put inside gets the card's shape: a mask of the rounded card on the card comp layer", !!mk && mk.name === "Card" && mk.children.find((c) => c.matchName === "ADBE Mask Shape").value.vertices.length === 8, mk ? JSON.stringify(mk.children.find((c) => c.matchName === "ADBE Mask Shape").value.vertices) : "no mask");
+    check("OR4 the switch is named «Сзади видно цифру и картинку»", (await p.page.innerText("#orbitBackRow")).trim() === "Сзади видно цифру и картинку");
     await p.restart(); await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]');
     check("OR4 the switch survives a restart", !(await p.page.isChecked("#orbitBack")));
     await p.close();
@@ -5265,6 +5322,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await mkTab(p);
     c1 = await cards(p);
     check("MK4 a middle panel (740): two blocks side by side, neither wider than 420", c1[0].split("@")[1].split("w")[0] === c1[1].split("@")[1].split("w")[0] && c1.every((x) => Number(x.split("w")[1]) <= 420) && (await p.page.locator("#orbitPane .mk-grip").count()) === 5, c1.join());
+    await p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.orbit.v1") || "{}"); o.fold = "ribbon,grid,textbox"; o.sort = "ribbon,carousel,grid,textbox,phone"; localStorage.setItem("sayframe.orbit.v1", JSON.stringify(o)); });
+    await p.restart(); await mkTab(p);
+    t = await p.page.evaluate(() => { const r = (n) => document.querySelector('.mk-card[data-mk="' + n + '"]').getBoundingClientRect(); return [r("ribbon"), r("grid"), r("textbox"), r("phone"), r("carousel")].map((x) => Math.round(x.left) + "," + Math.round(x.top) + "," + Math.round(x.bottom)).join(" "); });
+    const q = t.split(" ").map((x) => x.split(",").map(Number));
+    check("MK5 no hole under a folded block: the next blocks fill the short column first (Grid, Плашка, phone under the folded ribbon, beside the tall carousel)", q[0][0] === q[1][0] && q[1][0] === q[2][0] && q[2][0] === q[3][0] && q[4][0] > q[0][0] && q[1][1] - q[0][2] <= 14 && q[2][1] - q[1][2] <= 14 && q[3][1] - q[2][2] <= 14 && q[3][1] < q[4][2], t);
     await p.close();
     p = await open({ width: 420, orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
@@ -5447,6 +5509,153 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
+  // «Быстрый экспорт»: the ⤓ button in the header opens a sheet; platforms, quality, what to save, folder; MP4 via the Render Queue or Media Encoder.
+  {
+    const exOpen = async (q) => { await q.page.click("#exportBtn"); await q.page.waitForFunction(() => !document.getElementById("exportBar").hidden && /×/.test(document.getElementById("exCompMeta").textContent)); };
+    const exRun = async (q) => { await q.page.click("#exGo"); await q.page.waitForFunction(() => /^(Готово|Отправлено|Сохранено|Не получилось)/.test((document.querySelector("#exResults .ex-now") || {}).textContent || "")); };
+    const mp4s = (d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((n) => /\.mp4$/.test(n)).sort() : []);
+    const pressed = (q, sel) => q.page.evaluate((s) => Array.prototype.filter.call(document.querySelectorAll(s), (b) => b.getAttribute("aria-pressed") === "true").map((b) => b.getAttribute("data-t") || b.getAttribute("data-v")).join(), sel);
+    const scaleOf = (l) => acAt(l, "ADBE Transform Group", "ADBE Scale").value;
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { queued: ["Old"] } });
+    const exDir = path.join(p.home, "Desktop", "Sayframe Экспорт");
+    await exOpen(p);
+    check("EX1 the ⤓ button opens «Быстрый экспорт»: comp line, 6 platform tiles, Reels picked, quality «Обычное», «Всю композицию»", (await p.page.locator("#exCompName").innerText()) === "Main" && (await p.page.locator("#exCompMeta").innerText()) === "1920×1080 · 10 с" &&
+      (await p.page.locator("#exTargets .ex-t span").allInnerTexts()).join() === "Reels / Stories,YouTube,Telegram,Пост 4:5,TikTok,Свой" && (await pressed(p, "#exTargets .ex-t")) === "reels" &&
+      (await pressed(p, "#exQuality button")) === "normal" && (await pressed(p, "#exSpan button")) === "all" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео" && (await overflow(p)) <= 0, await pressed(p, "#exTargets .ex-t"));
+    check("EX1 16:9 comp and Reels 9:16 -> the sheet asks how, «Размытый фон по краям» by default", (await vis(p, "#exFitRow")) && (await p.page.locator("#exFitText").innerText()) === "Композиция горизонтальная, а Reels — вертикальный. Как сделать?" && (await pressed(p, "#exFit button")) === "blur", await p.page.locator("#exFitText").innerText());
+    check("EX1 unsaved project -> Desktop › «Sayframe Экспорт»; no Media Encoder switch when there is no Media Encoder", (await p.page.getAttribute("#exFolder", "title")) === exDir && !(await vis(p, "#exAmeRow")), await p.page.getAttribute("#exFolder", "title"));
+    await p.page.screenshot({ path: path.join(SHOTS, "90-export-sheet.png") });
+    await p.page.click('#exTargets [data-t="youtube"]');
+    check("EX2 two platforms -> «Сохранить 2 видео»", (await p.page.locator("#exGo").innerText()).trim() === "Сохранить 2 видео");
+    await exRun(p);
+    t = p.ae.log.rq.rendered;
+    check("EX2 one MP4 per platform, named «Comp — Platform.mp4», in the folder", mp4s(exDir).join() === "Main — Reels.mp4,Main — YouTube.mp4", mp4s(exDir).join());
+    check("EX2 Reels goes through a 1080×1920 comp, YouTube is the comp itself; H.264 15 Mbps; whole comp", t.length === 2 && t[0].w === 1080 && t[0].h === 1920 && t[1].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 15 Mbps" && t[1].tpl === t[0].tpl && t[0].span[1] === 10, JSON.stringify(t));
+    const wr = p.ae.log.orbitComps[0];
+    check("EX2 the 9:16 comp: the source fits the width over a blurred, silent copy that covers the frame", wr.list.map((l) => l.name).join() === "Main,Blur" && Math.abs(scaleOf(wr.list[0])[0] - 56.25) < 0.01 && Math.abs(scaleOf(wr.list[1])[0] - 1920 / 1080 * 106) < 0.1 &&
+      wr.list[1].audioEnabled === false && !!acAt(wr.list[1], "ADBE Effect Parade").children.find((e) => e.matchName === "ADBE Gaussian Blur 2"), wr.list.map((l) => l.name + ":" + scaleOf(l)).join(" "));
+    check("EX2 items already in the Render Queue sit the render out and come back; ours and the helper comp are removed after", t.every((r) => r.others === 0) && p.ae.project.renderQueue.numItems === 1 && p.ae.project.renderQueue.item(1).render === true && p.ae.log.rq.removed === 2 && p.ae.log.compsRemoved === 1, JSON.stringify([t.map((r) => r.others), p.ae.log.rq.removed, p.ae.log.compsRemoved]));
+    check("EX2 the list shows ✓, the size and «Показать»; the status names the folder", (await p.page.locator("#exResults .ex-row.done").count()) === 2 && (await p.page.locator("#exResults .ex-row small").allInnerTexts()).join() === "2,4 МБ,2,4 МБ" &&
+      (await p.page.locator("#exResults .ex-row .ghost").count()) === 2 && (await p.page.locator("#exResults .ex-now").innerText()) === "Готово, 2 видео" && (await p.status()) === "Видео сохранены в папку «Sayframe Экспорт».", await p.status());
+    await p.page.screenshot({ path: path.join(SHOTS, "91-export-done.png") });
+    await p.page.click("#exResults .ex-row .ghost"); await p.page.waitForTimeout(200);
+    check("EX3 «Показать» opens the folder", (p.ae.log.executed || []).join() === exDir, JSON.stringify(p.ae.log.executed));
+    await p.page.click("#exResults .ex-again .ghost");
+    check("EX3 «Назад к настройкам» brings the sheet back", await vis(p, "#exGo"));
+    await p.page.click("#exGo"); await p.page.waitForFunction(() => document.querySelectorAll("#exResults .ex-row.done").length === 2);
+    check("EX3 a second run does not overwrite: «Main — Reels 2.mp4»", mp4s(exDir).indexOf("Main — Reels 2.mp4") >= 0, mp4s(exDir).join());
+    await p.close();
+
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    p.ae.log.dcMain.workAreaStart = 2; p.ae.log.dcMain.workAreaDuration = 3;
+    await exOpen(p);
+    await p.page.click('#exTargets [data-t="reels"]'); await p.page.click('#exTargets [data-t="telegram"]');
+    await p.page.click('#exQuality [data-v="max"]'); await p.page.click('#exSpan [data-v="work"]');
+    check("EX4 Telegram alone keeps the comp's shape: nothing to ask", !(await vis(p, "#exFitRow")));
+    await exRun(p);
+    t = p.ae.log.rq.rendered;
+    check("EX4 Telegram is always the light file (5 Mbps) at the comp's size; «Рабочую область» renders the work area", t.length === 1 && t[0].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 5 Mbps" && t[0].span.join() === "2,3", JSON.stringify(t));
+    await p.restart();
+    await exOpen(p);
+    check("EX4 the choice is remembered", (await pressed(p, "#exTargets .ex-t")) === "telegram" && (await pressed(p, "#exQuality button")) === "max" && (await pressed(p, "#exSpan button")) === "work");
+    await p.page.click('#exTargets [data-t="telegram"]'); await p.page.click('#exTargets [data-t="post"]'); await p.page.click('#exFit [data-v="crop"]');
+    await exRun(p);
+    t = p.ae.log.rq.rendered;
+    t = t.slice(1);
+    check("EX5 «Обрезать»: the 4:5 comp is filled (cover), no blur copy; «Максимум» = 40 Mbps", t.length === 1 && t[0].w === 1080 && t[0].h === 1350 && t[0].tpl === "H.264 - Match Render Settings - 40 Mbps" && p.ae.log.orbitComps[0].list.length === 1 && Math.abs(scaleOf(p.ae.log.orbitComps[0].list[0])[0] - 125) < 0.01, JSON.stringify(t));
+    await p.page.click("#exResults .ex-again .ghost");
+    await p.page.click('#exTargets [data-t="post"]'); await p.page.click('#exTargets [data-t="custom"]');
+    check("EX6 «Свой» shows width × height", await vis(p, "#exCustom"));
+    await p.page.fill("#exW", "1080"); await p.page.fill("#exH", "1080"); await p.page.click('#exFit [data-v="black"]');
+    check("EX6 the tile shows the size; square vs 16:9 is asked about", (await p.page.locator('#exTargets [data-t="custom"] small').innerText()) === "1080×1080" && (await p.page.locator("#exFitText").innerText()) === "Композиция горизонтальная, а 1080×1080 — квадратный. Как сделать?", await p.page.locator("#exFitText").innerText());
+    await exRun(p);
+    t = p.ae.log.rq.rendered;
+    check("EX6 «Чёрные поля»: the source fits inside, one layer; the file is «Main — 1080x1080.mp4»", t.length === 3 && t[2].w === 1080 && t[2].h === 1080 && /Main — 1080x1080\.mp4$/.test(t[2].file) && p.ae.log.orbitComps[1].list.length === 1 && Math.abs(scaleOf(p.ae.log.orbitComps[1].list[0])[0] - 56.25) < 0.01, JSON.stringify(t[2]));
+    await p.close();
+
+    const exProj = fs.mkdtempSync(path.join(os.tmpdir(), "exproj-"));
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { ame: true, queued: ["Old"] }, projectFile: path.join(exProj, "ролик.aep") });
+    await exOpen(p);
+    check("EX7 a saved project -> «Рядом с проектом / Экспорт»; with Media Encoder the switch is there and on", (await p.page.locator("#exFolder").innerText()) === "Рядом с проектом / Экспорт" && (await p.page.getAttribute("#exFolder", "title")) === path.join(exProj, "Экспорт") && (await vis(p, "#exAmeRow")) && (await p.page.locator("#exAme").isChecked()));
+    await exRun(p);
+    check("EX7 Media Encoder: queued there (starts at once), nothing renders in After Effects, the row says so", p.ae.log.rq.ame.length === 1 && p.ae.log.rq.ame[0].now === true && p.ae.log.rq.ame[0].others === 0 && p.ae.log.rq.rendered.length === 0 &&
+      (await p.page.locator("#exResults .ex-row small").innerText()) === "в Media Encoder" && /^Отправлено в Media Encoder/.test(await p.page.locator("#exResults .ex-now").innerText()) && p.ae.project.renderQueue.item(1).render === true, JSON.stringify(p.ae.log.rq.ame));
+    await p.page.click("#exResults .ex-again .ghost"); await p.page.click("#exAmeRow"); await exRun(p);
+    check("EX7 switch off -> After Effects renders it", p.ae.log.rq.rendered.length === 1 && p.ae.log.rq.rendered[0].others === 0 && mp4s(path.join(exProj, "Экспорт")).length === 1, JSON.stringify(mp4s(path.join(exProj, "Экспорт"))));
+    await p.close();
+
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: { templates: ["Best Settings", "Lossless"] } });
+    await exOpen(p); await exRun(p);
+    check("EX8 no H.264 template and no Media Encoder -> a clear error in the row; the item is taken out of the queue", (await p.page.locator("#exResults .ex-row.fail").count()) === 1 && /нет настройки H\.264/.test(await p.page.locator("#exResults .ex-row .ex-nm").innerText()) && p.ae.project.renderQueue.numItems === 0 && (await p.statusKind()) === "error", await p.page.locator("#exResults .ex-row .ex-nm").innerText());
+    await p.page.click("#exResults .ex-again .ghost");
+    await p.page.keyboard.press("Escape");
+    check("EX8 Esc closes the sheet", !(await vis(p, "#exportBar")));
+    await p.close();
+    p = await open({ noActiveComp: true });
+    await p.page.click("#exportBtn"); await p.page.waitForFunction(() => /^Откройте/.test(document.getElementById("exCompName").textContent));
+    check("EX8 no comp open -> asks to open one, «Сохранить» is off", await p.page.locator("#exGo").isDisabled());
+    await p.close();
+  }
+
+
+  // Separate windows: each section or block can be its own After Effects panel (Window › Extensions › «Sayframe — …»).
+  {
+    const man = (q) => fs.readFileSync(path.join(q.extDir, "CSXS", "manifest.xml"), "utf8");
+    const wins = (text) => (text.match(/<Extension Id="com\.sayframe\.ae\.win\.([^"]+)" Version="[^"]*"\/>/g) || []).map((x) => /win\.([^"]+)"/.exec(x)[1]).join();
+    const shipped = fs.readFileSync(path.join(EXT, "CSXS", "manifest.xml"), "utf8");
+    check("WN1 the shipped manifest has the main panel and 10 windows: 4 sections, 5 blocks and the export", wins(shipped) === "anim,tools,shape,projects,ease,align,anchor,stagger,easecopy,export" &&
+      (shipped.match(/<Menu>[^<]+<\/Menu>/g) || []).join().indexOf("<Menu>Sayframe</Menu>,<Menu>Sayframe — Анимация</Menu>") === 0 && (shipped.match(/<DispatchInfo>/g) || []).length === 11, wins(shipped));
+    p = await open({ ownExt: true });
+    await p.page.waitForTimeout(600);
+    check("WN1 with the standard choice the panel leaves its manifest as it is", man(p) === shipped);
+    await p.close();
+
+    p = await open({ extId: "com.sayframe.ae.win.ease", settings: { design: "studio", designSet: 2 } });
+    await p.page.waitForTimeout(500);
+    t = await p.page.evaluate(() => Array.prototype.filter.call(document.querySelectorAll(".tool-card"), (c) => c.offsetParent !== null).map((c) => c.getAttribute("data-tool")).join());
+    check("WN2 «Sayframe — Плавность»: only the ease block, in the After Effects look, no header, tabs or block title", t === "ease" && (await p.page.getAttribute("html", "data-design")) === "ae" && !(await vis(p, ".top")) && !(await vis(p, "#tabs")) &&
+      !(await vis(p, '.tool-card[data-tool="ease"] .tool-head')) && (await vis(p, "#easeIn")) && (await overflow(p)) <= 0, t);
+    check("WN2 a separate window does not listen to shortcuts or check for updates (the big Sayframe does)", (await p.page.evaluate(() => window.__keyInterest.length === 0 && !window.__cepListeners["com.sayframe.hotkey"])) && (await p.status()) === "Готов.", await p.status());
+    await p.close();
+
+    p = await open({ extId: "com.sayframe.ae.win.tools" });
+    await p.page.waitForTimeout(500);
+    check("WN3 «Sayframe — Инструменты»: the whole section without the header and tabs", (await vis(p, "#viewMotion")) && !(await vis(p, "#viewClaude")) && !(await vis(p, "#tabs")) && (await p.page.locator(".tool-card:visible").count()) > 5);
+    await p.close();
+
+    p = await open({ extId: "com.sayframe.ae.win.export", orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    await p.page.waitForFunction(() => /×/.test(document.getElementById("exCompMeta").textContent));
+    check("WN4 «Sayframe — Экспорт»: the export sheet is the window — no close button, Esc does not close it", (await vis(p, "#exGo")) && !(await vis(p, "#exClose")) && !(await vis(p, "#viewClaude")) && (await p.page.locator("#exCompName").innerText()) === "Main");
+    await p.page.keyboard.press("Escape");
+    check("WN4 Esc keeps it open", await vis(p, "#exportBar"));
+    await p.close();
+
+    p = await open({ ownExt: true, settings: { design: "ae", designSet: 2 } });
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabWin");
+    t = await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#winPicker input"), (i) => (i.checked ? "+" : "-") + i.getAttribute("data-win")).join());
+    check("WN5 Settings › «Окна»: a switch per section and block, the standard ones on", t === "+anim,+tools,+shape,+projects,+ease,+align,+anchor,+stagger,+easecopy,-paste,-organize,-decompose,-cache,-nullp,-unused,-cutout,-pathfinder,-split,+export", t);
+    await p.page.click('#winPicker label:has(input[data-win="stagger"])'); await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
+    check("WN5 switching rewrites the manifest: Лесенка out, Кэш in; the note asks to restart After Effects", wins(man(p)) === "anim,tools,shape,projects,ease,align,anchor,easecopy,cache,export" && /Перезапустите After Effects/.test(await p.page.locator("#winNote").innerText()) &&
+      /<Menu>Sayframe — Кэш<\/Menu>/.test(man(p)) && !/Лесенка/.test(man(p)), wins(man(p)));
+    await p.page.click('#winPicker label:has(input[data-win="stagger"])'); await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
+    check("WN5 back as it was -> the same manifest as shipped, nothing to restart", man(p) === shipped && /такое же/.test(await p.page.locator("#winNote").innerText()));
+    await p.page.click("#settingsClose");
+    await p.page.click("#tabMotion"); await p.page.hover('section[data-tool="ease"]'); await p.page.click('section[data-tool="ease"] .win-open');
+    check("WN6 ↗ on a block opens its window when After Effects has it", (await p.page.evaluate(() => window.__openedExt.join())) === "com.sayframe.ae.win.ease");
+    await p.page.hover('section[data-tool="cache"]'); await p.page.click('section[data-tool="cache"] .win-open'); await p.page.waitForTimeout(400);
+    check("WN6 ↗ on a block without a window yet adds it to the menu and says to restart", wins(man(p)).indexOf("cache") >= 0 && (await p.page.evaluate(() => window.__openedExt.length)) === 1 &&
+      (await p.status()) === "Окно «Кэш» появится после перезапуска After Effects: Window › Extensions › Sayframe — Кэш.", await p.status());
+    await p.page.click("#exportBtn");
+    check("WN6 the export sheet has ↗ too", await vis(p, '#exHead .win-open[data-win="export"]'));
+    await p.close();
+
+    p = await open({ ownExt: true, signedExt: true, settings: { design: "ae", designSet: 2 } });
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabWin");
+    await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
+    check("WN7 a signed copy cannot change its manifest: it says so and the switches lock", man(p) === shipped && /подписанного пакета/.test(await p.page.locator("#winNote").innerText()) && (await p.page.locator('#winPicker input[data-win="ease"]').isDisabled()));
+    await p.close();
+  }
+
   // Phone mockup (Animation › «Макеты»): an iPhone or Android phone of shapes; the screen is a comp of the real resolution or the selected layer.
   {
     const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
@@ -5500,7 +5709,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
     await rbTab(p);
     check("RB1 a «Текст по ленте» block in «Макеты» after the phone: preview of the ribbon with the text on it, forms, «Создать ленту»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" &&
-      (await p.page.locator("#rbStage svg path").count()) === 1 && /WEST LOOP • WEST LOOP/.test(await p.page.locator("#rbStage textPath").textContent()) && (await p.page.locator("#rbForm button").count()) === 5 && (await p.page.getAttribute('#rbForm [data-v="loops"]', "aria-pressed")) === "true" && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать ленту" && (await overflow(p)) <= 0);
+      (await p.page.locator("#rbStage svg path").count()) === 1 && /WEST LOOP • WEST LOOP/.test(await p.page.locator("#rbStage textPath").textContent()) && (await p.page.locator("#rbForm > button").count()) === 6 && (await p.page.getAttribute('#rbForm [data-v="loops"]', "aria-pressed")) === "true" && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать ленту" && (await overflow(p)) <= 0);
     await p.page.click('#rbMode [data-v="ring"]');
     check("RB1 «3D-кольцо»: the ring's own settings, the ribbon's ones hide; letters in the preview, the far ones dimmer", (await vis(p, "#rbRingSl")) && !(await vis(p, "#rbRibbonSl")) && !(await vis(p, "#rbForm")) && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать кольцо" &&
       (await p.page.locator("#rbStage .rb-ringrow").count()) === 2 && (await p.page.locator('#rbStage .rb-ringrow span[style*="opacity"]').count()) > 5);
@@ -5514,6 +5723,14 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       /effect\("Толщина ленты"\)/.test(acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Width").expression) &&
       /time\*effect\("Скорость"\)/.test(acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin").expression), fxNames(T));
     await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    await p.page.click('#rbForm [data-v="circle"]'); await p.page.fill("#rbText", "Didor"); await p.page.fill("#rbSep", ".");
+    await p.page.click("#rbBtn"); await p.idle();
+    T = L(p, "Текст ленты");
+    const circ = 2 * Math.PI * 1080 * 0.3, unitW = "Didor . ".length * (72 * 0.66 + 40 * 72 / 1000), reps = docText(T).split("Didor").length - 1;
+    check("RB7 a circle: the text goes round exactly once (no second lap piling on the first), spread by tracking; running wraps at the circle's length", reps === Math.floor(circ / unitW) && reps * unitW <= circ + 1 &&
+      acAt(T, "ADBE Text Properties", "ADBE Text Document").value.tracking > 40 && /%L\)\+L\)%L$/.test(acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin").expression), reps + " vs " + Math.floor(circ / unitW) + " | " + acAt(T, "ADBE Text Properties", "ADBE Text Document").value.tracking);
     p = await open({ orbit: { layers: [{ name: "Линия" }, { name: "BG", selected: false }] } });
     await rbTab(p);
     await p.page.click('#rbForm [data-v="path"]');
@@ -5533,14 +5750,139 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click('#rbMode [data-v="ring"]');
     await p.page.click("#rbBtn"); await p.idle();
     const r1 = L(p, "Кольцо 1"), sp = L(p, "Кольцо: вращение"), tl = L(p, "Кольцо: наклон");
-    check("RB4 «Создать кольцо»: two rings of 3D letters on a spinning null inside a tilting one, a camera; one undo step", ["Кольцо 1", "Кольцо 2"].every((n) => L(p, n) && L(p, n).threeDLayer && L(p, n).threeDPerChar && L(p, n).parent === sp) && sp.parent === tl &&
+    check("RB4 «Создать кольцо»: two rings of 3D letters on a spinning null inside a tilting one, a camera; one undo step (the measuring text is gone)", !L(p, "measure") && ["Кольцо 1", "Кольцо 2"].every((n) => L(p, n) && L(p, n).threeDLayer && L(p, n).threeDPerChar && L(p, n).parent === sp) && sp.parent === tl &&
       L(p, "Камера кольца") && p.ae.log.undo.join() === "begin:Sayframe: text ring,end" && tf(tl, "ADBE Rotate X").value === -12 && /time\*effect\("Скорость"\)/.test(tf(sp, "ADBE Rotate Y").expression) && /Кольцо готово/.test(await p.status()), names(p) + " | " + await p.status());
     check("RB4 the ring lies flat, letters stand up, far letters dimmer (an expression selector); the text fills the circle", tf(r1, "ADBE Rotate X").value === 90 && acAt(r1, "ADBE Text Properties", "ADBE Text Animators").children.map((a) => a.name).join() === "Centre,Stand up,Back side" &&
       acAt(r1, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text Force Align Path").value === 1 && /WEST LOOP/.test(docText(r1)), acAt(r1, "ADBE Text Properties", "ADBE Text Animators").children.map((a) => a.name).join());
+    const back = acAt(r1, "ADBE Text Properties", "ADBE Text Animators").children[2], camP = tf(L(p, "Камера кольца"), "ADBE Position").value;
+    const amt = (idx, total, rot) => { const e = acAt(back, "ADBE Text Selectors").children[0].children.find((c) => c.matchName === "ADBE Text Expressible Amount").expression;
+      return vm.runInNewContext("var textIndex=" + idx + ",textTotal=" + total + ";function degreesToRadians(d){return d*Math.PI/180}var thisComp={layer:function(){return {transform:{yRotation:" + rot + "}}}};" + e)[0]; };
+    check("RB6 the dim letters are the far half and stay far while the ring turns (the path starts at the near side)", amt(1, 40, 0) === 0 && amt(20, 40, 0) === 100 && amt(20, 40, 180) === 0 && amt(1, 40, 180) === 100 && amt(10, 40, 90) === 0 && amt(30, 40, 90) === 100, [amt(1, 40, 0), amt(20, 40, 0), amt(20, 40, 180), amt(10, 40, 90)].join());
+    check("RB6 the camera stands far enough back for the whole ring, level with it", camP[2] < -2500 && camP[1] === 540 && camP[0] === 960, JSON.stringify(camP));
     await p.restart(); await rbTab(p);
     check("RB5 the settings survive a restart", (await p.page.getAttribute('#rbMode [data-v="ring"]', "aria-pressed")) === "true" && p.errors.length === 0, p.errors.join("|"));
     await p.close();
   }
+  // «Текст по ленте»: a random line by number, the line's direction, the text running forward or back.
+  {
+    const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const rbTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    const verts = (R) => acAt(acAt(R, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices;
+    const spread = (v, k) => Math.max(...v.map((q) => q[k])) - Math.min(...v.map((q) => q[k]));
+    const fm = (T) => acAt(T, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin");
+    const d = (p) => p.page.getAttribute("#rbStage svg path", "d");
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    check("RN1 the seed row shows only for «Случайная»", !(await vis(p, "#rbSeedRow")) && (await vis(p, "#rbDirRow")));
+    await p.page.click('#rbForm [data-v="random"]');
+    const d1 = await d(p);
+    check("RN1 «🎲 Случайная»: a number and «Другая линия»", (await vis(p, "#rbSeedRow")) && (await p.page.inputValue("#rbSeed")) === "4127");
+    await p.page.click("#rbDice");
+    const s2 = await p.page.inputValue("#rbSeed"), d2 = await d(p);
+    check("RN2 «Другая линия» gives a new number and a new line", s2 !== "4127" && d2 !== d1, s2);
+    await p.page.fill("#rbSeed", "4127"); await p.page.press("#rbSeed", "Enter");
+    check("RN2 the same number brings the same line back", (await d(p)) === d1);
+    await p.page.click("#rbBtn"); await p.idle();
+    const v1 = JSON.stringify(verts(L(p, "Лента")));
+    check("RN3 the comp gets that random line", verts(L(p, "Лента")).length >= 5 && spread(verts(L(p, "Лента")), 0) > 1500 && /Лента готова/.test(await p.status()), await p.status());
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    await p.page.click('#rbForm [data-v="random"]'); await p.page.fill("#rbSeed", "4127"); await p.page.press("#rbSeed", "Enter");
+    await p.page.click("#rbBtn"); await p.idle();
+    check("RN3 the same number makes the same line again", JSON.stringify(verts(L(p, "Лента"))) === v1);
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    await p.page.click('#rbForm [data-v="wave"]');
+    await p.page.click('#rbDir [data-v="-90"]');
+    check("RN4 ↑ sets the angle to -90°, the slider follows", (await p.page.inputValue("#rbAngle")) === "-90" && (await p.page.innerText("#rbAngleVal")) === "-90°" && (await p.page.getAttribute('#rbDir [data-v="-90"]', "aria-pressed")) === "true");
+    await p.page.click('#rbRunDir [data-v="back"]');
+    await p.page.click("#rbBtn"); await p.idle();
+    let v = verts(L(p, "Лента")), T = L(p, "Текст ленты");
+    check("RN4 a wave from bottom to top runs the whole height", spread(v, 1) > 1000 && spread(v, 0) < 900 && v[0][1] > v[v.length - 1][1], spread(v, 0) + "x" + spread(v, 1));
+    check("RN5 «← Назад»: the text runs the other way and starts far back, so no gap opens", /^value\+time\*effect/.test(fm(T).expression) && fm(T).value < 0, fm(T).expression + " " + fm(T).value);
+    await p.page.click('#rbForm [data-v="circle"]');
+    check("RN6 a circle and a drawn line have no direction row", !(await vis(p, "#rbDirRow")) && (await p.page.click('#rbForm [data-v="path"]'), !(await vis(p, "#rbDirRow"))));
+    await p.page.click('#rbForm [data-v="wave"]'); await p.page.click("label:has(#rbRun)");
+    check("RN6 «Вперёд / Назад» only while the text runs", !(await vis(p, "#rbRunDir")) && p.errors.length === 0, p.errors.join("|"));
+    await p.close();
+  }
+
+  // «Текст по ленте»: «Перекрытия 3D» — the ribbon is cut between its crossings, later pieces cover earlier ones with their letters.
+  {
+    const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const rbTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    const anims = (T) => acAt(T, "ADBE Text Properties", "ADBE Text Animators").children;
+    const pieceExpr = (T) => { const a = anims(T).find((x) => x.name === "Piece"); return a && acAt(a, "ADBE Text Selectors").children[0].children.find((c) => c.matchName === "ADBE Text Expressible Amount").expression; };
+    const trim = (R) => { const g = acAt(R, "ADBE Root Vectors Group").children[0], t = acAt(g, "ADBE Vectors Group").children.find((c) => c.matchName === "ADBE Vector Filter - Trim"); return t ? [t.children.find((c) => c.matchName === "ADBE Vector Trim Start").value, t.children.find((c) => c.matchName === "ADBE Vector Trim End").value] : null; };
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    check("OV1 «Перекрытия 3D» is off at first; «Тень» shows only when it is on", !(await p.page.isChecked("#rbOverlap")) && !(await vis(p, "#rbShadowRow")) &&
+      (await p.page.click("label:has(#rbOverlap)"), await vis(p, "#rbShadowRow")) && (await p.page.isChecked("#rbShadow")));
+    const pc = await p.page.locator("#rbStage .rb-piece").count();
+    check("OV1 the preview draws the ribbon in pieces, a soft shadow under the later ones", pc > 3 && (await p.page.locator("#rbStage [mask]").count()) === pc - 1, String(pc));
+    await p.page.click("#rbBtn"); await p.idle();
+    const T = L(p, "Текст ленты"), R = L(p, "Лента"), T2 = L(p, "Текст ленты: кусок 2"), R2 = L(p, "Лента: кусок 2"), S2 = L(p, "Лента: тень 2");
+    const nm = names(p).split(","), last = nm.filter((n) => /^Текст ленты: кусок \d+$/.test(n)).length + 1;
+    check("OV2 «Создать ленту» with overlaps: pieces stacked along the line, later on top: shadow, ribbon, text for each", T2 && R2 && S2 && nm.indexOf("Текст ленты: кусок 2") < nm.indexOf("Лента: кусок 2") && nm.indexOf("Лента: кусок 2") < nm.indexOf("Лента: тень 2") && nm.indexOf("Лента: тень 2") < nm.indexOf("Текст ленты") &&
+      nm.indexOf("Текст ленты: кусок " + last) === 0 && p.ae.log.undo.join() === "begin:Sayframe: text ribbon,end" && /куска|кусков/.test(await p.status()) && !L(p, "measure"), names(p) + " | " + await p.status());
+    check("OV2 each ribbon piece is a trimmed copy; the pieces follow each other along the line", trim(R)[0] === 0 && trim(R)[1] > 0 && trim(R2)[0] > 0 && Math.abs(trim(R2)[0] - trim(R)[1]) < 0.01 && trim(L(p, "Лента: кусок " + last))[1] === 100, JSON.stringify([trim(R), trim(R2)]));
+    check("OV2 the copies follow the main text: its words and its run", /thisComp\.layer\("Текст ленты"\)\.text\.sourceText/.test(acAt(T2, "ADBE Text Properties", "ADBE Text Document").expression) &&
+      /thisComp\.layer\("Текст ленты"\)\.text\.pathOption\.firstMargin/.test(acAt(T2, "ADBE Text Properties", "ADBE Text Path Options", "ADBE Text First Margin").expression));
+    check("OV2 the shadow is a dark blurred copy, softer", /Gaussian Blur/.test(acAt(S2, "ADBE Effect Parade").children.map((c) => c.matchName).join()) && acAt(S2, "ADBE Transform Group", "ADBE Opacity").value === 55 && /blur|Blur/.test(acAt(S2, "ADBE Effect Parade").children.map((c) => c.matchName).join()), acAt(S2, "ADBE Effect Parade").children.map((c) => c.matchName).join());
+    // Every letter on the line shows in exactly one piece, wherever the text has run to.
+    const exprs = [T].concat(nm.filter((n) => /^Текст ленты: кусок/.test(n)).map((n) => L(p, n))).map(pieceExpr);
+    const shows = (e, i, m) => vm.runInNewContext("var textIndex=" + i + ",text={pathOption:{firstMargin:" + m + "}};" + e)[0] === 0;
+    let bad = 0, seen = 0;
+    for (const m of [0, -333, -2500]) for (let i = 1; i <= 400; i++) { const k = exprs.filter((e) => shows(e, i, m)).length; if (k > 1) bad++; if (k === 1) seen++; }
+    check("OV3 every letter shows in one piece only, while the text runs", exprs.every(Boolean) && bad === 0 && seen > 300, bad + " doubled, " + seen + " shown");
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
+    await rbTab(p);
+    await p.page.click('#rbForm [data-v="wave"]'); await p.page.click("label:has(#rbOverlap)"); await p.page.click("label:has(#rbShadow)");
+    await p.page.click("#rbBtn"); await p.idle();
+    check("OV4 a line that never meets itself: no pieces, said plainly", !/кусок|тень/.test(names(p)) && /перекрёстков нет/.test(await p.status()), names(p) + " | " + await p.status());
+    await p.restart(); await rbTab(p);
+    check("OV4 the switches survive a restart", (await p.page.isChecked("#rbOverlap")) && !(await p.page.isChecked("#rbShadow")) && p.errors.length === 0, p.errors.join("|"));
+    await p.close();
+  }
+
+  // AI in «Студия»: modes Создать / Выражение / Мои, example and style inside the field, quick tasks as tiles.
+  {
+    p = await open({ settings: { design: "studio", designSet: 2 } });
+    await p.page.click("#tabClaude");
+    check("SA1 «Студия»: three modes on top, «Создать» first; the field with «Пример» and the style inside; quick tasks as tiles with «Своя задача»", (await vis(p, "#aiModes")) && (await p.page.getAttribute('#aiModes [data-m="create"]', "aria-selected")) === "true" &&
+      (await vis(p, "#aiExample")) && (await p.page.innerText("#aiStyleBtn")).trim() === "Обычный ▾" && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && (await p.page.getAttribute("#prompt", "placeholder")) === "Что сделать в композиции?" &&
+      (await p.page.locator("#quickList .quick-chip").count()) === 4 && (await vis(p, "#quickList .quick-new")) && (await p.page.locator("#quickList .quick-chip .quick-ic").first().innerText()) === "T↑" && !(await vis(p, "#exprWish")) && p.errors.length === 0, p.errors.join("|"));
+    await p.page.click("#aiStyleBtn");
+    const popOpen = await vis(p, "#aiStylePop");
+    await p.page.click('#aiStylePop .style-chip[data-style="smooth"]');
+    check("SA2 the style pill opens the styles; a pick is kept for the next requests and closes the list", popOpen && (await p.page.innerText("#aiStyleBtn")).trim() === "Плавный ▾" && !(await vis(p, "#aiStylePop")) &&
+      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).motionStyle)) === "smooth");
+    await p.page.click("#aiExample");
+    const exOpen = await vis(p, "#aiExampleMenu");
+    await p.page.click('#aiExampleMenu [data-ex="link"]');
+    check("SA3 «📎 Пример»: a picture or video from the computer, or a link; the link row opens", exOpen && (await vis(p, "#refLinkRow")) && !(await vis(p, "#aiExampleMenu")));
+    await p.page.click("#refLinkCancel");
+    await p.page.click("#quickList .quick-new");
+    check("SA6 the «Своя задача» tile opens the form for a new quick task", await vis(p, "#quickForm"));
+    await p.page.click("#quickCancel");
+    await p.page.click('#aiModes [data-m="expr"]');
+    check("SA4 «Выражение»: only the expression card (no title bar) and the status; the request field is gone", (await vis(p, "#exprWish")) && (await vis(p, "#exprApplyBtn")) && !(await vis(p, "#prompt")) && !(await vis(p, "#quickList")) && !(await vis(p, "#exprToggle")) && (await vis(p, "#status")));
+    await p.page.click('#aiModes [data-m="mine"]');
+    check("SA5 «Мои» without saved scripts: a short note on how to save one", (await vis(p, "#scriptsEmpty")) && !(await vis(p, "#exprWish")) && !(await vis(p, "#prompt")));
+    await p.page.click('#aiModes [data-m="expr"]');
+    await p.restart(); await p.page.click("#tabClaude");
+    check("SA4 the open mode survives a restart", (await p.page.getAttribute('#aiModes [data-m="expr"]', "aria-selected")) === "true" && (await vis(p, "#exprWish")));
+    await p.page.evaluate(() => { const s = JSON.parse(localStorage.getItem("sayframe.settings.v1")); s.design = "glass"; localStorage.setItem("sayframe.settings.v1", JSON.stringify(s)); });
+    await p.restart(); await p.page.click("#tabClaude");
+    check("SA7 other designs keep the old AI layout: style row, attach buttons and quick chips over the field, no modes", !(await vis(p, "#aiModes")) && (await vis(p, "#styleRow")) && (await vis(p, "#refBtn")) && (await vis(p, "#prompt")) && (await vis(p, "#exprWish")) &&
+      (await p.page.locator("#quickList .quick-new").count()) === 0 && (await p.page.evaluate(() => document.querySelector(".composer").firstElementChild.id)) === "quickBox" && p.errors.length === 0, p.errors.join("|"));
+    await p.close();
+  }
+
   // Decompose: the layers of a selected precomp come out into the open comp, in its place.
   {
     const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
@@ -5666,11 +6008,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
     await p.restart(); await p.page.click("#tabBrand");
     check("BR9 everything survives a restart", (await p.page.locator("#brandColors .brand-chip").count()) === 2 && (await p.page.locator("#brandLogos .brand-logo").count()) === 1 && (await p.page.inputValue("#brandFontHead")) === "Montserrat-Bold" && (await p.page.locator("#brandTexts .brand-text").count()) === 1);
-    await p.page.click("#brandNew"); await p.page.fill("#brandName", "Beta"); await p.page.click("#brandNameOk");
+    await bmClick(p, "#brandNew"); await p.page.fill("#brandName", "Beta"); await p.page.click("#brandNameOk");
     check("BR9 a second project starts empty and becomes the current one", (await p.page.locator("#brandSelect option").allInnerTexts()).join() === "Acme,Beta" && (await p.page.locator("#brandColors .brand-chip").count()) === 0);
-    await p.page.click("#brandDelete");
+    await bmClick(p, "#brandDelete");
     check("BR9 the bin asks once more before deleting", (await vis(p, "#brandDeleteNote")) && (await p.page.locator("#brandSelect option").count()) === 2);
-    await p.page.click("#brandDelete");
+    await bmClick(p, "#brandDelete");
     check("BR9 the second press deletes it; Acme is current again", (await p.page.locator("#brandSelect option").allInnerTexts()).join() === "Acme" && (await p.page.locator("#brandColors .brand-chip").count()) === 2 && p.errors.filter((e) => !/Not allowed to load local resource/.test(e)).length === 0, p.errors.join(" | "));
     // A logo the open AE project still uses as footage stays on disk when it is removed from the brand book
     // (a deleted source makes After Effects show "A file could not be found").
@@ -5700,15 +6042,17 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     if (await p.page.locator('#brandSubs .brand-sub[aria-selected="true"] .brand-sub-x').count()) { await p.page.click('#brandSubs .brand-sub[aria-selected="true"] .brand-sub-x'); }
     await p.page.click('#brandSubs .brand-sub[data-group]:first-child');
     await p.page.fill("#brandColorHex", "#2fc16e"); await p.page.fill("#brandColorName", "Alif colour"); await p.page.click("#brandColorAdd");
-    await p.page.click("#brandNew"); await p.page.fill("#brandName", "Alif Academy"); await p.page.press("#brandName", "Enter");
-    check("SB3 inside the section the project card works as before: list, pencil, bin, «+ Новый»", (await projects()) === "Alif Shop,Alif Academy" && (await vis(p, "#brandRename")) && (await vis(p, "#brandDelete")) && (await vis(p, "#brandExport")));
+    await bmClick(p, "#brandNew"); await p.page.fill("#brandName", "Alif Academy"); await p.page.press("#brandName", "Enter");
+    await p.page.click("#brandMore");
+    check("SB3 inside the section the sub-brands are chips in «Логотипы»; ⋯ holds rename, delete, «+ Новый подбренд»; «Поделиться» sits on the top row", (await projects()) === "Alif Shop,Alif Academy" && (await p.page.locator("#brandSubChips .brand-subb:not(.brand-subb-add)").allInnerTexts()).join() === "Alif Shop,Alif Academy" && (await vis(p, "#brandRename")) && (await vis(p, "#brandDelete")) && (await vis(p, "#brandNew")) && (await vis(p, "#brandExport")));
+    await p.page.click("#brandMore");
     await p.page.click("#brandSubAdd"); await p.page.fill("#brandName", "Samsung"); await p.page.press("#brandName", "Enter");
     await p.page.click("#brandFirst"); await p.page.fill("#brandName", "Galaxy"); await p.page.press("#brandName", "Enter");
     await p.page.fill("#brandColorHex", "#1428a0"); await p.page.fill("#brandColorName", "Samsung Blue"); await p.page.click("#brandColorAdd");
     t = await stored();
     check("SB4 each section has its own projects", (await chips()) === "Alif,Samsung" && (await projects()) === "Galaxy" && t.items.map((g) => g.name + ":" + g.subs.map((x) => x.name).join("+")).join() === "Alif:Alif Shop+Alif Academy,Samsung:Galaxy", JSON.stringify(t));
     await p.page.click('#brandSubs .brand-sub[data-group]:first-child');
-    await p.page.selectOption("#brandSelect", { label: "Alif Shop" });
+    await p.page.click('#brandSubChips .brand-subb:has-text("Alif Shop")');
     check("SB5 back in Alif, Alif Shop keeps its colors", (await projects()) === "Alif Shop,Alif Academy" && (await p.page.locator("#brandColors .brand-chip").getAttribute("data-hex")) === "#2fc16e");
     await p.page.click("#tabClaude"); await p.page.fill("#prompt", "заставка в стиле бренда"); await p.page.click("#runBtn"); await p.idle();
     t = JSON.stringify(p.net.requests[0] ? p.net.requests[0].body.messages[0].content : "");
@@ -5741,7 +6085,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ saveAs: out });
     await p.page.evaluate((v) => localStorage.setItem("sayframe.brands.v1", JSON.stringify(v)), seed);
     await p.restart(); await p.page.click("#tabBrand");
-    check("SH1 «Поделиться» and «Импорт» buttons under the project list", (await vis(p, "#brandExport")) && (await vis(p, "#brandImport")));
+    check("SH1 «Поделиться» on the top row, «Импорт» in the ⋯ menu", (await vis(p, "#brandExport")) && !(await vis(p, "#brandImport")) && (await p.page.click("#brandMore"), await vis(p, "#brandImport")));
+    await p.page.click("#brandMore");
     await p.page.click("#brandExport");
     await p.page.waitForFunction(() => /сохранён|Не удалось/.test(document.getElementById("status").textContent), null, { timeout: 8000 }).catch(() => {});
     await p.idle();
@@ -5763,16 +6108,16 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       ib.logos.length === 1 && ib.logos[0].variant === "white" && /Documents\/Sayframe Brands\//.test(ib.logos[0].file) && fs.readFileSync(ib.logos[0].file).equals(fakePng(3)), JSON.stringify(t));
     check("SH2 the report counts what came in", (await p.status()) === "Брендбук «Acme» добавлен: логотипов — 1, цветов — 2, текстов — 1.", await p.status());
     const firstLogo = ib.logos[0].file;
-    await p.page.click("#brandImport"); await p.idle();
+    await bmClick(p, "#brandImport"); await p.idle();
     check("SH3 the same brand again: asks whether to update it or keep a separate copy", (await vis(p, "#brandAsk")) && /уже есть проект «Acme»/.test(await p.page.locator("#brandAskText").innerText()) && !(await vis(p, "#brandShareRow")));
     await p.page.click("#brandAskCopy"); await p.idle();
     t = await stored();
     check("SH3 «Отдельной копией» adds «Acme 2» next to it", t.items[0].subs.map((x) => x.name).join() === "Acme,Acme 2" && !(await vis(p, "#brandAsk")), t.items[0].subs.map((x) => x.name).join());
-    await p.page.click("#brandImport"); await p.idle();
+    await bmClick(p, "#brandImport"); await p.idle();
     await p.page.click("#brandAskUpdate"); await p.idle();
     t = await stored();
     check("SH3 «Обновить» replaces Acme in place, its old logo file is cleaned up", t.items[0].subs.map((x) => x.name).join() === "Acme,Acme 2" &&  !fs.existsSync(firstLogo) && fs.existsSync(t.items[0].subs[0].logos[0].file) && /обновлён/.test(await p.status()) && p.errors.filter((e) => !/Not allowed to load local resource/.test(e)).length === 0, (await p.status()) + " " + p.errors.join(" | "));
-    await p.page.click("#brandImport"); await p.idle(); await p.page.click("#brandAskCancel");
+    await bmClick(p, "#brandImport"); await p.idle(); await p.page.click("#brandAskCancel");
     check("SH3 «Отмена» changes nothing", (await stored()).items[0].subs.length === 2 && (await p.status()) === "Импорт отменён.");
     await p.close();
 
@@ -5842,6 +6187,40 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.evaluate(() => localStorage.setItem("sayframe.brandOrder.v1", JSON.stringify(["texts", "colors", "logos", "fonts", "formats", "bogus", "texts"])));
     await p.restart(); await p.page.click("#tabBrand");
     check("SO3 sections missing from a saved order (new in an update) take their place after their old neighbour", (await order(p)) === "texts,colors,grads,logos,icons,fonts,formats", await order(p));
+    await p.close();
+  }
+
+  // «Компактный список»: each section folds into one row with a preview and a count; sub-brands are chips in «Логотипы».
+  {
+    const sub = (id, name) => ({ id, name, colors: [{ name: "Зелёный", hex: "#18a957" }, { name: "Белый", hex: "#f4f4f4" }], gradients: [], fonts: { head: "Montserrat-Bold", body: "" }, texts: [{ name: "Сайт", text: "alif.tj" }], logos: [] });
+    const seed = { active: "g1", items: [{ id: "g1", name: "Alif", active: "b1", subs: [sub("b1", "Alif"), sub("b2", "Alif Shop"), sub("b3", "Alif Business")] }] };
+    const opened = (p) => p.page.evaluate(() => Array.from(document.querySelectorAll("#brandBody > .brand-sec.open")).map((x) => x.getAttribute("data-sec")).join());
+    p = await open({});
+    await p.page.evaluate((v) => { localStorage.setItem("sayframe.brands.v1", JSON.stringify(v)); localStorage.removeItem("sayframe.brandOpen.v1"); }, seed);
+    await p.restart(); await p.page.click("#tabBrand");
+    t = await p.page.evaluate(() => { const r = (s) => document.querySelector('#brandBody > .brand-sec[data-sec="' + s + '"]'); return [r("colors").querySelectorAll(".brand-pv i").length, r("colors").querySelector(".brand-n").textContent, r("texts").querySelector(".brand-pv").textContent, r("fonts").querySelector(".brand-pv").textContent, r("colors").offsetHeight].join("|"); });
+    check("CL1 at first only «Логотипы» is open; the rest are rows with a preview and a count", (await opened(p)) === "logos" && !(await vis(p, "#brandColorHex")) && /^2\|2\|alif\.tj\|AaMontserrat\|\d+$/.test(t) && Number(t.split("|")[4]) < 60, (await opened(p)) + " " + t);
+    check("CL1 no grey hints inside the sections: the hint shows on the section title", !(await p.page.locator("#brandBody .brand-sec > small.hint").first().isVisible()) && /Щелчок по цвету/.test(await p.page.getAttribute('[data-sec="colors"] .brand-h > b', "title")));
+    await p.page.click('[data-sec="colors"] .brand-h > b');
+    check("CL2 a click on the row opens it; the order arrows stay in its header", (await opened(p)) === "logos,colors" && (await vis(p, "#brandColorHex")) && (await vis(p, '[data-sec="colors"] .brand-move [data-dir="-1"]')));
+    await p.page.click('[data-sec="logos"] .brand-fold');
+    await p.restart(); await p.page.click("#tabBrand");
+    check("CL2 which sections are open is remembered", (await opened(p)) === "colors", await opened(p));
+    await p.page.click('[data-sec="logos"] .brand-h > b');
+    check("CL3 the sub-brands are chips inside «Логотипы», the open one marked", (await p.page.locator("#brandSubChips .brand-subb:not(.brand-subb-add)").allInnerTexts()).join() === "Alif,Alif Shop,Alif Business" && (await p.page.getAttribute('#brandSubChips [data-sub="b1"]', "aria-selected")) === "true");
+    await p.page.click('#brandSubChips [data-sub="b2"]');
+    check("CL3 a chip switches the sub-brand", (await p.page.inputValue("#brandSelect")) === "b2" && (await p.page.getAttribute('#brandSubChips [data-sub="b2"]', "aria-selected")) === "true" && (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.brands.v1")).items[0].active)) === "b2");
+    check("CL4 the top row: sections, «Поделиться», ⋯; no project card", (await vis(p, "#brandExport")) && (await vis(p, "#brandMore")) && !(await vis(p, "#brandTop")) && !(await vis(p, "#brandMenu")));
+    await p.page.click("#brandMore");
+    check("CL4 ⋯ opens the menu", (await vis(p, "#brandMenu")) && (await p.page.getAttribute("#brandMore", "aria-expanded")) === "true");
+    await p.page.mouse.click(5, 700);
+    check("CL4 a click elsewhere closes it", !(await vis(p, "#brandMenu")));
+    await bmClick(p, "#brandDelete");
+    check("CL5 «Удалить подбренд» asks once more, the menu stays open", (await vis(p, "#brandDeleteNote")) && /«Удалить подбренд» ещё раз/.test(await p.page.innerText("#brandDeleteNote")) && (await vis(p, "#brandMenu")));
+    await p.page.click("#brandDelete");
+    check("CL5 the second press deletes it", (await p.page.locator("#brandSubChips .brand-subb:not(.brand-subb-add)").allInnerTexts()).join() === "Alif,Alif Business" && p.errors.length === 0, p.errors.join("|"));
+    await p.page.click("#brandSubChips .brand-subb-add");
+    check("CL6 «+» after the chips asks for the new sub-brand's name", (await vis(p, "#brandName")) && (await vis(p, "#brandTop")));
     await p.close();
   }
 
@@ -5939,7 +6318,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ pickFile: out });
     await p.page.evaluate((v) => localStorage.setItem("sayframe.brands.v1", JSON.stringify(v)),
       { active: "g2", items: [{ id: "g1", name: "alif", active: "b1", subs: [bb("b1", "Alif Academy")] }, { id: "g2", name: "Samsung", active: "b2", subs: [bb("b2", "Galaxy")] }] });
-    await p.restart(); await p.page.click("#tabBrand"); await p.page.click("#brandImport"); await p.idle();
+    await p.restart(); await p.page.click("#tabBrand"); await bmClick(p, "#brandImport"); await p.idle();
     t = await stored();
     check("SH5 with «Samsung» open and «alif» already there: it goes into «alif», not into Samsung, no new section", t.items.length === 2 && t.items[0].subs.map((x) => x.name).join() === "Alif Academy,Alif Shop" && t.items[1].subs.length === 1 && t.active === "g1", JSON.stringify(t));
     await p.close();

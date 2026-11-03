@@ -15,6 +15,9 @@
         <h1>Sayframe</h1>
       </div>
       <div class="top-actions">
+      <button id="exportBtn" data-info="Быстрый экспорт|Сохраняет открытую композицию в MP4 для Reels, YouTube, Telegram, TikTok или поста — сразу в нужном размере. Можно выбрать несколько площадок." class="icon-btn" aria-label="Быстрый экспорт" title="Быстрый экспорт в MP4">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/></svg>
+      </button>
       <button id="snapBtn" data-info="Снимок кадра|Сохраняет кадр под указателем времени в PNG и кладёт в буфер обмена. В плашке можно выбрать папку и добавить снимок в проект After Effects." class="icon-btn" aria-label="Снимок кадра" title="Снимок кадра: PNG рядом с проектом и в буфер обмена">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5a2 2 0 0 1 2-2h2l1.5-2h5L16 6.5h2a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
       </button>
@@ -64,6 +67,56 @@
       <small id="snapFolder" class="snap-folder"></small>
     </section>
 
+    <!-- Быстрый экспорт: MP4 для площадок одной кнопкой. -->
+    <section id="exportBar" class="card ex-bar" hidden aria-label="Быстрый экспорт">
+      <div id="exHead" class="snap-head">
+        <b>Быстрый экспорт</b>
+        <button id="exClose" class="icon-btn small" aria-label="Закрыть" title="Закрыть (Esc)">&times;</button>
+      </div>
+      <div id="exSetup" class="ex-setup">
+        <div class="ex-comp"><span id="exCompName">Композиция</span><small id="exCompMeta"></small></div>
+        <div id="exTargets" class="ex-targets" role="group" aria-label="Куда пойдёт видео">
+          <button type="button" class="kr-b ex-t" data-t="reels" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2.5"/></svg><span>Reels / Stories</span><small>1080×1920</small></button>
+          <button type="button" class="kr-b ex-t" data-t="youtube" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M10.5 9.5v5l4-2.5z"/></svg><span>YouTube</span><small>1920×1080</small></button>
+          <button type="button" class="kr-b ex-t" data-t="telegram" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 4.5L3.5 11l6 2.2 2.3 6.3 3.2-4 4.8 3.5z"/><path d="M9.5 13.2L20.5 4.5"/></svg><span>Telegram</span><small>лёгкий файл</small></button>
+          <button type="button" class="kr-b ex-t" data-t="post" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/></svg><span>Пост 4:5</span><small>1080×1350</small></button>
+          <button type="button" class="kr-b ex-t" data-t="tiktok" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 4v10.5a3.5 3.5 0 1 1-3.5-3.5"/><path d="M13 4c.5 2.4 2.2 4 4.5 4.2"/></svg><span>TikTok</span><small>1080×1920</small></button>
+          <button type="button" class="kr-b ex-t" data-t="custom" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v12M6 12h12"/></svg><span>Свой</span><small>свой размер</small></button>
+        </div>
+        <div id="exCustom" class="ex-custom" hidden>
+          <input id="exW" type="number" min="16" max="8192" step="2" aria-label="Ширина"><span>×</span><input id="exH" type="number" min="16" max="8192" step="2" aria-label="Высота">
+        </div>
+        <div id="exFitRow" class="ex-fit" hidden>
+          <span id="exFitText">Размер не совпадает. Как сделать?</span>
+          <div id="exFit" class="ex-chips" role="group" aria-label="Если размер не совпадает">
+            <button type="button" data-v="blur" aria-pressed="true" title="Видео по центру, по краям — оно же, размытое">Размытый фон</button>
+            <button type="button" data-v="black" aria-pressed="false">Чёрные поля</button>
+            <button type="button" data-v="crop" aria-pressed="false">Обрезать</button>
+          </div>
+        </div>
+        <span class="kr-lab">Качество</span>
+        <div id="exQuality" class="kr-seg tb-three" role="group" aria-label="Качество">
+          <button type="button" class="kr-b" data-v="light"><span>Лёгкий файл</span></button>
+          <button type="button" class="kr-b" data-v="normal"><span>Обычное</span></button>
+          <button type="button" class="kr-b" data-v="max"><span>Максимум</span></button>
+        </div>
+        <span class="kr-lab">Что сохранить</span>
+        <div id="exSpan" class="kr-seg" role="group" aria-label="Что сохранить">
+          <button type="button" class="kr-b" data-v="all"><span>Всю композицию</span></button>
+          <button type="button" class="kr-b" data-v="work"><span>Рабочую область</span></button>
+        </div>
+        <span class="kr-lab">Куда</span>
+        <div class="ex-folder"><span id="exFolder">Рядом с проектом / Экспорт</span><button id="exBrowse" type="button" class="ex-link">Изменить</button></div>
+        <label id="exAmeRow" class="snap-check" hidden title="Media Encoder сохраняет видео в фоне, а After Effects в это время свободен">
+          <input id="exAme" type="checkbox" checked aria-label="Через Media Encoder">
+          <span class="snap-box" aria-hidden="true"></span>
+          <span>Через Media Encoder — AE не занят</span>
+        </label>
+        <button id="exGo" class="primary ex-go" type="button">Сохранить видео</button>
+      </div>
+      <div id="exResults" class="ex-results" hidden></div>
+    </section>
+
     <!-- Вкладки и блоки раздела «Инструменты» можно менять местами. Перетаскивание включается двойным щелчком
          по вкладке или по блоку и выключается так же, кнопкой «Готово» или клавишей Esc.
          С клавиатуры вкладку двигает Alt + стрелка влево/вправо. -->
@@ -83,6 +136,12 @@
 
     <!-- Раздел AI (внутреннее имя claude): задача словами, референс, запуск и ответ -->
     <div id="viewClaude" class="view" role="tabpanel" aria-labelledby="tabClaude">
+    <!-- «Студия»: три режима раздела AI — создать по описанию, выражение для свойства, сохранённые скрипты -->
+    <div id="aiModes" class="ai-modes" role="tablist" aria-label="Что делает AI" hidden>
+      <button type="button" class="ai-mode" data-m="create" role="tab" data-info="Создать|Опишите словами, что сделать в композиции, — AI напишет скрипт и выполнит его.">✦ Создать</button>
+      <button type="button" class="ai-mode" data-m="expr" role="tab" data-info="Выражение|Выделите свойство на таймлайне и напишите, что оно должно делать, — AI поставит выражение. Или почините выражения с ошибками.">ƒ Выражение</button>
+      <button type="button" class="ai-mode" data-m="mine" role="tab" data-info="Мои скрипты|Удачные скрипты, сохранённые звёздочкой ☆ после ответа AI. Запускаются одной кнопкой, без AI и бесплатно.">☆ Мои</button>
+    </div>
     <div class="claude-main">
     <section class="card composer">
       <!-- Быстрые задачи: готовые просьбы одной кнопкой; свои тоже можно сохранить -->
@@ -106,7 +165,23 @@
         </div>
       </div>
       <div id="styleRow" class="style-row" role="radiogroup" aria-label="Стиль анимации"><span class="style-label">Стиль:</span></div>
-      <textarea id="prompt" rows="4" placeholder="Опишите, что сделать в композиции. @ — логотип, цвет или иконка из брендбука" aria-label="Задача для нейросети"></textarea>
+      <div class="prompt-wrap">
+        <textarea id="prompt" rows="4" placeholder="Опишите, что сделать в композиции. @ — логотип, цвет или иконка из брендбука" aria-label="Задача для нейросети"></textarea>
+      <div id="promptFoot" class="prompt-foot" hidden>
+        <div class="pf-pop-wrap">
+          <button type="button" id="aiExample" class="pf-pill" aria-haspopup="menu" aria-expanded="false" title="Пример: картинка, видео или ссылка — AI сделает похоже">📎 Пример</button>
+          <div id="aiExampleMenu" class="pf-menu" role="menu" hidden>
+            <button type="button" role="menuitem" data-ex="file">Картинка или видео с компьютера</button>
+            <button type="button" role="menuitem" data-ex="link">Ссылка (Pinterest, Behance…)</button>
+          </div>
+        </div>
+        <div class="pf-pop-wrap">
+          <button type="button" id="aiStyleBtn" class="pf-pill" aria-haspopup="true" aria-expanded="false" title="Как двигается анимация — для всех следующих запросов">Обычный ▾</button>
+          <div id="aiStylePop" class="pf-menu pf-style" hidden></div>
+        </div>
+        <span class="pf-at" title="Напишите @ в поле — вставится логотип, цвет или иконка из брендбука (вкладка «Проекты»)">@ брендбук</span>
+      </div>
+      </div>
       <div id="mentionList" class="mention-list" role="listbox" aria-label="Из брендбука" hidden></div>
       <div id="brandHits" class="brand-hits" aria-live="polite" hidden></div>
       <div class="attach-row">
@@ -176,6 +251,7 @@
       </div>
     </section>
 
+    <p id="scriptsEmpty" class="scripts-empty" hidden>Здесь будут ваши скрипты. После удачного ответа AI нажмите «☆ Сохранить скрипт».</p>
     <!-- Мои скрипты: сохранённые удачные скрипты, запускаются одной кнопкой, без нейросети -->
     <section id="scriptsCard" class="card scripts" hidden>
       <button id="scriptsToggle" class="scripts-head" aria-expanded="true" aria-controls="scriptsList">
@@ -258,7 +334,7 @@
             <div class="kr-sw">
               <label class="switch"><input id="orbitNumbers" type="checkbox"><span class="track"></span><span class="text">Номера</span></label>
               <label class="switch"><input id="orbitCamera" type="checkbox"><span class="track"></span><span class="text">Камера</span></label>
-              <label id="orbitBackRow" class="switch kr-back"><input id="orbitBack" type="checkbox"><span class="track"></span><span class="text">Цифра видна сзади</span></label>
+              <label id="orbitBackRow" class="switch kr-back"><input id="orbitBack" type="checkbox"><span class="track"></span><span class="text">Сзади видно цифру и картинку</span></label>
             </div>
             <button id="orbitBtn" class="shift-do shift-go">Создать карусель</button>
           </div>
@@ -432,6 +508,21 @@
                 <button type="button" class="gr-chip" data-v="loops">Петли</button>
                 <button type="button" class="gr-chip" data-v="circle">Круг</button>
                 <button type="button" class="gr-chip" data-v="spiral">Спираль</button>
+                <button type="button" class="gr-chip" data-v="random" title="Каждый раз новая линия: петли, волны и изгибы">🎲 Случайная</button>
+              </div>
+              <div id="rbSeedRow" class="rb-seed">
+                <label class="rb-seed-l" title="Номер линии: понравилась — запомните номер и вернитесь к ней">Вариант<input id="rbSeed" class="field" type="number" min="1" max="99999" step="1" aria-label="Вариант линии"></label>
+                <button id="rbDice" type="button" class="gr-chip rb-dice">🎲 Другая линия</button>
+              </div>
+              <div id="rbDirRow" class="rb-dir">
+                <span class="kr-lab">Направление линии</span>
+                <div id="rbDir" class="kr-seg rb-dirs" role="group" aria-label="Направление линии">
+                  <button type="button" class="kr-b" data-v="0" title="Слева направо" aria-label="Слева направо">→</button>
+                  <button type="button" class="kr-b" data-v="-30" title="Вверх вправо" aria-label="Вверх вправо">↗</button>
+                  <button type="button" class="kr-b" data-v="-90" title="Снизу вверх" aria-label="Снизу вверх">↑</button>
+                  <button type="button" class="kr-b" data-v="30" title="Вниз вправо" aria-label="Вниз вправо">↘</button>
+                </div>
+                <label class="ac-row ac-slider kr-sl"><span>Угол</span><input id="rbAngle" class="range" type="range" min="-90" max="90" step="1"><output id="rbAngleVal" for="rbAngle"></output></label>
               </div>
             </div>
             <div class="rb-text">
@@ -455,6 +546,12 @@
             </div>
             <div id="rbRibbonSw" class="kr-sw">
               <label class="switch"><input id="rbRun" type="checkbox"><span class="track"></span><span class="text">Бежит по ленте</span></label>
+              <div id="rbRunDir" class="kr-seg rb-rundir" role="group" aria-label="Куда бежит текст">
+                <button type="button" class="kr-b" data-v="fwd"><span>Вперёд →</span></button>
+                <button type="button" class="kr-b" data-v="back"><span>← Назад</span></button>
+              </div>
+              <label class="switch"><input id="rbOverlap" type="checkbox"><span class="track"></span><span class="text">Перекрытия 3D</span></label>
+              <label id="rbShadowRow" class="switch rb-sub"><input id="rbShadow" type="checkbox"><span class="track"></span><span class="text">Тень</span></label>
             </div>
             <div id="rbRingSw" class="kr-sw">
               <label class="switch"><input id="rbBack" type="checkbox"><span class="track"></span><span class="text">Сзади бледнее</span></label>
@@ -890,33 +987,33 @@
 
     <!-- «Проекты»: брендбуки. У каждого проекта (клиента, компании) свои логотипы, цвета, шрифты, тексты и форматы. -->
     <div id="viewBrand" class="view" role="tabpanel" aria-labelledby="tabBrand" hidden>
-      <div id="brandSubs" class="brand-subs" role="tablist" aria-label="Разделы: клиенты и группы проектов"></div>
+      <div id="brandBar" class="brand-bar">
+        <div id="brandSubs" class="brand-subs" role="tablist" aria-label="Разделы: клиенты и группы проектов"></div>
+        <span class="brand-tools">
+          <button id="brandExport" class="icon-btn" aria-label="Поделиться" title="Поделиться: сохранить проект целиком — логотипы, цвета, шрифты, тексты — в один файл .sfbrand, чтобы отправить коллеге">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+          </button>
+          <button id="brandMore" class="icon-btn" aria-label="Ещё: новый подбренд, переименовать, импорт, удалить" title="Ещё" aria-haspopup="menu" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg>
+          </button>
+          <div id="brandMenu" class="brand-menu" role="menu" hidden>
+            <button id="brandNew" role="menuitem" title="Создать новый подбренд в этом разделе">+ Новый подбренд</button>
+            <button id="brandRename" role="menuitem" title="Переименовать подбренд">Переименовать</button>
+            <button id="brandImport" role="menuitem" title="Добавить брендбук из файла .sfbrand, который прислал коллега">Импорт из файла .sfbrand</button>
+            <button id="brandDelete" role="menuitem" class="brand-menu-del" title="Удалить подбренд (нажмите дважды)">Удалить подбренд</button>
+          </div>
+        </span>
+      </div>
       <section id="brandTop" class="card brand-top">
-        <div class="brand-row" id="brandPickRow">
+        <div class="brand-row" id="brandPickRow" hidden>
           <select id="brandSelect" class="field" aria-label="Текущий проект"></select>
-          <button id="brandRename" class="icon-btn" aria-label="Переименовать проект" title="Переименовать проект">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>
-          </button>
-          <button id="brandDelete" class="icon-btn" aria-label="Удалить проект" title="Удалить проект (нажмите дважды)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 7h15"/><path d="M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7l.9 11.6a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/></svg>
-          </button>
-          <button id="brandNew" class="ghost brand-new" title="Создать новый проект">+ Новый</button>
         </div>
         <div class="brand-row" id="brandNameRow" hidden>
           <input id="brandName" class="field" maxlength="60" spellcheck="false" placeholder="Название: клиент или компания" aria-label="Название проекта">
           <button id="brandNameOk" class="primary">Сохранить</button>
           <button id="brandNameCancel" class="ghost">Отмена</button>
         </div>
-        <div class="brand-row brand-share" id="brandShareRow">
-          <button id="brandExport" class="ghost" title="Сохранить проект целиком — логотипы, цвета, шрифты, тексты — в один файл .sfbrand, чтобы отправить коллеге">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
-            Поделиться
-          </button>
-          <button id="brandImport" class="ghost" title="Добавить брендбук из файла .sfbrand, который прислал коллега">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
-            Импорт
-          </button>
-        </div>
+        <div class="brand-row brand-share" id="brandShareRow" hidden></div>
         <div class="brand-ask" id="brandAsk" hidden>
           <span id="brandAskText"></span>
           <div class="brand-row">
@@ -938,7 +1035,9 @@
       <div id="brandBody" hidden>
         <section class="card brand-sec" data-sec="logos">
           <div class="brand-h"><b>Логотипы</b><button id="brandLogoAdd" class="ghost brand-add" title="Добавить файл логотипа: PNG, SVG, AI, PSD, JPG">+ Добавить</button></div>
+          <div id="brandSubChips" class="brand-subbs" role="tablist" aria-label="Подбренды"></div>
           <div id="brandLogos" class="brand-logos"></div>
+          <div id="brandLogoCap" class="brand-cap" aria-live="polite"></div>
           <small class="hint">Щелчок по логотипу — вставить в открытую композицию прекомпозицией: внутри логотип 100 %, сама прекомпозиция — 10 %. В проекте — в папке «Brand — …». Файлы копируются в «Документы / Sayframe Brands».</small>
         </section>
 
@@ -1035,6 +1134,7 @@
         <button id="setTabAI" role="tab" data-pane="ai" aria-selected="true" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z"/></svg><span>AI</span></button>
         <button id="setTabTheme" role="tab" data-pane="theme" aria-selected="false" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor"/></svg><span>Темы</span></button>
         <button id="setTabTools" role="tab" data-pane="tools" aria-selected="false" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span>Блоки</span></button>
+        <button id="setTabWin" role="tab" data-pane="win" aria-selected="false" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M12 4.5v15M12 12h8.5"/></svg><span>Окна</span></button>
         <button id="setTabKeys" role="tab" data-pane="keys" aria-selected="false" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></svg><span>Клавиши</span></button>
         <button id="setTabMore" role="tab" data-pane="more" aria-selected="false" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg><span>Прочее</span></button>
       </div>
@@ -1196,6 +1296,14 @@
               <small>Картинку из буфера — сразу в проект.</small>
             </span>
           </label>
+        </div>
+      </div>
+      <div id="setPaneWin" class="set-pane" role="tabpanel" aria-labelledby="setTabWin" hidden>
+        <div class="group">
+          <div id="winPicker" class="win-picker"></div>
+        </div>
+        <div class="group">
+          <small id="winNote" class="win-note">Включённые окна есть в меню Window › Extensions. Меню обновляется после перезапуска After Effects.</small>
         </div>
       </div>
       <div id="setPaneKeys" class="set-pane" role="tabpanel" aria-labelledby="setTabKeys" hidden>
