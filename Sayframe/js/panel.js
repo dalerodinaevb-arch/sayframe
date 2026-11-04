@@ -4389,6 +4389,7 @@
         ui.easeLink.disabled = on;
         ui.easeBothBtn.disabled = on;
         ui.anchorKeys.disabled = on;
+        Array.prototype.forEach.call(document.querySelectorAll("#anchorOpts button"), function (b) { b.disabled = on; });
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
         cells = ui.alignGrid.querySelectorAll("button");
         ui.alignTo.disabled = on;
@@ -11805,8 +11806,14 @@
         enableFlowDrag(g);
     }
 
+    function drawAnchorOpts() {
+        Array.prototype.forEach.call(document.querySelectorAll("#anchorOpts button[data-v]"), function (b) {
+            b.setAttribute("aria-pressed", b.getAttribute("data-v") === motion.anchorKeys ? "true" : "false");
+        });
+    }
+    var FLOW_COL = 280, FLOW_GAP = 12;
     function layoutFlow(g) {
-        var folded = flowFolded(g);
+        var folded = flowFolded(g), n;
         var k = Number(document.documentElement.getAttribute("data-tools")) / 100;
         var w = g.el.clientWidth, tiles = 0, sets = 0;
         if (!g.flowBox) { buildFlow(g); }
@@ -11838,7 +11845,11 @@
         });
         g.flowBox.tilesCap.hidden = g.flowBox.tiles.hidden = !tiles;
         g.flowBox.colsCap.hidden = g.flowBox.cols.hidden = !sets;
-        g.flowBox.cols.setAttribute("data-cols", w >= 980 ? "3" : w >= 620 ? "2" : "1");
+        // Блоки узкие (280 px) и не тянутся за панелью: сколько влезает, столько колонок.
+        n = w >= 2 * FLOW_COL + FLOW_GAP ? Math.floor((w + FLOW_GAP) / (FLOW_COL + FLOW_GAP)) : 1;
+        g.flowBox.cols.setAttribute("data-cols", String(n));
+        g.flowBox.cols.style.columnCount = n > 1 ? String(n) : "";
+        g.flowBox.cols.style.width = n > 1 ? (n * FLOW_COL + (n - 1) * FLOW_GAP) + "px" : "";
         g.flowBox.tiles.setAttribute("data-wide", w >= 980 ? "true" : "false");
         showFoldParts();
         showEcFold();
@@ -12344,7 +12355,16 @@
             var v = ui.anchorKeys.value;
             motion.anchorKeys = v === "shift" || v === "skip" ? v : "key";
             storeMotion();
+            drawAnchorOpts();
         });
+        // «Студия»: вместо списка три кнопки рядом с сеткой. Они просто меняют тот же список.
+        Array.prototype.forEach.call(document.querySelectorAll("#anchorOpts button[data-v]"), function (b) {
+            b.addEventListener("click", function () {
+                ui.anchorKeys.value = b.getAttribute("data-v");
+                ui.anchorKeys.dispatchEvent(new Event("change"));
+            });
+        });
+        drawAnchorOpts();
         ui.alignTo.value = motion.alignTo;
         enableShiftTool();
         showFoldParts();

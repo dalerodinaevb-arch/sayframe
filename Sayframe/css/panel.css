@@ -677,6 +677,17 @@ html:not([data-design="studio"])[data-titles="off"] .motion-tools > .tool-card {
 .anchor-cell:disabled { opacity: 0.45; cursor: default; }
 .anchor-side { flex: 1 1 130px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .anchor-side label { color: var(--muted); font: 600 12px/1.2 var(--round); }
+.anchor-opts { display: none; }
+html[data-design="studio"] .anchor-wrap { flex-wrap: nowrap; gap: 10px; align-items: stretch; }
+html[data-design="studio"] #anchorSide { display: none; }
+html[data-design="studio"] .anchor-opts { display: flex; flex-direction: column; gap: 4px; flex: 1 1 auto; min-width: 0; }
+html[data-design="studio"] .anchor-opts button { display: flex; align-items: center; gap: 8px; flex: 1; min-height: 0; padding: 0 10px; border-radius: 8px; background: var(--st-btn); border: 1px solid #2a2b31; color: #c9cad2; font: 500 12px/1 var(--plain); text-align: left; white-space: nowrap; overflow: hidden; cursor: pointer; }
+html[data-design="studio"] .anchor-opts button span { overflow: hidden; text-overflow: ellipsis; }
+html[data-design="studio"] .anchor-opts svg { width: 14px; height: 14px; flex: none; color: #8a8c97; }
+html[data-design="studio"] .anchor-opts button:hover:not(:disabled) { border-color: rgba(var(--accent-rgb), .5); }
+html[data-design="studio"] .anchor-opts button[aria-pressed="true"] { background: rgba(var(--accent-rgb), .2); border-color: rgba(var(--accent-rgb), .7); color: #fff; }
+html[data-design="studio"] .anchor-opts button[aria-pressed="true"] svg { color: var(--accent-hi); }
+html[data-design="studio"] .anchor-opts button:disabled { opacity: .45; cursor: default; }
 /* Выравнивание — как панель Align в After Effects: список «Выровнять по», ряд из шести значков,
    черта, ряд «Распределить слои». Значки стоят тройками: в узком блоке тройки встают друг под другом. */
 .align-body { display: flex; flex-direction: column; gap: 10px; }

@@ -4935,6 +4935,23 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     fs.rmSync(scratch, { recursive: true, force: true });
   }
 
+  // «Студия»: narrow blocks, «Якорь» with three buttons instead of the list
+  p = await open({ width: 905, height: 1200, settings: { design: "studio", designSet: 2 } });
+  await motionTab(p);
+  t = await p.page.evaluate(() => { const f = document.querySelector("#motionTools .flow-cols"); const c = f.querySelector('[data-tool="ease"]').getBoundingClientRect(); return [f.getAttribute("data-cols"), Math.round(c.width)].join(); });
+  check("FL9 blocks with settings are narrow (280 px): three in a row at 905 px", t === "3,280" && (await overflow(p)) <= 0, t);
+  await p.page.click('.flow-cols [data-tool="anchor"] .tool-head');
+  check("FL9 «Якорь» shows three buttons instead of the list", (await vis(p, "#anchorOpts")) && !(await vis(p, "#anchorKeys")) && (await p.page.getAttribute('#anchorOpts [data-v="key"]', "aria-pressed")) === "true");
+  await p.page.click('#anchorOpts [data-v="skip"]');
+  check("FL9 a button picks the option and it is saved", (await p.page.inputValue("#anchorKeys")) === "skip" && (await savedMotion(p, "anchorKeys")) === "skip" && (await p.page.getAttribute('#anchorOpts [data-v="skip"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#anchorOpts [data-v="key"]', "aria-pressed")) === "false");
+  await p.restart(); await motionTab(p);
+  check("FL9 after a restart the same button is on", (await p.page.getAttribute('#anchorOpts [data-v="skip"]', "aria-pressed")) === "true" && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+  p = await open({ width: 905, height: 1200, settings: { design: "glass" } });
+  await motionTab(p);
+  check("FL9 other designs keep the list", (await vis(p, "#anchorKeys")) && !(await vis(p, "#anchorOpts")));
+  await p.close();
+
   // ---------------------------------------------------------------- Tools: ease copy (like EaseCopy)
   {
     const eases2 = (list) => list.map((e) => Math.round(e.speed * 100) / 100 + "/" + e.influence).join();
