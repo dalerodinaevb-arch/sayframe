@@ -7477,8 +7477,11 @@
     var EX_ORDER = ["light", "normal", "max", "custom"];
     // Битрейт каждого качества меняется − и + на выбранном окошке, шагами EX_RATES. Выше 40 нет: у AE нет шаблона лучше.
     var EX_RATES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40];
-    var exState = { levels: ["normal"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {} };
-    var exInfo = null, exFolderNow = "", exDefaultNow = "";
+    // H.264 в AE сжимает «по нужде»: простая графика выходит заметно меньше битрейта. Начинаем с 0,6 от битрейта,
+    // после каждого сохранения подстраиваемся под настоящий размер файла.
+    var EX_K = 0.6;
+    var exState = { levels: ["normal"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {}, k: EX_K };
+    var exInfo = null, exPollBusy = false, exPollKey = "", exFolderNow = "", exDefaultNow = "";
     try {
         (function () {
             var v = JSON.parse(window.localStorage.getItem(EXPORT_KEY) || "{}") || {};
@@ -7494,6 +7497,7 @@
             if (typeof v.ame === "boolean") { exState.ame = v.ame; }
             if (v.cw > 0) { exState.cw = Math.round(v.cw); }
             if (v.ch > 0) { exState.ch = Math.round(v.ch); }
+            if (v.k >= 0.1 && v.k <= 1.3) { exState.k = v.k; }
             if (v.rates && typeof v.rates === "object") {
                 ["light", "normal", "max"].forEach(function (k) { if (EX_RATES.indexOf(v.rates[k]) >= 0) { exState.rates[k] = v.rates[k]; } });
             }
@@ -7525,12 +7529,26 @@
         if (next === EX_LEVELS[q].mbps) { delete exState.rates[q]; } else { exState.rates[q] = next; }
     }
 
-    // Примерный размер файла: битрейт видео + звук (~320 кбит/с) × длина.
-    function exMBn(level) {
-        var c = exInfo && exInfo.comp, dur;
+    // Длина того, что сохраняем: вся композиция или рабочая область.
+    function exDur() {
+        var c = exInfo && exInfo.comp;
         if (!c) { return 0; }
-        dur = exState.span === "work" && c.waDur > 0 ? c.waDur : c.dur;
-        return (exRate(level) + 0.32) * dur / 8;
+        return exState.span === "work" && c.waDur > 0 ? c.waDur : c.dur;
+    }
+
+    // Примерный размер файла: битрейт видео × поправка по прошлым сохранениям + звук (~320 кбит/с), × длина.
+    function exMBn(level) {
+        return (exRate(level) * exState.k + 0.32) * exDur() / 8;
+    }
+
+    // Узнали настоящий размер сохранённого видео — запоминаем, во сколько раз он меньше битрейта.
+    function exLearn(bytes, mbps, dur) {
+        var k;
+        if (!(bytes > 0 && mbps > 0 && dur > 0.5)) { return; }
+        k = (bytes * 8 / 1e6 / dur - 0.32) / mbps;
+        k = Math.max(0.1, Math.min(1.3, k));
+        exState.k = Math.round((exState.k === EX_K ? k : (exState.k + k) / 2) * 1000) / 1000;
+        storeExport();
     }
 
     function exMBText(mb) {
@@ -7611,17 +7629,35 @@
             res = await host("exportInfo", []);
             exInfo = res;
             c = res.comp;
+            exPollKey = JSON.stringify(c);
             ui.exCompName.textContent = c.name;
             ui.exCompMeta.textContent = c.w + "×" + c.h + " · " + (Math.round(c.dur * 10) / 10) + " с";
             exDefaultNow = res.projectFolder ? platform.join(res.projectFolder, "Экспорт") : platform.join(platform.homedir(), "Desktop", "Sayframe Экспорт");
         } catch (e) {
             exInfo = null;
+            exPollKey = JSON.stringify({ error: e && e.message });
             ui.exCompName.textContent = e && e.message === "NO_ACTIVE_COMP" ? "Откройте композицию, которую сохранить" : "Нет связи с After Effects";
             exDefaultNow = platform.join(platform.homedir(), "Desktop", "Sayframe Экспорт");
         }
         showExFolder(exState.folder || exDefaultNow);
         drawExport();
     }
+
+    // Пока окно открыто, следим за After Effects: сменили композицию или рабочую область — окошки и МБ обновляются сами.
+    async function exPoll() {
+        var res, key;
+        if (ui.exportBar.hidden || busy || exPollBusy || ui.exSetup.hidden) { return; }
+        exPollBusy = true;
+        try {
+            try { res = await host("exportInfo", []); } catch (e) { res = { error: e && e.message }; }
+            key = JSON.stringify(res && res.comp ? res.comp : res);
+            if (key !== exPollKey && !busy && !ui.exportBar.hidden) {
+                exPollKey = key;
+                await exLoadInfo();
+            }
+        } finally { exPollBusy = false; }
+    }
+    setInterval(exPoll, 1000);
 
     // В отдельном окне «Экспорт» закрывать нечего: окно и есть экспорт.
     function closeExport() { if (SOLO && !SOLO.tool && !SOLO.tab) { return; } ui.exportBar.hidden = true; }
@@ -7659,7 +7695,7 @@
     }
 
     async function runExport() {
-        var jobs, folder, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null;
+        var jobs, folder, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null, jobDur = exDur();
         if (busy || !exInfo) { return; }
         folder = exFolderNow || exDefaultNow;
         jobs = exState.levels.map(function (id) {
@@ -7702,7 +7738,7 @@
                 j.st.textContent = "✓";
                 j.nm.textContent = r.name || platform.basename(r.path);
                 j.nm.title = r.path;
-                if (r.mode === "ame") { ame = true; j.sm.textContent = "в Media Encoder"; } else { j.sm.textContent = exSizeText(r.size); }
+                if (r.mode === "ame") { ame = true; j.sm.textContent = "в Media Encoder"; } else { j.sm.textContent = exSizeText(r.size); exLearn(r.size, r.mbps || j.mbps, jobDur); }
                 // Битрейт, с которым сохранили; без Media Encoder — ближайший шаблон AE (5, 15 или 40).
                 if (r.mbps > 0) {
                     j.sm.textContent += " · " + r.mbps + " Мбит/с";

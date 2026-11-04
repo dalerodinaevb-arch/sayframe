@@ -5573,7 +5573,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await exOpen(p);
     check("EX1 the ⤓ button opens «Быстрый экспорт»: comp line, quality tiles Низкое / Среднее / Высокое / Своё with the size in MB, «Среднее» picked, «Всю композицию»", (await p.page.locator("#exCompName").innerText()) === "Main" && (await p.page.locator("#exCompMeta").innerText()) === "1920×1080 · 10 с" &&
       (await p.page.locator("#exTargets .ex-t span").allInnerTexts()).join() === "Низкое,Среднее,Высокое,Своё" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
-      (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() === "≈ 6,7 МБ,≈ 19 МБ,≈ 50 МБ," && (await pressed(p, "#exSpan button")) === "all" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 19 МБ" && (await overflow(p)) <= 0,
+      (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() === "≈ 4,1 МБ,≈ 12 МБ,≈ 30 МБ," && (await pressed(p, "#exSpan button")) === "all" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 12 МБ" && (await overflow(p)) <= 0,
       (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() + " | " + await p.page.locator("#exGo").innerText());
     t = await tileBox(p, "normal");
     check("EX1 a horizontal comp -> horizontal tiles; no size question, no quality row (the tile is the quality)", t.width > t.height * 1.3 && !(await vis(p, "#exFitRow")) && !(await vis(p, "#exQualRow")), JSON.stringify(t));
@@ -5598,7 +5598,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p.ae.log.dcMain.workAreaStart = 2; p.ae.log.dcMain.workAreaDuration = 3;
     await exOpen(p);
     await p.page.click('#exTargets [data-t="light"]'); await p.page.click('#exTargets [data-t="normal"]'); await p.page.click('#exSpan [data-v="work"]');
-    check("EX4 «Рабочую область»: the MB follow the work area's length", (await p.page.locator('#exTargets [data-t="light"] .ex-mb').innerText()) === "≈ 2 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 2 МБ", await p.page.locator("#exGo").innerText());
+    check("EX4 «Рабочую область»: the MB follow the work area's length", (await p.page.locator('#exTargets [data-t="light"] .ex-mb').innerText()) === "≈ 1,2 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 1,2 МБ", await p.page.locator("#exGo").innerText());
     await exRun(p);
     t = p.ae.log.rq.rendered;
     check("EX4 «Низкое» = 5 Mbps at the comp's size; «Рабочую область» renders the work area; the file says the quality", t.length === 1 && t[0].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 5 Mbps" && t[0].span.join() === "2,3" && /Main — Низкое\.mp4$/.test(t[0].file), JSON.stringify(t));
@@ -5642,7 +5642,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       (await vis(p, '#exTargets [data-t="normal"] .ex-rate [data-d="1"]')) && !(await vis(p, '#exTargets [data-t="light"] .ex-rate [data-d="1"]')) && (await overflow(p)) <= 0);
     await p.page.click('#exTargets [data-t="normal"] .ex-rate [data-d="1"]');
     check("EX10 + on «Среднее» -> 18 Мбит/с, MB and the button follow, the tile stays picked", (await rateOf("normal")) === "18 Мбит/с" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
-      (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 23 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 23 МБ");
+      (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 14 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 14 МБ");
     await p.page.click('#exTargets [data-t="light"]'); await p.page.click('#exTargets [data-t="normal"]');
     check("EX10 − on a tile that is not picked just picks it (and the other one taken away)", (await pressed(p, "#exTargets .ex-t")) === "light" && (await rateOf("light")) === "5 Мбит/с");
     for (let i = 0; i < 6; i++) await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="-1"]');
@@ -5660,10 +5660,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p.ae.log.dcMain.workAreaStart = 2; p.ae.log.dcMain.workAreaDuration = 3;
     await exOpen(p);
     await p.page.click('#exTargets [data-t="light"]');
-    check("EX12 a second tile is added, not swapped: both picked, the button counts and sums the MB", (await pressed(p, "#exTargets .ex-t")) === "light,normal" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить 2 видео · ≈ 26 МБ" &&
+    check("EX12 a second tile is added, not swapped: both picked, the button counts and sums the MB", (await pressed(p, "#exTargets .ex-t")) === "light,normal" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить 2 видео · ≈ 16 МБ" &&
       (await vis(p, '#exTargets [data-t="light"] .ex-rate [data-d="1"]')) && (await vis(p, '#exTargets [data-t="normal"] .ex-rate [data-d="1"]')));
     await p.page.click('#exTargets [data-t="normal"]');
-    check("EX12 clicking a picked tile takes it away", (await pressed(p, "#exTargets .ex-t")) === "light" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 6,7 МБ");
+    check("EX12 clicking a picked tile takes it away", (await pressed(p, "#exTargets .ex-t")) === "light" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 4,1 МБ");
     await p.page.click('#exTargets [data-t="light"]');
     check("EX12 the last picked tile stays", (await pressed(p, "#exTargets .ex-t")) === "light");
     await p.page.click('#exTargets [data-t="max"]');
@@ -5725,6 +5725,24 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ noActiveComp: true });
     await p.page.click("#exportBtn"); await p.page.waitForFunction(() => /^Откройте/.test(document.getElementById("exCompName").textContent));
     check("EX8 no comp open -> asks to open one, «Сохранить» is off", await p.page.locator("#exGo").isDisabled());
+    await p.close();
+
+    // Live: the sheet follows After Effects while it is open, no need to close and reopen it.
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    await exOpen(p);
+    p.ae.log.dcMain.width = 1080; p.ae.log.dcMain.height = 1920;
+    await p.page.waitForFunction(() => document.getElementById("exTargets").classList.contains("ex-v"), null, { timeout: 4000 }).catch(() => {});
+    check("EX13 the comp turns vertical while the sheet is open -> tiles turn vertical by themselves", (await p.page.locator("#exTargets").getAttribute("class")).indexOf("ex-v") >= 0 && (await p.page.locator("#exCompMeta").innerText()) === "1080×1920 · 10 с", await p.page.locator("#exCompMeta").innerText());
+    await p.page.click('#exSpan [data-v="work"]');
+    p.ae.log.dcMain.workAreaStart = 0; p.ae.log.dcMain.workAreaDuration = 8;
+    await p.page.waitForFunction(() => /≈ 9,3 МБ/.test(document.getElementById("exGo").textContent), null, { timeout: 4000 }).catch(() => {});
+    check("EX13 the work area gets shorter/longer -> the MB follow by themselves", (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 9,3 МБ", await p.page.locator("#exGo").innerText());
+    // Size learning: the mock video is 2,5 MB for 10 s at 15 Мбит/с — the next estimate matches it.
+    await p.page.click('#exSpan [data-v="all"]');
+    await p.page.click("#exGo"); await p.page.waitForFunction(() => document.querySelectorAll("#exResults .ex-row.done").length === 1);
+    await p.page.click("#exResults .ex-again .ghost");
+    await p.page.waitForTimeout(300);
+    check("EX13 after a save the MB estimate learns the real file size (2,5 МБ, not 19)", (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 2,5 МБ" && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.export.v1"))).k < 0.2 && p.errors.length === 0, await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText());
     await p.close();
   }
 
