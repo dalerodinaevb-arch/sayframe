@@ -4839,6 +4839,10 @@
             b.setAttribute("aria-selected", on ? "true" : "false");
         });
         ui.acFavOnly.setAttribute("aria-pressed", acState.favOnly ? "true" : "false");
+        if (el("acEdit")) { el("acEdit").setAttribute("aria-pressed", editing ? "true" : "false"); }
+        Array.prototype.forEach.call(el("acPlay").querySelectorAll("button[data-value]"), function (b) {
+            b.setAttribute("aria-pressed", b.getAttribute("data-value") === (settings.previewPlay === "hover" ? "hover" : "always") ? "true" : "false");
+        });
         ui.acModeRow.hidden = editing || !(searching || sec === "text" || sec === "anim");
         // Цвет нужен только графике и переходам-шейпам (шторки, круг).
         ui.acColorRow.hidden = editing || !(searching || sec === "graphic" || (sec === "trans" && acState.tfolder === "shapes"));
@@ -7034,10 +7038,12 @@
         });
         (function () {
             var b = document.createElement("button");
-            b.className = "ac-tab ac-tab-edit";
-            b.setAttribute("role", "tab");
-            b.setAttribute("data-sec", "edit");
-            b.textContent = "✎ Изменить";
+            // «Изменить» — в строке поиска, рядом с «Авто / Наведение» и ★.
+            b.id = "acEdit";
+            b.type = "button";
+            b.className = "ac-edit-btn";
+            b.setAttribute("aria-pressed", "false");
+            b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg><span>Изменить</span>';
             b.title = "Настроить пресеты, которые уже стоят на выделенном слое";
             b.addEventListener("click", function () {
                 acState.sec = "edit";
@@ -7048,8 +7054,18 @@
                 renderAc();
                 loadAcEdit();
             });
-            ui.acTabs.appendChild(b);
+            ui.acFavOnly.parentNode.insertBefore(b, ui.acFavOnly);
         })();
+        // Превью анимаций: «Авто» — играют сами, «Наведение» — только под курсором. Сохраняется в настройках.
+        el("acPlay").addEventListener("click", function (e) {
+            var b = e.target && e.target.closest ? e.target.closest("button[data-value]") : null;
+            var v = b ? b.getAttribute("data-value") : null;
+            if (v !== "always" && v !== "hover") { return; }
+            settings.previewPlay = v;
+            if (draft) { draft.previewPlay = v; pressGroup(ui.previewPlay, v); }
+            storeSettings(settings);
+            renderAc();
+        });
         ui.acFolders = document.createElement("div");
         ui.acFolders.id = "acFolders";
         ui.acFolders.className = "ac-folders";

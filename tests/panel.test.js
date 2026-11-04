@@ -2570,26 +2570,23 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.tab("tools");
   }
 
-  // Settings → Прочее → «Превью анимаций: При наведении»: previews stand still and play only under the cursor.
+  // «Авто / Наведение» next to the search: «Наведение» — previews stand still and play only under the cursor.
   {
     const frame0 = () => p.page.evaluate(() => { const cv = document.querySelector("#acGrid .ac-card canvas.ac-grc"); return cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data.join(); });
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabMore");
-    const groupOk = (await p.page.locator("#previewPlay button").allInnerTexts()).join() === "Всегда,При наведении" && (await p.page.getAttribute('#previewPlay [data-value="always"]', "aria-pressed")) === "true";
-    await p.page.click('#previewPlay [data-value="hover"]'); await p.page.waitForTimeout(150);
-    await p.page.click("#settingsClose");
+    const groupOk = (await p.page.locator("#acPlay button").allInnerTexts()).join() === "Авто,Наведение" && (await p.page.getAttribute('#acPlay [data-value="always"]', "aria-pressed")) === "true" &&
+      (await p.page.evaluate(() => { const b = document.querySelector(".ac-bar"); return [...b.children].map((x) => x.id || x.className).join(); })) === "acSearch,acPlay,acEdit,acFavOnly";
+    await p.page.click('#acPlay [data-value="hover"]'); await p.page.waitForTimeout(150);
     await p.page.mouse.move(1, 1); await p.page.waitForTimeout(300);
     const s1 = await frame0(); await p.page.waitForTimeout(400); const s2 = await frame0();
-    check("AG2 «При наведении»: the setting is in «Прочее», saved, and previews stand still", groupOk && s1 === s2 && (await p.page.locator('#acGrid .ac-card[data-hover-play="true"]').count()) > 0 &&
+    check("AG2 «Наведение»: the switch sits by the search (search, Авто/Наведение, Изменить, ★), is saved, and previews stand still", groupOk && (await p.page.getAttribute('#acPlay [data-value="hover"]', "aria-pressed")) === "true" && s1 === s2 && (await p.page.locator('#acGrid .ac-card[data-hover-play="true"]').count()) > 0 &&
       (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).previewPlay)) === "hover", String(groupOk) + " " + (s1 === s2));
     await p.page.hover("#acGrid .ac-card >> nth=0"); await p.page.waitForTimeout(250);
     const h1 = await frame0(); await p.page.waitForTimeout(350); const h2 = await frame0();
     check("AG2 under the cursor the preview plays", h1 !== h2);
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabMore");
-    await p.page.click('#previewPlay [data-value="always"]'); await p.page.waitForTimeout(150);
-    await p.page.click("#settingsClose");
+    await p.page.click('#acPlay [data-value="always"]'); await p.page.waitForTimeout(150);
     await p.page.mouse.move(1, 1); await p.page.waitForTimeout(400);
     const a1 = await frame0(); await p.page.waitForTimeout(400); const a2 = await frame0();
-    check("AG2 back to «Всегда»: previews play on their own again", a1 !== a2 && p.errors.length === 0, p.errors.join(" | "));
+    check("AG2 back to «Авто»: previews play on their own again", a1 !== a2 && p.errors.length === 0, p.errors.join(" | "));
   }
 
   await p.page.evaluate(() => { const c = document.getElementById("acColor"); c.value = "#ff0000"; c.dispatchEvent(new Event("input", { bubbles: true })); });
@@ -2608,7 +2605,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("AC12 'Counter' is a text layer counting to its 'Значение' control over the layer", t.name === "Счётчик" && gfx(t)[1].name === "Значение" && sfEval(t, acAt(t, "ADBE Text Properties", "ADBE Text Document"), 2) === "0%" && sfEval(t, acAt(t, "ADBE Text Properties", "ADBE Text Document"), 5.9) === "100%", sfEval(t, acAt(t, "ADBE Text Properties", "ADBE Text Document"), 5.9));
   // Edit: the selected graphic
   p.ae.comp.selectedLayers = [p.ae.log.acLayers[0]];
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".gr-edit");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".gr-edit");
   check("AC12 'Edit' on a graphic: colour, duration, size, thickness, remove", (await p.page.locator(".gr-edit .ac-edit-top b").innerText()) === "Графика «Кольцо»" && (await p.page.inputValue(".gr-edit .gr-color")) === "#ff0000" && (await p.page.locator(".gr-edit .ac-edit-row output").allInnerTexts()).join() === "1,2 с,100%,8 px", (await p.page.locator(".gr-edit .ac-edit-row output").allInnerTexts()).join());
   await p.page.evaluate(() => { const i = document.querySelector('.gr-edit input[aria-label="Размер"]'); i.value = "200"; i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); });
   await p.idle(); await p.page.waitForTimeout(50);
@@ -2644,7 +2641,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   Object.assign(SND, { hasAudio: true, locked: false, inPoint: 1.5, outPoint: 2.5, source: sndSource(TONE("-12.00")), replaceSource(item) { SND.source = sndSource(p.ae.log.imports[p.ae.log.imports.length - 1]); } });
   const compLayer = p.ae.comp.layer; p.ae.comp.layer = (i) => (i === SND.index ? SND : compLayer.call(p.ae.comp, i));
   p.ae.project.activeItem = p.ae.comp; p.ae.comp.selectedLayers = [SND];
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".snd-edit");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".snd-edit");
   check("AC13 'Edit' on the sound layer shows its pitch, length and volume", (await p.page.locator(".snd-edit .ac-edit-top b").innerText()) === "Звук «Вжух»" && (await p.page.locator(".snd-edit .ac-edit-row output").allInnerTexts()).join() === "-12 пт,100%,0 дБ", (await p.page.locator(".snd-edit .ac-edit-row output").allInnerTexts()).join());
   const slide = async (sel, v) => { await p.page.waitForSelector(sel); await p.page.evaluate(([q, x]) => { const i = document.querySelector(q); i.value = String(x); i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); }, [sel, v]); await p.idle();
     for (let k = 0; k < 100 && /^Пересчитываю/.test(await p.status()); k++) { await p.page.waitForTimeout(50); } await p.idle(); await p.page.waitForTimeout(80); };
@@ -2667,7 +2664,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await slide("#acPitch", 0);
   check("AC13b nothing selected: the bar only remembers the value for the next sound", SND.source.mainSource.file.fsName === TONE("+5.00"));
   p.ae.comp.selectedLayers = [SND];
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".snd-edit");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".snd-edit");
   await p.page.locator(".snd-edit button", { hasText: "Убрать" }).click(); await p.idle(); await p.page.waitForTimeout(50);
   check("AC13 'Remove' deletes the sound layer", p.ae.log.layersRemoved.join() === "♪ Вжух" && p.errors.length === 0, p.errors.join(" | "));
   await acSec(p, "Звуки");
@@ -2749,7 +2746,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // a transition put on by an earlier version (keys on the layer itself) stays editable
   vm.runInContext('sayframeHost.acAnimate("push-left", "in", 0.6)', p.ae.ctx);
   check("ED1 the layer remembers the preset in its comment, after the user's own note", /^моя заметка\n\[Sayframe presets\] \[\{"id":"push-left","dir":"in"/.test(EL.comment), EL.comment.slice(0, 80));
-  await p.page.click("#acTabs .ac-tab-edit");
+  await p.page.click("#acEdit");
   await p.page.waitForSelector(".ac-edit-item");
   check("ED1 'Edit' lists it with its settings; the library options are hidden", (await p.page.locator(".ac-edit-head").innerText()).indexOf("Слой «Логотип»") === 0 && (await p.page.locator(".ac-edit-top b").innerText()) === "Сдвиг влево — появление" && (await p.page.locator(".ac-edit-item .ac-edit-row output").allInnerTexts()).join() === "0,6 с,0,0 с,100%,как в пресете" && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acFoot").isHidden()));
   await p.page.screenshot({ path: path.join(SHOTS, "29-animation-edit.png") });
@@ -2776,7 +2773,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   vm.runInContext('sayframeHost.acAnimate("blur", "both", 0.6)', p.ae.ctx);
   t = acAt(EL, "ADBE Effect Parade").children.map((c) => c.name);
   check("ED8 effects added by a preset get their own names", t.length === 2 && t.every((n) => /^Sayframe fx /.test(n)), t.join());
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".ac-edit-item");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".ac-edit-item");
   check("ED8 'both' shows two entries: appearance and disappearance", (await p.page.locator(".ac-edit-top b").allInnerTexts()).join() === "Размытие — появление,Размытие — исчезновение");
   const fxBefore = acAt(EL, "ADBE Effect Parade").children.map((c) => c.name);
   await edSlide(p, 1, "Длительность", 1);
@@ -2787,7 +2784,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const ET = mkAcLayer("Заголовок", "text");
   p.ae.comp.selectedLayers = [ET];
   vm.runInContext('sayframeHost.acText("slide-letters", "in", 0.6, "x")', p.ae.ctx);
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".ac-edit-item");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".ac-edit-item");
   await p.page.selectOption(".ac-edit-item .ac-swap", "blur-letters"); await p.idle(); await p.page.waitForTimeout(50);
   t = acAt(ET, "ADBE Text Properties", "ADBE Text Animators").children;
   check("ED9 a text preset swaps its text animator for the new one (text presets offer only text presets)", t.length === 1 && /^Sayframe text /.test(t[0].name) && acAt(t[0], "ADBE Text Animator Properties", 1).matchName === "ADBE Text Blur" && (await p.page.locator(".ac-edit-item .ac-swap option").count()) === 9);
@@ -2802,7 +2799,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.tab("tools"); await acSec(p, "Движения");
   await p.page.click('#acMode button[data-value="both"]');
   await acClick(p, "Снизу · плавно");
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".sf-group");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".sf-group");
   const sfOut = (dir) => p.page.locator('.sf-group[data-dir="' + dir + '"] .ac-edit-row output').allInnerTexts();
   const sfSlide = async (dir, label, value) => {
     await p.page.evaluate(([d, l, v]) => {
@@ -2835,7 +2832,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ selectedLayers: [XL] });
   await p.tab("tools"); await acSec(p, "Текст");
   await acClick(p, "Снизу по буквам");
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".sf-preset");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".sf-preset");
   const xAn = () => acAt(XL, "ADBE Text Properties", "ADBE Text Animators").children;
   check("TX1 'Edit' shows a text preset with its shift and the order of the letters", (await p.page.locator(".sf-preset .ac-edit-top b").innerText()) === "Снизу по буквам" && (await p.page.locator('.sf-group[data-dir="in"] .ac-edit-row output').allInnerTexts()).join() === "0,6 с,0,0 с,80 px,60%", (await p.page.locator('.sf-group[data-dir="in"] .ac-edit-row output').allInnerTexts()).join());
   await edSlideIn(p, '.sf-group[data-dir="in"]', "Сдвиг", 150);
@@ -2850,7 +2847,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await acClick(p, "Отъезд");
   const TL2 = p.ae.log.acLayers[0];
   p.ae.comp.selectedLayers = [TL2];
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".tr-edit");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".tr-edit");
   check("TE1 selecting the transition layer, 'Edit' shows the transition: duration, strength, remove", (await p.page.locator(".tr-edit .ac-edit-top b").innerText()) === "Переход «Отъезд»" && (await p.page.locator(".tr-edit .ac-edit-row output").allInnerTexts()).join() === "0,8 с,100%");
   await edSlideIn(p, ".tr-edit", "Длительность", 2);
   check("TE2 a longer duration stretches the layer around the cut", TL2.inPoint === 1 && TL2.outPoint === 3 && /Длительность перехода изменена/.test(await p.status()), TL2.inPoint + ".." + TL2.outPoint);
@@ -3112,7 +3109,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T2 Tools tab shows only the tools", (await vis(p, "#viewTools #acGrid")) && !(await vis(p, "#prompt")) && !(await vis(p, "#runBtn")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#newBtn")) && !(await vis(p, "#fixBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "false");
   check("T2 status line moved to the Tools tab", (await p.page.locator("#viewTools #statusBox").count()) === 1 && (await p.page.locator("#statusBox").count()) === 1 && (await vis(p, "#status")));
   await p.page.screenshot({ path: path.join(SHOTS, "17-tab-tools.png") });
-  check("T2 the Animation tab holds the preset library with seven sections (Макеты last); the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Заготовки,Звуки,Макеты,✎ Изменить");
+  check("T2 the Animation tab holds the preset library with seven sections (Макеты last); the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Заготовки,Звуки,Макеты" && (await p.page.locator("#acEdit").innerText()) === "Изменить");
   await p.paste(); await p.idle(); await p.modalClick("Оставить как есть");
   check("T3 the paste block reports its result on its tab", /^Картинка вставлена/.test(await p.status()) && (await vis(p, "#status")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1 && p.ae.log.imports.length === 1, await p.status());
   t = await p.status();

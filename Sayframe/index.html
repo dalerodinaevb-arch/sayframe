@@ -271,6 +271,10 @@
       <nav id="acTabs" class="ac-tabs" role="tablist" aria-label="Разделы библиотеки"></nav>
       <div class="ac-bar">
         <input id="acSearch" class="field ac-search" type="search" placeholder="Поиск по всем разделам…" autocomplete="off" spellcheck="false" aria-label="Поиск пресетов">
+        <div id="acPlay" class="ac-autoplay" role="group" aria-label="Когда играют превью анимаций">
+          <button type="button" data-value="always" title="Превью играют сами по кругу">Авто</button>
+          <button type="button" data-value="hover" title="Превью стоит и играет, только пока над ним курсор">Наведение</button>
+        </div>
         <button id="acFavOnly" class="icon-btn ac-fav" aria-pressed="false" title="Только избранное" aria-label="Только избранное">★</button>
       </div>
       <!-- Слева — виды выбранного раздела (как папки в Animation Composer), справа — карточки -->
@@ -1332,7 +1336,7 @@
         </div>
       </div>
       <div id="setPaneMore" class="set-pane" role="tabpanel" aria-labelledby="setTabMore" hidden>
-        <div class="group">
+        <div class="group" hidden>
           <span class="label">Превью анимаций</span>
           <div id="previewPlay" class="frames preview-play" role="group" aria-label="Когда играют превью анимаций">
             <button data-value="always" title="Все видимые превью играют сами по кругу">Всегда</button>
