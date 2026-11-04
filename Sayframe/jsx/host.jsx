@@ -6560,9 +6560,11 @@ var sayframeHost = (function () {
                         try { if (q.render) { q.render = false; parked.push(q); } } catch (e1) {}
                     }
                     it = rq.items.add(wrap || comp);
-                    if (o.span === "work") {
-                        try { it.timeSpanStart = comp.workAreaStart; it.timeSpanDuration = comp.workAreaDuration; } catch (e2) {}
-                    }
+                    // Always set the span: After Effects' default render settings may say "Work Area Only".
+                    try {
+                        if (o.span === "work") { it.timeSpanStart = comp.workAreaStart; it.timeSpanDuration = comp.workAreaDuration; }
+                        else { it.timeSpanStart = 0; it.timeSpanDuration = comp.duration; }
+                    } catch (e2) {}
                     om = it.outputModule(1);
                     try { tpls = om.templates; } catch (e3) {}
                     tpl = exTemplate(tpls, o.quality, o.mbps);

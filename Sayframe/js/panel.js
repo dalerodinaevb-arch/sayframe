@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.72.0";
+    var VERSION = "1.72.1";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -7476,12 +7476,16 @@
     var EX_ORDER = ["light", "normal", "max", "custom"];
     // Битрейт каждого качества меняется − и + на выбранном окошке, шагами EX_RATES. Выше 40 нет: у AE нет шаблона лучше.
     var EX_RATES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40];
-    var exState = { level: "normal", quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {} };
+    var exState = { levels: ["normal"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {} };
     var exInfo = null, exFolderNow = "", exDefaultNow = "";
     try {
         (function () {
             var v = JSON.parse(window.localStorage.getItem(EXPORT_KEY) || "{}") || {};
-            if (EX_LEVELS[v.level]) { exState.level = v.level; }
+            // Можно выбрать несколько окошек сразу — по видео на каждое.
+            if (Object.prototype.toString.call(v.levels) === "[object Array]") {
+                exState.levels = EX_ORDER.filter(function (k) { return v.levels.indexOf(k) >= 0; });
+            } else if (EX_LEVELS[v.level]) { exState.levels = [v.level]; }
+            if (!exState.levels.length) { exState.levels = ["normal"]; }
             if (/^(light|normal|max)$/.test(v.quality)) { exState.quality = v.quality; }
             if (/^(all|work)$/.test(v.span)) { exState.span = v.span; }
             if (/^(blur|black|crop)$/.test(v.fit)) { exState.fit = v.fit; }
@@ -7498,9 +7502,11 @@
     function storeExport() { try { window.localStorage.setItem(EXPORT_KEY, JSON.stringify(exState)); } catch (e) {} }
 
     // Размер видео: как у композиции, у «Своего» — введённый.
-    function exSize() {
+    function exPicked(id) { return exState.levels.indexOf(id) >= 0; }
+
+    function exSize(id) {
         var c = exInfo ? exInfo.comp : { w: 1920, h: 1080 };
-        if (exState.level === "custom") { return { w: exState.cw, h: exState.ch }; }
+        if (id === "custom") { return { w: exState.cw, h: exState.ch }; }
         return { w: Math.round(c.w / 2) * 2, h: Math.round(c.h / 2) * 2 };
     }
 
@@ -7519,17 +7525,23 @@
     }
 
     // Примерный размер файла: битрейт видео + звук (~320 кбит/с) × длина.
-    function exMB(level) {
-        var c = exInfo && exInfo.comp, dur, mb;
-        if (!c) { return ""; }
+    function exMBn(level) {
+        var c = exInfo && exInfo.comp, dur;
+        if (!c) { return 0; }
         dur = exState.span === "work" && c.waDur > 0 ? c.waDur : c.dur;
-        mb = (exRate(level) + 0.32) * dur / 8;
+        return (exRate(level) + 0.32) * dur / 8;
+    }
+
+    function exMBText(mb) {
+        if (!exInfo) { return ""; }
         return mb < 1 ? "< 1 МБ" : "≈ " + (mb < 10 ? (Math.round(mb * 10) / 10).toString().replace(".", ",") : Math.round(mb)) + " МБ";
     }
 
+    function exMB(level) { return exMBText(exMBn(level)); }
+
     function exMismatch() {
-        var c = exInfo && exInfo.comp, s = exSize();
-        return c && exState.level === "custom" && Math.abs(s.w / s.h - c.w / c.h) > 0.01;
+        var c = exInfo && exInfo.comp, s = exSize("custom");
+        return c && exPicked("custom") && Math.abs(s.w / s.h - c.w / c.h) > 0.01;
     }
 
     function showExFolder(path) {
@@ -7541,14 +7553,14 @@
     }
 
     function drawExport() {
-        var c = exInfo && exInfo.comp, s, ar = c ? c.w / c.h : 16 / 9, mb = exMB(exState.level), custom = exState.level === "custom";
+        var c = exInfo && exInfo.comp, s, ar = c ? c.w / c.h : 16 / 9, mb = exMBText(exState.levels.reduce(function (a, id) { return a + exMBn(id); }, 0)), custom = exPicked("custom"), n = exState.levels.length;
         ui.exTargets.classList.toggle("ex-h", ar > 1.02);
         ui.exTargets.classList.toggle("ex-v", ar < 0.98);
         ui.exTargets.classList.toggle("ex-sq", ar >= 0.98 && ar <= 1.02);
         ui.exTargets.style.setProperty("--ar", String(Math.max(9 / 16, Math.min(16 / 9, ar))));
         Array.prototype.forEach.call(ui.exTargets.querySelectorAll(".ex-t"), function (b) {
             var id = b.getAttribute("data-t");
-            b.setAttribute("aria-pressed", exState.level === id ? "true" : "false");
+            b.setAttribute("aria-pressed", exPicked(id) ? "true" : "false");
             b.querySelector(".ex-mb").textContent = id === "custom" ? (custom ? exState.cw + "×" + exState.ch : "") : exMB(id);
             if (id !== "custom") {
                 b.querySelector(".ex-rate em").textContent = String(exRate(id));
@@ -7566,12 +7578,12 @@
         });
         ui.exFitRow.hidden = !exMismatch();
         if (exMismatch()) {
-            s = exSize();
+            s = exSize("custom");
             ui.exFitText.textContent = "Композиция " + exShape(c.w, c.h) + "ая, а видео " + s.w + "×" + s.h + " — " + exShape(s.w, s.h) + "ое. Как сделать?";
         }
         ui.exAmeRow.hidden = !(exInfo && exInfo.ame);
         ui.exAme.checked = exState.ame;
-        ui.exGo.textContent = "Сохранить видео" + (mb ? " · " + mb : "");
+        ui.exGo.textContent = (n > 1 ? "Сохранить " + n + " видео" : "Сохранить видео") + (mb ? " · " + mb : "");
         ui.exGo.disabled = busy || !exInfo;
     }
 
@@ -7649,8 +7661,8 @@
         var jobs, folder, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null;
         if (busy || !exInfo) { return; }
         folder = exFolderNow || exDefaultNow;
-        jobs = [exState.level].map(function (id) {
-            var s = exSize();
+        jobs = exState.levels.map(function (id) {
+            var s = exSize(id);
             return { id: id, w: s.w, h: s.h, label: id === "custom" ? s.w + "x" + s.h : EX_LEVELS[id].label, quality: exQualityOf(id), mbps: exRate(id) };
         });
         setBusy(true);
@@ -7739,7 +7751,7 @@
         ui.exBrowse.addEventListener("click", onExBrowse);
         ui.exGo.addEventListener("click", runExport);
         ui.exTargets.addEventListener("click", function (e) {
-            var b = e.target.closest ? e.target.closest(".ex-t") : null, st = e.target.closest ? e.target.closest(".ex-rate [data-d]") : null;
+            var b = e.target.closest ? e.target.closest(".ex-t") : null, st = e.target.closest ? e.target.closest(".ex-rate [data-d]") : null, id;
             if (!b) { return; }
             if (st && b.getAttribute("aria-pressed") === "true") {
                 if (!st.classList.contains("off")) { exStepRate(b.getAttribute("data-t"), Number(st.getAttribute("data-d"))); }
@@ -7747,7 +7759,13 @@
                 drawExport();
                 return;
             }
-            exState.level = b.getAttribute("data-t");
+            // Клик добавляет окошко или убирает его; одно всегда остаётся.
+            id = b.getAttribute("data-t");
+            if (!exPicked(id)) {
+                exState.levels = EX_ORDER.filter(function (k) { return k === id || exPicked(k); });
+            } else if (exState.levels.length > 1) {
+                exState.levels = exState.levels.filter(function (k) { return k !== id; });
+            }
             storeExport();
             drawExport();
         });
