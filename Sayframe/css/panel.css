@@ -2071,6 +2071,14 @@ html[data-design="studio"] .tool-flow .flow-tiles .paste-do > span { display: no
 html[data-design="studio"] .tool-flow .flow-tiles .paste-do::after { content: attr(data-short); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover { border-color: rgba(var(--accent-rgb), .5) !important; }
 html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover .paste-do svg { background: rgba(var(--accent-rgb), .26); }
+/* Плитка = значок в квадрате, подпись под ним (как иконки приложений), без большой рамки вокруг. */
+.tool-flow > .flow-tiles:not([hidden]), .tool-flow > .flow-tiles[data-wide="true"] { grid-template-columns: repeat(auto-fill, 74px); gap: 6px 8px; }
+html[data-design="studio"] .tool-flow .flow-tiles .tool-card { width: 74px; height: 82px; min-height: 0; padding: 0 !important; background: transparent !important; border-color: transparent !important; box-shadow: none !important; justify-content: flex-start; }
+html[data-design="studio"] .tool-flow .flow-tiles .paste-do { gap: 7px !important; justify-content: flex-start !important; padding: 0 !important; color: #b9bac4 !important; }
+html[data-design="studio"] .tool-flow .flow-tiles .paste-do svg { width: 22px !important; height: 22px !important; padding: 15px !important; border-radius: 15px !important; background: #1c1d23 !important; border: 1px solid #2a2b31; color: var(--accent-hi) !important; transition: background .15s, border-color .15s; }
+html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover { border-color: transparent !important; }
+html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover .paste-do svg { background: rgba(var(--accent-rgb), .22) !important; border-color: rgba(var(--accent-rgb), .6); }
+html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover .paste-do { color: var(--text) !important; }
 /* блоки с настройками */
 .tool-flow .flow-cols .tool-card { width: 100%; box-sizing: border-box; margin: 0 0 12px; -webkit-column-break-inside: avoid; break-inside: avoid; }
 .tool-flow .flow-cols .tool-head { cursor: pointer; padding-right: 30px; }
