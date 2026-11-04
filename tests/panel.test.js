@@ -5744,6 +5744,17 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.waitForTimeout(300);
     check("EX13 after a save the MB estimate learns the real file size (2,5 МБ, not 19)", (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 2,5 МБ" && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.export.v1"))).k < 0.2 && p.errors.length === 0, await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText());
     await p.close();
+    // Each quality learns its own factor; a quality never saved yet uses the common one.
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    await p.page.evaluate(() => localStorage.setItem("sayframe.export.v1", JSON.stringify({ levels: ["normal"], k: 0.6, kq: { normal: 0.2 } })));
+    await p.restart();
+    await exOpen(p);
+    check("EX14 each quality has its own learned factor: Среднее uses 0.2 (≈ 4,1 МБ), Высокое the common 0.6 (≈ 30 МБ)", (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 4,1 МБ" && (await p.page.locator('#exTargets [data-t="max"] .ex-mb').innerText()) === "≈ 30 МБ" && p.errors.length === 0,
+      (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) + " / " + (await p.page.locator('#exTargets [data-t="max"] .ex-mb').innerText()));
+    await p.page.click("#exGo"); await p.page.waitForFunction(() => document.querySelectorAll("#exResults .ex-row.done").length === 1);
+    t = JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.export.v1")));
+    check("EX14 a save updates that quality's factor (average of old and new) and the common one", t.kq.normal > 0.15 && t.kq.normal < 0.2 && !t.kq.max && t.k < 0.6, JSON.stringify(t));
+    await p.close();
   }
 
 

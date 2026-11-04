@@ -7480,7 +7480,7 @@
     // H.264 в AE сжимает «по нужде»: простая графика выходит заметно меньше битрейта. Начинаем с 0,6 от битрейта,
     // после каждого сохранения подстраиваемся под настоящий размер файла.
     var EX_K = 0.6;
-    var exState = { levels: ["normal"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {}, k: EX_K };
+    var exState = { levels: ["normal"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {}, k: EX_K, kq: {} };
     var exInfo = null, exPollBusy = false, exPollKey = "", exFolderNow = "", exDefaultNow = "";
     try {
         (function () {
@@ -7498,6 +7498,9 @@
             if (v.cw > 0) { exState.cw = Math.round(v.cw); }
             if (v.ch > 0) { exState.ch = Math.round(v.ch); }
             if (v.k >= 0.1 && v.k <= 1.3) { exState.k = v.k; }
+            if (v.kq && typeof v.kq === "object") {
+                ["light", "normal", "max"].forEach(function (q) { if (v.kq[q] >= 0.1 && v.kq[q] <= 1.3) { exState.kq[q] = v.kq[q]; } });
+            }
             if (v.rates && typeof v.rates === "object") {
                 ["light", "normal", "max"].forEach(function (k) { if (EX_RATES.indexOf(v.rates[k]) >= 0) { exState.rates[k] = v.rates[k]; } });
             }
@@ -7538,16 +7541,21 @@
 
     // Примерный размер файла: битрейт видео × поправка по прошлым сохранениям + звук (~320 кбит/с), × длина.
     function exMBn(level) {
-        return (exRate(level) * exState.k + 0.32) * exDur() / 8;
+        return (exRate(level) * exK(exQualityOf(level)) + 0.32) * exDur() / 8;
     }
 
     // Узнали настоящий размер сохранённого видео — запоминаем, во сколько раз он меньше битрейта.
-    function exLearn(bytes, mbps, dur) {
+    // Поправка для качества: своя, если это качество уже сохраняли, иначе общая по всем сохранениям.
+    function exK(q) { return exState.kq[q] || exState.k; }
+
+    function exLearn(bytes, mbps, dur, q) {
         var k;
         if (!(bytes > 0 && mbps > 0 && dur > 0.5)) { return; }
         k = (bytes * 8 / 1e6 / dur - 0.32) / mbps;
         k = Math.max(0.1, Math.min(1.3, k));
         exState.k = Math.round((exState.k === EX_K ? k : (exState.k + k) / 2) * 1000) / 1000;
+        // У каждого качества своя поправка: на низком битрейте After Effects экономит меньше, чем на высоком.
+        if (EX_LEVELS[q] && q !== "custom") { exState.kq[q] = Math.round((exState.kq[q] ? (exState.kq[q] + k) / 2 : k) * 1000) / 1000; }
         storeExport();
     }
 
@@ -7738,7 +7746,7 @@
                 j.st.textContent = "✓";
                 j.nm.textContent = r.name || platform.basename(r.path);
                 j.nm.title = r.path;
-                if (r.mode === "ame") { ame = true; j.sm.textContent = "в Media Encoder"; } else { j.sm.textContent = exSizeText(r.size); exLearn(r.size, r.mbps || j.mbps, jobDur); }
+                if (r.mode === "ame") { ame = true; j.sm.textContent = "в Media Encoder"; } else { j.sm.textContent = exSizeText(r.size); exLearn(r.size, r.mbps || j.mbps, jobDur, j.quality); }
                 // Битрейт, с которым сохранили; без Media Encoder — ближайший шаблон AE (5, 15 или 40).
                 if (r.mbps > 0) {
                     j.sm.textContent += " · " + r.mbps + " Мбит/с";
