@@ -396,7 +396,9 @@ function mkSmComp(specs, log, legacyMatte) {
   Object.defineProperty(c, "selectedLayers", { get: () => c.list.filter((l) => l.selected) });
   c.layer = (i) => c.list[i - 1] || null;
   c.layers = { addShape() { const l = smLayer(c, { name: "Shape Layer 1" }, log); c.list.unshift(l); return l; },
-    addSolid(color, name, w, h) { const l = smLayer(c, { name, shape: false }, log); l.solidSize = [w, h]; c.list.unshift(l); return l; } };
+    addSolid(color, name, w, h) { const l = smLayer(c, { name, shape: false }, log); l.solidSize = [w, h]; c.list.unshift(l); return l; },
+    addText(t) { const l = Object.setPrototypeOf(smLayer(c, { name: String(t), shape: false }, log), TextLayer.prototype); c.list.unshift(l);
+      l.moveToBeginning = () => { c.list.splice(c.list.indexOf(l), 1); c.list.unshift(l); }; return l; } };
   specs.forEach((sp) => c.list.push(smLayer(c, sp, log)));
   specs.forEach((sp, i) => { if (sp.parent) c.list[i].parent = c.list.find((x) => x.name === sp.parent); });
   return c;
@@ -3109,7 +3111,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T2 Tools tab shows only the tools", (await vis(p, "#viewTools #acGrid")) && !(await vis(p, "#prompt")) && !(await vis(p, "#runBtn")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#newBtn")) && !(await vis(p, "#fixBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "false");
   check("T2 status line moved to the Tools tab", (await p.page.locator("#viewTools #statusBox").count()) === 1 && (await p.page.locator("#statusBox").count()) === 1 && (await vis(p, "#status")));
   await p.page.screenshot({ path: path.join(SHOTS, "17-tab-tools.png") });
-  check("T2 the Animation tab holds the preset library with seven sections (Макеты last); the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Заготовки,Звуки,Макеты" && (await p.page.locator("#acEdit").innerText()) === "Изменить");
+  check("T2 the Animation tab holds the preset library with six sections (Макеты last, «Заготовки» gone: the glass is a Макеты block); the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Звуки,Макеты" && (await p.page.locator("#acEdit").innerText()) === "Изменить");
   await p.paste(); await p.idle(); await p.modalClick("Оставить как есть");
   check("T3 the paste block reports its result on its tab", /^Картинка вставлена/.test(await p.status()) && (await vis(p, "#status")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1 && p.ae.log.imports.length === 1, await p.status());
   t = await p.status();
@@ -5148,42 +5150,78 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
-  // «Заготовки» on the Animation tab: liquid glass from the selected layer (or a new rounded rectangle).
+  // «Жидкое стекло» — a block in «Макеты» (Animation tab): with a text (4 forms) or a plain shape; glass kind and outline; «Сделать стеклом».
   {
     const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
     const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
     const fxOf = (l) => acAt(l, "ADBE Effect Parade").children.map((e) => e.matchName).join(",");
-    const kitTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="kit"]'); };
+    const glTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    const add = async (p, sel) => { await p.page.click(sel || "#glAdd"); await p.idle(); };
     p = await open({ sm: [{ name: "Pill", selected: true, groups: [smGroup("Box", [smRect(200), smFill([1, 1, 1, 1])])], inPoint: 1, outPoint: 7 }, { name: "BG" }] });
-    await kitTab(p);
-    check("KG1 a «Заготовки» section between «Графика» and «Звуки», with its kinds on the left and the liquid glass card", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#acTabs button"), (b) => b.textContent).join("|"))).indexOf("Графика|Заготовки|Звуки") >= 0 &&
-      (await p.page.locator("#acGrid .ac-card").count()) === 1 && (await p.page.locator("#acGrid .ac-card .ac-name").innerText()) === "Жидкое стекло" && (await p.page.locator("#acFolders .ac-folder").allInnerTexts()).join() === "Все,Эффекты", (await p.page.locator("#acFolders .ac-folder").allInnerTexts()).join());
-    check("KG1 no duration and no colour for kits; the hint says how the glass works", (await p.page.locator("#acDurRow").isHidden()) && (await p.page.locator("#acColorRow").isHidden()) && /Жидкое стекло: выделите слой-фигуру/.test(await p.page.locator("#acHint").innerText()));
-    check("KG1 the preview: glass over a moving picture, playing while visible", (await p.page.locator("#acGrid .ac-card.kit-play .kit-glass .kit-lens").count()) === 1 && (await p.page.evaluate(() => getComputedStyle(document.querySelector(".kit-bg b")).animationName)) === "kit-slide");
-    await p.page.screenshot({ path: path.join(SHOTS, "77-kit-liquid-glass.png") });
-    await p.page.click("#acGrid .ac-card"); await p.idle();
+    await glTab(p);
+    check("GL1 «Жидкое стекло» is the first block of «Макеты»; no «Заготовки» section any more", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())).indexOf("glass,") === 0 &&
+      (await p.page.locator('#acTabs button[data-sec="kit"]').count()) === 0 && (await overflow(p)) <= 0);
+    check("GL1 defaults: «С текстом», «Подписаться», the button tile, clear glass, the usual outline; 4 form tiles with the text, 8 shapes, 4 kinds, 6 outlines",
+      (await p.page.getAttribute('#glMode [data-v="text"]', "aria-pressed")) === "true" && (await p.page.inputValue("#glText")) === "Подписаться" && (await p.page.getAttribute('#glForms [data-v="btn"]', "aria-pressed")) === "true" &&
+      (await p.page.locator("#glForms .gl-tile").count()) === 4 && (await p.page.locator("#glForms .gl-nm").allInnerTexts()).join() === "Кнопка,Карточка,Плашка,Пуш" &&
+      (await p.page.locator('#glForms [data-v="box"] .gl-box').innerText()) === "ПОДПИСАТЬСЯ" && (await p.page.locator("#glShapes button").count()) === 8 && (await p.page.locator("#glKinds button").count()) === 4 && (await p.page.locator("#glEdges button").count()) === 6 &&
+      (await p.page.getAttribute('#glKinds [data-v="clear"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#glEdges [data-v="std"]', "aria-pressed")) === "true" && !(await vis(p, "#glStage")) && !(await vis(p, "#glSize")) &&
+      (await p.page.locator("#glAdd").innerText()).trim() === "Добавить кнопку" && (await p.page.locator("#glMine").innerText()).trim() === "Сделать стеклом");
+    await p.page.fill("#glText", "Купить");
+    check("GL2 typing changes the text on every tile at once", (await p.page.locator('#glForms [data-v="btn"] .gl-btn').innerText()) === "Купить" && (await p.page.locator('#glForms [data-v="note"] small').innerText()) === "Купить");
+    await p.page.click('#glMode [data-v="shape"]');
+    check("GL2 «Без текста»: the big preview and the shapes, the size slider; the text part hides", (await vis(p, "#glStage")) && (await vis(p, "#glSize")) && !(await vis(p, "#glText")) && (await p.page.locator("#glAdd").innerText()).trim() === "Добавить в кадр" &&
+      (await p.page.getAttribute('#glShapes [data-v="heart"]', "aria-pressed")) === "true" && /^M50 90C/.test(await p.page.getAttribute("#glStage .gl-line", "d")));
+    await p.page.click('#glShapes [data-v="star"]'); await p.page.click('#glKinds [data-v="frost"]'); await p.page.click('#glEdges [data-v="dash"]');
+    check("GL2 a kind sets its blur; the outline shows in the preview", (await p.page.inputValue("#glBlur")) === "60" && (await p.page.getAttribute(".gl-pane", "data-edge")) === "dash" && (await p.page.locator("#glKindName").innerText()) === "Матовое");
+    await p.restart(); await glTab(p);
+    check("GL2 the choices survive a restart", (await p.page.getAttribute('#glMode [data-v="shape"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#glShapes [data-v="star"]', "aria-pressed")) === "true" && (await p.page.inputValue("#glText")) === "Купить");
+    await p.page.screenshot({ path: path.join(SHOTS, "77-glass-block.png") });
+    // «Сделать стеклом»: the selected layer becomes the glass, as the old kit did.
+    await add(p, "#glMine");
     const adj = Lx(p, "Жидкое стекло"), edge = Lx(p, "Стекло: блик"), pill = Lx(p, "Pill");
-    check("KG2 four layers, top to bottom: the outline, the edge light, the glass (matted to the shape), the shape (hidden)", names(p) === "Стекло: обводка,Стекло: блик,Жидкое стекло,Pill,BG" && adj.adjustmentLayer === true && adj.matte === pill && adj.matteType === 5013 && pill.enabled === false && edge.enabled === true, names(p));
-    check("KG2 the glass bulges, blurs and brightens; the bulge follows the shape by expressions", fxOf(adj) === "ADBE Bulge,ADBE Gaussian Blur 2,ADBE Brightness & Contrast 2" && /thisComp\.layer\("Pill"\)/.test(acAt(adj, "ADBE Effect Parade", 1, "ADBE Bulge-0003").expression) && /sourceRectAtTime/.test(acAt(adj, "ADBE Effect Parade", 1, "ADBE Bulge-0001").expression) && acAt(adj, "ADBE Effect Parade", 2, "ADBE Gaussian Blur 2-0001").value === 12 && adj.inPoint === 1 && adj.outPoint === 7, fxOf(adj));
-    check("KG2 the edge: a grey copy in Overlay with Bevel Alpha, hanging on the shape", fxOf(edge) === "ADBE Fill,ADBE Bevel Alpha" && edge.blendingMode === 5224 && edge.parent === pill && JSON.stringify(acAt(edge, "ADBE Effect Parade", 1, "ADBE Fill-0002").value) === "[0.5,0.5,0.5,1]");
     t = Lx(p, "Стекло: обводка");
-    check("KG2 the outline: a copy of the shape, its own fill off, one Stroke driven by width, colour and opacity controls", !!t && t.enabled !== false && t.parent === pill &&
-      acAt(t, "ADBE Effect Parade").children.map((e) => e.name).join() === "Толщина обводки,Цвет обводки,Прозрачность обводки" && acAt(t, "ADBE Effect Parade", 1, "ADBE Slider Control-0001").value === 2 && acAt(t, "ADBE Effect Parade", 3, "ADBE Slider Control-0001").value === 70 &&
-      acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Graphic - Fill").enabled === false &&
-      /effect\(1\)\(1\)/.test(acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Width").expression) && /effect\(2\)\(1\)/.test(acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Color").expression) && /effect\(3\)\(1\)/.test(acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Opacity").expression) &&
-      /Обводка — слой «Стекло: обводка»/.test(await p.status()), t ? acAt(t, "ADBE Effect Parade").children.map((e) => e.name).join() : "none");
-    check("KG2 one undo step; the shape is selected; the report", p.ae.log.undo.join() === "begin:Sayframe: liquid glass,end" && pill.selected && !edge.selected && /^Жидкое стекло готово: фигура — «Pill»/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+    check("GL3 «Сделать стеклом»: four layers, top to bottom outline, edge light, glass (matted to the shape), the shape (hidden)", names(p) === "Стекло: обводка,Стекло: блик,Жидкое стекло,Pill,BG" && adj.adjustmentLayer === true && adj.matte === pill && adj.matteType === 5013 && pill.enabled === false && edge.parent === pill && t.parent === pill, names(p));
+    check("GL3 the glass: bulge (following the shape), blur from the slider (60 → 36), brighter for frosted glass; the edge light from «Блик»", fxOf(adj) === "ADBE Bulge,ADBE Gaussian Blur 2,ADBE Brightness & Contrast 2" && /thisComp\.layer\("Pill"\)/.test(acAt(adj, "ADBE Effect Parade", 1, "ADBE Bulge-0003").expression) &&
+      acAt(adj, "ADBE Effect Parade", 2, "ADBE Gaussian Blur 2-0001").value === 36 && acAt(adj, "ADBE Effect Parade", 3, "ADBE Brightness & Contrast 2-0001").value === 18 && fxOf(edge) === "ADBE Fill,ADBE Bevel Alpha" && acAt(edge, "ADBE Effect Parade", 2, "ADBE Bevel Alpha-0004").value === 0.7);
+    check("GL3 the dashed outline: dash 14, gap 10 on the Stroke", acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Dashes", "ADBE Vector Stroke Dash 1").value === 14 && acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Dashes", "ADBE Vector Stroke Gap 1").value === 10 &&
+      acAt(t, "ADBE Effect Parade", 3, "ADBE Slider Control-0001").value === 90);
+    check("GL3 one undo step, the report", p.ae.log.undo.join() === "begin:Sayframe: liquid glass,end" && /^Фигура «Pill» стала стеклом/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
     await p.close();
 
     p = await open({ sm: [{ name: "BG" }] });
-    await kitTab(p); await p.page.click("#acGrid .ac-card"); await p.idle();
-    t = Lx(p, "Стекло");
-    check("KG3 nothing selected: a rounded rectangle «Стекло» in the middle becomes the glass", names(p) === "Стекло: обводка,Стекло: блик,Жидкое стекло,Стекло,BG" && JSON.stringify(acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[806,324]" && /нарисовал фигуру «Стекло»/.test(await p.status()), names(p) + " " + (await p.status()));
+    await glTab(p);
+    await add(p, "#glMine");
+    check("GL4 «Сделать стеклом» with nothing selected: a hint to draw and select a shape, nothing made", /Нарисуйте фигуру/.test(await p.status()) && names(p) === "BG", await p.status());
+    await p.page.click('#glMode [data-v="shape"]'); await p.page.click('#glShapes [data-v="heart"]'); await p.page.click('#glEdges [data-v="run"]');
+    await add(p);
+    t = Lx(p, "Стекло: сердце");
+    const st = Lx(p, "Стекло: обводка");
+    check("GL4 «Без текста», a heart: a path shape «Стекло: сердце» in the middle, 40% of the height; the running outline is Trim Paths (end 25, offset turning) before the Stroke", !!t && names(p) === "Стекло: обводка,Стекло: блик,Жидкое стекло,Стекло: сердце,BG" &&
+      acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group").children.map((c) => c.matchName).join() === "ADBE Vector Shape - Group,ADBE Vector Graphic - Fill" &&
+      acAt(st, "ADBE Root Vectors Group").children.map((c) => c.matchName).slice(-2).join() === "ADBE Vector Filter - Trim,ADBE Vector Graphic - Stroke" && acAt(st, "ADBE Root Vectors Group", "ADBE Vector Filter - Trim", "ADBE Vector Trim End").value === 25 &&
+      /time \* 120/.test(acAt(st, "ADBE Root Vectors Group", "ADBE Vector Filter - Trim", "ADBE Vector Trim Offset").expression), names(p));
+    await p.page.click('#glShapes [data-v="star"]'); await p.page.click('#glKinds [data-v="tint"]');
+    await add(p);
+    t = Lx(p, "Стекло: звезда");
+    check("GL4 a second glass gets its own names; a star is a 5-point Star; tinted glass adds Tint", !!t && !!Lx(p, "Жидкое стекло 2") && acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Star", "ADBE Vector Star Points").value === 5 &&
+      fxOf(Lx(p, "Жидкое стекло 2")) === "ADBE Bulge,ADBE Gaussian Blur 2,ADBE Brightness & Contrast 2,ADBE Tint", names(p));
     await p.close();
 
-    p = await open({ sm: [{ name: "Pill", selected: true, groups: [smGroup("Box", [smRect(200)])] }, { name: "BG" }], legacyMatte: true });
-    await kitTab(p); await p.page.click("#acGrid .ac-card"); await p.idle();
-    check("KG4 an older After Effects (matte only from the layer above): the shape sits right above the glass", names(p) === "Стекло: обводка,Стекло: блик,Pill,Жидкое стекло,BG" && Lx(p, "Жидкое стекло").trackMatteType === 5013 && p.errors.length === 0, names(p));
+    p = await open({ sm: [{ name: "BG" }] });
+    await glTab(p);
+    await add(p);
+    t = Lx(p, "Подписаться"); const btn = Lx(p, "Стекло: кнопка");
+    check("GL5 «С текстом», a button: the text «Подписаться» on top, the capsule under it follows the text by expressions (size, roundness, position); nothing is parented", !!t && !!btn && names(p).indexOf("Подписаться,Стекло: обводка,Стекло: блик,Жидкое стекло,Стекло: кнопка") === 0 &&
+      /thisComp\.layer\("Подписаться"\)/.test(acAt(btn, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").expression) && /sourceRectAtTime/.test(acAt(btn, "ADBE Transform Group", "ADBE Position").expression) &&
+      /\/ 2/.test(acAt(btn, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Roundness").expression) && !Lx(p, "Стекло: блик").parent && !Lx(p, "Стекло: обводка").parent && !t.parent && t.selected && /подстраивается под текст/.test(await p.status()), names(p) + " " + (await p.status()));
+    await p.page.click('#glForms [data-v="card"]');
+    await add(p);
+    const card = Lx(p, "Стекло: карточка");
+    check("GL5 a card: «Заголовок» (the typed text) and «Текст» hang on the glass card", !!card && Lx(p, "Заголовок").parent === card && Lx(p, "Текст").parent === card && Lx(p, "Стекло: блик 2").parent === card, names(p));
+    await p.page.click('#glForms [data-v="note"]');
+    await add(p);
+    check("GL5 a notification: an icon, «Название» and the text on the glass, all hanging on it", !!Lx(p, "Стекло: пуш") && Lx(p, "Иконка").parent === Lx(p, "Стекло: пуш") && Lx(p, "Название").parent === Lx(p, "Стекло: пуш") && p.errors.length === 0, names(p));
     await p.close();
   }
 
@@ -5275,7 +5313,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const rect = (l) => acAt(l, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect");
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
-    check("GR1 «Макеты»: five blocks, «Карусель», «Grid», «Плашка под текстом», «Мокап телефона» and «Текст по ленте», open; the grid preview shows numbered tiles", (await p.page.locator("#orbitPane .mk-card").evaluateAll((l) => l.map((c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" &&
+    check("GR1 «Макеты»: six blocks, «Жидкое стекло», «Карусель», «Grid», «Плашка под текстом», «Мокап телефона» and «Текст по ленте», open; the grid preview shows numbered tiles", (await p.page.locator("#orbitPane .mk-card").evaluateAll((l) => l.map((c) => c.getAttribute("data-mk")).join())) === "glass,carousel,grid,textbox,phone,ribbon" &&
       (await p.page.isVisible("#orbitStage")) && (await p.page.isVisible("#gridStage")) && (await tiles(p)) > 4 && (await tiles(p)) < 20 && (await p.page.locator("#gridStage .gr-box span").first().innerText()) === "1" && (await overflow(p)) <= 0);
     check("GR1 defaults: 4 rows, 5 columns, gap 20, roundness 20, spread 100%, variant 12345, the comp size, numbers and one-by-one on", (await p.page.inputValue("#gridRows")) === "4" && (await p.page.inputValue("#gridCols")) === "5" && (await p.page.locator("#gridGapVal").innerText()) === "20" &&
       (await p.page.locator("#gridRandVal").innerText()) === "100%" && (await p.page.inputValue("#gridSeed")) === "12345" && (await p.page.getAttribute("#gridFit", "aria-pressed")) === "true" && (await p.page.isDisabled("#gridW")) && (await p.page.isChecked("#gridNumbers")) && (await p.page.isChecked("#gridStagger")));
@@ -5358,8 +5396,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ width: 1300, orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
     let c1 = await cards(p);
-    check("MK1 a wide panel: the blocks side by side (three in a row), a standard width (320–420), not stretched", c1.length === 5 && c1.every((x) => { const w = Number(x.split("w")[1]); return w >= 320 && w <= 420; }) && c1.slice(0, 3).every((x) => x.split("@")[1].split("w")[0] === c1[0].split("@")[1].split("w")[0]) && /^carousel/.test(c1[0]), c1.join());
-    const a = await p.page.locator('.mk-card[data-mk="grid"] .mk-head b').boundingBox(), b = await p.page.locator('.mk-card[data-mk="carousel"] .mk-head b').boundingBox();
+    check("MK1 a wide panel: the blocks side by side (three in a row), a standard width (320–420), not stretched", c1.length === 6 && c1.every((x) => { const w = Number(x.split("w")[1]); return w >= 320 && w <= 420; }) && c1.slice(0, 3).every((x) => x.split("@")[1].split("w")[0] === c1[0].split("@")[1].split("w")[0]) && /^glass/.test(c1[0]), c1.join());
+    const a = await p.page.locator('.mk-card[data-mk="grid"] .mk-head b').boundingBox(), b = await p.page.locator('.mk-card[data-mk="glass"] .mk-head b').boundingBox();
     await p.page.mouse.move(a.x + 10, a.y + 5); await p.page.mouse.down(); await p.page.mouse.move(a.x - 40, a.y + 5, { steps: 4 }); await p.page.mouse.move(b.x + 10, b.y + 5, { steps: 6 }); await p.page.mouse.up();
     c1 = await cards(p);
     check("MK2 dragging Grid by its title puts it first; neither block folds", /^grid/.test(c1[0]) && (await p.page.locator("#orbitPane .mk-folded").count()) === 0, c1.join());
@@ -5369,8 +5407,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ width: 740, orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
     c1 = await cards(p);
-    check("MK4 a middle panel (740): two blocks side by side, neither wider than 420", c1[0].split("@")[1].split("w")[0] === c1[1].split("@")[1].split("w")[0] && c1.every((x) => Number(x.split("w")[1]) <= 420) && (await p.page.locator("#orbitPane .mk-grip").count()) === 5, c1.join());
-    await p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.orbit.v1") || "{}"); o.fold = "ribbon,grid,textbox"; o.sort = "ribbon,carousel,grid,textbox,phone"; localStorage.setItem("sayframe.orbit.v1", JSON.stringify(o)); });
+    check("MK4 a middle panel (740): two blocks side by side, neither wider than 420", c1[0].split("@")[1].split("w")[0] === c1[1].split("@")[1].split("w")[0] && c1.every((x) => Number(x.split("w")[1]) <= 420) && (await p.page.locator("#orbitPane .mk-grip").count()) === 6, c1.join());
+    await p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.orbit.v1") || "{}"); o.fold = "ribbon,grid,textbox,glass"; o.sort = "ribbon,carousel,grid,textbox,phone,glass"; localStorage.setItem("sayframe.orbit.v1", JSON.stringify(o)); });
     await p.restart(); await mkTab(p);
     t = await p.page.evaluate(() => { const r = (n) => document.querySelector('.mk-card[data-mk="' + n + '"]').getBoundingClientRect(); return [r("ribbon"), r("grid"), r("textbox"), r("phone"), r("carousel")].map((x) => Math.round(x.left) + "," + Math.round(x.top) + "," + Math.round(x.bottom)).join(" "); });
     const q = t.split(" ").map((x) => x.split(",").map(Number));
@@ -5515,7 +5553,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const parentOf = (s) => ({ sourceRectAtTime: () => ({ left: -100, top: -32, width: 200, height: 88 }), text: { sourceText: txt(s) } });
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hello\rworld" }, { name: "BG", selected: false }] } });
     await tbTab(p);
-    check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
+    check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "glass,carousel,grid,textbox,phone,ribbon" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
     check("TB1 defaults: each line, fill, dark purple, no stroke row; no animation choice", (await p.page.locator("#tbAppear").count()) === 0 && (await p.page.getAttribute('#tbPer [data-v="line"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbLook [data-v="fill"]', "aria-pressed")) === "true" && !(await vis(p, "#tbStrokeRow")) && (await p.page.inputValue("#tbColor")) === "#3a0f63");
     await p.page.click('#tbLook [data-v="both"]');
     await setRange(p, "#tbRound", 30);
@@ -5831,7 +5869,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const phTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
     await phTab(p);
-    check("PH1 a «Мокап телефона» block in «Макеты» after the text box: preview, iPhone / Android (no «Samsung»), «Создать мокап»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" && (await vis(p, "#phStage")) &&
+    check("PH1 a «Мокап телефона» block in «Макеты» after the text box: preview, iPhone / Android (no «Samsung»), «Создать мокап»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "glass,carousel,grid,textbox,phone,ribbon" && (await vis(p, "#phStage")) &&
       (await p.page.locator("#phModel button").allInnerTexts()).map((t) => t.split("\n")[0].trim()).join() === "iPhone,Android" && !/Samsung/i.test(await p.page.locator('.mk-card[data-mk="phone"]').innerText()) && (await p.page.locator("#phBtn").innerText()).trim() === "Создать мокап" && (await overflow(p)) <= 0);
     check("PH1 defaults: iPhone, black, upright, screen is a precomp, shadow on, no animation; roundness «Авто»", (await p.page.getAttribute('#phModel [data-v="iphone"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#phColors [data-v="black"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#phPose [data-v="flat"]', "aria-pressed")) === "true" &&
       (await p.page.getAttribute('#phScreen [data-v="precomp"]', "aria-pressed")) === "true" && (await p.page.isChecked("#phShadow")) && !(await p.page.isChecked("#phAppear")) && (await p.page.locator("#phRoundVal").innerText()) === "Авто");
@@ -5875,7 +5913,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const docText = (l) => String(acAt(l, "ADBE Text Properties", "ADBE Text Document").value.text);
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
     await rbTab(p);
-    check("RB1 a «Текст по ленте» block in «Макеты» after the phone: preview of the ribbon with the text on it, forms, «Создать ленту»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" &&
+    check("RB1 a «Текст по ленте» block in «Макеты» after the phone: preview of the ribbon with the text on it, forms, «Создать ленту»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "glass,carousel,grid,textbox,phone,ribbon" &&
       (await p.page.locator("#rbStage svg path").count()) === 1 && /WEST LOOP • WEST LOOP/.test(await p.page.locator("#rbStage textPath").textContent()) && (await p.page.locator("#rbForm > button").count()) === 6 && (await p.page.getAttribute('#rbForm [data-v="loops"]', "aria-pressed")) === "true" && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать ленту" && (await overflow(p)) <= 0);
     await p.page.click('#rbMode [data-v="ring"]');
     check("RB1 «3D-кольцо»: the ring's own settings, the ribbon's ones hide; letters in the preview, the far ones dimmer", (await vis(p, "#rbRingSl")) && !(await vis(p, "#rbRibbonSl")) && !(await vis(p, "#rbForm")) && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать кольцо" &&
