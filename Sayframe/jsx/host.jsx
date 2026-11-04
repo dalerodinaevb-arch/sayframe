@@ -2637,14 +2637,24 @@ var sayframeHost = (function () {
         return l;
     }
 
-    function kitLiquidGlass(comp, labels) {
-        var sel = comp.selectedLayers || [], shape = null, made = false, i, adj, edge, fx, ref, legacy, stroke = null;
-        for (i = 0; i < sel.length; i++) {
-            if (!(sel[i] instanceof CameraLayer) && !(sel[i] instanceof LightLayer) && !sel[i].adjustmentLayer) { shape = sel[i]; break; }
+    // o (optional, the Maketi block): { shape: a layer made by the block, free: the shape moves by expressions, so the
+    // edge and the outline are not parented to it, edge: "std"|"thin"|"run"|"dash"|"none"|"glow" }.
+    function kitLiquidGlass(comp, labels, o) {
+        var sel = comp.selectedLayers || [], shape = null, made = false, i, adj, edge, fx, ref, legacy, stroke = null, ti;
+        o = o || {};
+        if (o.shape) {
+            shape = o.shape;
+        } else {
+            for (i = 0; i < sel.length; i++) {
+                if (!(sel[i] instanceof CameraLayer) && !(sel[i] instanceof LightLayer) && !sel[i].adjustmentLayer) { shape = sel[i]; break; }
+            }
         }
         if (shape && shape.locked) { throw new Error("SM_LOCKED"); }
         for (i = 0; i < sel.length; i++) { try { sel[i].selected = false; } catch (e0) {} }
-        if (!shape) { shape = kitGlassShape(comp, labels.shape || "Glass"); made = true; }
+        if (!shape) {
+            if (o.need) { throw new Error("GL_NO_SHAPE"); }
+            shape = kitGlassShape(comp, labels.shape || "Glass"); made = true;
+        }
         // The expressions find the shape by name; After Effects keeps them right when it is renamed.
         ref = "thisComp.layer(\"" + String(shape.name).replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\")";
         adj = comp.layers.addSolid([1, 1, 1], labels.glass || "Liquid Glass", comp.width, comp.height, comp.pixelAspect || 1, comp.duration);
@@ -2682,6 +2692,14 @@ var sayframeHost = (function () {
             kitControl(stroke, "ADBE Slider Control", labels.strokeWidth || "Stroke Width", 2);
             kitControl(stroke, "ADBE Color Control", labels.strokeColor || "Stroke Color", [1, 1, 1, 1]);
             kitControl(stroke, "ADBE Slider Control", labels.strokeOpacity || "Stroke Opacity", 70);
+            // Running outline: a short piece of the line goes round and round (Trim Paths before the Stroke).
+            if (o.edge === "run") {
+                ti = acAdd(stroke, ["ADBE Root Vectors Group"], "ADBE Vector Filter - Trim");
+                try {
+                    acP(stroke, ["ADBE Root Vectors Group", ti, "ADBE Vector Trim End"]).setValue(25);
+                    acP(stroke, ["ADBE Root Vectors Group", ti, "ADBE Vector Trim Offset"]).expression = "time * 120;";
+                } catch (e6) {}
+            }
             fx = acAdd(stroke, ["ADBE Root Vectors Group"], "ADBE Vector Graphic - Stroke");
             try {
                 acP(stroke, ["ADBE Root Vectors Group", fx, "ADBE Vector Stroke Width"]).expression = "Math.max(0, effect(1)(1));";
@@ -2702,14 +2720,198 @@ var sayframeHost = (function () {
         }
         if (stroke) {
             stroke.moveBefore(edge);
-            try { stroke.parent = shape; } catch (e5) {}
+            if (!o.free) { try { stroke.parent = shape; } catch (e5) {} }
             stroke.selected = false;
         }
         shape.enabled = false;
-        try { edge.parent = shape; } catch (e3) {}
+        if (!o.free) { try { edge.parent = shape; } catch (e3) {} }
         edge.selected = false;
         shape.selected = true;
-        return { glass: { name: adj.name, shape: shape.name, edge: edge.name, stroke: stroke ? stroke.name : "", created: made, legacy: legacy } };
+        return { glass: { name: adj.name, shape: shape.name, edge: edge.name, stroke: stroke ? stroke.name : "", created: made, legacy: legacy },
+            layers: { adj: adj, edge: edge, stroke: stroke, shape: shape } };
+    }
+
+    // ---- Liquid glass block (Animation tab, Maketi section): with a text (button / card / text box / notification) or a plain
+    // shape (circle ... star), a glass kind and an outline style; or the user's own selected shape becomes the glass.
+    var GL_FORMS = { btn: 1, card: 1, box: 1, note: 1 };
+    var GL_SHAPES = { circle: 1, square: 1, round: 1, heart: 1, star: 1, pill: 1, tri: 1, hex: 1 };
+    var GL_KINDS = { clear: [0, 6], frost: [0, 18], tint: [1, 8], dark: [0, -40] };
+    var GL_EDGES = { std: [2, 70], thin: [1, 100], run: [3, 100], dash: [2, 90], none: [2, 0], glow: [2, 100] };
+    // A heart in a 100 x 100 box: points with their bezier handles (in, out), clockwise from the bottom tip.
+    var GL_HEART = [[[50, 90], [16, -14], [-16, -14]], [[6, 36], [0, 18], [0, -14]], [[28, 10], [-12, 0], [12, 0]],
+        [[50, 24], [-3, -9], [3, -9]], [[72, 10], [-12, 0], [12, 0]], [[94, 36], [0, -14], [0, 18]]];
+
+    function glUniq(comp, base) {
+        var names = {}, i, n = 2, out = base;
+        for (i = 1; i <= comp.numLayers; i++) { try { names[comp.layer(i).name] = 1; } catch (e) {} }
+        while (names[out]) { out = base + " " + n; n++; }
+        return out;
+    }
+
+    function glText(comp, str, name, size, just, color) {
+        var nm = glUniq(comp, name), t = comp.layers.addText(str), p, doc;
+        try {
+            p = acP(t, ["ADBE Text Properties", "ADBE Text Document"]);
+            doc = p.value;
+            doc.fontSize = Math.max(8, Math.round(size));
+            doc.fillColor = color || [1, 1, 1];
+            try { doc.applyFill = true; doc.applyStroke = false; } catch (e2) {}
+            try { doc.justification = just === "left" ? ParagraphJustification.LEFT_JUSTIFY : ParagraphJustification.CENTER_JUSTIFY; } catch (e1) {}
+            p.setValue(doc);
+        } catch (e0) {}
+        t.name = nm;
+        return t;
+    }
+
+    // A shape layer with one group: a Rect / Ellipse / Star / path and a white fill (the fill only gives the matte).
+    function glShapeLayer(comp, name, kind, w, h, round) {
+        var l = comp.layers.addShape(), gi = acGroup(l), ri, s, pts = [], ins = [], outs = [], i, k = w / 100;
+        l.name = glUniq(comp, name);
+        if (kind === "circle") {
+            ri = acIn(l, gi, "ADBE Vector Shape - Ellipse");
+            acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Ellipse Size"]).setValue([w, w]);
+        } else if (kind === "star" || kind === "tri" || kind === "hex") {
+            ri = acIn(l, gi, "ADBE Vector Shape - Star");
+            try {
+                acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Star Type"]).setValue(kind === "star" ? 1 : 2);
+                acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Star Points"]).setValue(kind === "star" ? 5 : (kind === "tri" ? 3 : 6));
+                acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Star Outer Radius"]).setValue(w / 2);
+                if (kind === "star") { acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Star Inner Radius"]).setValue(w * 0.22); }
+            } catch (e0) {}
+        } else if (kind === "heart") {
+            for (i = 0; i < GL_HEART.length; i++) {
+                pts.push([(GL_HEART[i][0][0] - 50) * k, (GL_HEART[i][0][1] - 50) * k]);
+                ins.push([GL_HEART[i][1][0] * k, GL_HEART[i][1][1] * k]);
+                outs.push([GL_HEART[i][2][0] * k, GL_HEART[i][2][1] * k]);
+            }
+            ri = acIn(l, gi, "ADBE Vector Shape - Group");
+            s = new Shape();
+            s.vertices = pts; s.inTangents = ins; s.outTangents = outs; s.closed = true;
+            acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Shape"]).setValue(s);
+        } else {
+            ri = acIn(l, gi, "ADBE Vector Shape - Rect");
+            acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Size"]).setValue([w, h]);
+            acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Rect Roundness"]).setValue(round || 0);
+        }
+        ri = acIn(l, gi, "ADBE Vector Graphic - Fill");
+        acGP(l, gi, ["ADBE Vectors Group", ri, "ADBE Vector Fill Color"]).setValue([1, 1, 1, 1]);
+        acP(l, ["ADBE Transform Group", "ADBE Position"]).setValue([comp.width / 2, comp.height / 2]);
+        l.glGroup = gi;
+        return l;
+    }
+
+    // The glass under a text (button, text box): the rectangle takes the size of the text plus padding and stands
+    // on its middle, by expressions, so it follows the text when it is retyped or moved.
+    function glFollow(l, t, px, py, pill) {
+        var ref = "thisComp.layer(\"" + String(t.name).replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\")";
+        var gi = l.glGroup;
+        try {
+            acGP(l, gi, ["ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size"]).expression =
+                "var t = " + ref + ", r = t.sourceRectAtTime(time, false), s = t.transform.scale;\n[r.width * Math.abs(s[0]) / 100 + " + px * 2 + ", r.height * Math.abs(s[1]) / 100 + " + py * 2 + "];";
+            if (pill) {
+                acGP(l, gi, ["ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Roundness"]).expression =
+                    "var t = " + ref + ", r = t.sourceRectAtTime(time, false);\n(r.height * Math.abs(t.transform.scale[1]) / 100 + " + py * 2 + ") / 2;";
+            }
+            acP(l, ["ADBE Transform Group", "ADBE Position"]).expression =
+                "var t = " + ref + ", r = t.sourceRectAtTime(time, false);\nt.toComp([r.left + r.width / 2, r.top + r.height / 2]);";
+        } catch (e) {}
+    }
+
+    function glStyle(made, o) {
+        var adj = made.layers.adj, edge = made.layers.edge, stroke = made.layers.stroke, kind = GL_KINDS[o.kind] || GL_KINDS.clear, ed = GL_EDGES[o.edge] || GL_EDGES.std, fx, sp;
+        kitSet(adj, 2, "ADBE Gaussian Blur 2-0001", Math.round(Math.max(0, Math.min(100, Number(o.blur) || 0)) * 0.6));
+        kitSet(adj, 3, "ADBE Brightness & Contrast 2-0001", kind[1]);
+        if (kind[0]) {
+            fx = acAdd(adj, ["ADBE Effect Parade"], "ADBE Tint");
+            kitSet(adj, fx, "ADBE Tint-0002", o.tint || [0.48, 0.35, 0.96, 1]);
+            kitSet(adj, fx, "ADBE Tint-0003", 45);
+        }
+        kitSet(edge, 2, "ADBE Bevel Alpha-0004", Math.max(0, Math.min(100, Number(o.light) || 0)) / 100);
+        if (!stroke) { return; }
+        kitSet(stroke, 1, "ADBE Slider Control-0001", ed[0]);
+        kitSet(stroke, 3, "ADBE Slider Control-0001", ed[1]);
+        if (o.edge === "dash") {
+            try {
+                sp = acP(stroke, ["ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Dashes"]);
+                sp.addProperty("ADBE Vector Stroke Dash 1");
+                sp.addProperty("ADBE Vector Stroke Gap 1");
+                acP(stroke, ["ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Dashes", "ADBE Vector Stroke Dash 1"]).setValue(14);
+                acP(stroke, ["ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Dashes", "ADBE Vector Stroke Gap 1"]).setValue(10);
+            } catch (e0) {}
+        }
+        if (o.edge === "glow") { try { acAdd(stroke, ["ADBE Effect Parade"], "ADBE Glo2"); } catch (e1) {} }
+    }
+
+    // o = { mode: "text"|"shape"|"mine", text, form, shape, kind, edge, blur, light, size }; lab - names in the panel's language.
+    function glBuild(comp, o, lab) {
+        var W = comp.width, H = comp.height, m = Math.min(W, H), shape = null, texts = [], made, i, free = false, t, t2, ic, w, h, gi;
+        var text = String(o.text || "").replace(/^\s+|\s+$/g, "") || (lab.defaultText || "Text"), k, L = {};
+        // Every new glass gets its own layer names (a second one in the comp: "... 2").
+        for (k in lab) { if (lab.hasOwnProperty(k)) { L[k] = lab[k]; } }
+        L.glass = glUniq(comp, lab.glass || "Liquid Glass");
+        L.edge = glUniq(comp, lab.edge || "Glass Edge");
+        L.stroke = glUniq(comp, lab.stroke || "Glass Stroke");
+        lab = L;
+        if (o.mode === "mine") {
+            made = kitLiquidGlass(comp, lab, { need: true, edge: o.edge });
+        } else {
+            if (o.mode === "shape") {
+                if (!GL_SHAPES[o.shape]) { throw new Error("BAD_GLASS"); }
+                w = Math.round(m * Math.max(10, Math.min(100, Number(o.size) || 40)) / 100);
+                h = o.shape === "pill" ? Math.round(w * 0.44) : w;
+                shape = glShapeLayer(comp, lab[o.shape] || lab.shape || "Glass", o.shape, w, h, o.shape === "round" ? Math.round(w * 0.22) : (o.shape === "pill" ? h / 2 : 0));
+            } else {
+                if (!GL_FORMS[o.form]) { throw new Error("BAD_GLASS"); }
+                if (o.form === "btn" || o.form === "box") {
+                    t = glText(comp, o.form === "box" ? text.toUpperCase() : text, text, m * (o.form === "box" ? 0.09 : 0.055), "center");
+                    try { acP(t, ["ADBE Transform Group", "ADBE Position"]).setValue([W / 2, H / 2 + m * 0.02]); } catch (eP) {}
+                    shape = glShapeLayer(comp, lab[o.form] || "Glass", "rect", 100, 100, o.form === "box" ? Math.round(m * 0.02) : 0);
+                    glFollow(shape, t, Math.round(m * (o.form === "box" ? 0.035 : 0.05)), Math.round(m * (o.form === "box" ? 0.02 : 0.03)), o.form === "btn");
+                    texts.push(t);
+                    free = true;
+                } else if (o.form === "card") {
+                    w = Math.round(W * 0.46); h = Math.round(H * 0.42);
+                    shape = glShapeLayer(comp, lab.card || "Glass", "rect", w, h, Math.round(m * 0.05));
+                    t = glText(comp, text, lab.title || "Title", m * 0.06, "left");
+                    t2 = glText(comp, lab.sub || "Text", lab.subName || "Text", m * 0.032, "left", [0.92, 0.92, 0.95]);
+                    try {
+                        acP(t, ["ADBE Transform Group", "ADBE Position"]).setValue([W / 2 - w / 2 + m * 0.045, H / 2 + h / 2 - m * 0.1]);
+                        acP(t2, ["ADBE Transform Group", "ADBE Position"]).setValue([W / 2 - w / 2 + m * 0.045, H / 2 + h / 2 - m * 0.045]);
+                    } catch (eC) {}
+                    texts.push(t2, t);
+                } else {
+                    w = Math.round(W * 0.5); h = Math.round(m * 0.15);
+                    shape = glShapeLayer(comp, lab.note || "Glass", "rect", w, h, Math.round(h * 0.3));
+                    try { acP(shape, ["ADBE Transform Group", "ADBE Position"]).setValue([W / 2, h / 2 + m * 0.06]); } catch (eN) {}
+                    ic = glShapeLayer(comp, lab.icon || "Icon", "rect", Math.round(h * 0.6), Math.round(h * 0.6), Math.round(h * 0.15));
+                    try {
+                        gi = ic.glGroup;
+                        acGP(ic, gi, ["ADBE Vectors Group", "ADBE Vector Graphic - Fill", "ADBE Vector Fill Color"]).setValue([0.48, 0.35, 0.96, 1]);
+                        acP(ic, ["ADBE Transform Group", "ADBE Position"]).setValue([W / 2 - w / 2 + h * 0.5, h / 2 + m * 0.06]);
+                    } catch (eI) {}
+                    t = glText(comp, lab.app || "Sayframe", lab.appName || "Title", h * 0.24, "left");
+                    t2 = glText(comp, text, lab.noteText || "Text", h * 0.21, "left", [0.92, 0.92, 0.95]);
+                    try {
+                        acP(t, ["ADBE Transform Group", "ADBE Position"]).setValue([W / 2 - w / 2 + h * 0.95, m * 0.06 + h * 0.44]);
+                        acP(t2, ["ADBE Transform Group", "ADBE Position"]).setValue([W / 2 - w / 2 + h * 0.95, m * 0.06 + h * 0.74]);
+                    } catch (eT) {}
+                    texts.push(t2, t, ic);
+                }
+            }
+            made = kitLiquidGlass(comp, lab, { shape: shape, free: free, edge: o.edge });
+        }
+        glStyle(made, o);
+        // The texts (and the icon) stand above the glass; on a card or a notification they hang on the glass shape.
+        for (i = 0; i < texts.length; i++) {
+            try { texts[i].moveToBeginning(); } catch (e0) {}
+            if (!free) { try { texts[i].parent = made.layers.shape; } catch (e1) {} }
+            try { texts[i].selected = false; } catch (e2) {}
+        }
+        if (free && texts.length) { try { texts[0].selected = true; made.layers.shape.selected = false; } catch (e3) {} }
+        made.glass.texts = [];
+        for (i = 0; i < texts.length; i++) { made.glass.texts.push(texts[i].name); }
+        made.glass.free = free;
+        return { glass: made.glass };
     }
 
     // ---- Carousel (the Animation tab, section 3D): N cards around a 3D controller null, like a gallery ring.
@@ -7156,6 +7358,22 @@ var sayframeHost = (function () {
                 app.beginUndoGroup("Sayframe: liquid glass");
                 try {
                     res = kitLiquidGlass(comp, labels || {});
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Liquid glass block (Maketi): o = { mode: "text"|"shape"|"mine", text, form, shape, kind, edge, blur, light, size }.
+        glassMake: function (o, labels) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (!o || typeof o !== "object") { throw new Error("BAD_GLASS"); }
+                app.beginUndoGroup("Sayframe: liquid glass");
+                try {
+                    res = glBuild(comp, o, labels || {});
                 } finally {
                     app.endUndoGroup();
                 }

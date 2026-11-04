@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.72.1";
+    var VERSION = "1.73.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -1062,6 +1062,7 @@
         if (m === "NO_ACTIVE_COMP") { return "Откройте композицию: инструмент работает с открытой композицией."; }
         if (m === "NO_KEYS_SELECTED") { return "Выделите ключевые кадры на таймлайне и нажмите ещё раз."; }
         if (m === "NO_LAYERS_SELECTED") { return "Выделите слой в композиции и нажмите ещё раз."; }
+        if (m === "GL_NO_SHAPE") { return "Нарисуйте фигуру (пером или прямоугольником), выделите её и нажмите «Сделать стеклом»."; }
         if (m === "LOGO_NOT_FOUND") { return "Файл логотипа не найден. Удалите его из проекта и добавьте снова."; }
         if (m === "ICON_NOT_FOUND") { return "Файл иконки не найден. Удалите её из проекта и добавьте снова."; }
         if (m === "BR_NO_TEXT") { return "Выделите текстовый слой в композиции и нажмите ещё раз."; }
@@ -1322,6 +1323,9 @@
         tbPx: el("tbPx"), tbPxVal: el("tbPxVal"), tbPy: el("tbPy"), tbPyVal: el("tbPyVal"), tbRound: el("tbRound"), tbRoundVal: el("tbRoundVal"),
         tbStroke: el("tbStroke"), tbStrokeVal: el("tbStrokeVal"), tbSkew: el("tbSkew"), tbSkewVal: el("tbSkewVal"), tbOpacity: el("tbOpacity"), tbOpacityVal: el("tbOpacityVal"),
         tbShadow: el("tbShadow"), tbBtn: el("tbBtn"),
+        glPane: document.querySelector(".gl-pane"), glMode: el("glMode"), glTextPart: el("glTextPart"), glShapePart: el("glShapePart"), glText: el("glText"), glForms: el("glForms"),
+        glStage: el("glStage"), glShapes: el("glShapes"), glKinds: el("glKinds"), glKindName: el("glKindName"), glEdges: el("glEdges"), glBlur: el("glBlur"), glBlurVal: el("glBlurVal"),
+        glLight: el("glLight"), glLightVal: el("glLightVal"), glSize: el("glSize"), glSizeVal: el("glSizeVal"), glSizeRow: el("glSizeRow"), glAdd: el("glAdd"), glMine: el("glMine"),
         phPhone: el("phPhone"), phModel: el("phModel"), phColors: el("phColors"), phPose: el("phPose"), phSize: el("phSize"), phSizeVal: el("phSizeVal"),
         rbStage: el("rbStage"), rbSeedRow: el("rbSeedRow"), rbSeed: el("rbSeed"), rbDice: el("rbDice"), rbDirRow: el("rbDirRow"), rbDir: el("rbDir"), rbAngle: el("rbAngle"), rbAngleVal: el("rbAngleVal"), rbRunDir: el("rbRunDir"), rbMode: el("rbMode"), rbRibbonOpts: el("rbRibbonOpts"), rbForm: el("rbForm"), rbText: el("rbText"), rbSep: el("rbSep"),
         rbRibColorRow: el("rbRibColorRow"), rbRibColors: el("rbRibColors"), rbTextColors: el("rbTextColors"), rbPaint: el("rbPaint"), rbCustom: el("rbCustom"), rbGradRow: el("rbGradRow"), rbGradA: el("rbGradA"), rbGradB: el("rbGradB"), rbGradBar: el("rbGradBar"), rbGradDir: el("rbGradDir"), rbPairs: el("rbPairs"), rbRingColorRow: el("rbRingColorRow"), rbRibbonSl: el("rbRibbonSl"), rbRingSl: el("rbRingSl"),
@@ -4389,6 +4393,7 @@
         ui.easeLink.disabled = on;
         ui.easeBothBtn.disabled = on;
         ui.anchorKeys.disabled = on;
+        Array.prototype.forEach.call(document.querySelectorAll("#anchorOpts button"), function (b) { b.disabled = on; });
         for (i = 0; i < cells.length; i++) { cells[i].disabled = on; }
         cells = ui.alignGrid.querySelectorAll("button");
         ui.alignTo.disabled = on;
@@ -4413,7 +4418,6 @@
         { id: "text", label: "Текст" },
         { id: "anim", label: "Движения" },
         { id: "graphic", label: "Графика" },
-        { id: "kit", label: "Заготовки" },
         { id: "sfx", label: "Звуки" },
         { id: "orbit", label: "Макеты" }
     ];
@@ -4422,7 +4426,6 @@
         text: [],
         anim: [],
         graphic: [],
-        kit: [],
         sfx: [],
         orbit: []
     };
@@ -4619,7 +4622,8 @@
     // ---- «Заготовки» — готовые вещи для монтажёра: эффекты-сборки (жидкое стекло), потом макеты телефонов и т. п.
     // Всё собирается из стандартных эффектов After Effects, без сторонних плагинов.
     var KIT_FOLDERS = [{ id: "all", label: "Все" }, { id: "fx", label: "Эффекты" }];
-    var KIT_LIST = [["fx", "liquid-glass", "Жидкое стекло"]];
+    // Жидкое стекло переехало блоком в «Макеты»; раздел «Заготовки» пока пуст и спрятан.
+    var KIT_LIST = [];
     var KIT_BY_ID = {};
     KIT_LIST.forEach(function (k) { KIT_BY_ID[k[1]] = { folder: k[0] }; AC_PRESETS.kit.push([k[1], k[2]]); });
 
@@ -4838,6 +4842,10 @@
             b.setAttribute("aria-selected", on ? "true" : "false");
         });
         ui.acFavOnly.setAttribute("aria-pressed", acState.favOnly ? "true" : "false");
+        if (el("acEdit")) { el("acEdit").setAttribute("aria-pressed", editing ? "true" : "false"); }
+        Array.prototype.forEach.call(el("acPlay").querySelectorAll("button[data-value]"), function (b) {
+            b.setAttribute("aria-pressed", b.getAttribute("data-value") === (settings.previewPlay === "hover" ? "hover" : "always") ? "true" : "false");
+        });
         ui.acModeRow.hidden = editing || !(searching || sec === "text" || sec === "anim");
         // Цвет нужен только графике и переходам-шейпам (шторки, круг).
         ui.acColorRow.hidden = editing || !(searching || sec === "graphic" || (sec === "trans" && acState.tfolder === "shapes"));
@@ -7033,10 +7041,12 @@
         });
         (function () {
             var b = document.createElement("button");
-            b.className = "ac-tab ac-tab-edit";
-            b.setAttribute("role", "tab");
-            b.setAttribute("data-sec", "edit");
-            b.textContent = "✎ Изменить";
+            // «Изменить» — в строке поиска, рядом с «Авто / Наведение» и ★.
+            b.id = "acEdit";
+            b.type = "button";
+            b.className = "ac-edit-btn";
+            b.setAttribute("aria-pressed", "false");
+            b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg><span>Изменить</span>';
             b.title = "Настроить пресеты, которые уже стоят на выделенном слое";
             b.addEventListener("click", function () {
                 acState.sec = "edit";
@@ -7047,8 +7057,18 @@
                 renderAc();
                 loadAcEdit();
             });
-            ui.acTabs.appendChild(b);
+            ui.acFavOnly.parentNode.insertBefore(b, ui.acFavOnly);
         })();
+        // Превью анимаций: «Авто» — играют сами, «Наведение» — только под курсором. Сохраняется в настройках.
+        el("acPlay").addEventListener("click", function (e) {
+            var b = e.target && e.target.closest ? e.target.closest("button[data-value]") : null;
+            var v = b ? b.getAttribute("data-value") : null;
+            if (v !== "always" && v !== "hover") { return; }
+            settings.previewPlay = v;
+            if (draft) { draft.previewPlay = v; pressGroup(ui.previewPlay, v); }
+            storeSettings(settings);
+            renderAc();
+        });
         ui.acFolders = document.createElement("div");
         ui.acFolders.id = "acFolders";
         ui.acFolders.className = "ac-folders";
@@ -7476,8 +7496,11 @@
     var EX_ORDER = ["light", "normal", "max", "custom"];
     // Битрейт каждого качества меняется − и + на выбранном окошке, шагами EX_RATES. Выше 40 нет: у AE нет шаблона лучше.
     var EX_RATES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40];
-    var exState = { levels: ["normal"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {} };
-    var exInfo = null, exFolderNow = "", exDefaultNow = "";
+    // H.264 в AE сжимает «по нужде»: простая графика выходит заметно меньше битрейта. Начинаем с 0,6 от битрейта,
+    // после каждого сохранения подстраиваемся под настоящий размер файла.
+    var EX_K = 0.6;
+    var exState = { levels: ["normal"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {}, k: EX_K, kq: {} };
+    var exInfo = null, exPollBusy = false, exPollKey = "", exFolderNow = "", exDefaultNow = "";
     try {
         (function () {
             var v = JSON.parse(window.localStorage.getItem(EXPORT_KEY) || "{}") || {};
@@ -7493,6 +7516,10 @@
             if (typeof v.ame === "boolean") { exState.ame = v.ame; }
             if (v.cw > 0) { exState.cw = Math.round(v.cw); }
             if (v.ch > 0) { exState.ch = Math.round(v.ch); }
+            if (v.k >= 0.1 && v.k <= 1.3) { exState.k = v.k; }
+            if (v.kq && typeof v.kq === "object") {
+                ["light", "normal", "max"].forEach(function (q) { if (v.kq[q] >= 0.1 && v.kq[q] <= 1.3) { exState.kq[q] = v.kq[q]; } });
+            }
             if (v.rates && typeof v.rates === "object") {
                 ["light", "normal", "max"].forEach(function (k) { if (EX_RATES.indexOf(v.rates[k]) >= 0) { exState.rates[k] = v.rates[k]; } });
             }
@@ -7524,12 +7551,31 @@
         if (next === EX_LEVELS[q].mbps) { delete exState.rates[q]; } else { exState.rates[q] = next; }
     }
 
-    // Примерный размер файла: битрейт видео + звук (~320 кбит/с) × длина.
-    function exMBn(level) {
-        var c = exInfo && exInfo.comp, dur;
+    // Длина того, что сохраняем: вся композиция или рабочая область.
+    function exDur() {
+        var c = exInfo && exInfo.comp;
         if (!c) { return 0; }
-        dur = exState.span === "work" && c.waDur > 0 ? c.waDur : c.dur;
-        return (exRate(level) + 0.32) * dur / 8;
+        return exState.span === "work" && c.waDur > 0 ? c.waDur : c.dur;
+    }
+
+    // Примерный размер файла: битрейт видео × поправка по прошлым сохранениям + звук (~320 кбит/с), × длина.
+    function exMBn(level) {
+        return (exRate(level) * exK(exQualityOf(level)) + 0.32) * exDur() / 8;
+    }
+
+    // Узнали настоящий размер сохранённого видео — запоминаем, во сколько раз он меньше битрейта.
+    // Поправка для качества: своя, если это качество уже сохраняли, иначе общая по всем сохранениям.
+    function exK(q) { return exState.kq[q] || exState.k; }
+
+    function exLearn(bytes, mbps, dur, q) {
+        var k;
+        if (!(bytes > 0 && mbps > 0 && dur > 0.5)) { return; }
+        k = (bytes * 8 / 1e6 / dur - 0.32) / mbps;
+        k = Math.max(0.1, Math.min(1.3, k));
+        exState.k = Math.round((exState.k === EX_K ? k : (exState.k + k) / 2) * 1000) / 1000;
+        // У каждого качества своя поправка: на низком битрейте After Effects экономит меньше, чем на высоком.
+        if (EX_LEVELS[q] && q !== "custom") { exState.kq[q] = Math.round((exState.kq[q] ? (exState.kq[q] + k) / 2 : k) * 1000) / 1000; }
+        storeExport();
     }
 
     function exMBText(mb) {
@@ -7610,17 +7656,35 @@
             res = await host("exportInfo", []);
             exInfo = res;
             c = res.comp;
+            exPollKey = JSON.stringify(c);
             ui.exCompName.textContent = c.name;
             ui.exCompMeta.textContent = c.w + "×" + c.h + " · " + (Math.round(c.dur * 10) / 10) + " с";
             exDefaultNow = res.projectFolder ? platform.join(res.projectFolder, "Экспорт") : platform.join(platform.homedir(), "Desktop", "Sayframe Экспорт");
         } catch (e) {
             exInfo = null;
+            exPollKey = JSON.stringify({ error: e && e.message });
             ui.exCompName.textContent = e && e.message === "NO_ACTIVE_COMP" ? "Откройте композицию, которую сохранить" : "Нет связи с After Effects";
             exDefaultNow = platform.join(platform.homedir(), "Desktop", "Sayframe Экспорт");
         }
         showExFolder(exState.folder || exDefaultNow);
         drawExport();
     }
+
+    // Пока окно открыто, следим за After Effects: сменили композицию или рабочую область — окошки и МБ обновляются сами.
+    async function exPoll() {
+        var res, key;
+        if (ui.exportBar.hidden || busy || exPollBusy || ui.exSetup.hidden) { return; }
+        exPollBusy = true;
+        try {
+            try { res = await host("exportInfo", []); } catch (e) { res = { error: e && e.message }; }
+            key = JSON.stringify(res && res.comp ? res.comp : res);
+            if (key !== exPollKey && !busy && !ui.exportBar.hidden) {
+                exPollKey = key;
+                await exLoadInfo();
+            }
+        } finally { exPollBusy = false; }
+    }
+    setInterval(exPoll, 1000);
 
     // В отдельном окне «Экспорт» закрывать нечего: окно и есть экспорт.
     function closeExport() { if (SOLO && !SOLO.tool && !SOLO.tab) { return; } ui.exportBar.hidden = true; }
@@ -7658,7 +7722,7 @@
     }
 
     async function runExport() {
-        var jobs, folder, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null;
+        var jobs, folder, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null, jobDur = exDur();
         if (busy || !exInfo) { return; }
         folder = exFolderNow || exDefaultNow;
         jobs = exState.levels.map(function (id) {
@@ -7701,7 +7765,7 @@
                 j.st.textContent = "✓";
                 j.nm.textContent = r.name || platform.basename(r.path);
                 j.nm.title = r.path;
-                if (r.mode === "ame") { ame = true; j.sm.textContent = "в Media Encoder"; } else { j.sm.textContent = exSizeText(r.size); }
+                if (r.mode === "ame") { ame = true; j.sm.textContent = "в Media Encoder"; } else { j.sm.textContent = exSizeText(r.size); exLearn(r.size, r.mbps || j.mbps, jobDur, j.quality); }
                 // Битрейт, с которым сохранили; без Media Encoder — ближайший шаблон AE (5, 15 или 40).
                 if (r.mbps > 0) {
                     j.sm.textContent += " · " + r.mbps + " Мбит/с";
@@ -8660,6 +8724,173 @@
         ui.tbShadow.addEventListener("change", function () { setTb({ shadow: ui.tbShadow.checked }); });
         ui.tbBtn.addEventListener("click", onTextBox);
         drawTb();
+    }
+
+    // ---- Жидкое стекло (Анимация › Макеты): с текстом (кнопка, карточка, плашка, пуш) или без — фигура; вид стекла и обводка отдельно.
+    // «Добавить в кадр» собирает выбранное в композиции, «Сделать стеклом» делает стеклом свою выделенную фигуру (host glassMake).
+    var GL_KEY = "sayframe.glass.v1";
+    var GL_DEFAULTS = { mode: "text", text: "Подписаться", form: "btn", shape: "heart", kind: "clear", edge: "std", blur: 25, light: 70, size: 40 };
+    var GL_FORMS = [["btn", "Кнопка"], ["card", "Карточка"], ["box", "Плашка"], ["note", "Пуш"]];
+    var GL_SHAPES = [["circle", "Круг"], ["square", "Квадрат"], ["round", "Скруглённый"], ["heart", "Сердце"], ["star", "Звезда"], ["pill", "Капсула"], ["tri", "Треугольник"], ["hex", "6-угольник"]];
+    var GL_KINDS = [["clear", "Прозрачное", "rgba(255,255,255,.08)", 15], ["frost", "Матовое", "rgba(255,255,255,.22)", 60], ["tint", "Цветное", "rgba(122,90,245,.38)", 30], ["dark", "Тёмное", "rgba(10,10,14,.5)", 35]];
+    var GL_EDGES = [["std", "Обычная"], ["thin", "Тонкая"], ["run", "Бегущая"], ["dash", "Пунктир"], ["none", "Без обводки"], ["glow", "Свечение"]];
+    var GL_HEART = [[[50, 90], [16, -14], [-16, -14]], [[6, 36], [0, 18], [0, -14]], [[28, 10], [-12, 0], [12, 0]],
+        [[50, 24], [-3, -9], [3, -9]], [[72, 10], [-12, 0], [12, 0]], [[94, 36], [0, -14], [0, 18]]];
+    var GL_BG = "<i class=\"gl-b1\"></i><i class=\"gl-b2\"></i><i class=\"gl-b3\"></i><i class=\"gl-b4\"></i>";
+
+    function glClean(src) {
+        var o = {}, k, ids = function (list) { return list.map(function (x) { return x[0]; }); };
+        for (k in GL_DEFAULTS) { if (GL_DEFAULTS.hasOwnProperty(k)) { o[k] = src && typeof src === "object" && typeof src[k] === typeof GL_DEFAULTS[k] ? src[k] : GL_DEFAULTS[k]; } }
+        if (["text", "shape"].indexOf(o.mode) < 0) { o.mode = "text"; }
+        if (ids(GL_FORMS).indexOf(o.form) < 0) { o.form = "btn"; }
+        if (ids(GL_SHAPES).indexOf(o.shape) < 0) { o.shape = "heart"; }
+        if (ids(GL_KINDS).indexOf(o.kind) < 0) { o.kind = "clear"; }
+        if (ids(GL_EDGES).indexOf(o.edge) < 0) { o.edge = "std"; }
+        o.text = String(o.text).slice(0, 40);
+        o.blur = Math.max(0, Math.min(100, Math.round(o.blur))); if (isNaN(o.blur)) { o.blur = 25; }
+        o.light = Math.max(0, Math.min(100, Math.round(o.light))); if (isNaN(o.light)) { o.light = 70; }
+        o.size = Math.max(10, Math.min(100, Math.round(o.size))); if (isNaN(o.size)) { o.size = 40; }
+        return o;
+    }
+
+    var glass = (function () { try { return glClean(JSON.parse(window.localStorage.getItem(GL_KEY) || "null")); } catch (e) { return glClean(null); } })();
+
+    // Контур фигуры в квадрате 100×100 — тот же, что строит After Effects.
+    function glPath(id) {
+        var d = "", i, a, r, pts = [], h = GL_HEART;
+        var poly = function (n, r1, r2) { var o = [], k; for (k = 0; k < n * (r2 ? 2 : 1); k++) { a = -Math.PI / 2 + k * Math.PI * 2 / (n * (r2 ? 2 : 1)); r = r2 && k % 2 ? r2 : r1; o.push((50 + Math.cos(a) * r).toFixed(1) + " " + (52 + Math.sin(a) * r).toFixed(1)); } return "M" + o.join("L") + "Z"; };
+        switch (id) {
+        case "circle": return "M50 6a44 44 0 1 0 0.01 0Z";
+        case "square": return "M8 8H92V92H8Z";
+        case "round": return "M30 8H70A22 22 0 0 1 92 30V70A22 22 0 0 1 70 92H30A22 22 0 0 1 8 70V30A22 22 0 0 1 30 8Z";
+        case "pill": return "M28 30H72A20 20 0 0 1 72 70H28A20 20 0 0 1 28 30Z";
+        case "star": return poly(5, 46, 20);
+        case "tri": return poly(3, 48);
+        case "hex": return poly(6, 46);
+        case "heart":
+            for (i = 0; i < h.length; i++) { pts.push(h[i]); }
+            d = "M" + h[0][0].join(" ");
+            for (i = 0; i < h.length; i++) {
+                var A = h[i], B = h[(i + 1) % h.length];
+                d += "C" + (A[0][0] + A[2][0]) + " " + (A[0][1] + A[2][1]) + " " + (B[0][0] + B[1][0]) + " " + (B[0][1] + B[1][1]) + " " + B[0][0] + " " + B[0][1];
+            }
+            return d + "Z";
+        }
+        return "";
+    }
+
+    function glEsc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+
+    function glFormHtml(form, text) {
+        var t = glEsc(text || "Ваш текст");
+        if (form === "btn") { return "<div class=\"gl-g gl-btn\">" + t + "</div>"; }
+        if (form === "box") { return "<div class=\"gl-g gl-box\">" + glEsc((text || "Ваш текст").toUpperCase()) + "</div>"; }
+        if (form === "card") { return "<div class=\"gl-g gl-card\"><b>" + t + "</b><small>Пара строк текста</small></div>"; }
+        return "<div class=\"gl-g gl-note\"><i></i><span><b>Sayframe</b><small>" + t + "</small></span></div>";
+    }
+
+    function drawGlass() {
+        var k, kind;
+        if (!ui.glForms) { return; }
+        kind = GL_KINDS.filter(function (x) { return x[0] === glass.kind; })[0];
+        ui.glPane.style.setProperty("--glt", kind[2]);
+        ui.glPane.style.setProperty("--glb", Math.round(glass.blur * 0.16) + "px");
+        ui.glPane.setAttribute("data-edge", glass.edge);
+        pressGroupV(ui.glMode, glass.mode);
+        ui.glTextPart.hidden = glass.mode !== "text";
+        ui.glShapePart.hidden = glass.mode !== "shape";
+        ui.glSizeRow.hidden = glass.mode !== "shape";
+        if (document.activeElement !== ui.glText) { ui.glText.value = glass.text; }
+        Array.prototype.forEach.call(ui.glForms.querySelectorAll(".gl-tile"), function (b) {
+            b.querySelector(".gl-in").innerHTML = glFormHtml(b.getAttribute("data-v"), glass.text);
+            b.setAttribute("aria-pressed", b.getAttribute("data-v") === glass.form ? "true" : "false");
+        });
+        k = glPath(glass.shape);
+        ui.glStage.querySelector(".gl-shape").style.setProperty("-webkit-mask-image", "url(\"data:image/svg+xml," + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='" + k + "'/></svg>") + "\")");
+        ui.glStage.querySelector(".gl-line").setAttribute("d", k);
+        ui.glStage.style.setProperty("--gls", (40 + glass.size * 0.9) + "px");
+        pressGroupV(ui.glShapes, glass.shape);
+        pressGroupV(ui.glKinds, glass.kind);
+        pressGroupV(ui.glEdges, glass.edge);
+        ui.glKindName.textContent = kind[1];
+        ui.glBlur.value = String(glass.blur); ui.glBlurVal.textContent = String(glass.blur);
+        ui.glLight.value = String(glass.light); ui.glLightVal.textContent = String(glass.light);
+        ui.glSize.value = String(glass.size); ui.glSizeVal.textContent = glass.size + "%";
+        ui.glAdd.querySelector("span").textContent = glass.mode === "text" ? "Добавить " + { btn: "кнопку", card: "карточку", box: "плашку", note: "пуш" }[glass.form] : "Добавить в кадр";
+    }
+
+    function setGlass(changes) {
+        var k;
+        for (k in changes) { if (changes.hasOwnProperty(k)) { glass[k] = changes[k]; } }
+        glass = glClean(glass);
+        try { window.localStorage.setItem(GL_KEY, JSON.stringify(glass)); } catch (e) {}
+        drawGlass();
+    }
+
+    function glLabels() {
+        return { glass: "Жидкое стекло", edge: "Стекло: блик", shape: "Стекло", stroke: "Стекло: обводка",
+            strokeWidth: "Толщина обводки", strokeColor: "Цвет обводки", strokeOpacity: "Прозрачность обводки",
+            btn: "Стекло: кнопка", card: "Стекло: карточка", box: "Стекло: плашка", note: "Стекло: пуш",
+            circle: "Стекло: круг", square: "Стекло: квадрат", round: "Стекло: скруглённый", heart: "Стекло: сердце", star: "Стекло: звезда",
+            pill: "Стекло: капсула", tri: "Стекло: треугольник", hex: "Стекло: 6-угольник",
+            title: "Заголовок", sub: "Пара строк текста", subName: "Текст", icon: "Иконка", app: "Sayframe", appName: "Название", noteText: "Текст",
+            defaultText: "Ваш текст" };
+    }
+
+    async function onGlass(mine) {
+        var res, g, what;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus(mine ? "Делаю фигуру стеклянной…" : "Собираю стекло…", "busy");
+        try {
+            res = await host("glassMake", [{ mode: mine ? "mine" : glass.mode, text: glass.text, form: glass.form, shape: glass.shape, kind: glass.kind,
+                edge: glass.edge, blur: glass.blur, light: glass.light, size: glass.size }, glLabels()]);
+            setBusy(false);
+            g = res.glass;
+            what = mine ? "Фигура «" + g.shape + "» стала стеклом." : "Стекло «" + g.shape + "» готово" + (g.texts && g.texts.length ? ", текст — слой «" + g.texts[g.texts.length - 1] + "»" : "") + ".";
+            setStatus(what + (g.free ? " Стекло само подстраивается под текст: меняйте и двигайте текст." : " Двигайте «" + g.shape + "» — стекло, блик и текст идут за ней.") +
+                " Размытие и яркость — в Effect Controls слоя «" + g.name + "». Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
+    function enableGlass() {
+        if (!ui.glForms) { return; }
+        ui.glForms.innerHTML = GL_FORMS.map(function (f) {
+            return "<button type=\"button\" class=\"gl-tile\" data-v=\"" + f[0] + "\" aria-label=\"" + f[1] + "\"><span class=\"gl-stage\">" + GL_BG + "<span class=\"gl-in\"></span></span><span class=\"gl-nm\">" + f[1] + "</span></button>";
+        }).join("");
+        ui.glStage.innerHTML = GL_BG + "<i class=\"gl-shape\"></i><svg class=\"gl-out\" viewBox=\"0 0 100 100\" aria-hidden=\"true\"><path class=\"gl-line\"/></svg>";
+        ui.glShapes.innerHTML = GL_SHAPES.map(function (f) {
+            return "<button type=\"button\" class=\"kr-b\" data-v=\"" + f[0] + "\"><svg viewBox=\"0 0 100 100\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"7\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"" + glPath(f[0]) + "\"/></svg><span>" + f[1] + "</span></button>";
+        }).join("");
+        ui.glKinds.innerHTML = GL_KINDS.map(function (f) {
+            return "<button type=\"button\" data-v=\"" + f[0] + "\" style=\"--k:" + f[2] + "\" title=\"" + f[1] + "\" aria-label=\"" + f[1] + "\"></button>";
+        }).join("");
+        ui.glEdges.innerHTML = GL_EDGES.map(function (f) {
+            return "<button type=\"button\" class=\"gl-edge\" data-v=\"" + f[0] + "\"><i class=\"gl-e gl-e-" + f[0] + "\"></i><span>" + f[1] + "</span></button>";
+        }).join("");
+        [["glMode", "mode"], ["glForms", "form"], ["glShapes", "shape"], ["glEdges", "edge"]].forEach(function (d) {
+            ui[d[0]].addEventListener("click", function (e) {
+                var b = e.target.closest ? e.target.closest("button[data-v]") : null, ch = {};
+                if (!b) { return; }
+                ch[d[1]] = b.getAttribute("data-v");
+                setGlass(ch);
+            });
+        });
+        ui.glKinds.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("button[data-v]") : null, k;
+            if (!b) { return; }
+            k = GL_KINDS.filter(function (x) { return x[0] === b.getAttribute("data-v"); })[0];
+            setGlass({ kind: k[0], blur: k[3] });
+        });
+        ui.glText.addEventListener("input", function () { setGlass({ text: ui.glText.value }); });
+        [["glBlur", "blur"], ["glLight", "light"], ["glSize", "size"]].forEach(function (d) {
+            ui[d[0]].addEventListener("input", function () { var ch = {}; ch[d[1]] = Number(ui[d[0]].value); setGlass(ch); });
+        });
+        ui.glAdd.addEventListener("click", function () { onGlass(false); });
+        ui.glMine.addEventListener("click", function () { onGlass(true); });
+        drawGlass();
     }
 
     // ---- Мокап телефона (Анимация › Макеты): iPhone или Android из шейпов, экран — прекомп настоящего размера или выделенный слой.
@@ -11090,7 +11321,7 @@
 
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT" || m === "RB_NO_PATH" || m === "NO_TEXT_LAYER";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT" || m === "RB_NO_PATH" || m === "NO_TEXT_LAYER" || m === "GL_NO_SHAPE";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -11805,8 +12036,14 @@
         enableFlowDrag(g);
     }
 
+    function drawAnchorOpts() {
+        Array.prototype.forEach.call(document.querySelectorAll("#anchorOpts button[data-v]"), function (b) {
+            b.setAttribute("aria-pressed", b.getAttribute("data-v") === motion.anchorKeys ? "true" : "false");
+        });
+    }
+    var FLOW_COL = 280, FLOW_GAP = 12;
     function layoutFlow(g) {
-        var folded = flowFolded(g);
+        var folded = flowFolded(g), n;
         var k = Number(document.documentElement.getAttribute("data-tools")) / 100;
         var w = g.el.clientWidth, tiles = 0, sets = 0;
         if (!g.flowBox) { buildFlow(g); }
@@ -11838,7 +12075,11 @@
         });
         g.flowBox.tilesCap.hidden = g.flowBox.tiles.hidden = !tiles;
         g.flowBox.colsCap.hidden = g.flowBox.cols.hidden = !sets;
-        g.flowBox.cols.setAttribute("data-cols", w >= 980 ? "3" : w >= 620 ? "2" : "1");
+        // Блоки узкие (280 px) и не тянутся за панелью: сколько влезает, столько колонок.
+        n = w >= 2 * FLOW_COL + FLOW_GAP ? Math.floor((w + FLOW_GAP) / (FLOW_COL + FLOW_GAP)) : 1;
+        g.flowBox.cols.setAttribute("data-cols", String(n));
+        g.flowBox.cols.style.columnCount = n > 1 ? String(n) : "";
+        g.flowBox.cols.style.width = n > 1 ? (n * FLOW_COL + (n - 1) * FLOW_GAP) + "px" : "";
         g.flowBox.tiles.setAttribute("data-wide", w >= 980 ? "true" : "false");
         showFoldParts();
         showEcFold();
@@ -12295,6 +12536,7 @@
         if (!PF_MODES[shape.pfLast]) { shape.pfLast = "unite"; }
         enablePathfinder();
         enableTextBox();
+        enableGlass();
         enablePhone();
         enableRibbon();
         ui.ecOptsToggle.addEventListener("click", function () {
@@ -12344,7 +12586,16 @@
             var v = ui.anchorKeys.value;
             motion.anchorKeys = v === "shift" || v === "skip" ? v : "key";
             storeMotion();
+            drawAnchorOpts();
         });
+        // «Студия»: вместо списка три кнопки рядом с сеткой. Они просто меняют тот же список.
+        Array.prototype.forEach.call(document.querySelectorAll("#anchorOpts button[data-v]"), function (b) {
+            b.addEventListener("click", function () {
+                ui.anchorKeys.value = b.getAttribute("data-v");
+                ui.anchorKeys.dispatchEvent(new Event("change"));
+            });
+        });
+        drawAnchorOpts();
         ui.alignTo.value = motion.alignTo;
         enableShiftTool();
         showFoldParts();

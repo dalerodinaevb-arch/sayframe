@@ -396,7 +396,9 @@ function mkSmComp(specs, log, legacyMatte) {
   Object.defineProperty(c, "selectedLayers", { get: () => c.list.filter((l) => l.selected) });
   c.layer = (i) => c.list[i - 1] || null;
   c.layers = { addShape() { const l = smLayer(c, { name: "Shape Layer 1" }, log); c.list.unshift(l); return l; },
-    addSolid(color, name, w, h) { const l = smLayer(c, { name, shape: false }, log); l.solidSize = [w, h]; c.list.unshift(l); return l; } };
+    addSolid(color, name, w, h) { const l = smLayer(c, { name, shape: false }, log); l.solidSize = [w, h]; c.list.unshift(l); return l; },
+    addText(t) { const l = Object.setPrototypeOf(smLayer(c, { name: String(t), shape: false }, log), TextLayer.prototype); c.list.unshift(l);
+      l.moveToBeginning = () => { c.list.splice(c.list.indexOf(l), 1); c.list.unshift(l); }; return l; } };
   specs.forEach((sp) => c.list.push(smLayer(c, sp, log)));
   specs.forEach((sp, i) => { if (sp.parent) c.list[i].parent = c.list.find((x) => x.name === sp.parent); });
   return c;
@@ -2570,26 +2572,23 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.tab("tools");
   }
 
-  // Settings → Прочее → «Превью анимаций: При наведении»: previews stand still and play only under the cursor.
+  // «Авто / Наведение» next to the search: «Наведение» — previews stand still and play only under the cursor.
   {
     const frame0 = () => p.page.evaluate(() => { const cv = document.querySelector("#acGrid .ac-card canvas.ac-grc"); return cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data.join(); });
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabMore");
-    const groupOk = (await p.page.locator("#previewPlay button").allInnerTexts()).join() === "Всегда,При наведении" && (await p.page.getAttribute('#previewPlay [data-value="always"]', "aria-pressed")) === "true";
-    await p.page.click('#previewPlay [data-value="hover"]'); await p.page.waitForTimeout(150);
-    await p.page.click("#settingsClose");
+    const groupOk = (await p.page.locator("#acPlay button").allInnerTexts()).join() === "Авто,Наведение" && (await p.page.getAttribute('#acPlay [data-value="always"]', "aria-pressed")) === "true" &&
+      (await p.page.evaluate(() => { const b = document.querySelector(".ac-bar"); return [...b.children].map((x) => x.id || x.className).join(); })) === "acSearch,acPlay,acEdit,acFavOnly";
+    await p.page.click('#acPlay [data-value="hover"]'); await p.page.waitForTimeout(150);
     await p.page.mouse.move(1, 1); await p.page.waitForTimeout(300);
     const s1 = await frame0(); await p.page.waitForTimeout(400); const s2 = await frame0();
-    check("AG2 «При наведении»: the setting is in «Прочее», saved, and previews stand still", groupOk && s1 === s2 && (await p.page.locator('#acGrid .ac-card[data-hover-play="true"]').count()) > 0 &&
+    check("AG2 «Наведение»: the switch sits by the search (search, Авто/Наведение, Изменить, ★), is saved, and previews stand still", groupOk && (await p.page.getAttribute('#acPlay [data-value="hover"]', "aria-pressed")) === "true" && s1 === s2 && (await p.page.locator('#acGrid .ac-card[data-hover-play="true"]').count()) > 0 &&
       (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).previewPlay)) === "hover", String(groupOk) + " " + (s1 === s2));
     await p.page.hover("#acGrid .ac-card >> nth=0"); await p.page.waitForTimeout(250);
     const h1 = await frame0(); await p.page.waitForTimeout(350); const h2 = await frame0();
     check("AG2 under the cursor the preview plays", h1 !== h2);
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabMore");
-    await p.page.click('#previewPlay [data-value="always"]'); await p.page.waitForTimeout(150);
-    await p.page.click("#settingsClose");
+    await p.page.click('#acPlay [data-value="always"]'); await p.page.waitForTimeout(150);
     await p.page.mouse.move(1, 1); await p.page.waitForTimeout(400);
     const a1 = await frame0(); await p.page.waitForTimeout(400); const a2 = await frame0();
-    check("AG2 back to «Всегда»: previews play on their own again", a1 !== a2 && p.errors.length === 0, p.errors.join(" | "));
+    check("AG2 back to «Авто»: previews play on their own again", a1 !== a2 && p.errors.length === 0, p.errors.join(" | "));
   }
 
   await p.page.evaluate(() => { const c = document.getElementById("acColor"); c.value = "#ff0000"; c.dispatchEvent(new Event("input", { bubbles: true })); });
@@ -2608,7 +2607,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("AC12 'Counter' is a text layer counting to its 'Значение' control over the layer", t.name === "Счётчик" && gfx(t)[1].name === "Значение" && sfEval(t, acAt(t, "ADBE Text Properties", "ADBE Text Document"), 2) === "0%" && sfEval(t, acAt(t, "ADBE Text Properties", "ADBE Text Document"), 5.9) === "100%", sfEval(t, acAt(t, "ADBE Text Properties", "ADBE Text Document"), 5.9));
   // Edit: the selected graphic
   p.ae.comp.selectedLayers = [p.ae.log.acLayers[0]];
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".gr-edit");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".gr-edit");
   check("AC12 'Edit' on a graphic: colour, duration, size, thickness, remove", (await p.page.locator(".gr-edit .ac-edit-top b").innerText()) === "Графика «Кольцо»" && (await p.page.inputValue(".gr-edit .gr-color")) === "#ff0000" && (await p.page.locator(".gr-edit .ac-edit-row output").allInnerTexts()).join() === "1,2 с,100%,8 px", (await p.page.locator(".gr-edit .ac-edit-row output").allInnerTexts()).join());
   await p.page.evaluate(() => { const i = document.querySelector('.gr-edit input[aria-label="Размер"]'); i.value = "200"; i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); });
   await p.idle(); await p.page.waitForTimeout(50);
@@ -2644,7 +2643,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   Object.assign(SND, { hasAudio: true, locked: false, inPoint: 1.5, outPoint: 2.5, source: sndSource(TONE("-12.00")), replaceSource(item) { SND.source = sndSource(p.ae.log.imports[p.ae.log.imports.length - 1]); } });
   const compLayer = p.ae.comp.layer; p.ae.comp.layer = (i) => (i === SND.index ? SND : compLayer.call(p.ae.comp, i));
   p.ae.project.activeItem = p.ae.comp; p.ae.comp.selectedLayers = [SND];
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".snd-edit");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".snd-edit");
   check("AC13 'Edit' on the sound layer shows its pitch, length and volume", (await p.page.locator(".snd-edit .ac-edit-top b").innerText()) === "Звук «Вжух»" && (await p.page.locator(".snd-edit .ac-edit-row output").allInnerTexts()).join() === "-12 пт,100%,0 дБ", (await p.page.locator(".snd-edit .ac-edit-row output").allInnerTexts()).join());
   const slide = async (sel, v) => { await p.page.waitForSelector(sel); await p.page.evaluate(([q, x]) => { const i = document.querySelector(q); i.value = String(x); i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); }, [sel, v]); await p.idle();
     for (let k = 0; k < 100 && /^Пересчитываю/.test(await p.status()); k++) { await p.page.waitForTimeout(50); } await p.idle(); await p.page.waitForTimeout(80); };
@@ -2667,7 +2666,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await slide("#acPitch", 0);
   check("AC13b nothing selected: the bar only remembers the value for the next sound", SND.source.mainSource.file.fsName === TONE("+5.00"));
   p.ae.comp.selectedLayers = [SND];
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".snd-edit");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".snd-edit");
   await p.page.locator(".snd-edit button", { hasText: "Убрать" }).click(); await p.idle(); await p.page.waitForTimeout(50);
   check("AC13 'Remove' deletes the sound layer", p.ae.log.layersRemoved.join() === "♪ Вжух" && p.errors.length === 0, p.errors.join(" | "));
   await acSec(p, "Звуки");
@@ -2749,7 +2748,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // a transition put on by an earlier version (keys on the layer itself) stays editable
   vm.runInContext('sayframeHost.acAnimate("push-left", "in", 0.6)', p.ae.ctx);
   check("ED1 the layer remembers the preset in its comment, after the user's own note", /^моя заметка\n\[Sayframe presets\] \[\{"id":"push-left","dir":"in"/.test(EL.comment), EL.comment.slice(0, 80));
-  await p.page.click("#acTabs .ac-tab-edit");
+  await p.page.click("#acEdit");
   await p.page.waitForSelector(".ac-edit-item");
   check("ED1 'Edit' lists it with its settings; the library options are hidden", (await p.page.locator(".ac-edit-head").innerText()).indexOf("Слой «Логотип»") === 0 && (await p.page.locator(".ac-edit-top b").innerText()) === "Сдвиг влево — появление" && (await p.page.locator(".ac-edit-item .ac-edit-row output").allInnerTexts()).join() === "0,6 с,0,0 с,100%,как в пресете" && (await p.page.locator("#acModeRow").isHidden()) && (await p.page.locator("#acFoot").isHidden()));
   await p.page.screenshot({ path: path.join(SHOTS, "29-animation-edit.png") });
@@ -2776,7 +2775,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   vm.runInContext('sayframeHost.acAnimate("blur", "both", 0.6)', p.ae.ctx);
   t = acAt(EL, "ADBE Effect Parade").children.map((c) => c.name);
   check("ED8 effects added by a preset get their own names", t.length === 2 && t.every((n) => /^Sayframe fx /.test(n)), t.join());
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".ac-edit-item");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".ac-edit-item");
   check("ED8 'both' shows two entries: appearance and disappearance", (await p.page.locator(".ac-edit-top b").allInnerTexts()).join() === "Размытие — появление,Размытие — исчезновение");
   const fxBefore = acAt(EL, "ADBE Effect Parade").children.map((c) => c.name);
   await edSlide(p, 1, "Длительность", 1);
@@ -2787,7 +2786,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const ET = mkAcLayer("Заголовок", "text");
   p.ae.comp.selectedLayers = [ET];
   vm.runInContext('sayframeHost.acText("slide-letters", "in", 0.6, "x")', p.ae.ctx);
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".ac-edit-item");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".ac-edit-item");
   await p.page.selectOption(".ac-edit-item .ac-swap", "blur-letters"); await p.idle(); await p.page.waitForTimeout(50);
   t = acAt(ET, "ADBE Text Properties", "ADBE Text Animators").children;
   check("ED9 a text preset swaps its text animator for the new one (text presets offer only text presets)", t.length === 1 && /^Sayframe text /.test(t[0].name) && acAt(t[0], "ADBE Text Animator Properties", 1).matchName === "ADBE Text Blur" && (await p.page.locator(".ac-edit-item .ac-swap option").count()) === 9);
@@ -2802,7 +2801,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.tab("tools"); await acSec(p, "Движения");
   await p.page.click('#acMode button[data-value="both"]');
   await acClick(p, "Снизу · плавно");
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".sf-group");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".sf-group");
   const sfOut = (dir) => p.page.locator('.sf-group[data-dir="' + dir + '"] .ac-edit-row output').allInnerTexts();
   const sfSlide = async (dir, label, value) => {
     await p.page.evaluate(([d, l, v]) => {
@@ -2835,7 +2834,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p = await open({ selectedLayers: [XL] });
   await p.tab("tools"); await acSec(p, "Текст");
   await acClick(p, "Снизу по буквам");
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".sf-preset");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".sf-preset");
   const xAn = () => acAt(XL, "ADBE Text Properties", "ADBE Text Animators").children;
   check("TX1 'Edit' shows a text preset with its shift and the order of the letters", (await p.page.locator(".sf-preset .ac-edit-top b").innerText()) === "Снизу по буквам" && (await p.page.locator('.sf-group[data-dir="in"] .ac-edit-row output').allInnerTexts()).join() === "0,6 с,0,0 с,80 px,60%", (await p.page.locator('.sf-group[data-dir="in"] .ac-edit-row output').allInnerTexts()).join());
   await edSlideIn(p, '.sf-group[data-dir="in"]', "Сдвиг", 150);
@@ -2850,7 +2849,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await acClick(p, "Отъезд");
   const TL2 = p.ae.log.acLayers[0];
   p.ae.comp.selectedLayers = [TL2];
-  await p.page.click("#acTabs .ac-tab-edit"); await p.page.waitForSelector(".tr-edit");
+  await p.page.click("#acEdit"); await p.page.waitForSelector(".tr-edit");
   check("TE1 selecting the transition layer, 'Edit' shows the transition: duration, strength, remove", (await p.page.locator(".tr-edit .ac-edit-top b").innerText()) === "Переход «Отъезд»" && (await p.page.locator(".tr-edit .ac-edit-row output").allInnerTexts()).join() === "0,8 с,100%");
   await edSlideIn(p, ".tr-edit", "Длительность", 2);
   check("TE2 a longer duration stretches the layer around the cut", TL2.inPoint === 1 && TL2.outPoint === 3 && /Длительность перехода изменена/.test(await p.status()), TL2.inPoint + ".." + TL2.outPoint);
@@ -3096,7 +3095,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.restart();
   await p.page.click("#tabMotion");
   t = await p.page.evaluate(() => { const a = document.querySelector('.easecopy-card').getBoundingClientRect(), n = document.querySelector('.easecopy-card').nextElementSibling; const row = [...document.querySelectorAll('.easecopy-card .paste-do')].map((x) => x.getBoundingClientRect()); return [document.documentElement.getAttribute("data-design"), row.every((r) => r.bottom <= a.bottom), getComputedStyle(document.querySelector("#pasteBtn svg")).borderRadius]; });
-  check("DS5 «Студия» survives a restart; the Tools tab keeps its blocks, buttons fit their cards, icons sit in rounded squares", t[0] === "studio" && t[1] && t[2] === "8px" && (await p.page.locator('#motionTools .tool-card[data-tool="paste"] #pasteBtn').isVisible()) && (await overflow(p)) <= 0 && p.errors.length === 0, JSON.stringify(t));
+  check("DS5 «Студия» survives a restart; the Tools tab keeps its blocks, buttons fit their cards, icons sit in rounded squares", t[0] === "studio" && t[1] && t[2] === "15px" && (await p.page.locator('#motionTools .tool-card[data-tool="paste"] #pasteBtn').isVisible()) && (await overflow(p)) <= 0 && p.errors.length === 0, JSON.stringify(t));
   t = await p.page.evaluate(() => { const cs = (sel) => getComputedStyle(document.querySelector(sel)); return [cs("#pasteBtn").borderTopColor, cs("#pasteBtn").backgroundColor, cs("#ecPasteEase").borderTopColor]; });
   check("DS6 «Студия»: buttons inside a block have no frame of their own (the «Копировать» tile is the one accent); a one-button block has no second background", t.join("|") === "rgba(0, 0, 0, 0)|rgba(0, 0, 0, 0)|rgba(0, 0, 0, 0)", t.join("|"));
   await p.page.screenshot({ path: path.join(SHOTS, "09f-design-studio.png") });
@@ -3112,7 +3111,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T2 Tools tab shows only the tools", (await vis(p, "#viewTools #acGrid")) && !(await vis(p, "#prompt")) && !(await vis(p, "#runBtn")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#newBtn")) && !(await vis(p, "#fixBtn")) && (await p.page.locator("#tabTools").getAttribute("aria-selected")) === "true" && (await p.page.locator("#tabClaude").getAttribute("aria-selected")) === "false");
   check("T2 status line moved to the Tools tab", (await p.page.locator("#viewTools #statusBox").count()) === 1 && (await p.page.locator("#statusBox").count()) === 1 && (await vis(p, "#status")));
   await p.page.screenshot({ path: path.join(SHOTS, "17-tab-tools.png") });
-  check("T2 the Animation tab holds the preset library with seven sections (Макеты last); the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Заготовки,Звуки,Макеты,✎ Изменить");
+  check("T2 the Animation tab holds the preset library with six sections (Макеты last, «Заготовки» gone: the glass is a Макеты block); the paste block lives on the Tools tab (internal name motion)", (await p.page.locator("#tabTools").innerText()) === "Анимация" && (await p.page.locator("#tabMotion").innerText()) === "Инструменты" && (await p.page.locator("#viewMotion #pasteBtn").count()) === 1 && (await p.page.locator("#acTabs button").allInnerTexts()).join() === "Переходы,Текст,Движения,Графика,Звуки,Макеты" && (await p.page.locator("#acEdit").innerText()) === "Изменить");
   await p.paste(); await p.idle(); await p.modalClick("Оставить как есть");
   check("T3 the paste block reports its result on its tab", /^Картинка вставлена/.test(await p.status()) && (await vis(p, "#status")) && (await p.page.locator("#viewMotion #statusBox").count()) === 1 && p.ae.log.imports.length === 1, await p.status());
   t = await p.status();
@@ -4935,6 +4934,23 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     fs.rmSync(scratch, { recursive: true, force: true });
   }
 
+  // «Студия»: narrow blocks, «Якорь» with three buttons instead of the list
+  p = await open({ width: 905, height: 1200, settings: { design: "studio", designSet: 2 } });
+  await motionTab(p);
+  t = await p.page.evaluate(() => { const f = document.querySelector("#motionTools .flow-cols"); const c = f.querySelector('[data-tool="ease"]').getBoundingClientRect(); return [f.getAttribute("data-cols"), Math.round(c.width)].join(); });
+  check("FL9 blocks with settings are narrow (280 px): three in a row at 905 px", t === "3,280" && (await overflow(p)) <= 0, t);
+  await p.page.click('.flow-cols [data-tool="anchor"] .tool-head');
+  check("FL9 «Якорь» shows three buttons instead of the list", (await vis(p, "#anchorOpts")) && !(await vis(p, "#anchorKeys")) && (await p.page.getAttribute('#anchorOpts [data-v="key"]', "aria-pressed")) === "true");
+  await p.page.click('#anchorOpts [data-v="skip"]');
+  check("FL9 a button picks the option and it is saved", (await p.page.inputValue("#anchorKeys")) === "skip" && (await savedMotion(p, "anchorKeys")) === "skip" && (await p.page.getAttribute('#anchorOpts [data-v="skip"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#anchorOpts [data-v="key"]', "aria-pressed")) === "false");
+  await p.restart(); await motionTab(p);
+  check("FL9 after a restart the same button is on", (await p.page.getAttribute('#anchorOpts [data-v="skip"]', "aria-pressed")) === "true" && p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+  p = await open({ width: 905, height: 1200, settings: { design: "glass" } });
+  await motionTab(p);
+  check("FL9 other designs keep the list", (await vis(p, "#anchorKeys")) && !(await vis(p, "#anchorOpts")));
+  await p.close();
+
   // ---------------------------------------------------------------- Tools: ease copy (like EaseCopy)
   {
     const eases2 = (list) => list.map((e) => Math.round(e.speed * 100) / 100 + "/" + e.influence).join();
@@ -5134,42 +5150,78 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
-  // «Заготовки» on the Animation tab: liquid glass from the selected layer (or a new rounded rectangle).
+  // «Жидкое стекло» — a block in «Макеты» (Animation tab): with a text (4 forms) or a plain shape; glass kind and outline; «Сделать стеклом».
   {
     const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
     const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
     const fxOf = (l) => acAt(l, "ADBE Effect Parade").children.map((e) => e.matchName).join(",");
-    const kitTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="kit"]'); };
+    const glTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    const add = async (p, sel) => { await p.page.click(sel || "#glAdd"); await p.idle(); };
     p = await open({ sm: [{ name: "Pill", selected: true, groups: [smGroup("Box", [smRect(200), smFill([1, 1, 1, 1])])], inPoint: 1, outPoint: 7 }, { name: "BG" }] });
-    await kitTab(p);
-    check("KG1 a «Заготовки» section between «Графика» and «Звуки», with its kinds on the left and the liquid glass card", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#acTabs button"), (b) => b.textContent).join("|"))).indexOf("Графика|Заготовки|Звуки") >= 0 &&
-      (await p.page.locator("#acGrid .ac-card").count()) === 1 && (await p.page.locator("#acGrid .ac-card .ac-name").innerText()) === "Жидкое стекло" && (await p.page.locator("#acFolders .ac-folder").allInnerTexts()).join() === "Все,Эффекты", (await p.page.locator("#acFolders .ac-folder").allInnerTexts()).join());
-    check("KG1 no duration and no colour for kits; the hint says how the glass works", (await p.page.locator("#acDurRow").isHidden()) && (await p.page.locator("#acColorRow").isHidden()) && /Жидкое стекло: выделите слой-фигуру/.test(await p.page.locator("#acHint").innerText()));
-    check("KG1 the preview: glass over a moving picture, playing while visible", (await p.page.locator("#acGrid .ac-card.kit-play .kit-glass .kit-lens").count()) === 1 && (await p.page.evaluate(() => getComputedStyle(document.querySelector(".kit-bg b")).animationName)) === "kit-slide");
-    await p.page.screenshot({ path: path.join(SHOTS, "77-kit-liquid-glass.png") });
-    await p.page.click("#acGrid .ac-card"); await p.idle();
+    await glTab(p);
+    check("GL1 «Жидкое стекло» is the first block of «Макеты»; no «Заготовки» section any more", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())).indexOf("glass,") === 0 &&
+      (await p.page.locator('#acTabs button[data-sec="kit"]').count()) === 0 && (await overflow(p)) <= 0);
+    check("GL1 defaults: «С текстом», «Подписаться», the button tile, clear glass, the usual outline; 4 form tiles with the text, 8 shapes, 4 kinds, 6 outlines",
+      (await p.page.getAttribute('#glMode [data-v="text"]', "aria-pressed")) === "true" && (await p.page.inputValue("#glText")) === "Подписаться" && (await p.page.getAttribute('#glForms [data-v="btn"]', "aria-pressed")) === "true" &&
+      (await p.page.locator("#glForms .gl-tile").count()) === 4 && (await p.page.locator("#glForms .gl-nm").allInnerTexts()).join() === "Кнопка,Карточка,Плашка,Пуш" &&
+      (await p.page.locator('#glForms [data-v="box"] .gl-box').innerText()) === "ПОДПИСАТЬСЯ" && (await p.page.locator("#glShapes button").count()) === 8 && (await p.page.locator("#glKinds button").count()) === 4 && (await p.page.locator("#glEdges button").count()) === 6 &&
+      (await p.page.getAttribute('#glKinds [data-v="clear"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#glEdges [data-v="std"]', "aria-pressed")) === "true" && !(await vis(p, "#glStage")) && !(await vis(p, "#glSize")) &&
+      (await p.page.locator("#glAdd").innerText()).trim() === "Добавить кнопку" && (await p.page.locator("#glMine").innerText()).trim() === "Сделать стеклом");
+    await p.page.fill("#glText", "Купить");
+    check("GL2 typing changes the text on every tile at once", (await p.page.locator('#glForms [data-v="btn"] .gl-btn').innerText()) === "Купить" && (await p.page.locator('#glForms [data-v="note"] small').innerText()) === "Купить");
+    await p.page.click('#glMode [data-v="shape"]');
+    check("GL2 «Без текста»: the big preview and the shapes, the size slider; the text part hides", (await vis(p, "#glStage")) && (await vis(p, "#glSize")) && !(await vis(p, "#glText")) && (await p.page.locator("#glAdd").innerText()).trim() === "Добавить в кадр" &&
+      (await p.page.getAttribute('#glShapes [data-v="heart"]', "aria-pressed")) === "true" && /^M50 90C/.test(await p.page.getAttribute("#glStage .gl-line", "d")));
+    await p.page.click('#glShapes [data-v="star"]'); await p.page.click('#glKinds [data-v="frost"]'); await p.page.click('#glEdges [data-v="dash"]');
+    check("GL2 a kind sets its blur; the outline shows in the preview", (await p.page.inputValue("#glBlur")) === "60" && (await p.page.getAttribute(".gl-pane", "data-edge")) === "dash" && (await p.page.locator("#glKindName").innerText()) === "Матовое");
+    await p.restart(); await glTab(p);
+    check("GL2 the choices survive a restart", (await p.page.getAttribute('#glMode [data-v="shape"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#glShapes [data-v="star"]', "aria-pressed")) === "true" && (await p.page.inputValue("#glText")) === "Купить");
+    await p.page.screenshot({ path: path.join(SHOTS, "77-glass-block.png") });
+    // «Сделать стеклом»: the selected layer becomes the glass, as the old kit did.
+    await add(p, "#glMine");
     const adj = Lx(p, "Жидкое стекло"), edge = Lx(p, "Стекло: блик"), pill = Lx(p, "Pill");
-    check("KG2 four layers, top to bottom: the outline, the edge light, the glass (matted to the shape), the shape (hidden)", names(p) === "Стекло: обводка,Стекло: блик,Жидкое стекло,Pill,BG" && adj.adjustmentLayer === true && adj.matte === pill && adj.matteType === 5013 && pill.enabled === false && edge.enabled === true, names(p));
-    check("KG2 the glass bulges, blurs and brightens; the bulge follows the shape by expressions", fxOf(adj) === "ADBE Bulge,ADBE Gaussian Blur 2,ADBE Brightness & Contrast 2" && /thisComp\.layer\("Pill"\)/.test(acAt(adj, "ADBE Effect Parade", 1, "ADBE Bulge-0003").expression) && /sourceRectAtTime/.test(acAt(adj, "ADBE Effect Parade", 1, "ADBE Bulge-0001").expression) && acAt(adj, "ADBE Effect Parade", 2, "ADBE Gaussian Blur 2-0001").value === 12 && adj.inPoint === 1 && adj.outPoint === 7, fxOf(adj));
-    check("KG2 the edge: a grey copy in Overlay with Bevel Alpha, hanging on the shape", fxOf(edge) === "ADBE Fill,ADBE Bevel Alpha" && edge.blendingMode === 5224 && edge.parent === pill && JSON.stringify(acAt(edge, "ADBE Effect Parade", 1, "ADBE Fill-0002").value) === "[0.5,0.5,0.5,1]");
     t = Lx(p, "Стекло: обводка");
-    check("KG2 the outline: a copy of the shape, its own fill off, one Stroke driven by width, colour and opacity controls", !!t && t.enabled !== false && t.parent === pill &&
-      acAt(t, "ADBE Effect Parade").children.map((e) => e.name).join() === "Толщина обводки,Цвет обводки,Прозрачность обводки" && acAt(t, "ADBE Effect Parade", 1, "ADBE Slider Control-0001").value === 2 && acAt(t, "ADBE Effect Parade", 3, "ADBE Slider Control-0001").value === 70 &&
-      acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Graphic - Fill").enabled === false &&
-      /effect\(1\)\(1\)/.test(acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Width").expression) && /effect\(2\)\(1\)/.test(acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Color").expression) && /effect\(3\)\(1\)/.test(acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Opacity").expression) &&
-      /Обводка — слой «Стекло: обводка»/.test(await p.status()), t ? acAt(t, "ADBE Effect Parade").children.map((e) => e.name).join() : "none");
-    check("KG2 one undo step; the shape is selected; the report", p.ae.log.undo.join() === "begin:Sayframe: liquid glass,end" && pill.selected && !edge.selected && /^Жидкое стекло готово: фигура — «Pill»/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+    check("GL3 «Сделать стеклом»: four layers, top to bottom outline, edge light, glass (matted to the shape), the shape (hidden)", names(p) === "Стекло: обводка,Стекло: блик,Жидкое стекло,Pill,BG" && adj.adjustmentLayer === true && adj.matte === pill && adj.matteType === 5013 && pill.enabled === false && edge.parent === pill && t.parent === pill, names(p));
+    check("GL3 the glass: bulge (following the shape), blur from the slider (60 → 36), brighter for frosted glass; the edge light from «Блик»", fxOf(adj) === "ADBE Bulge,ADBE Gaussian Blur 2,ADBE Brightness & Contrast 2" && /thisComp\.layer\("Pill"\)/.test(acAt(adj, "ADBE Effect Parade", 1, "ADBE Bulge-0003").expression) &&
+      acAt(adj, "ADBE Effect Parade", 2, "ADBE Gaussian Blur 2-0001").value === 36 && acAt(adj, "ADBE Effect Parade", 3, "ADBE Brightness & Contrast 2-0001").value === 18 && fxOf(edge) === "ADBE Fill,ADBE Bevel Alpha" && acAt(edge, "ADBE Effect Parade", 2, "ADBE Bevel Alpha-0004").value === 0.7);
+    check("GL3 the dashed outline: dash 14, gap 10 on the Stroke", acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Dashes", "ADBE Vector Stroke Dash 1").value === 14 && acAt(t, "ADBE Root Vectors Group", "ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Dashes", "ADBE Vector Stroke Gap 1").value === 10 &&
+      acAt(t, "ADBE Effect Parade", 3, "ADBE Slider Control-0001").value === 90);
+    check("GL3 one undo step, the report", p.ae.log.undo.join() === "begin:Sayframe: liquid glass,end" && /^Фигура «Pill» стала стеклом/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
     await p.close();
 
     p = await open({ sm: [{ name: "BG" }] });
-    await kitTab(p); await p.page.click("#acGrid .ac-card"); await p.idle();
-    t = Lx(p, "Стекло");
-    check("KG3 nothing selected: a rounded rectangle «Стекло» in the middle becomes the glass", names(p) === "Стекло: обводка,Стекло: блик,Жидкое стекло,Стекло,BG" && JSON.stringify(acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[806,324]" && /нарисовал фигуру «Стекло»/.test(await p.status()), names(p) + " " + (await p.status()));
+    await glTab(p);
+    await add(p, "#glMine");
+    check("GL4 «Сделать стеклом» with nothing selected: a hint to draw and select a shape, nothing made", /Нарисуйте фигуру/.test(await p.status()) && names(p) === "BG", await p.status());
+    await p.page.click('#glMode [data-v="shape"]'); await p.page.click('#glShapes [data-v="heart"]'); await p.page.click('#glEdges [data-v="run"]');
+    await add(p);
+    t = Lx(p, "Стекло: сердце");
+    const st = Lx(p, "Стекло: обводка");
+    check("GL4 «Без текста», a heart: a path shape «Стекло: сердце» in the middle, 40% of the height; the running outline is Trim Paths (end 25, offset turning) before the Stroke", !!t && names(p) === "Стекло: обводка,Стекло: блик,Жидкое стекло,Стекло: сердце,BG" &&
+      acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group").children.map((c) => c.matchName).join() === "ADBE Vector Shape - Group,ADBE Vector Graphic - Fill" &&
+      acAt(st, "ADBE Root Vectors Group").children.map((c) => c.matchName).slice(-2).join() === "ADBE Vector Filter - Trim,ADBE Vector Graphic - Stroke" && acAt(st, "ADBE Root Vectors Group", "ADBE Vector Filter - Trim", "ADBE Vector Trim End").value === 25 &&
+      /time \* 120/.test(acAt(st, "ADBE Root Vectors Group", "ADBE Vector Filter - Trim", "ADBE Vector Trim Offset").expression), names(p));
+    await p.page.click('#glShapes [data-v="star"]'); await p.page.click('#glKinds [data-v="tint"]');
+    await add(p);
+    t = Lx(p, "Стекло: звезда");
+    check("GL4 a second glass gets its own names; a star is a 5-point Star; tinted glass adds Tint", !!t && !!Lx(p, "Жидкое стекло 2") && acAt(t, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Star", "ADBE Vector Star Points").value === 5 &&
+      fxOf(Lx(p, "Жидкое стекло 2")) === "ADBE Bulge,ADBE Gaussian Blur 2,ADBE Brightness & Contrast 2,ADBE Tint", names(p));
     await p.close();
 
-    p = await open({ sm: [{ name: "Pill", selected: true, groups: [smGroup("Box", [smRect(200)])] }, { name: "BG" }], legacyMatte: true });
-    await kitTab(p); await p.page.click("#acGrid .ac-card"); await p.idle();
-    check("KG4 an older After Effects (matte only from the layer above): the shape sits right above the glass", names(p) === "Стекло: обводка,Стекло: блик,Pill,Жидкое стекло,BG" && Lx(p, "Жидкое стекло").trackMatteType === 5013 && p.errors.length === 0, names(p));
+    p = await open({ sm: [{ name: "BG" }] });
+    await glTab(p);
+    await add(p);
+    t = Lx(p, "Подписаться"); const btn = Lx(p, "Стекло: кнопка");
+    check("GL5 «С текстом», a button: the text «Подписаться» on top, the capsule under it follows the text by expressions (size, roundness, position); nothing is parented", !!t && !!btn && names(p).indexOf("Подписаться,Стекло: обводка,Стекло: блик,Жидкое стекло,Стекло: кнопка") === 0 &&
+      /thisComp\.layer\("Подписаться"\)/.test(acAt(btn, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").expression) && /sourceRectAtTime/.test(acAt(btn, "ADBE Transform Group", "ADBE Position").expression) &&
+      /\/ 2/.test(acAt(btn, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Roundness").expression) && !Lx(p, "Стекло: блик").parent && !Lx(p, "Стекло: обводка").parent && !t.parent && t.selected && /подстраивается под текст/.test(await p.status()), names(p) + " " + (await p.status()));
+    await p.page.click('#glForms [data-v="card"]');
+    await add(p);
+    const card = Lx(p, "Стекло: карточка");
+    check("GL5 a card: «Заголовок» (the typed text) and «Текст» hang on the glass card", !!card && Lx(p, "Заголовок").parent === card && Lx(p, "Текст").parent === card && Lx(p, "Стекло: блик 2").parent === card, names(p));
+    await p.page.click('#glForms [data-v="note"]');
+    await add(p);
+    check("GL5 a notification: an icon, «Название» and the text on the glass, all hanging on it", !!Lx(p, "Стекло: пуш") && Lx(p, "Иконка").parent === Lx(p, "Стекло: пуш") && Lx(p, "Название").parent === Lx(p, "Стекло: пуш") && p.errors.length === 0, names(p));
     await p.close();
   }
 
@@ -5261,7 +5313,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const rect = (l) => acAt(l, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect");
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
-    check("GR1 «Макеты»: five blocks, «Карусель», «Grid», «Плашка под текстом», «Мокап телефона» and «Текст по ленте», open; the grid preview shows numbered tiles", (await p.page.locator("#orbitPane .mk-card").evaluateAll((l) => l.map((c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" &&
+    check("GR1 «Макеты»: six blocks, «Жидкое стекло», «Карусель», «Grid», «Плашка под текстом», «Мокап телефона» and «Текст по ленте», open; the grid preview shows numbered tiles", (await p.page.locator("#orbitPane .mk-card").evaluateAll((l) => l.map((c) => c.getAttribute("data-mk")).join())) === "glass,carousel,grid,textbox,phone,ribbon" &&
       (await p.page.isVisible("#orbitStage")) && (await p.page.isVisible("#gridStage")) && (await tiles(p)) > 4 && (await tiles(p)) < 20 && (await p.page.locator("#gridStage .gr-box span").first().innerText()) === "1" && (await overflow(p)) <= 0);
     check("GR1 defaults: 4 rows, 5 columns, gap 20, roundness 20, spread 100%, variant 12345, the comp size, numbers and one-by-one on", (await p.page.inputValue("#gridRows")) === "4" && (await p.page.inputValue("#gridCols")) === "5" && (await p.page.locator("#gridGapVal").innerText()) === "20" &&
       (await p.page.locator("#gridRandVal").innerText()) === "100%" && (await p.page.inputValue("#gridSeed")) === "12345" && (await p.page.getAttribute("#gridFit", "aria-pressed")) === "true" && (await p.page.isDisabled("#gridW")) && (await p.page.isChecked("#gridNumbers")) && (await p.page.isChecked("#gridStagger")));
@@ -5344,8 +5396,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ width: 1300, orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
     let c1 = await cards(p);
-    check("MK1 a wide panel: the blocks side by side (three in a row), a standard width (320–420), not stretched", c1.length === 5 && c1.every((x) => { const w = Number(x.split("w")[1]); return w >= 320 && w <= 420; }) && c1.slice(0, 3).every((x) => x.split("@")[1].split("w")[0] === c1[0].split("@")[1].split("w")[0]) && /^carousel/.test(c1[0]), c1.join());
-    const a = await p.page.locator('.mk-card[data-mk="grid"] .mk-head b').boundingBox(), b = await p.page.locator('.mk-card[data-mk="carousel"] .mk-head b').boundingBox();
+    check("MK1 a wide panel: the blocks side by side (three in a row), a standard width (320–420), not stretched", c1.length === 6 && c1.every((x) => { const w = Number(x.split("w")[1]); return w >= 320 && w <= 420; }) && c1.slice(0, 3).every((x) => x.split("@")[1].split("w")[0] === c1[0].split("@")[1].split("w")[0]) && /^glass/.test(c1[0]), c1.join());
+    const a = await p.page.locator('.mk-card[data-mk="grid"] .mk-head b').boundingBox(), b = await p.page.locator('.mk-card[data-mk="glass"] .mk-head b').boundingBox();
     await p.page.mouse.move(a.x + 10, a.y + 5); await p.page.mouse.down(); await p.page.mouse.move(a.x - 40, a.y + 5, { steps: 4 }); await p.page.mouse.move(b.x + 10, b.y + 5, { steps: 6 }); await p.page.mouse.up();
     c1 = await cards(p);
     check("MK2 dragging Grid by its title puts it first; neither block folds", /^grid/.test(c1[0]) && (await p.page.locator("#orbitPane .mk-folded").count()) === 0, c1.join());
@@ -5355,8 +5407,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ width: 740, orbit: { layers: [{ name: "BG" }] } });
     await mkTab(p);
     c1 = await cards(p);
-    check("MK4 a middle panel (740): two blocks side by side, neither wider than 420", c1[0].split("@")[1].split("w")[0] === c1[1].split("@")[1].split("w")[0] && c1.every((x) => Number(x.split("w")[1]) <= 420) && (await p.page.locator("#orbitPane .mk-grip").count()) === 5, c1.join());
-    await p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.orbit.v1") || "{}"); o.fold = "ribbon,grid,textbox"; o.sort = "ribbon,carousel,grid,textbox,phone"; localStorage.setItem("sayframe.orbit.v1", JSON.stringify(o)); });
+    check("MK4 a middle panel (740): two blocks side by side, neither wider than 420", c1[0].split("@")[1].split("w")[0] === c1[1].split("@")[1].split("w")[0] && c1.every((x) => Number(x.split("w")[1]) <= 420) && (await p.page.locator("#orbitPane .mk-grip").count()) === 6, c1.join());
+    await p.page.evaluate(() => { const o = JSON.parse(localStorage.getItem("sayframe.orbit.v1") || "{}"); o.fold = "ribbon,grid,textbox,glass"; o.sort = "ribbon,carousel,grid,textbox,phone,glass"; localStorage.setItem("sayframe.orbit.v1", JSON.stringify(o)); });
     await p.restart(); await mkTab(p);
     t = await p.page.evaluate(() => { const r = (n) => document.querySelector('.mk-card[data-mk="' + n + '"]').getBoundingClientRect(); return [r("ribbon"), r("grid"), r("textbox"), r("phone"), r("carousel")].map((x) => Math.round(x.left) + "," + Math.round(x.top) + "," + Math.round(x.bottom)).join(" "); });
     const q = t.split(" ").map((x) => x.split(",").map(Number));
@@ -5501,7 +5553,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const parentOf = (s) => ({ sourceRectAtTime: () => ({ left: -100, top: -32, width: 200, height: 88 }), text: { sourceText: txt(s) } });
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hello\rworld" }, { name: "BG", selected: false }] } });
     await tbTab(p);
-    check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
+    check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "glass,carousel,grid,textbox,phone,ribbon" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
     check("TB1 defaults: each line, fill, dark purple, no stroke row; no animation choice", (await p.page.locator("#tbAppear").count()) === 0 && (await p.page.getAttribute('#tbPer [data-v="line"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbLook [data-v="fill"]', "aria-pressed")) === "true" && !(await vis(p, "#tbStrokeRow")) && (await p.page.inputValue("#tbColor")) === "#3a0f63");
     await p.page.click('#tbLook [data-v="both"]');
     await setRange(p, "#tbRound", 30);
@@ -5556,7 +5608,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await exOpen(p);
     check("EX1 the ⤓ button opens «Быстрый экспорт»: comp line, quality tiles Низкое / Среднее / Высокое / Своё with the size in MB, «Среднее» picked, «Всю композицию»", (await p.page.locator("#exCompName").innerText()) === "Main" && (await p.page.locator("#exCompMeta").innerText()) === "1920×1080 · 10 с" &&
       (await p.page.locator("#exTargets .ex-t span").allInnerTexts()).join() === "Низкое,Среднее,Высокое,Своё" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
-      (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() === "≈ 6,7 МБ,≈ 19 МБ,≈ 50 МБ," && (await pressed(p, "#exSpan button")) === "all" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 19 МБ" && (await overflow(p)) <= 0,
+      (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() === "≈ 4,1 МБ,≈ 12 МБ,≈ 30 МБ," && (await pressed(p, "#exSpan button")) === "all" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 12 МБ" && (await overflow(p)) <= 0,
       (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() + " | " + await p.page.locator("#exGo").innerText());
     t = await tileBox(p, "normal");
     check("EX1 a horizontal comp -> horizontal tiles; no size question, no quality row (the tile is the quality)", t.width > t.height * 1.3 && !(await vis(p, "#exFitRow")) && !(await vis(p, "#exQualRow")), JSON.stringify(t));
@@ -5581,7 +5633,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p.ae.log.dcMain.workAreaStart = 2; p.ae.log.dcMain.workAreaDuration = 3;
     await exOpen(p);
     await p.page.click('#exTargets [data-t="light"]'); await p.page.click('#exTargets [data-t="normal"]'); await p.page.click('#exSpan [data-v="work"]');
-    check("EX4 «Рабочую область»: the MB follow the work area's length", (await p.page.locator('#exTargets [data-t="light"] .ex-mb').innerText()) === "≈ 2 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 2 МБ", await p.page.locator("#exGo").innerText());
+    check("EX4 «Рабочую область»: the MB follow the work area's length", (await p.page.locator('#exTargets [data-t="light"] .ex-mb').innerText()) === "≈ 1,2 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 1,2 МБ", await p.page.locator("#exGo").innerText());
     await exRun(p);
     t = p.ae.log.rq.rendered;
     check("EX4 «Низкое» = 5 Mbps at the comp's size; «Рабочую область» renders the work area; the file says the quality", t.length === 1 && t[0].comp === "Main" && t[0].tpl === "H.264 - Match Render Settings - 5 Mbps" && t[0].span.join() === "2,3" && /Main — Низкое\.mp4$/.test(t[0].file), JSON.stringify(t));
@@ -5625,7 +5677,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       (await vis(p, '#exTargets [data-t="normal"] .ex-rate [data-d="1"]')) && !(await vis(p, '#exTargets [data-t="light"] .ex-rate [data-d="1"]')) && (await overflow(p)) <= 0);
     await p.page.click('#exTargets [data-t="normal"] .ex-rate [data-d="1"]');
     check("EX10 + on «Среднее» -> 18 Мбит/с, MB and the button follow, the tile stays picked", (await rateOf("normal")) === "18 Мбит/с" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
-      (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 23 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 23 МБ");
+      (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 14 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 14 МБ");
     await p.page.click('#exTargets [data-t="light"]'); await p.page.click('#exTargets [data-t="normal"]');
     check("EX10 − on a tile that is not picked just picks it (and the other one taken away)", (await pressed(p, "#exTargets .ex-t")) === "light" && (await rateOf("light")) === "5 Мбит/с");
     for (let i = 0; i < 6; i++) await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="-1"]');
@@ -5643,10 +5695,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p.ae.log.dcMain.workAreaStart = 2; p.ae.log.dcMain.workAreaDuration = 3;
     await exOpen(p);
     await p.page.click('#exTargets [data-t="light"]');
-    check("EX12 a second tile is added, not swapped: both picked, the button counts and sums the MB", (await pressed(p, "#exTargets .ex-t")) === "light,normal" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить 2 видео · ≈ 26 МБ" &&
+    check("EX12 a second tile is added, not swapped: both picked, the button counts and sums the MB", (await pressed(p, "#exTargets .ex-t")) === "light,normal" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить 2 видео · ≈ 16 МБ" &&
       (await vis(p, '#exTargets [data-t="light"] .ex-rate [data-d="1"]')) && (await vis(p, '#exTargets [data-t="normal"] .ex-rate [data-d="1"]')));
     await p.page.click('#exTargets [data-t="normal"]');
-    check("EX12 clicking a picked tile takes it away", (await pressed(p, "#exTargets .ex-t")) === "light" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 6,7 МБ");
+    check("EX12 clicking a picked tile takes it away", (await pressed(p, "#exTargets .ex-t")) === "light" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 4,1 МБ");
     await p.page.click('#exTargets [data-t="light"]');
     check("EX12 the last picked tile stays", (await pressed(p, "#exTargets .ex-t")) === "light");
     await p.page.click('#exTargets [data-t="max"]');
@@ -5708,6 +5760,35 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ noActiveComp: true });
     await p.page.click("#exportBtn"); await p.page.waitForFunction(() => /^Откройте/.test(document.getElementById("exCompName").textContent));
     check("EX8 no comp open -> asks to open one, «Сохранить» is off", await p.page.locator("#exGo").isDisabled());
+    await p.close();
+
+    // Live: the sheet follows After Effects while it is open, no need to close and reopen it.
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    await exOpen(p);
+    p.ae.log.dcMain.width = 1080; p.ae.log.dcMain.height = 1920;
+    await p.page.waitForFunction(() => document.getElementById("exTargets").classList.contains("ex-v"), null, { timeout: 4000 }).catch(() => {});
+    check("EX13 the comp turns vertical while the sheet is open -> tiles turn vertical by themselves", (await p.page.locator("#exTargets").getAttribute("class")).indexOf("ex-v") >= 0 && (await p.page.locator("#exCompMeta").innerText()) === "1080×1920 · 10 с", await p.page.locator("#exCompMeta").innerText());
+    await p.page.click('#exSpan [data-v="work"]');
+    p.ae.log.dcMain.workAreaStart = 0; p.ae.log.dcMain.workAreaDuration = 8;
+    await p.page.waitForFunction(() => /≈ 9,3 МБ/.test(document.getElementById("exGo").textContent), null, { timeout: 4000 }).catch(() => {});
+    check("EX13 the work area gets shorter/longer -> the MB follow by themselves", (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 9,3 МБ", await p.page.locator("#exGo").innerText());
+    // Size learning: the mock video is 2,5 MB for 10 s at 15 Мбит/с — the next estimate matches it.
+    await p.page.click('#exSpan [data-v="all"]');
+    await p.page.click("#exGo"); await p.page.waitForFunction(() => document.querySelectorAll("#exResults .ex-row.done").length === 1);
+    await p.page.click("#exResults .ex-again .ghost");
+    await p.page.waitForTimeout(300);
+    check("EX13 after a save the MB estimate learns the real file size (2,5 МБ, not 19)", (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 2,5 МБ" && JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.export.v1"))).k < 0.2 && p.errors.length === 0, await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText());
+    await p.close();
+    // Each quality learns its own factor; a quality never saved yet uses the common one.
+    p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
+    await p.page.evaluate(() => localStorage.setItem("sayframe.export.v1", JSON.stringify({ levels: ["normal"], k: 0.6, kq: { normal: 0.2 } })));
+    await p.restart();
+    await exOpen(p);
+    check("EX14 each quality has its own learned factor: Среднее uses 0.2 (≈ 4,1 МБ), Высокое the common 0.6 (≈ 30 МБ)", (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 4,1 МБ" && (await p.page.locator('#exTargets [data-t="max"] .ex-mb').innerText()) === "≈ 30 МБ" && p.errors.length === 0,
+      (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) + " / " + (await p.page.locator('#exTargets [data-t="max"] .ex-mb').innerText()));
+    await p.page.click("#exGo"); await p.page.waitForFunction(() => document.querySelectorAll("#exResults .ex-row.done").length === 1);
+    t = JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.export.v1")));
+    check("EX14 a save updates that quality's factor (average of old and new) and the common one", t.kq.normal > 0.15 && t.kq.normal < 0.2 && !t.kq.max && t.k < 0.6, JSON.stringify(t));
     await p.close();
   }
 
@@ -5788,7 +5869,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const phTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
     await phTab(p);
-    check("PH1 a «Мокап телефона» block in «Макеты» after the text box: preview, iPhone / Android (no «Samsung»), «Создать мокап»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" && (await vis(p, "#phStage")) &&
+    check("PH1 a «Мокап телефона» block in «Макеты» after the text box: preview, iPhone / Android (no «Samsung»), «Создать мокап»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "glass,carousel,grid,textbox,phone,ribbon" && (await vis(p, "#phStage")) &&
       (await p.page.locator("#phModel button").allInnerTexts()).map((t) => t.split("\n")[0].trim()).join() === "iPhone,Android" && !/Samsung/i.test(await p.page.locator('.mk-card[data-mk="phone"]').innerText()) && (await p.page.locator("#phBtn").innerText()).trim() === "Создать мокап" && (await overflow(p)) <= 0);
     check("PH1 defaults: iPhone, black, upright, screen is a precomp, shadow on, no animation; roundness «Авто»", (await p.page.getAttribute('#phModel [data-v="iphone"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#phColors [data-v="black"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#phPose [data-v="flat"]', "aria-pressed")) === "true" &&
       (await p.page.getAttribute('#phScreen [data-v="precomp"]', "aria-pressed")) === "true" && (await p.page.isChecked("#phShadow")) && !(await p.page.isChecked("#phAppear")) && (await p.page.locator("#phRoundVal").innerText()) === "Авто");
@@ -5832,7 +5913,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const docText = (l) => String(acAt(l, "ADBE Text Properties", "ADBE Text Document").value.text);
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] } });
     await rbTab(p);
-    check("RB1 a «Текст по ленте» block in «Макеты» after the phone: preview of the ribbon with the text on it, forms, «Создать ленту»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "carousel,grid,textbox,phone,ribbon" &&
+    check("RB1 a «Текст по ленте» block in «Макеты» after the phone: preview of the ribbon with the text on it, forms, «Создать ленту»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "glass,carousel,grid,textbox,phone,ribbon" &&
       (await p.page.locator("#rbStage svg path").count()) === 1 && /WEST LOOP • WEST LOOP/.test(await p.page.locator("#rbStage textPath").textContent()) && (await p.page.locator("#rbForm > button").count()) === 6 && (await p.page.getAttribute('#rbForm [data-v="loops"]', "aria-pressed")) === "true" && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать ленту" && (await overflow(p)) <= 0);
     await p.page.click('#rbMode [data-v="ring"]');
     check("RB1 «3D-кольцо»: the ring's own settings, the ribbon's ones hide; letters in the preview, the far ones dimmer", (await vis(p, "#rbRingSl")) && !(await vis(p, "#rbRibbonSl")) && !(await vis(p, "#rbForm")) && (await p.page.locator("#rbBtn").innerText()).trim() === "Создать кольцо" &&

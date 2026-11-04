@@ -677,6 +677,17 @@ html:not([data-design="studio"])[data-titles="off"] .motion-tools > .tool-card {
 .anchor-cell:disabled { opacity: 0.45; cursor: default; }
 .anchor-side { flex: 1 1 130px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .anchor-side label { color: var(--muted); font: 600 12px/1.2 var(--round); }
+.anchor-opts { display: none; }
+html[data-design="studio"] .anchor-wrap { flex-wrap: nowrap; gap: 10px; align-items: stretch; }
+html[data-design="studio"] #anchorSide { display: none; }
+html[data-design="studio"] .anchor-opts { display: flex; flex-direction: column; gap: 4px; flex: 1 1 auto; min-width: 0; }
+html[data-design="studio"] .anchor-opts button { display: flex; align-items: center; gap: 8px; flex: 1; min-height: 0; padding: 0 10px; border-radius: 8px; background: var(--st-btn); border: 1px solid #2a2b31; color: #c9cad2; font: 500 12px/1 var(--plain); text-align: left; white-space: nowrap; overflow: hidden; cursor: pointer; }
+html[data-design="studio"] .anchor-opts button span { overflow: hidden; text-overflow: ellipsis; }
+html[data-design="studio"] .anchor-opts svg { width: 14px; height: 14px; flex: none; color: #8a8c97; }
+html[data-design="studio"] .anchor-opts button:hover:not(:disabled) { border-color: rgba(var(--accent-rgb), .5); }
+html[data-design="studio"] .anchor-opts button[aria-pressed="true"] { background: rgba(var(--accent-rgb), .2); border-color: rgba(var(--accent-rgb), .7); color: #fff; }
+html[data-design="studio"] .anchor-opts button[aria-pressed="true"] svg { color: var(--accent-hi); }
+html[data-design="studio"] .anchor-opts button:disabled { opacity: .45; cursor: default; }
 /* Выравнивание — как панель Align в After Effects: список «Выровнять по», ряд из шести значков,
    черта, ряд «Распределить слои». Значки стоят тройками: в узком блоке тройки встают друг под другом. */
 .align-body { display: flex; flex-direction: column; gap: 10px; }
@@ -1485,7 +1496,19 @@ html[data-design="ae"] .set-tabs button[aria-selected="true"] { background: rgba
 .ac-card:hover .pv-graphic-timer,.ac-card:focus-visible .pv-graphic-timer{animation:pv-graphic-timer 1.6s cubic-bezier(.3,.7,.3,1) infinite}
 
 /* «Изменить»: пресеты на выделенном слое */
-.ac-tab-edit { margin-left: auto; }
+.ac-autoplay { flex: none; display: inline-flex; padding: 2px; gap: 2px; border-radius: 9px; background: rgba(0, 0, 0, .25); border: 1px solid var(--border, #2a2b31); }
+.ac-autoplay button { height: 26px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: 500 11.5px/1 var(--plain, inherit); cursor: pointer; white-space: nowrap; }
+.ac-autoplay button:hover { color: var(--text); }
+.ac-autoplay button[aria-pressed="true"] { background: rgba(var(--accent-rgb), .26); color: #fff; }
+.ac-edit-btn { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 11px; border-radius: 9px; border: 1px solid var(--border, #2a2b31); background: rgba(255, 255, 255, .04); color: var(--text); font: 500 12px/1 var(--plain, inherit); cursor: pointer; white-space: nowrap; }
+.ac-edit-btn svg { width: 14px; height: 14px; flex: none; }
+.ac-edit-btn:hover { border-color: rgba(var(--accent-rgb), .5); }
+.ac-edit-btn[aria-pressed="true"] { background: rgba(var(--accent-rgb), .22); border-color: rgba(var(--accent-rgb), .75); }
+/* Узкая панель: поиск на всю строку, переключатель, «Изменить» и ★ под ним */
+@media (max-width: 460px) { .ac-bar { flex-wrap: wrap; } .ac-bar .ac-search { flex: 1 1 100%; } .ac-bar .ac-edit-btn { margin-left: auto; } }
+/* Узкая панель: «Изменить» — только карандаш */
+@media (max-width: 360px) { .ac-edit-btn span { display: none; } .ac-edit-btn { width: 32px; padding: 0; justify-content: center; } }
+html[data-design="ae"] .ac-autoplay, html[data-design="ae"] .ac-autoplay button, html[data-design="ae"] .ac-edit-btn { border-radius: 4px; }
 .ac-grid > .ac-edit-head, .ac-grid > .ac-edit-item, .ac-grid > .fx-note { grid-column: 1 / -1; }
 .ac-edit-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 700 13px/1.3 var(--round); }
 .ac-edit-item { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--glass); }
@@ -2071,6 +2094,14 @@ html[data-design="studio"] .tool-flow .flow-tiles .paste-do > span { display: no
 html[data-design="studio"] .tool-flow .flow-tiles .paste-do::after { content: attr(data-short); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover { border-color: rgba(var(--accent-rgb), .5) !important; }
 html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover .paste-do svg { background: rgba(var(--accent-rgb), .26); }
+/* Плитка = значок в квадрате, подпись под ним (как иконки приложений), без большой рамки вокруг. */
+.tool-flow > .flow-tiles:not([hidden]), .tool-flow > .flow-tiles[data-wide="true"] { grid-template-columns: repeat(auto-fill, 74px); gap: 6px 8px; }
+html[data-design="studio"] .tool-flow .flow-tiles .tool-card { width: 74px; height: 82px; min-height: 0; padding: 0 !important; background: transparent !important; border-color: transparent !important; box-shadow: none !important; justify-content: flex-start; }
+html[data-design="studio"] .tool-flow .flow-tiles .paste-do { gap: 7px !important; justify-content: flex-start !important; padding: 0 !important; color: #b9bac4 !important; }
+html[data-design="studio"] .tool-flow .flow-tiles .paste-do svg { width: 22px !important; height: 22px !important; padding: 15px !important; border-radius: 15px !important; background: #1c1d23 !important; border: 1px solid #2a2b31; color: var(--accent-hi) !important; transition: background .15s, border-color .15s; }
+html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover { border-color: transparent !important; }
+html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover .paste-do svg { background: rgba(var(--accent-rgb), .22) !important; border-color: rgba(var(--accent-rgb), .6); }
+html[data-design="studio"] .tool-flow .flow-tiles .tool-card:hover .paste-do { color: var(--text) !important; }
 /* блоки с настройками */
 .tool-flow .flow-cols .tool-card { width: 100%; box-sizing: border-box; margin: 0 0 12px; -webkit-column-break-inside: avoid; break-inside: avoid; }
 .tool-flow .flow-cols .tool-head { cursor: pointer; padding-right: 30px; }
@@ -2222,6 +2253,83 @@ html[data-design="ae"] .mk-pane .mk-card, html[data-design="ae"] .gr-stage, html
 .tb-swatches button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent-hi, var(--accent)); }
 #tbStrokeRow[hidden], #tbStrokeWRow[hidden] { display: none; }
 html[data-design="ae"] .tb-stage { border-radius: 4px; }
+/* ---- «Жидкое стекло» (Анимация › Макеты): с текстом — 4 формы с живым текстом, без текста — фигура; вид стекла и обводка общие. */
+.gl-pane { --glt: rgba(255, 255, 255, .08); --glb: 4px; display: flex; flex-direction: column; gap: 9px; padding-top: 0; }
+.gl-part { display: flex; flex-direction: column; gap: 9px; }
+.gl-part[hidden], .gl-pane .kr-sl[hidden] { display: none; }
+.gl-mode .kr-b { padding: 8px 4px; font-size: 12px; }
+.gl-pane > .field, .gl-part > .field { width: 100%; box-sizing: border-box; }
+.gl-stage { position: relative; display: block; overflow: hidden; background: #0d0e12; border-radius: 10px; container-type: inline-size; }
+.gl-stage > i[class^="gl-b"] { position: absolute; border-radius: 50%; }
+.gl-b1 { width: 30%; aspect-ratio: 1; left: 8%; top: 8%; background: #ff5a2a; }
+.gl-b2 { width: 9%; height: 90%; left: 46%; top: 5%; border-radius: 99px !important; background: #2f63ff; }
+.gl-b3 { width: 22%; aspect-ratio: 1; right: 8%; top: 42%; background: #ff2d8a; }
+.gl-b4 { width: 34%; height: 11%; left: 28%; bottom: 6%; border-radius: 99px !important; background: #ffd23f; }
+.gl-big { height: 150px; border-radius: 12px; }
+.gl-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gl-tile { appearance: none; position: relative; display: block; height: 86px; padding: 0; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255, 255, 255, .1); background: #0d0e12; cursor: pointer; font: inherit; }
+.gl-tile .gl-stage { position: absolute; inset: 0; border-radius: 0; }
+.gl-tile[aria-pressed="true"] { border-color: var(--accent-hi, var(--accent)); box-shadow: 0 0 0 1px var(--accent-hi, var(--accent)); }
+.gl-nm { position: absolute; left: 7px; top: 6px; z-index: 2; font-size: 10.5px; font-weight: 600; color: rgba(255, 255, 255, .8); text-shadow: 0 1px 2px #000; }
+.gl-in { position: absolute; inset: 0; }
+.gl-g { position: absolute; display: flex; align-items: center; justify-content: center; box-sizing: border-box; color: #fff; font-weight: 700; white-space: nowrap; overflow: hidden;
+  backdrop-filter: blur(var(--glb)) saturate(1.6) brightness(1.08); -webkit-backdrop-filter: blur(var(--glb)) saturate(1.6) brightness(1.08);
+  background: var(--glt); border: 1px solid rgba(255, 255, 255, .6); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .75), 0 6px 16px rgba(0, 0, 0, .45); }
+.gl-btn { left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 86%; padding: 5px 14px; border-radius: 99px; font-size: 11px; }
+.gl-box { left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 90%; padding: 3px 10px; border-radius: 6px; font-size: 14px; font-weight: 800; letter-spacing: .02em; }
+.gl-card { left: 50%; top: 50%; transform: translate(-50%, -50%); width: 62%; height: 70%; border-radius: 10px; flex-direction: column; align-items: flex-start; justify-content: flex-end; padding: 0 9px 8px; font-size: 11px; }
+.gl-card b, .gl-note b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.gl-card small, .gl-note small { font-weight: 400; font-size: 8px; opacity: .8; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.gl-note { left: 50%; top: 8px; transform: translateX(-50%); width: 80%; height: 28px; border-radius: 9px; justify-content: flex-start; gap: 6px; padding: 0 7px; font-size: 9px; }
+.gl-note i { flex: none; width: 16px; height: 16px; border-radius: 4px; background: linear-gradient(135deg, #7a5af5, #2f9bff); }
+.gl-note span { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.gl-shape, .gl-out { position: absolute; left: 50%; top: 50%; width: var(--gls, 76px); height: var(--gls, 76px); transform: translate(-50%, -50%); }
+.gl-shape { -webkit-mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; background: var(--glt);
+  backdrop-filter: blur(var(--glb)) saturate(1.6) brightness(1.1); -webkit-backdrop-filter: blur(var(--glb)) saturate(1.6) brightness(1.1); }
+.gl-out { overflow: visible; pointer-events: none; }
+.gl-line { fill: none; stroke: rgba(255, 255, 255, .75); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+/* Обводка: превью меняется так же, как слой «Стекло: обводка». */
+.gl-pane[data-edge="thin"] .gl-g { border-width: .6px; border-color: rgba(255, 255, 255, .95); box-shadow: 0 6px 16px rgba(0, 0, 0, .45); }
+.gl-pane[data-edge="thin"] .gl-line { stroke-width: 1; stroke: #fff; }
+.gl-pane[data-edge="dash"] .gl-g { border: 1.4px dashed rgba(255, 255, 255, .9); box-shadow: 0 6px 16px rgba(0, 0, 0, .45); }
+.gl-pane[data-edge="dash"] .gl-line { stroke-dasharray: 6 4; stroke: #fff; }
+.gl-pane[data-edge="none"] .gl-g { border-color: transparent; box-shadow: 0 6px 16px rgba(0, 0, 0, .35); }
+.gl-pane[data-edge="none"] .gl-line { stroke: none; }
+.gl-pane[data-edge="glow"] .gl-g { box-shadow: 0 0 10px rgba(170, 210, 255, .9), inset 0 1px 0 rgba(255, 255, 255, .75); }
+.gl-pane[data-edge="glow"] .gl-line { stroke: #fff; filter: drop-shadow(0 0 3px rgba(170, 210, 255, .95)); }
+.gl-pane[data-edge="run"] .gl-g { border-color: rgba(255, 255, 255, .2); animation: gl-run 2.4s linear infinite; }
+.gl-pane[data-edge="run"] .gl-line { stroke: #fff; stroke-width: 2; stroke-dasharray: 60 240; animation: gl-dash 2.4s linear infinite; }
+@keyframes gl-run { 0%, 100% { box-shadow: inset 2px 0 0 #fff, 0 6px 16px rgba(0, 0, 0, .45); } 25% { box-shadow: inset 0 2px 0 #fff, 0 6px 16px rgba(0, 0, 0, .45); } 50% { box-shadow: inset -2px 0 0 #fff, 0 6px 16px rgba(0, 0, 0, .45); } 75% { box-shadow: inset 0 -2px 0 #fff, 0 6px 16px rgba(0, 0, 0, .45); } }
+@keyframes gl-dash { to { stroke-dashoffset: -300; } }
+.gl-shapes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.gl-shapes .kr-b svg { width: 22px; height: 22px; stroke-width: 7; }
+.gl-lab { font-size: 11px; color: var(--muted); margin: 1px 0 -3px; }
+.gl-kinds { display: flex; align-items: center; gap: 10px; }
+.gl-kind-row { display: flex; gap: 8px; }
+.gl-kind-row button { appearance: none; position: relative; width: 28px; height: 28px; padding: 0; border-radius: 50%; overflow: hidden; cursor: pointer; border: 1px solid rgba(255, 255, 255, .18);
+  background: linear-gradient(120deg, #ff5a2a 0 35%, #2f63ff 35% 62%, #ff2d8a 62%); }
+.gl-kind-row button::after { content: ""; position: absolute; inset: 0; background: var(--k); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.gl-kind-row button[aria-pressed="true"] { outline: 2px solid var(--accent-hi, var(--accent)); outline-offset: 2px; }
+.gl-kinds em { font-style: normal; font-size: 12px; color: var(--text); }
+.gl-edges { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.gl-edge { appearance: none; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 2px 6px; min-width: 0; font: inherit; font-size: 10.5px; color: var(--text);
+  background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .1); border-radius: 9px; cursor: pointer; }
+.gl-edge span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.gl-edge:hover { background: rgba(255, 255, 255, .08); }
+.gl-edge[aria-pressed="true"] { background: rgba(var(--accent-rgb), .22); border-color: rgba(var(--accent-rgb), .75); color: var(--accent-hi, var(--accent)); }
+.gl-e { position: relative; width: 48px; height: 26px; border-radius: 8px; overflow: hidden; background: linear-gradient(120deg, #ff5a2a 0 32%, #2f63ff 32% 58%, #ff2d8a 58%); }
+.gl-e::after { content: ""; position: absolute; inset: 5px 7px; border-radius: 6px; background: rgba(255, 255, 255, .14); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  border: 1px solid rgba(255, 255, 255, .6); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8); }
+.gl-e-thin::after { border: .6px solid #fff; box-shadow: none; }
+.gl-e-run::after { border-color: rgba(255, 255, 255, .2); box-shadow: inset 0 2px 0 #fff, inset 2px 0 0 rgba(255, 255, 255, .6); }
+.gl-e-dash::after { border: 1.4px dashed #fff; box-shadow: none; }
+.gl-e-none::after { border-color: transparent; box-shadow: none; }
+.gl-e-glow::after { box-shadow: 0 0 6px rgba(170, 210, 255, .95); }
+.gl-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.gl-btns .shift-do { margin: 0; display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
+.gl-btns .shift-do span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gl-btns svg { width: 15px; height: 15px; flex: none; }
+html[data-design="ae"] .gl-tile, html[data-design="ae"] .gl-stage, html[data-design="ae"] .gl-edge { border-radius: 4px; }
 /* ---- «Мокап телефона» (Анимация › Макеты): превью рисует тот же телефон, что появится в композиции. */
 .ph-pane { display: flex; flex-direction: column; gap: 9px; padding-top: 0; }
 .ph-stage { height: 190px; border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; perspective: 600px;
