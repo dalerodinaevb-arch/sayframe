@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.73.0";
+    var VERSION = "1.74.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -210,6 +210,40 @@
         "- When you receive a [Result check] message, follow the instructions in it.",
         "",
         "Every user message contains a snapshot of the current project state. Use it to refer to real layer names and indexes.",
+        "If you are told that your previous script failed, return the full corrected script, not a patch."
+    ].join("\n");
+
+    // То же для Premiere Pro: другие объекты (секвенции, дорожки, клипы) и своя библиотека PR из host_pr.jsx.
+    var PR_SYSTEM_PROMPT = [
+        "You are an assistant built into a panel inside Adobe Premiere Pro.",
+        "The user describes, in plain words, what they want done in Premiere Pro. You make it happen by writing a script that the panel runs immediately.",
+        "",
+        "Reply format:",
+        "- One short sentence, in the user's language, saying what the script will do.",
+        "- Then exactly one fenced code block (```javascript) with a complete ExtendScript script for Premiere Pro.",
+        "- If the message is a question, or the task cannot be done by scripting in Premiere Pro, answer in plain text in the user's language and include no code block.",
+        "",
+        "Script rules:",
+        "- ExtendScript is ES3: use var and function only. No let, const, arrow functions, template strings, JSON, Array.prototype.map/forEach/filter/indexOf, String.prototype.trim, or trailing commas.",
+        "- This is the Premiere Pro object model, not After Effects: app.project, app.project.activeSequence, sequence.videoTracks / audioTracks (track 0 is V1 / A1, the lowest), track.clips (TrackItem: name, start, end, inPoint, outPoint, projectItem, components, isSelected(), setSelected(), remove(ripple, alignToVideo)), app.project.rootItem (bins and ProjectItems), sequence.markers, app.encoder.",
+        "- Time is in ticks: 254016000000 per second. Time objects have .seconds and .ticks. Positions on the timeline are seconds or tick strings.",
+        "- Premiere has no undo groups for scripts: every change is a separate undo step. Keep scripts focused and do not make changes the user did not ask for.",
+        "- Work in the active sequence. If the task needs a sequence and none is open, throw new Error with a clear message asking the user to open one.",
+        "- Clip effects are components: clip.components (Motion, Opacity, plus applied effects). Their parameters are component.properties with getValue(), setValue(v, true), setTimeVarying(true), addKey(t), setValueAtKey(t, v, true). Motion > Position is normalised [x, y] (0..1 of the frame); Scale is percent.",
+        "- To add an effect use the QE DOM: app.enableQE(); var qs = qe.project.getActiveSequence(); qs.getVideoTrackAt(n).getItemAt(i).addVideoEffect(qe.project.getVideoEffectByName('Gaussian Blur')). Transitions: addTransition(qe.project.getVideoTransitionByName('Cross Dissolve'), true, '00;00;01;00'). Wrap QE calls in try/catch: QE is undocumented and can differ between versions.",
+        "- Text and titles: Premiere cannot create text layers by plain scripting. Use sequence.importMGT(path, ticks, videoTrackIndex, audioTrackIndex) only when the user gives a .mogrt file; otherwise explain in the reply that the text has to be made with the Essential Graphics panel, and still do the rest of the task.",
+        "- Do not call alert, confirm or prompt. Do not delete clips, sequences or project items, close or save the project, or touch files, unless the user explicitly asks for that.",
+        "- Write defensive code: check that things exist before using them, and throw new Error('clear message in the user\\'s language') when the request cannot be carried out (for example, no clip is selected).",
+        "",
+        "The PR helper library is already loaded (tested, ES3). Prefer it over raw calls:",
+        "  PR.seq() - the active sequence (throws when none). PR.fps(), PR.duration(), PR.playhead() - in seconds.",
+        "  PR.secs(timeOrTicks) - seconds. PR.ticks(sec) - tick string. PR.time(sec) - a Time object.",
+        "  PR.track('V'|'A', n) - track n from 1. PR.clips(track) - its clips as an array. PR.selected() - selected clips of the active sequence.",
+        "  PR.bin(name) - a bin in the project root, made when missing. PR.findItem(name) - a project item by name.",
+        "  PR.importFile(path, binName) - imports a file and returns its project item. PR.place(item, sec) - puts an item on the lowest free video track at sec (default: playhead).",
+        "  PR.freeAt(track, a, b) - is the track empty between a and b seconds. PR.component(clip, name) and PR.param(clip, componentName, paramName), e.g. PR.param(clip, 'Motion', 'Scale').",
+        "",
+        "Every user message contains a snapshot of the current project state (sequence, tracks, clips with times, selection). Use it to refer to real clip names, tracks and times.",
         "If you are told that your previous script failed, return the full corrected script, not a patch."
     ].join("\n");
 
@@ -581,6 +615,17 @@
             exists: function (p) {
                 return new Promise(function (resolve) { fs.access(p, function (err) { resolve(!err); }); });
             },
+            // Содержимое папки: [{ name, dir }]; нет папки — пустой список.
+            listDir: function (p) {
+                return new Promise(function (resolve) {
+                    fs.readdir(p, { withFileTypes: true }, function (err, list) {
+                        resolve(err ? [] : list.map(function (d) { return { name: d.name, dir: d.isDirectory() }; }));
+                    });
+                });
+            },
+            copyFile: function (a, b) {
+                return new Promise(function (resolve, reject) { fs.copyFile(a, b, cb(resolve, reject)); });
+            },
             mkdirp: function (p) {
                 return new Promise(function (resolve, reject) { fs.mkdir(p, { recursive: true }, cb(resolve, reject)); });
             },
@@ -686,6 +731,96 @@
 
     var platform = window.__SAYFRAME_TEST_PLATFORM__ || makePlatform();
 
+    // ---------------------------------------------------------------- программа
+    // Та же панель работает в After Effects и в Premiere Pro. В Premiere она — отдельное расширение
+    // (com.sayframe.pr.panel со своим manifest-pr.xml), берёт команды из jsx/host_pr.jsx и показывает
+    // только то, что там есть: AI, Проекты и быстрый экспорт.
+    var IS_PR = (function () {
+        try { return String(JSON.parse(window.__adobe_cep__.getHostEnvironment()).appName || "") === "PPRO"; } catch (e) { return false; }
+    })();
+    var APP_NAME = IS_PR ? "Premiere Pro" : "After Effects";
+    // Быстрые задачи в Premiere свои и хранятся отдельно.
+    if (IS_PR) {
+        QUICK_KEY = "sayframe.quick.pr.v1";
+        QUICK_ICONS = { "p-dissolve": "⧉", "p-gaps": "⇤", "p-markers": "◆", "p-tidy": "▤" };
+        QUICK_DEFAULTS = [
+            { id: "p-dissolve", name: "Переходы между клипами",
+              text: "Поставь переход Cross Dissolve длиной 0,5 секунды на каждый стык соседних клипов на дорожке V1 открытой секвенции. Там, где переход уже есть, ничего не меняй." },
+            { id: "p-gaps", name: "Убрать пустоты",
+              text: "Убери пустые места между клипами на дорожке V1 открытой секвенции: сдвинь клипы влево вплотную друг к другу, порядок не меняй. Клипы на других дорожках, которые стоят над сдвинутым клипом, сдвинь вместе с ним." },
+            { id: "p-markers", name: "Маркеры каждые 5 секунд",
+              text: "Поставь маркеры на открытой секвенции каждые 5 секунд от начала до конца, с названиями «5 с», «10 с» и так далее." },
+            { id: "p-tidy", name: "Упорядочить проект",
+              text: "Упорядочи панель Project: разложи элементы по корзинам «Секвенции», «Видео», «Картинки», «Звук» и «Прочее». Уже существующие корзины с такими именами используй, пустые не создавай, ничего не удаляй и не переименовывай." }
+        ];
+    }
+    var HOST_JSX = IS_PR ? "/jsx/host_pr.jsx" : "/jsx/host.jsx";
+    // Команды host_pr.jsx: остальные в Premiere сразу отвечают NOT_IN_PREMIERE, не трогая программу.
+    var PR_FNS = ["info", "syntax", "run", "reference", "brandLogo", "brandIcon", "brandComp", "brandFilesInUse", "brandSaveDialog",
+        "exportInfo", "exportOne", "exportReveal"];
+
+    // ---- Sayframe для Premiere Pro у тех, кто поставил панель раньше (обновлялся из After Effects):
+    // если на компьютере есть Premiere Pro, а расширения SayframePR рядом нет, панель один раз предлагает
+    // поставить его сама — копией своей папки с manifest-pr.xml вместо manifest.xml.
+    var PR_OFFER_KEY = "sayframe.prOffer.v1";   // "no" — отказались, "done" — поставлено
+
+    function premiereRoots() {
+        if (window.__SAYFRAME_TEST_APPS__) { return [window.__SAYFRAME_TEST_APPS__]; }
+        return platform.isWindows() ? ["C:\\Program Files\\Adobe"] : ["/Applications"];
+    }
+
+    async function premiereOnComputer() {
+        var roots = premiereRoots(), i, list;
+        for (i = 0; i < roots.length; i++) {
+            list = await platform.listDir(roots[i]);
+            if (list.some(function (d) { return d.dir && /^Adobe Premiere Pro/i.test(d.name); })) { return true; }
+        }
+        return false;
+    }
+
+    function premiereDir() { return platform.join(platform.dirname(extensionDir()), "SayframePR"); }
+
+    async function copyTree(src, dst) {
+        var list = await platform.listDir(src), i, d;
+        await platform.mkdirp(dst);
+        for (i = 0; i < list.length; i++) {
+            d = list[i];
+            if (/^\./.test(d.name)) { continue; }
+            if (d.dir) { await copyTree(platform.join(src, d.name), platform.join(dst, d.name)); }
+            else { await platform.copyFile(platform.join(src, d.name), platform.join(dst, d.name)); }
+        }
+    }
+
+    // Ставит расширение для Premiere Pro рядом: сначала во временную папку, потом одним переименованием.
+    async function installPremiereCopy() {
+        var ext = extensionDir(), dest = premiereDir(), staging = platform.join(platform.dirname(ext), ".SayframePR.installing");
+        await copyTree(ext, staging);
+        await platform.writeText(platform.join(staging, "CSXS", "manifest.xml"), await platform.readText(platform.join(ext, "CSXS", "manifest-pr.xml")));
+        await platform.move(staging, dest);
+    }
+
+    async function offerPremiere() {
+        var said = "", ext = extensionDir(), choice;
+        if (IS_PR || SOLO || !platform.available || !platform.listDir || !platform.copyFile || !ext || busy) { return; }
+        try { said = window.localStorage.getItem(PR_OFFER_KEY) || ""; } catch (e) {}
+        if (said) { return; }
+        if (!(await platform.exists(platform.join(ext, "CSXS", "manifest-pr.xml")))) { return; }
+        if (await platform.exists(premiereDir())) { try { window.localStorage.setItem(PR_OFFER_KEY, "done"); } catch (e0) {} return; }
+        if (!(await premiereOnComputer())) { return; }
+        choice = await modal({ title: "Sayframe в Premiere Pro",
+            text: "На компьютере есть Premiere Pro. Добавить Sayframe и туда? Там будут AI, Проекты и быстрый экспорт, ключ и настройки — те же, что здесь.\n\nПосле этого перезапустите Premiere Pro: панель будет в меню Window > Extensions > Sayframe.",
+            buttons: [{ label: "Не надо", value: "no" }, { label: "Добавить", value: "yes", primary: true }] });
+        if (choice === null) { return; }   // Esc — спросим в другой раз
+        if (choice === "no") { try { window.localStorage.setItem(PR_OFFER_KEY, "no"); } catch (e1) {} setStatus("Хорошо. Добавить Sayframe в Premiere Pro можно потом установщиком.", ""); return; }
+        try {
+            await installPremiereCopy();
+            try { window.localStorage.setItem(PR_OFFER_KEY, "done"); } catch (e2) {}
+            setStatus("Sayframe добавлен в Premiere Pro. Перезапустите Premiere Pro — панель будет в меню Window > Extensions > Sayframe.", "done");
+        } catch (e3) {
+            setStatus("Не получилось добавить Sayframe в Premiere Pro. Закройте Premiere Pro и запустите установщик Sayframe.", "error");
+        }
+    }
+
     // ---------------------------------------------------------------- отдельные окна
     // Раздел или блок можно открыть своим окном After Effects (Window › Extensions › «Sayframe — …»).
     // Каждое окно — своё расширение в manifest.xml с Id com.sayframe.ae.win.<key>; панель узнаёт по Id,
@@ -730,7 +865,7 @@
     var SOLO = (function () {
         var id = "";
         try { id = String(window.__adobe_cep__ && window.__adobe_cep__.getExtensionId ? window.__adobe_cep__.getExtensionId() : ""); } catch (e) {}
-        return id.indexOf(WIN_PREFIX) === 0 ? winByKey(id.slice(WIN_PREFIX.length)) : null;
+        return !IS_PR && id.indexOf(WIN_PREFIX) === 0 ? winByKey(id.slice(WIN_PREFIX.length)) : null;
     })();
 
     function windowList(text) {
@@ -778,6 +913,7 @@
     // "signed" / "noaccess" / "nofile" — переписать нельзя.
     async function syncWindowsManifest() {
         var dir = extensionDir(), text, next;
+        if (IS_PR) { return "same"; }
         if (!dir || !platform.available) { return "nofile"; }
         try { text = await platform.readText(manifestPath()); } catch (e) { return "nofile"; }
         if (winLoaded === null) { winLoaded = loadedWindows(text); }
@@ -985,7 +1121,7 @@
         if (!hostReady[key]) {
             hostReady[key] = evalScript(hostProbe(fn)).then(function (t) {
                 if (t === "yes") { return true; }
-                return evalScript("$.evalFile(" + asciiJSON(extensionDir() + "/jsx/host.jsx") + "); " + hostProbe(fn)).then(function (t2) {
+                return evalScript("$.evalFile(" + asciiJSON(extensionDir() + HOST_JSX) + "); " + hostProbe(fn)).then(function (t2) {
                     if (t2 !== "yes") { throw new Error("HOST_NOT_LOADED"); }
                     return true;
                 });
@@ -996,6 +1132,7 @@
     }
 
     function host(fn, args) {
+        if (IS_PR && PR_FNS.indexOf(fn) < 0) { return Promise.reject(new Error("NOT_IN_PREMIERE")); }
         return ensureHost(fn).then(function () {
             var list = [];
             var i;
@@ -1026,12 +1163,18 @@
         if (m === "EC_NO_KEYS") { return "Выделите на таймлайне ключи, куда вставить, или само свойство (у свойства без ключей панель их создаст), или слой — тогда вставится в то же свойство этого слоя."; }
         if (m === "EC_NO_TARGET") { return "У выделенного слоя нет такого свойства, откуда копировали. Выделите на таймлайне ключи или само свойство (Position, Scale…), куда вставить."; }
         if (m === "EC_TYPE") { return "Значения можно вставить только в свойство того же типа: позицию — в позицию, цвет — в цвет. Плавность вставляется куда угодно."; }
-        if (m === "HOST_UNAVAILABLE") { return "Панель открыта вне After Effects, связи с программой нет."; }
+        if (m === "HOST_UNAVAILABLE") { return "Панель открыта вне " + APP_NAME + ", связи с программой нет."; }
         if (m === "HOST_NOT_LOADED" || m === "HOST_ERROR" || m === "HOST_BAD_REPLY") {
-            return "After Effects не ответил панели. Закройте и снова откройте её в меню Window > Extensions.";
+            return APP_NAME + " не ответил панели. Закройте и снова откройте её в меню Window > Extensions.";
         }
+        if (m === "NOT_IN_PREMIERE") { return "В Premiere Pro этого инструмента пока нет — он работает в After Effects."; }
+        if (m === "REF_NOT_IN_PREMIERE") { return "В Premiere Pro референсы пока не поддерживаются: опишите задачу словами."; }
+        if (m === "NO_SEQUENCE") { return "Откройте секвенцию: инструмент работает с открытой секвенцией."; }
+        if (m === "NO_FREE_TRACK") { return "На всех видеодорожках под указателем уже есть клипы. Добавьте пустую видеодорожку и нажмите ещё раз."; }
+        if (m === "IMPORT_FAILED") { return "Premiere Pro не смог импортировать файл."; }
+        if (m === "NO_NEW_SEQUENCE") { return "Premiere Pro не создал секвенцию."; }
         if (m === "NODE_UNAVAILABLE") { return "Панель не получила доступ к файлам (Node.js выключен)."; }
-        if (m === "NO_H264") { return "В After Effects нет настройки H.264 (MP4) — нужен After Effects 2023 или новее. Или включите «Через Media Encoder»."; }
+        if (m === "NO_H264") { return IS_PR ? "Не нашёл в Premiere Pro настройку H.264 (MP4) для экспорта." : "В After Effects нет настройки H.264 (MP4) — нужен After Effects 2023 или новее. Или включите «Через Media Encoder»."; }
         if (m === "EXPORT_NO_FOLDER") { return "Не получилось создать папку для видео. " + FILE_ACCESS_HINT; }
         if (m === "EXPORT_BUSY") { return "After Effects уже что-то сохраняет (Render Queue). Дождитесь конца и попробуйте снова."; }
         if (m === "BAD_EXPORT_SIZE") { return "Размер видео — от 16 до 16384 пикселей."; }
@@ -1141,6 +1284,76 @@
 
     function storeSettings(s) {
         try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {}
+        shareSoon();
+    }
+
+    // ---- Общее для After Effects и Premiere Pro: настройки (ключ AI, модель, тема…) и Проекты лежат ещё и
+    // в ~/.sayframe/shared.json. Панель, открытая позже, берёт оттуда то, что новее её собственного.
+    // Отдельные окна в этом не участвуют.
+    var SHARED_STAMP_KEY = "sayframe.shared.v1";
+    var SHARED_LOCAL = ["windows", "hotkeys"];   // эти настройки у каждой программы свои
+    var sharedTimer = null;
+    var sharedRead = false, sharedPending = false;   // пока общий файл не прочитан, ничего в него не пишем
+
+    function sharedKeys() { return [SETTINGS_KEY, "sayframe.brands.v1"]; }
+    function sharedPath() { return platform.join(platform.homedir(), ".sayframe", "shared.json"); }
+
+    function shareSoon() {
+        if (SOLO || !platform.available) { return; }
+        if (!sharedRead) { sharedPending = true; return; }
+        if (sharedTimer) { clearTimeout(sharedTimer); }
+        sharedTimer = setTimeout(function () { sharedTimer = null; writeShared(); }, 300);
+    }
+
+    function writeShared() {
+        var data = { t: Date.now(), app: IS_PR ? "PPRO" : "AEFT", items: {} };
+        sharedKeys().forEach(function (k) {
+            var v = null;
+            try { v = window.localStorage.getItem(k); } catch (e) {}
+            if (typeof v === "string") { data.items[k] = v; }
+        });
+        try { window.localStorage.setItem(SHARED_STAMP_KEY, String(data.t)); } catch (e1) {}
+        return platform.mkdirp(platform.dirname(sharedPath())).then(function () {
+            return platform.writeText(sharedPath(), JSON.stringify(data));
+        }).catch(function () {});
+    }
+
+    // При запуске: общий файл новее — берём его и перезапускаем панель один раз; старее — обновляем его.
+    function readShared() {
+        var mine = 0;
+        if (SOLO || !platform.available) { sharedRead = true; return Promise.resolve(false); }
+        try { mine = Number(window.localStorage.getItem(SHARED_STAMP_KEY) || 0) || 0; } catch (e) {}
+        return platform.readText(sharedPath()).then(function (text) {
+            var data = JSON.parse(text), items = data && data.items, local, next, changed = [];
+            if (!data || !(Number(data.t) > mine) || !items || typeof items !== "object") {
+                if (!data || Number(data.t) < mine) { sharedPending = true; }
+                return false;
+            }
+            sharedKeys().forEach(function (k) {
+                var before = null;
+                if (typeof items[k] !== "string") { return; }
+                try { before = window.localStorage.getItem(k); } catch (e0) {}
+                if (k === SETTINGS_KEY) {
+                    try {
+                        next = JSON.parse(items[k]);
+                        local = JSON.parse(window.localStorage.getItem(k) || "{}") || {};
+                        SHARED_LOCAL.forEach(function (n) { if (local.hasOwnProperty(n)) { next[n] = local[n]; } else { delete next[n]; } });
+                        if (JSON.stringify(next) !== JSON.stringify(local)) { window.localStorage.setItem(k, JSON.stringify(next)); changed.push(k); }
+                    } catch (e1) {}
+                    return;
+                }
+                if (items[k] !== before) { try { window.localStorage.setItem(k, items[k]); changed.push(k); } catch (e2) {} }
+            });
+            try { window.localStorage.setItem(SHARED_STAMP_KEY, String(data.t)); } catch (e3) {}
+            return changed.length ? changed : false;
+        }, function () {
+            sharedPending = true;
+            return false;
+        }).catch(function () { return false; }).then(function (fresh) {
+            sharedRead = true;
+            if (!fresh && sharedPending) { sharedPending = false; writeShared(); }
+            return fresh;
+        });
     }
 
     function parseHex(hex) {
@@ -1402,6 +1615,33 @@
         shape: { tab: ui.tabShape, view: ui.viewShape, slot: ui.statusSlotShape },
         brand: { tab: ui.tabBrand, view: ui.viewBrand, slot: ui.statusSlotBrand }
     };
+
+    // Premiere: только AI и Проекты. Кнопки остальных вкладок убираются, их разделы остаются скрытыми.
+    function setupPremiere() {
+        var root = document.documentElement, badge;
+        if (!IS_PR) { return; }
+        root.setAttribute("data-app", "ppro");
+        ["tools", "motion", "shape"].forEach(function (k) {
+            TABS[k].view.hidden = true;
+            if (TABS[k].tab.parentNode) { TABS[k].tab.parentNode.removeChild(TABS[k].tab); }
+            delete TABS[k];
+        });
+        ui.snapBtn.hidden = true;
+        ui.fxBtn.hidden = true;
+        ui.exportBtn.setAttribute("data-info", "Быстрый экспорт|Сохраняет открытую секвенцию в MP4 для Reels, YouTube, Telegram, TikTok или поста — сразу в нужном размере.");
+        ui.tabClaude.setAttribute("data-info", "AI|Опишите задачу словами — Claude напишет скрипт и выполнит его в Premiere Pro: клипы, дорожки, маркеры, эффекты, экспорт.");
+        ui.exAme.parentNode.querySelector("span:last-child").textContent = "Через Media Encoder — Premiere не занят";
+        ui.exAmeRow.title = "Media Encoder сохраняет видео в фоне, а Premiere Pro в это время свободен.";
+        ui.prompt.placeholder = "Опишите, что сделать в секвенции. @ — логотип, цвет или иконка из брендбука";
+        ui.prompt.setAttribute("data-ph", ui.prompt.placeholder);
+        if (document.documentElement.getAttribute("data-design") === "studio") { ui.prompt.placeholder = "Что сделать в секвенции?"; }
+        ui.exSpan.querySelector('[data-v="all"] span').textContent = "Всю секвенцию";
+        ui.exSpan.querySelector('[data-v="work"] span').textContent = "От In до Out";
+        badge = document.createElement("span");
+        badge.className = "app-badge";
+        badge.textContent = "Premiere";
+        document.querySelector("header.top .brand").appendChild(badge);
+    }
 
     function showTab(name) {
         var k;
@@ -1966,7 +2206,7 @@
 
     // История хранится в формате Claude; для ChatGPT картинки и текст перекладываются в его формат.
     function openAIMessages(messages, system) {
-        var out = [{ role: "system", content: system || SYSTEM_PROMPT }];
+        var out = [{ role: "system", content: system || (IS_PR ? PR_SYSTEM_PROMPT : SYSTEM_PROMPT) }];
         messages.forEach(function (m) {
             var parts;
             if (!(m.content instanceof Array)) { out.push({ role: m.role, content: m.content }); return; }
@@ -2033,7 +2273,7 @@
         var body = JSON.stringify({
             model: settings.model,
             max_tokens: maxTokens || MAX_TOKENS,
-            system: [{ type: "text", text: system || SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+            system: [{ type: "text", text: system || (IS_PR ? PR_SYSTEM_PROMPT : SYSTEM_PROMPT), cache_control: { type: "ephemeral" } }],
             messages: messages,
             cache_control: { type: "ephemeral" }
         });
@@ -7663,7 +7903,7 @@
         } catch (e) {
             exInfo = null;
             exPollKey = JSON.stringify({ error: e && e.message });
-            ui.exCompName.textContent = e && e.message === "NO_ACTIVE_COMP" ? "Откройте композицию, которую сохранить" : "Нет связи с After Effects";
+            ui.exCompName.textContent = e && (e.message === "NO_ACTIVE_COMP" || e.message === "NO_SEQUENCE") ? (IS_PR ? "Откройте секвенцию, которую сохранить" : "Откройте композицию, которую сохранить") : "Нет связи с " + APP_NAME;
             exDefaultNow = platform.join(platform.homedir(), "Desktop", "Sayframe Экспорт");
         }
         showExFolder(exState.folder || exDefaultNow);
@@ -8261,7 +8501,7 @@
     function registerHotkeys() {
         var cep = window.__adobe_cep__, map = parseHotkeys(settings.hotkeys), list = [], k, parts, code;
         // Сочетания по всему After Effects слушает только большой Sayframe, иначе одно нажатие сработает в каждом окне.
-        if (SOLO) { return; }
+        if (SOLO || IS_PR) { return; }
         watchHostHotkeys(map);
         if (!cep || typeof cep.registerKeyEventsInterest !== "function") { return; }
         for (k in map) {
@@ -8448,7 +8688,7 @@
     function listenHostHotkeys() {
         var cep = window.__adobe_cep__;
         if (cep && typeof cep.addEventListener === "function") {
-            if (!SOLO) {
+            if (!SOLO && !IS_PR) {
                 try { cep.addEventListener(HOST_KEY_EVENT, onHostHotkey); } catch (e) {}
                 try { cep.addEventListener(FX_EVENT, onFxPopupApplied); } catch (e2) {}
             }
@@ -9571,6 +9811,7 @@
 
     function storeBrands() {
         try { window.localStorage.setItem(BRAND_KEY, JSON.stringify(brands)); } catch (e) {}
+        shareSoon();
     }
 
     // Открытый раздел (Alif, Samsung…).
@@ -10313,6 +10554,10 @@
         var b = activeBrand();
         if (!b) { return; }
         brandCall("brandIcon", [l.file, brandBin(b)], function (r) {
+            if (IS_PR) {
+                return r.comp ? "Иконка «" + l.name + "» вставлена в «" + r.comp + "» под указателем. Файл — в корзине «" + brandBin(b) + "»."
+                    : "Иконка «" + l.name + "» добавлена в проект, в корзину «" + brandBin(b) + "». Откройте секвенцию — и щелчок вставит её туда.";
+            }
             return r.comp ? "Иконка «" + l.name + "» вставлена в «" + r.comp + "» в центр, в исходном размере. Файл — в папке «" + brandBin(b) + "». Отменить — Cmd/Ctrl+Z."
                 : "Иконка «" + l.name + "» добавлена в проект, в папку «" + brandBin(b) + "». Откройте композицию — и щелчок вставит её туда.";
         });
@@ -10345,12 +10590,34 @@
         var b = activeBrand();
         if (!b) { return; }
         brandCall("brandLogo", [l.file, brandBin(b), l.name], function (r) {
+            if (IS_PR) {
+                return r.comp ? "Логотип «" + l.name + "» вставлен в «" + r.comp + "» под указателем" + (r.track ? ", дорожка " + r.track : "") + ". Файл — в корзине «" + brandBin(b) + "»."
+                    : "Логотип «" + l.name + "» добавлен в проект, в корзину «" + brandBin(b) + "». Откройте секвенцию — и щелчок вставит его туда.";
+            }
             return r.comp ? "Логотип «" + l.name + "» вставлен в «" + r.comp + "» прекомпозицией «" + r.pre + "»: внутри логотип в масштабе 100 %, а сама прекомпозиция — " + r.scale + " %. Файл и прекомпозиция лежат в папке «" + brandBin(b) + "»."
                 : "Логотип «" + l.name + "» добавлен в проект, в папку «" + brandBin(b) + "». Откройте композицию — и щелчок вставит его в неё.";
         });
     }
 
+    // Premiere не красит клипы и не делает текстовых слоёв скриптом: цвет и текст бренда копируются в буфер обмена.
+    function copyText(text) {
+        var ta = document.createElement("textarea"), ok = false;
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+        document.body.removeChild(ta);
+        return ok;
+    }
+
     function brandPaint(c) {
+        if (IS_PR) {
+            setStatus(copyText(c.hex) ? "«" + c.name + "» " + c.hex + " скопирован — вставьте его в цвет в Essential Graphics или Lumetri." : "Не получилось скопировать " + c.hex + ".", "done");
+            return;
+        }
         brandCall("brandColor", [c.hex, c.name], function (r) {
             return "«" + c.name + "» " + c.hex + ": покрашено слоёв — " + r.count + "." + (r.linked ? " Цвет привязан к слою Brand Colors." : "") + " Отменить — Cmd/Ctrl+Z.";
         });
@@ -10380,6 +10647,10 @@
     function brandMakeText(t) {
         var b = activeBrand();
         if (!b) { return; }
+        if (IS_PR) {
+            setStatus(copyText(t.text) ? "Текст скопирован — вставьте его в титр (Essential Graphics)." : "Не получилось скопировать текст.", "done");
+            return;
+        }
         brandCall("brandText", [t.text, b.fonts.head || b.fonts.body || "", b.colors.length ? b.colors[0].hex : ""], function (r) {
             return "Текстовый слой «" + r.name + "» создан в «" + r.comp + "»" + (r.missing ? ", но шрифта бренда нет на этом компьютере — стоит замена." : ".");
         });
@@ -10389,6 +10660,7 @@
         var b = activeBrand();
         if (!b) { return; }
         brandCall("brandComp", [b.name + " " + w + "x" + h, w, h, 30, 10, brandBgHex(b), brandBin(b)], function (r) {
+            if (IS_PR) { return "Секвенция «" + r.name + "» " + w + "×" + h + " создана и открыта. Она — в корзине «" + brandBin(b) + "»."; }
             return "Композиция «" + r.name + "» " + w + "×" + h + " создана и открыта" + (r.bg ? ", фон — цвет «Фон»." : ".");
         });
     }
@@ -11896,7 +12168,7 @@
         ui.aiModes.hidden = !on;
         ui.promptFoot.hidden = !on;
         if (!ui.prompt.getAttribute("data-ph")) { ui.prompt.setAttribute("data-ph", ui.prompt.placeholder); }
-        ui.prompt.placeholder = on ? "Что сделать в композиции?" : ui.prompt.getAttribute("data-ph");
+        ui.prompt.placeholder = on ? (IS_PR ? "Что сделать в секвенции?" : "Что сделать в композиции?") : ui.prompt.getAttribute("data-ph");
         if (on) {
             if (ui.styleRow.parentNode !== ui.aiStylePop) { ui.aiStylePop.appendChild(ui.styleRow); }
             if (ui.quickBox.parentNode !== main) { main.appendChild(ui.quickBox); }
@@ -12824,12 +13096,14 @@
             if (!f || !safeRelPath(f.path) || !/^[0-9a-f]{64}$/i.test(String(f.sha256))) {
                 return Promise.reject(new Error("UPDATE_BAD_INFO"));
             }
+            // Premiere: у его расширения свой manifest.xml — это manifest-pr.xml из выпуска. Манифест After Effects не нужен.
+            if (IS_PR && f.path === "CSXS/manifest.xml") { continue; }
             plan.push({
                 url: httpsUrl(f.path + "?v=" + String(f.sha256).slice(0, 12), base),
                 sha: String(f.sha256).toLowerCase(),
                 tmp: platform.join(tmp, "file" + i),
                 bak: platform.join(tmp, "old" + i),
-                dest: platform.join.apply(null, [ext].concat(f.path.split("/"))),
+                dest: platform.join.apply(null, [ext].concat((IS_PR && f.path === "CSXS/manifest-pr.xml" ? "CSXS/manifest.xml" : f.path).split("/"))),
                 saved: false,     // прежний файл отложен в bak
                 placed: false     // новый файл стоит на месте
             });
@@ -12894,7 +13168,7 @@
         }).then(function () {
             // Новая версия host.jsx должна заменить загруженную в After Effects.
             hostReady = {};
-            return evalScript("$.evalFile(" + asciiJSON(ext + "/jsx/host.jsx") + "); 1").catch(function () {});
+            return evalScript("$.evalFile(" + asciiJSON(ext + HOST_JSX) + "); 1").catch(function () {});
         });
         return chain.then(function () { cleanup(); }, function (e) { cleanup(); throw e; });
     }
@@ -12979,6 +13253,7 @@
     buildSettings();
     buildToolPicker();
     showRef();
+    setupPremiere();
     applyTabOrder();
     showTab(savedTab());
     enableArranging();
@@ -13081,6 +13356,24 @@
         syncWindowsManifest().catch(function () {});
     }
     ensureHost().catch(function (e) { setStatus(humanError(e), "error"); });
+    // Настройки и Проекты из другой программы (After Effects ↔ Premiere Pro): новее — перезапускаемся с ними.
+    readShared().then(function (fresh) {
+        if (fresh && platform.reload) { platform.reload(); return; }
+        setTimeout(function () { offerPremiere().catch(function () {}); }, 2500);
+    });
+    // Обе программы открыты сразу: вернулись в панель — подхватываем то, что поменяли в другой.
+    // Проекты обновляются на месте; настройки (ключ, тема) — перезапуском панели.
+    if (!SOLO) {
+        window.addEventListener("focus", function () {
+            if (!sharedRead || busy) { return; }
+            readShared().then(function (changed) {
+                if (!changed) { return; }
+                if (changed.indexOf(SETTINGS_KEY) >= 0 && platform.reload) { platform.reload(); return; }
+                brands = loadBrands();
+                renderBrand();
+            });
+        });
+    }
     // Проверка обновлений идёт в фоне и не мешает работе: об ошибках сети молчим.
     // Раньше панель спрашивала сервер только при запуске и не чаще раза в шесть часов, поэтому
     // о свежем выпуске узнавала очень поздно. Теперь — при запуске, раз в несколько минут, пока открыта,

@@ -22,6 +22,7 @@ const EXT = process.env.SAYFRAME_EXT || path.join(__dirname, "..", "Sayframe");
 const SHOTS = path.join(__dirname, ".tmp", "shots");
 fs.mkdirSync(SHOTS, { recursive: true });
 const hostSrc = fs.readFileSync(path.join(EXT, "jsx/host.jsx"), "utf8");
+const hostPrSrc = fs.readFileSync(path.join(EXT, "jsx/host_pr.jsx"), "utf8");
 
 function fakePng(i) {
   const n = 300 + i; const b = Buffer.alloc(n);
@@ -722,6 +723,103 @@ function makeAE(opts, tmpDir) {
   } };
 }
 
+
+// Premiere Pro, as much as host_pr.jsx uses: a project with bins, sequences with video and audio tracks
+// and clips, the playhead, selection, import, a QE stub, the encoder and direct export. Times are in ticks.
+const TPS = 254016000000;
+function makePR(opts, tmpDir) {
+  const log = { imports: [], placed: [], exports: [], encodes: [], newSeqs: [], settings: [], opened: [], qe: [], ran: [], scripts: [] };
+  function File(p) { this.fsName = p; this.name = encodeURI(path.basename(p)); }
+  Object.defineProperty(File.prototype, "exists", { get() { return fs.existsSync(this.fsName); } });
+  Object.defineProperty(File.prototype, "length", { get() { return fs.existsSync(this.fsName) ? fs.statSync(this.fsName).size : 0; } });
+  Object.defineProperty(File.prototype, "parent", { get() { return new Folder(path.dirname(this.fsName)); } });
+  File.prototype.open = function (mode) { this._mode = mode; this._buf = ""; return mode === "r" ? fs.existsSync(this.fsName) : fs.existsSync(path.dirname(this.fsName)); };
+  File.prototype.read = function () { return fs.readFileSync(this.fsName, "utf8"); };
+  File.prototype.write = function (x) { this._buf += String(x); return true; };
+  File.prototype.close = function () { if (this._mode === "w") fs.writeFileSync(this.fsName, this._buf, "utf8"); return true; };
+  File.prototype.saveDlg = function () { return opts.saveAs === null ? null : new File(opts.saveAs || this.fsName); };
+  function Folder(p) { this.fsName = p; this.name = encodeURI(path.basename(p)); }
+  Object.defineProperty(Folder.prototype, "exists", { get() { return fs.existsSync(this.fsName) && fs.statSync(this.fsName).isDirectory(); } });
+  Object.defineProperty(Folder.prototype, "parent", { get() { return new Folder(path.dirname(this.fsName)); } });
+  Folder.prototype.create = function () { fs.mkdirSync(this.fsName, { recursive: true }); return true; };
+  Folder.prototype.execute = function () { log.executed = (log.executed || []).concat([this.fsName]); return true; };
+  Folder.prototype.getFiles = function (filter) { return fs.readdirSync(this.fsName).sort().map((n) => { const f = path.join(this.fsName, n); return fs.statSync(f).isDirectory() ? new Folder(f) : new File(f); }).filter((f) => typeof filter !== "function" || filter(f)); };
+  Folder.temp = new Folder(path.join(tmpDir, "Temp")); fs.mkdirSync(Folder.temp.fsName, { recursive: true });
+  Folder.myDocuments = new Folder(path.join(tmpDir, "Documents"));
+  // Premiere's own install: an H.264 preset and a sequence preset.
+  const prApp = path.join(tmpDir, "Applications", "Adobe Premiere Pro 2026", "Adobe Premiere Pro 2026.app", "Contents");
+  if (!opts.noEpr) {
+    const param = (id, v) => "\t<ExporterParam ObjectID=\"1\" ClassID=\"x\" Version=\"1\">\n\t\t<ParamIdentifier>" + id + "</ParamIdentifier>\n\t\t<ParamType>3</ParamType>\n\t\t<ParamValue>" + v + "</ParamValue>\n\t</ExporterParam>\n";
+    const dir = path.join(prApp, "MediaIO", "systempresets", "4E49434B_48323634");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "Match Source - High bitrate.epr"), "<?xml version=\"1.0\"?>\n<PremiereData Version=\"3\">\n\t<PresetID>1</PresetID>\n\t<ExporterClassID>1313424203</ExporterClassID>\n\t<PresetName>Match Source - High bitrate</PresetName>\n" +
+      param("ADBEVideoMatchSource", "false") + param("ADBEVideoWidth", "1920") + param("ADBEVideoHeight", "1080") + param("ADBEVideoMinBitrate", "2.") + param("ADBEVideoTargetBitrate", "10.") + param("ADBEVideoMaxBitrate", "12.") + "</PremiereData>\n");
+  }
+  fs.mkdirSync(path.join(prApp, "Settings", "SequencePresets", "HD 1080p"), { recursive: true });
+  fs.writeFileSync(path.join(prApp, "Settings", "SequencePresets", "HD 1080p", "HD 1080p 25.sqpreset"), "<x/>");
+  const ProjectItemType = { CLIP: 1, BIN: 2, ROOT: 3, FILE: 4 };
+  let nodeN = 0;
+  const coll = (arr, countName) => { const c = arr; Object.defineProperty(c, countName, { get: () => arr.length }); return c; };
+  function Item(name, type, extra) {
+    const it = Object.assign({ name, type, nodeId: "n" + (++nodeN), children: coll([], "numItems"), media: "" }, extra || {});
+    it.createBin = (n) => { const b = Item(n, ProjectItemType.BIN); b.parent = it; it.children.push(b); return b; };
+    it.moveBin = (b) => { if (it.parent) it.parent.children.splice(it.parent.children.indexOf(it), 1); b.children.push(it); it.parent = b; };
+    it.getMediaPath = () => it.media;
+    it.getInPoint = () => ({ seconds: 0, ticks: "0" });
+    it.getOutPoint = () => ({ seconds: it.len || 5, ticks: String((it.len || 5) * TPS) });
+    return it;
+  }
+  const root = Item("root", ProjectItemType.ROOT);
+  const T = (s) => ({ seconds: s, ticks: String(Math.round(s * TPS)) });
+  function Clip(name, a, b, sel, item) { return { name, start: T(a), end: T(b), projectItem: item || null, _sel: !!sel, isSelected() { return this._sel; }, components: coll([], "numItems") }; }
+  function Track(name, clips) {
+    const tr = { name, clips: coll(clips || [], "numItems"), isLocked: () => false, isMuted: () => false };
+    tr.overwriteClip = (item, sec) => { const c = Clip(item.name, Number(sec), Number(sec) + (item.len || 5), false, item); tr.clips.push(c); log.placed.push({ track: name, item: item.name, at: Number(sec) }); return true; };
+    return tr;
+  }
+  function Seq(name, w, h, fps, opts2) {
+    const s = { name, sequenceID: "seq-" + (++nodeN), frameSizeHorizontal: w, frameSizeVertical: h, timebase: String(TPS / fps), end: String(10 * TPS), _ph: (opts2 && opts2.playhead) || 0,
+      videoTracks: coll((opts2 && opts2.v) || [Track("V1"), Track("V2")], "numTracks"), audioTracks: coll((opts2 && opts2.a) || [Track("A1")], "numTracks") };
+    s.getPlayerPosition = () => T(s._ph);
+    s.getSelection = () => [].concat(...s.videoTracks.map((t) => t.clips.filter((c) => c._sel)));
+    s.getInPointAsTime = () => T(1); s.getOutPointAsTime = () => T(4);
+    s.getSettings = () => ({ videoFrameWidth: s.frameSizeHorizontal, videoFrameHeight: s.frameSizeVertical, videoFrameRate: T(1 / fps) });
+    s.setSettings = (st) => { log.settings.push(st); s.frameSizeHorizontal = st.videoFrameWidth; s.frameSizeVertical = st.videoFrameHeight; };
+    s.exportAsMediaDirect = (p, epr, span) => { log.exports.push({ path: p, epr: fs.readFileSync(epr, "utf8"), span }); if (!opts.exportFails) fs.writeFileSync(p, Buffer.alloc(2048)); return opts.exportFails ? false : true; };
+    s.projectItem = Item(name, ProjectItemType.CLIP); s.projectItem.parent = root; root.children.push(s.projectItem);
+    return s;
+  }
+  const seqs = coll([], "numSequences");
+  const project = { name: "Ролик.prproj", path: path.join(tmpDir, "proj", "Ролик.prproj"), rootItem: root, sequences: seqs, activeSequence: null,
+    getInsertionBin: () => root,
+    importFiles(paths, suppress, bin, numbered) { paths.forEach((p) => { log.imports.push({ path: p, bin: bin.name }); const it = Item(path.basename(p), ProjectItemType.CLIP, { media: p }); it.parent = bin; bin.children.push(it); }); return !opts.importFails; },
+    openSequence(id) { log.opened.push(id); const s = seqs.find((x) => x.sequenceID === id); if (s) project.activeSequence = s; return true; },
+    createNewSequence(name) { const s = Seq(name, 1920, 1080, 25); seqs.push(s); return s; } };
+  if (!opts.noSequence) {
+    const s = Seq("Монтаж", 1920, 1080, 25, { playhead: opts.playhead || 2, v: [Track("V1", [Clip("intro.mp4", 0, 3, true), Clip("main.mp4", 3, 9)]), Track("V2", opts.v2Full ? [Clip("title", 0, 10)] : [])] });
+    seqs.push(s); project.activeSequence = s;
+  }
+  function Time() { this.ticks = "0"; }
+  Object.defineProperty(Time.prototype, "seconds", { get() { return Number(this.ticks) / TPS; } });
+  const qe = { project: {
+    newSequence(name, preset) { log.qe.push("newSequence " + name + " " + path.basename(preset)); const s = Seq(name, 1920, 1080, 25); seqs.push(s); log.newSeqs.push(name); return true; },
+    getActiveSequence() { return { addTracks(n) { log.qe.push("addTracks " + n); if (project.activeSequence) project.activeSequence.videoTracks.push(Track("V" + (project.activeSequence.videoTracks.length + 1))); } }; } } };
+  const app = { version: "26.0.0", path: prApp, project, enableQE() { log.qe.push("enable"); },
+    encoder: { launchEncoder() { log.encodes.push("launch"); return true; }, encodeSequence(s, p, epr, span, rm) { log.encodes.push({ seq: s.name, path: p, span }); return "job1"; }, startBatch() { log.encodes.push("start"); } },
+    __ran: (x) => log.ran.push(x) };
+  const ctx = vm.createContext({ app, qe, File, Folder, Time, ProjectItemType, $: { sleep() {} } });
+  ctx.$.global = ctx;
+  vm.runInContext(hostPrSrc, ctx);
+  return { log, project, ctx, Track, Clip, Seq, evalScript(script) {
+    log.lastScript = script; log.scripts.push(script);
+    if (!/^[\x09\x0a\x0d\x20-\x7e]*$/.test(script)) return "EvalScript error.";
+    try {
+      if (/^\$\.evalFile\(/.test(script)) { log.evalFiles = (log.evalFiles || 0) + 1; if (script.indexOf("/jsx/host_pr.jsx") < 0) return "EvalScript error."; vm.runInContext(hostPrSrc, ctx); const rest = script.replace(/^\$\.evalFile\([^)]*\);\s*/, ""); const r0 = vm.runInContext(rest, ctx); return typeof r0 === "string" ? r0 : String(r0); }
+      const r = vm.runInContext(script, ctx); return typeof r === "string" ? r : String(r);
+    } catch (e) { return "EvalScript error."; }
+  } };
+}
+
 const msg = (text, stop) => ({ type: "message", content: [{ type: "text", text }], stop_reason: stop || "end_turn" });
 let pass = 0, fail = 0;
 function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + name); } else { fail++; console.log("  FAIL " + name + (extra !== undefined ? "  -> " + extra : "")); } }
@@ -735,7 +833,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cep-"));
     const home = path.join(tmpDir, "home");
     fs.mkdirSync(home);
-    const ae = makeAE(opts, tmpDir);
+    // opts.shared: ~/.sayframe/shared.json as the other app (After Effects or Premiere Pro) left it.
+    if (opts.shared) { fs.mkdirSync(path.join(home, ".sayframe")); fs.writeFileSync(path.join(home, ".sayframe", "shared.json"), JSON.stringify(opts.shared)); }
+    const ae = opts.ppro ? makePR(opts, tmpDir) : makeAE(opts, tmpDir);
     const net = { requests: [], replies: (opts.replies || []).slice(), gets: [], downloads: [] };
     // Update scenarios run the panel from its own copy of the extension, so it can replace its files.
     const extDir = opts.ownExt ? path.join(tmpDir, "ext") : EXT;
@@ -796,6 +896,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           net.saved = (net.saved || []).concat([base + ext]);
           return { status: 200, contentType: type, finalUrl: url, path: base + ext, size: body.length };
         }
+        case "listDir": try { return fs.readdirSync(args[0], { withFileTypes: true }).map((d) => ({ name: d.name, dir: d.isDirectory() })); } catch (e) { return []; }
+        case "copyFile": fs.copyFileSync(args[0], args[1]); return null;
         case "verify": try { return crypto.createVerify("RSA-SHA256").update(args[0], "utf8").verify(args[2], args[1], "base64"); } catch (e) { return false; }
         case "reloaded": net.reloads = (net.reloads || 0) + 1; return null;
         case "pickFile": return opts.pickFile || null;
@@ -854,7 +956,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     });
 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false, design: "glass", designSet: 2 }, opts.settings || {});
-    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin, extId, hostExts }) => {
+    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin, extId, hostExts, ppro, apps }) => {
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
       window.__SAYFRAME_TEST_UPDATE_KEY__ = updateKey;
       window.__SAYFRAME_TEST_RETRY_MS__ = [40, 40, 40];
@@ -885,11 +987,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         addEventListener(type, fn) { window.__cepListeners[type] = fn; },
         getSystemPath() { return withSystemPath ? "file://" + hostPath : ""; },
         // opts.extId: the panel runs as one of the separate windows (com.sayframe.ae.win.<key>).
-        getExtensionId() { return extId || "com.sayframe.ae.panel"; },
+        getExtensionId() { return extId || (ppro ? "com.sayframe.pr.panel" : "com.sayframe.ae.panel"); },
         requestOpenExtension(id, params) { window.__openedExt.push(id); },
         // opts.hostExts: the extensions After Effects loaded at its start (it reads the manifest only then).
         getExtensions: hostExts ? () => JSON.stringify(hostExts.map((id) => ({ id }))) : undefined,
-        getHostEnvironment() { const env = { appName: "AEFT", appVersion: "25.0.1" }; const k = window.__skin;
+        getHostEnvironment() { const env = ppro ? { appName: "PPRO", appVersion: "26.0.0" } : { appName: "AEFT", appVersion: "25.0.1" }; const k = window.__skin;
           // opts.skin: the colours of After Effects' own panels, as CEP reports them ({ bg: [r, g, b], hi: [r, g, b] }).
           if (k) env.appSkinInfo = { panelBackgroundColor: { antialiasLevel: 0, color: { red: k.bg[0], green: k.bg[1], blue: k.bg[2], alpha: 255 } },
             systemHighlightColor: { red: k.hi[0], green: k.hi[1], blue: k.hi[2], alpha: 255 } };
@@ -909,6 +1011,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         openExternal: (u) => { window.__opened.push(u); return true; },
         reload: () => { window.__plat("reloaded", []).then(() => window.location.reload()); }
       };
+      // opts.apps: a folder of installed Adobe apps; the platform can then list folders and copy files.
+      if (apps) {
+        window.__SAYFRAME_TEST_APPS__ = apps;
+        window.__SAYFRAME_TEST_PLATFORM__.listDir = call("listDir");
+        window.__SAYFRAME_TEST_PLATFORM__.copyFile = call("copyFile");
+      }
       // opts.keyWatch: the platform can start long processes (the key watcher). The test plays its output.
       if (keyWatch) {
         window.__spawns = [];
@@ -918,7 +1026,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           return { kill() { s.killed = true; } };
         };
       }
-    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null, extId: opts.extId || "", hostExts: opts.hostExts || null });
+    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null, extId: opts.extId || "", hostExts: opts.hostExts || null, ppro: !!opts.ppro, apps: opts.apps ? path.join(tmpDir, "Apps") : "" });
+    if (opts.apps) opts.apps.forEach((a) => fs.mkdirSync(path.join(tmpDir, "Apps", a), { recursive: true }));
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
     // every reload and can hand the page an empty localStorage, which has nothing to do with the panel.
@@ -963,6 +1072,174 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   const VIDEO = { width: 1920, height: 1080, duration: 4, frameRate: 25, mainSource: { isStill: false } };
   const IMG = { width: 800, height: 600, duration: 0, frameRate: 0, mainSource: { isStill: true } };
   let p, c, t, m;
+
+
+  // ---------------------------------------------------------------- Premiere Pro
+  // The same panel inside Premiere Pro: its own extension (manifest-pr.xml), host_pr.jsx, AI + Проекты + export.
+  {
+    console.log("\n=== Premiere Pro ===");
+    const vis = (q, sel) => q.page.evaluate((s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== "none" && !e.closest("[hidden]") && e.offsetParent !== null; }, sel);
+    const prMan = fs.readFileSync(path.join(EXT, "CSXS", "manifest-pr.xml"), "utf8"), aeMan = fs.readFileSync(path.join(EXT, "CSXS", "manifest.xml"), "utf8");
+    check("PR0 manifest-pr.xml: its own bundle and panel id, host PPRO, host_pr.jsx, the same version as After Effects'",
+      /ExtensionBundleId="com\.sayframe\.pr"/.test(prMan) && /<Extension Id="com\.sayframe\.pr\.panel" Version="([\d.]+)"\/>/.test(prMan) && /<Host Name="PPRO"/.test(prMan) && !/AEFT/.test(prMan) &&
+      /<ScriptPath>\.\/jsx\/host_pr\.jsx<\/ScriptPath>/.test(prMan) && /ExtensionBundleVersion="([\d.]+)"/.exec(prMan)[1] === /ExtensionBundleVersion="([\d.]+)"/.exec(aeMan)[1]);
+
+    p = await open({ ppro: true, width: 420 });
+    await p.page.waitForTimeout(300);
+    const tabs = await p.page.locator("#tabs .tab").evaluateAll((l) => l.map((b) => b.getAttribute("data-tab")));
+    check("PR1 opens in Premiere without errors: tabs AI and Проекты only, «Premiere» badge, no snapshot or effect search",
+      p.errors.length === 0 && tabs.sort().join() === "brand,claude" && (await p.page.locator(".app-badge").innerText()) === "Premiere" &&
+      !(await vis(p, "#snapBtn")) && !(await vis(p, "#fxBtn")) && (await vis(p, "#exportBtn")) && (await p.page.getAttribute("html", "data-app")) === "ppro", p.errors.join(" | ") + " " + tabs.join());
+    check("PR1 the panel talks only to host_pr.jsx and only with its own commands",
+      p.ae.log.scripts.every((s) => !/^\$\.evalFile/.test(s) || s.indexOf("/jsx/host_pr.jsx") > 0) &&
+      p.ae.log.scripts.filter((s) => /^sayframeHost\./.test(s)).every((s) => /^sayframeHost\.(info|syntax|run|reference|brand\w+|export\w+)\(/.test(s)), p.ae.log.scripts.join(" | "));
+    check("PR1 AI tab: no expressions, styles or references; Premiere quick tasks",
+      !(await vis(p, '.ai-mode[data-m="expr"]')) && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && !(await vis(p, "#exprCard")) &&
+      (await p.page.locator("#quickList").innerText()).indexOf("Переходы между клипами") >= 0 &&
+      /секвенции/.test(await p.page.getAttribute("#prompt", "placeholder")), (await p.page.locator("#quickList").innerText()));
+    await p.page.screenshot({ path: path.join(SHOTS, "pr-01-ai.png") });
+
+    p.net.replies.push(msg("Покажу выделенный клип.\n```javascript\nvar c = PR.selected();\napp.__ran(c.length + ':' + c[0].name + ':' + PR.fps() + ':' + PR.playhead());\n```"));
+    await p.run("что выделено?");
+    m = p.net.requests[0] && p.net.requests[0].body;
+    const userText = m ? JSON.stringify(m.messages[0].content) : "";
+    check("PR2 Claude gets the Premiere instructions and a snapshot of the sequence: tracks, clips, selection, playhead",
+      m && /inside Adobe Premiere Pro/.test(JSON.stringify(m.system)) && /PR\.selected\(\)/.test(JSON.stringify(m.system)) && !/SF library/.test(JSON.stringify(m.system)) &&
+      /Active sequence: \\"Монтаж\\" 1920x1080, 25 fps/.test(userText) && /intro\.mp4\\" 0-3 s \[selected\]/.test(userText) && /playhead at 2 s/.test(userText), userText.slice(0, 600));
+    check("PR2 the script runs in Premiere with the PR library", p.ae.log.ran.join() === "1:intro.mp4:25:2" && (await p.statusKind()) === "done", p.ae.log.ran.join() + " | " + await p.status());
+    p.net.replies.push(msg("Ой.\n```javascript\nthrow new Error('Выделите клип');\n```"), msg("Не вышло, задача требует выделения."));
+    await p.run("сделай что-то");
+    check("PR2 a failing script reports the error (Premiere has no undo groups — nothing to undo)", /Выделите клип/.test(JSON.stringify(p.net.requests[2] ? p.net.requests[2].body.messages : "")) || /Выделите клип/.test(await p.status()), await p.status());
+    await p.close();
+
+    // Проекты: a logo goes to the brand's bin and onto the first free video track at the playhead.
+    const logoSrc = path.join(os.tmpdir(), "sayframe-pr-logo.png"); fs.writeFileSync(logoSrc, REAL_PNG);
+    const seed = { active: "b1", items: [{ id: "b1", name: "Acme", colors: [{ name: "Основной", hex: "#ff5a1f" }], fonts: { head: "Montserrat-Bold", body: "" }, texts: [{ name: "Сайт", text: "acme.tj" }], logos: [{ id: "l1", name: "acme-logo", file: logoSrc, variant: "main" }] }] };
+    p = await open({ ppro: true, width: 420 });
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.brands.v1", JSON.stringify(v)), seed);
+    await p.restart();
+    await p.page.click("#tabBrand");
+    check("PR3 Проекты: no Brand Colors layer and no «Применить» for fonts in Premiere", !(await vis(p, "#brandRigBtn")) && !(await vis(p, "#brandFontHeadApply")) && p.errors.filter((e) => !/Not allowed to load local resource/.test(e)).length === 0, p.errors.join(" | "));
+    await p.page.screenshot({ path: path.join(SHOTS, "pr-02-projects.png") });
+    await p.page.click("#brandLogos .brand-logo-img"); await p.idle();
+    t = p.ae.log;
+    check("PR3 a logo click: imported into the bin «Brand — Acme», put at the playhead on V2 (V1 is busy there)",
+      t.imports.length === 1 && t.imports[0].bin === "Brand — Acme" && t.placed.length === 1 && t.placed[0].track === "V2" && t.placed[0].at === 2 &&
+      /Логотип «acme-logo» вставлен в «Монтаж» под указателем, дорожка V2/.test(await p.status()), JSON.stringify(t.placed) + " | " + await p.status());
+    await p.page.click("#brandColors .brand-chip"); await p.page.waitForTimeout(100);
+    check("PR4 a colour click copies the hex (Premiere cannot paint clips by script)", /#ff5a1f скопирован/.test(await p.status()), await p.status());
+    await p.page.click('#brandFormats button[data-w="1080"][data-h="1920"]'); await p.idle();
+    t = p.ae.log;
+    check("PR5 a format makes a 1080×1920 sequence from Premiere's sequence preset, opens it, in the brand's bin",
+      t.newSeqs.join() === "Acme 1080x1920" && t.settings.length === 1 && t.settings[0].videoFrameWidth === 1080 && t.settings[0].videoFrameHeight === 1920 && t.opened.length === 1 &&
+      p.ae.project.activeSequence.name === "Acme 1080x1920" && /Секвенция «Acme 1080x1920» 1080×1920 создана/.test(await p.status()), JSON.stringify(t.newSeqs) + " | " + await p.status());
+    await p.close();
+
+    // V1 and V2 both busy at the playhead: a new track on top.
+    p = await open({ ppro: true, v2Full: true, settings: {} });
+    await p.page.evaluate((v) => localStorage.setItem("sayframe.brands.v1", JSON.stringify(v)), seed);
+    await p.restart();
+    await p.page.click("#tabBrand"); await p.page.click("#brandLogos .brand-logo-img"); await p.idle();
+    check("PR3b every track busy: Premiere gets a new video track (QE) and the logo goes there", p.ae.log.qe.indexOf("addTracks 1") >= 0 && p.ae.log.placed.length === 1 && p.ae.log.placed[0].track === "V3", JSON.stringify(p.ae.log.placed) + " | " + await p.status());
+    await p.close();
+
+    // Quick export: the sequence, H.264 at the chosen bitrate, rendered by Premiere itself.
+    p = await open({ ppro: true, width: 420 });
+    await p.page.click("#exportBtn"); await p.page.waitForFunction(() => !document.getElementById("exportBar").hidden && /×/.test(document.getElementById("exCompMeta").textContent));
+    check("PR6 export sheet: the sequence's name and size, «Всю секвенцию / От In до Out», no fit row",
+      (await p.page.locator("#exCompName").innerText()) === "Монтаж" && /1920×1080/.test(await p.page.locator("#exCompMeta").innerText()) &&
+      (await p.page.locator("#exSpan button").allInnerTexts()).join() === "Всю секвенцию,От In до Out" && (await p.page.locator("#exAmeRow").innerText()).trim() === "Через Media Encoder — Premiere не занят" && !(await vis(p, "#exFitRow")), await p.page.locator("#exSpan").innerText());
+    await p.page.screenshot({ path: path.join(SHOTS, "pr-03-export.png") });
+    const prDone = () => p.page.waitForFunction(() => /^(Готово|Отправлено|Сохранено|Не получилось)/.test((document.querySelector("#exResults .ex-now") || {}).textContent || ""), null, { timeout: 8000 }).catch(() => {});
+    await p.page.click("#exGo"); await prDone();
+    t = p.ae.log.encodes;
+    check("PR6 with «Через Media Encoder» (on by default) the sequence goes to Media Encoder's queue and starts",
+      t.length === 3 && t[0] === "launch" && t[1].seq === "Монтаж" && /Монтаж — Среднее\.mp4$/.test(t[1].path) && t[1].span === 0 && t[2] === "start" && /Media Encoder/.test(await p.status()), JSON.stringify(t) + " | " + await p.status());
+    await p.page.click("#exResults .ex-again .ghost");
+    await p.page.evaluate(() => document.getElementById("exAme").click()); await p.page.click("#exGo"); await prDone();
+    t = p.ae.log.exports;
+    check("PR6 Premiere renders one MP4 straight away: whole sequence, H.264 15 Mbps preset made from Premiere's own",
+      t.length === 1 && /Монтаж — Среднее\.mp4$/.test(t[0].path) && t[0].span === 0 && /<ParamIdentifier>ADBEVideoTargetBitrate<\/ParamIdentifier>\s*<ParamType>3<\/ParamType>\s*<ParamValue>15\.</.test(t[0].epr) &&
+      /<ParamIdentifier>ADBEVideoMatchSource<\/ParamIdentifier>\s*<ParamType>3<\/ParamType>\s*<ParamValue>true</.test(t[0].epr) && fs.existsSync(t[0].path), JSON.stringify(t.map((x) => x.path)) + " | " + await p.status());
+    await p.close();
+
+    p = await open({ ppro: true, noSequence: true });
+    await p.page.click("#exportBtn"); await p.page.waitForFunction(() => /^Откройте/.test(document.getElementById("exCompName").textContent));
+    check("PR6b no sequence open: the sheet asks to open one", (await p.page.locator("#exCompName").innerText()) === "Откройте секвенцию, которую сохранить");
+    await p.close();
+
+    // Settings and Проекты are shared with After Effects through ~/.sayframe/shared.json.
+    const aeSettings = { apiKey: "sk-ant-from-ae", selfCheck: false, infoTips: false, design: "studio", designSet: 2, windows: "ease" };
+    p = await open({ ppro: true, settings: null, shared: { t: Date.now() + 5000, app: "AEFT", items: { "sayframe.settings.v1": JSON.stringify(aeSettings), "sayframe.brands.v1": JSON.stringify(seed) } } });
+    await p.page.waitForFunction(() => { try { return JSON.parse(localStorage.getItem("sayframe.settings.v1") || "{}").apiKey === "sk-ant-from-ae"; } catch (e) { return false; } }, null, { timeout: 4000 }).catch(() => {});
+    await p.page.waitForTimeout(800); await p.ready();
+    t = await p.page.evaluate(() => ({ s: JSON.parse(localStorage.getItem("sayframe.settings.v1") || "{}"), b: JSON.parse(localStorage.getItem("sayframe.brands.v1") || "null") }));
+    check("SH1 a fresh Premiere panel takes the key, theme and Проекты that After Effects saved (and reloads once); AE's own windows list stays out",
+      t.s.apiKey === "sk-ant-from-ae" && t.s.design === "studio" && t.s.windows === undefined && t.b && t.b.items[0].name === "Acme" && p.net.reloads === 1 &&
+      (await p.page.getAttribute("html", "data-design")) === "studio", JSON.stringify(t.s) + " reloads " + p.net.reloads);
+    await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme");
+    await p.page.click('#designPick button[data-value="glass"]'); await p.page.waitForTimeout(800);
+    t = JSON.parse(fs.readFileSync(path.join(p.home, ".sayframe", "shared.json"), "utf8"));
+    check("SH2 a change in Premiere goes back to the shared file for After Effects", t.app === "PPRO" && JSON.parse(t.items["sayframe.settings.v1"]).design === "glass" && JSON.parse(t.items["sayframe.settings.v1"]).apiKey === "sk-ant-from-ae", JSON.stringify(t).slice(0, 300));
+    await p.restart();
+    check("SH2 no reload loop: the panel is already as new as the shared file", p.net.reloads === 1, String(p.net.reloads));
+    await p.close();
+
+    // Both apps open at once: a brand book imported or changed in one shows up in the other on return to it.
+    p = await open({ ppro: true, settings: {}, shared: { t: 1, app: "AEFT", items: {} } });
+    await p.page.waitForTimeout(600);
+    await p.page.click("#tabBrand");
+    fs.writeFileSync(path.join(p.home, ".sayframe", "shared.json"), JSON.stringify({ t: Date.now() + 1000, app: "AEFT", items: { "sayframe.settings.v1": await p.page.evaluate(() => localStorage.getItem("sayframe.settings.v1")), "sayframe.brands.v1": JSON.stringify(seed) } }));
+    await p.page.evaluate(() => window.dispatchEvent(new Event("focus"))); await p.page.waitForTimeout(500);
+    check("SH4 a brand book imported in After Effects appears in the open Premiere panel when it gets focus, without a reload",
+      (await p.page.locator("#brandLogos .brand-logo").count()) === 1 && /Acme/.test(await p.page.locator("#viewBrand").innerText()) && !p.net.reloads, (await p.page.locator("#viewBrand").innerText()).slice(0, 120) + " reloads " + p.net.reloads);
+    await p.page.fill("#brandColorHex", "#2fc16e"); await p.page.fill("#brandColorName", "Зелёный"); await p.page.click("#brandColorAdd"); await p.page.waitForTimeout(700);
+    t = JSON.parse(fs.readFileSync(path.join(p.home, ".sayframe", "shared.json"), "utf8"));
+    check("SH4 a change made in Premiere goes to the shared file for After Effects", t.app === "PPRO" && /Зелёный/.test(t.items["sayframe.brands.v1"]), JSON.stringify(t).slice(0, 200));
+    await p.close();
+    p = await open({ shared: { t: 1, app: "PPRO", items: {} } });
+    await p.page.waitForTimeout(600);
+    fs.writeFileSync(path.join(p.home, ".sayframe", "shared.json"), JSON.stringify({ t: Date.now() + 1000, app: "PPRO", items: { "sayframe.settings.v1": await p.page.evaluate(() => localStorage.getItem("sayframe.settings.v1")), "sayframe.brands.v1": JSON.stringify(seed) } }));
+    await p.page.evaluate(() => window.dispatchEvent(new Event("focus"))); await p.page.waitForTimeout(500);
+    await p.page.click("#tabBrand");
+    check("SH4 and the other way: imported in Premiere, it appears in After Effects", (await p.page.locator("#brandLogos .brand-logo").count()) === 1 && !p.net.reloads, String(p.net.reloads));
+    await p.close();
+
+    p = await open({});
+    await p.page.waitForTimeout(800);
+    t = fs.existsSync(path.join(p.home, ".sayframe", "shared.json")) ? JSON.parse(fs.readFileSync(path.join(p.home, ".sayframe", "shared.json"), "utf8")) : null;
+    check("SH3 After Effects without a shared file writes one with its settings (for Premiere to pick up)", t && t.app === "AEFT" && JSON.parse(t.items["sayframe.settings.v1"]).apiKey === "sk-ant-test" && !p.net.reloads, JSON.stringify(t).slice(0, 200));
+    await p.close();
+
+    // After Effects users who updated from the panel: it offers to add the Premiere Pro extension itself.
+    {
+      const prDir = (q) => path.join(q.tmpDir, "SayframePR");
+      p = await open({ ownExt: true, apps: ["Adobe After Effects 2026", "Adobe Premiere Pro 2026"] });
+      await p.page.waitForFunction(() => !document.getElementById("modal").hidden, null, { timeout: 6000 }).catch(() => {});
+      check("PO1 Premiere Pro on the computer and no SayframePR: After Effects asks once «Добавить Sayframe и туда?»",
+        !(await p.page.locator("#modal").isHidden()) && (await p.page.locator("#modalTitle").innerText()) === "Sayframe в Premiere Pro", await p.status());
+      await p.page.screenshot({ path: path.join(SHOTS, "pr-04-offer.png") });
+      await p.modalClick("Добавить"); await p.page.waitForTimeout(500);
+      const prMan2 = fs.existsSync(path.join(prDir(p), "CSXS", "manifest.xml")) ? fs.readFileSync(path.join(prDir(p), "CSXS", "manifest.xml"), "utf8") : "";
+      check("PO2 «Добавить»: SayframePR beside the panel — the same files, manifest.xml = manifest-pr.xml",
+        /com\.sayframe\.pr\.panel/.test(prMan2) && fs.readFileSync(path.join(prDir(p), "js", "panel.js"), "utf8") === fs.readFileSync(path.join(p.extDir, "js", "panel.js"), "utf8") &&
+        fs.existsSync(path.join(prDir(p), "jsx", "host_pr.jsx")) && /com\.sayframe\.ae\.panel/.test(fs.readFileSync(path.join(p.extDir, "CSXS", "manifest.xml"), "utf8")) &&
+        !fs.existsSync(path.join(p.tmpDir, ".SayframePR.installing")) && /Sayframe добавлен в Premiere Pro/.test(await p.status()), await p.status());
+      await p.restart(); await p.page.waitForTimeout(3000);
+      check("PO3 asked only once", await p.page.locator("#modal").isHidden());
+      await p.close();
+      p = await open({ ownExt: true, apps: ["Adobe Premiere Pro 2026"] });
+      await p.page.waitForFunction(() => !document.getElementById("modal").hidden, null, { timeout: 6000 }).catch(() => {});
+      await p.modalClick("Не надо"); await p.restart(); await p.page.waitForTimeout(3000);
+      check("PO4 «Не надо»: nothing installed, not asked again", !fs.existsSync(prDir(p)) && (await p.page.locator("#modal").isHidden()));
+      await p.close();
+      p = await open({ ownExt: true, apps: ["Adobe After Effects 2026"] });
+      await p.page.waitForTimeout(3500);
+      check("PO5 no Premiere Pro on the computer: no question", (await p.page.locator("#modal").isHidden()) && !fs.existsSync(prDir(p)));
+      await p.close();
+    }
+    if (process.env.SAYFRAME_ONLY === "pr") { await browser.close(); console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0); }
+  }
 
   console.log("\n=== start-up ===");
   p = await open({ settings: null });
@@ -6108,7 +6385,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ settings: { design: "studio", designSet: 2 } });
     await p.page.click("#tabClaude");
     check("SA1 «Студия»: three modes on top, «Создать» first; the field with «Пример» and the style inside; quick tasks as tiles with «Своя задача»", (await vis(p, "#aiModes")) && (await p.page.getAttribute('#aiModes [data-m="create"]', "aria-selected")) === "true" &&
-      (await vis(p, "#aiExample")) && (await p.page.innerText("#aiStyleBtn")).trim() === "Обычный ▾" && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && (await p.page.getAttribute("#prompt", "placeholder")) === "Что сделать в композиции?" &&
+      (await vis(p, "#aiExample")) && (await p.page.innerText("#aiStyleBtn")).trim() === "Обычный ▾" && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && !(await vis(p, "#exprCard")) && (await p.page.getAttribute("#prompt", "placeholder")) === "Что сделать в композиции?" &&
       (await p.page.locator("#quickList .quick-chip").count()) === 4 && (await vis(p, "#quickList .quick-new")) && (await p.page.locator("#quickList .quick-chip .quick-ic").first().innerText()) === "T↑" && !(await vis(p, "#exprWish")) && p.errors.length === 0, p.errors.join("|"));
     await p.page.click("#aiStyleBtn");
     const popOpen = await vis(p, "#aiStylePop");

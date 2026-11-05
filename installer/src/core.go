@@ -22,6 +22,12 @@ const (
 	stagingName   = ".Sayframe.installing"
 	backupName    = ".Sayframe.previous"
 	payloadPrefix = "Sayframe/"
+	// Premiere Pro: та же панель отдельным расширением — копия папки Sayframe, у которой
+	// manifest.xml заменён на manifest-pr.xml (свой Id, хост PPRO, host_pr.jsx).
+	prPanelName   = "SayframePR"
+	prStagingName = ".SayframePR.installing"
+	prBackupName  = ".SayframePR.previous"
+	prManifest    = "manifest-pr.xml"
 	maxFileSize   = 50 << 20
 )
 
@@ -278,17 +284,84 @@ func installPanel(p payload, extDir string) error {
 	return nil
 }
 
+// copyTree копирует обычные файлы папки src в dst (ссылки и прочее пропускает).
+func copyTree(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		in, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+		return writeFile(in, target, uint64(info.Size()), rel)
+	})
+}
+
+// installPremiere ставит расширение для Premiere Pro рядом с установленной панелью.
+// Установщик старой версии без manifest-pr.xml ничего не делает. Возвращает true, если поставил.
+func installPremiere(extDir string) (bool, error) {
+	src := filepath.Join(extDir, panelName)
+	man, err := os.ReadFile(filepath.Join(src, "CSXS", prManifest))
+	if err != nil {
+		return false, nil
+	}
+	dest := filepath.Join(extDir, prPanelName)
+	staging := filepath.Join(extDir, prStagingName)
+	backup := filepath.Join(extDir, prBackupName)
+	os.RemoveAll(staging)
+	if err := copyTree(src, staging); err != nil {
+		os.RemoveAll(staging)
+		return false, err
+	}
+	if err := os.WriteFile(filepath.Join(staging, "CSXS", "manifest.xml"), man, 0o644); err != nil {
+		os.RemoveAll(staging)
+		return false, err
+	}
+	hadOld := exists(dest)
+	if hadOld {
+		os.RemoveAll(backup)
+		if err := rename(dest, backup); err != nil {
+			os.RemoveAll(staging)
+			return false, errInUse
+		}
+	}
+	if err := rename(staging, dest); err != nil {
+		if hadOld {
+			rename(backup, dest)
+		}
+		os.RemoveAll(staging)
+		return false, err
+	}
+	os.RemoveAll(backup)
+	return true, nil
+}
+
 func removePanel(extDir string) error {
-	dest := filepath.Join(extDir, panelName)
-	backup := filepath.Join(extDir, backupName)
-	if !exists(dest) {
-		return nil
+	for _, names := range [][2]string{{panelName, backupName}, {prPanelName, prBackupName}} {
+		dest := filepath.Join(extDir, names[0])
+		backup := filepath.Join(extDir, names[1])
+		if !exists(dest) {
+			continue
+		}
+		os.RemoveAll(backup)
+		if err := rename(dest, backup); err != nil {
+			return errInUse
+		}
+		os.RemoveAll(backup)
 	}
-	os.RemoveAll(backup)
-	if err := rename(dest, backup); err != nil {
-		return errInUse
-	}
-	os.RemoveAll(backup)
 	return nil
 }
 
@@ -330,6 +403,8 @@ type wording struct {
 	copyFailed    string // %s — папка, второй %s — текст ошибки
 	settingFailed string
 	done          string
+	prDone        string // добавка к done: расширение для Premiere Pro тоже поставлено
+	prFailed      string // добавка к done: для Premiere Pro поставить не удалось
 }
 
 var windowsWords = wording{
@@ -340,10 +415,10 @@ var windowsWords = wording{
 		"Отмена — ничего не делать",
 	removeInUse: "Не удалось удалить папку панели: её использует After Effects или другая программа.\n\nЗакройте After Effects и запустите установщик ещё раз.",
 	removed:     "Sayframe удалён.\n\nНастройка PlayerDebugMode не тронута: она может быть нужна другим панелям.",
-	confirm: "Установить панель Sayframe в After Effects?\n\n" +
+	confirm: "Установить панель Sayframe в After Effects и Premiere Pro?\n\n" +
 		"Установщик:\n" +
 		"• скопирует панель в папку расширений Adobe в вашем профиле Windows\n" +
-		"• разрешит After Effects загружать панели без подписи Adobe (настройка PlayerDebugMode)%s\n\n" +
+		"• разрешит After Effects и Premiere Pro загружать панели без подписи Adobe (настройка PlayerDebugMode)%s\n\n" +
 		"Права администратора не нужны. Нажмите «ОК», чтобы установить.",
 	oldPanelLine: "\n• удалит прежнюю версию этой панели (папку ClaudePanel)",
 	inUse: "Не удалось заменить файлы панели: их использует After Effects или другая программа.\n\n" +
@@ -358,6 +433,8 @@ var windowsWords = wording{
 		"Панель находится в меню:\nWindow > Extensions > Sayframe\n\n" +
 		"Для референсов и вставки картинок включите в After Effects:\n" +
 		"Edit > Preferences > Scripting & Expressions > Allow Scripts to Write Files and Access Network",
+	prDone:   "\n\nВ Premiere Pro Sayframe тоже есть: Window > Extensions > Sayframe (перезапустите Premiere Pro, если он открыт).",
+	prFailed: "\n\nДля Premiere Pro панель поставить не удалось: закройте Premiere Pro и запустите установщик ещё раз.",
 }
 
 var macWords = wording{
@@ -365,10 +442,10 @@ var macWords = wording{
 	alreadyAsk:  "Sayframe уже установлен.\n\nПереустановить (заменить установленную версию этой) или удалить панель?",
 	removeInUse: "Не удалось удалить папку панели.\n\nЗакройте After Effects и запустите установщик ещё раз.",
 	removed:     "Sayframe удалён.\n\nПерезапустите After Effects, чтобы панель исчезла из меню. Настройка PlayerDebugMode не тронута: она может быть нужна другим панелям.",
-	confirm: "Установить панель Sayframe в After Effects?\n\n" +
+	confirm: "Установить панель Sayframe в After Effects и Premiere Pro?\n\n" +
 		"Установщик:\n" +
 		"• скопирует панель в папку расширений Adobe в вашей домашней папке\n" +
-		"• разрешит After Effects загружать панели без подписи Adobe (настройка PlayerDebugMode)%s\n\n" +
+		"• разрешит After Effects и Premiere Pro загружать панели без подписи Adobe (настройка PlayerDebugMode)%s\n\n" +
 		"Пароль не потребуется.",
 	oldPanelLine: "\n• удалит прежнюю версию этой панели (папку ClaudePanel)",
 	inUse: "Не удалось заменить файлы панели.\n\n" +
@@ -383,6 +460,8 @@ var macWords = wording{
 		"Панель находится в меню:\nWindow > Extensions > Sayframe\n\n" +
 		"Для референсов и вставки картинок включите в After Effects:\n" +
 		"Settings > Scripting & Expressions > Allow Scripts to Write Files and Access Network",
+	prDone:   "\n\nВ Premiere Pro Sayframe тоже есть: Window > Extensions > Sayframe (перезапустите Premiere Pro, если он открыт).",
+	prFailed: "\n\nДля Premiere Pro панель поставить не удалось: закройте Premiere Pro и запустите установщик ещё раз.",
 }
 
 // run — весь сценарий установщика. Возвращает код выхода.
@@ -429,11 +508,18 @@ func run(d dialogs, m machine, p payload, w wording) int {
 		return 1
 	}
 	m.installed(dest)
+	prNote := ""
+	if ok, err := installPremiere(extDir); err != nil {
+		prNote = w.prFailed
+	} else if ok {
+		m.installed(filepath.Join(extDir, prPanelName))
+		prNote = w.prDone
+	}
 	if err := m.enableUnsignedPanels(); err != nil {
 		d.fail(w.settingFailed)
 		return 1
 	}
-	d.info(w.done)
+	d.info(w.done + prNote)
 	return 0
 }
 

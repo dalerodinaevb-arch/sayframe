@@ -109,6 +109,16 @@ button { cursor: pointer; }
   letter-spacing: 0.01em;
 }
 
+/* В Premiere Pro рядом с названием — плашка «Premiere». */
+.app-badge {
+  font: 600 10.5px/1 var(--round);
+  padding: 3px 7px;
+  border-radius: 6px;
+  color: var(--accent-hi);
+  background: rgba(var(--accent-rgb), 0.16);
+  letter-spacing: 0.02em;
+}
+
 /* Знак: четырёхлучевая искра акцентного цвета. */
 .spark {
   width: 18px;
@@ -2550,3 +2560,24 @@ html[data-solo-kind="tool"] .motion-tools > .solo-card > [class^="tool-resize"] 
 html[data-solo-kind="export"] .ex-bar { border: 0; background: transparent; box-shadow: none; padding: 4px 2px; }
 html[data-solo-kind="tool"] .motion-tools > .solo-card { border: 0 !important; background: transparent !important; box-shadow: none !important; padding: 4px 2px !important; }
 html[data-solo-kind="tool"] .motion-tools > .solo-card > .tool-head, html[data-solo-kind="tool"] .motion-tools > .solo-card > .tool-toggle { display: none !important; }
+
+/* Premiere Pro: без инструментов, которых там нет (слой Brand Colors, шрифт текстовым слоям). */
+[data-app="ppro"] #brandRigBtn,
+[data-app="ppro"] #brandFontHeadApply,
+[data-app="ppro"] #brandFontBodyApply { display: none; }
+/* В Premiere другой размер кадра встаёт с полями: выбора «размытие / поля / обрезать» нет. */
+[data-app="ppro"] #exFitRow { display: none !important; }
+/* Настройки в Premiere: блоков, отдельных окон и горячих клавиш After Effects там нет. */
+[data-app="ppro"] #setTabTools,
+[data-app="ppro"] #setTabWin,
+[data-app="ppro"] #setTabKeys { display: none !important; }
+/* AI в Premiere: без выражений, стилей анимации и референсов (их пока нет для Premiere). */
+[data-app="ppro"] .ai-mode[data-m="expr"],
+[data-app="ppro"] #styleRow,
+[data-app="ppro"] #aiStyleBtn,
+[data-app="ppro"] #aiExample,
+[data-app="ppro"] #refBtn,
+[data-app="ppro"] #refLinkBtn { display: none !important; }
+/* Выражений и отдельных окон в Premiere нет. */
+[data-app="ppro"] #exprCard,
+[data-app="ppro"] .win-open { display: none !important; }
