@@ -1411,7 +1411,8 @@ html[data-design="ae"] .set-tabs button[aria-selected="true"] { background: rgba
 .trv-leak-warm { background: radial-gradient(circle at 30% 40%, #ffb347, transparent 60%), radial-gradient(circle at 75% 60%, #ff4d6d, transparent 55%); mix-blend-mode: screen; }
 .trv-leak-cool { background: radial-gradient(circle at 30% 40%, #4da3ff, transparent 60%), radial-gradient(circle at 75% 60%, #9b5cff, transparent 55%); mix-blend-mode: screen; }
 .trv-flash, .trv-fade-white { background: #fff; }
-.trv-fade-black { background: #000; }
+.trv-fade-black, .trv-pr-dip-black { background: #000; }
+.trv-pr-dip-white { background: #fff; }
 .trv-wipe-left, .trv-wipe-up { background: #f4f1ff; }
 .trv-circle { background: #f4f1ff; border-radius: 50%; inset: auto; left: 50%; top: 50%; width: 130%; aspect-ratio: 1; margin: -65% 0 0 -65%; transform: scale(0); }
 .ac-badge {
@@ -2579,5 +2580,6 @@ html[data-solo-kind="tool"] .motion-tools > .solo-card > .tool-head, html[data-s
 [data-app="ppro"] #refBtn,
 [data-app="ppro"] #refLinkBtn { display: none !important; }
 /* Выражений и отдельных окон в Premiere нет. */
+[data-app="ppro"] #acEdit,
 [data-app="ppro"] #exprCard,
 [data-app="ppro"] .win-open { display: none !important; }

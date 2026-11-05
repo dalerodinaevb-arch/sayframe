@@ -757,7 +757,7 @@
     var HOST_JSX = IS_PR ? "/jsx/host_pr.jsx" : "/jsx/host.jsx";
     // Команды host_pr.jsx: остальные в Premiere сразу отвечают NOT_IN_PREMIERE, не трогая программу.
     var PR_FNS = ["info", "syntax", "run", "reference", "brandLogo", "brandIcon", "brandComp", "brandFilesInUse", "brandSaveDialog",
-        "exportInfo", "exportOne", "exportReveal"];
+        "exportInfo", "exportOne", "exportReveal", "acSound", "sndTargets", "sndApplyFiles", "sfApply", "sfState", "trApply"];
 
     // ---- Sayframe для Premiere Pro у тех, кто поставил панель раньше (обновлялся из After Effects):
     // если на компьютере есть Premiere Pro, а расширения SayframePR рядом нет, панель один раз предлагает
@@ -1170,7 +1170,10 @@
         if (m === "NOT_IN_PREMIERE") { return "В Premiere Pro этого инструмента пока нет — он работает в After Effects."; }
         if (m === "REF_NOT_IN_PREMIERE") { return "В Premiere Pro референсы пока не поддерживаются: опишите задачу словами."; }
         if (m === "NO_SEQUENCE") { return "Откройте секвенцию: инструмент работает с открытой секвенцией."; }
-        if (m === "NO_FREE_TRACK") { return "На всех видеодорожках под указателем уже есть клипы. Добавьте пустую видеодорожку и нажмите ещё раз."; }
+        if (m === "NO_FREE_TRACK") { return "На всех дорожках под указателем уже есть клипы. Добавьте пустую дорожку и нажмите ещё раз."; }
+        if (m === "NO_CLIPS") { return "Выделите видеоклипы на таймлайне и щёлкните ещё раз."; }
+        if (m === "NO_CUT") { return "Поставьте указатель на стык двух клипов (или выделите клипы у стыка) и щёлкните ещё раз."; }
+        if (m === "NO_TRANSITION") { return "Premiere Pro не нашёл этот встроенный переход. Возьмите другой или наш из разделов «Зум», «Панорама», «Поворот»."; }
         if (m === "IMPORT_FAILED") { return "Premiere Pro не смог импортировать файл."; }
         if (m === "NO_NEW_SEQUENCE") { return "Premiere Pro не создал секвенцию."; }
         if (m === "NODE_UNAVAILABLE") { return "Панель не получила доступ к файлам (Node.js выключен)."; }
@@ -1621,7 +1624,7 @@
         var root = document.documentElement, badge;
         if (!IS_PR) { return; }
         root.setAttribute("data-app", "ppro");
-        ["tools", "motion", "shape"].forEach(function (k) {
+        ["motion", "shape"].forEach(function (k) {
             TABS[k].view.hidden = true;
             if (TABS[k].tab.parentNode) { TABS[k].tab.parentNode.removeChild(TABS[k].tab); }
             delete TABS[k];
@@ -1629,6 +1632,10 @@
         ui.snapBtn.hidden = true;
         ui.fxBtn.hidden = true;
         ui.exportBtn.setAttribute("data-info", "Быстрый экспорт|Сохраняет открытую секвенцию в MP4 для Reels, YouTube, Telegram, TikTok или поста — сразу в нужном размере.");
+        // «Анимация» в Premiere — «Монтаж»: переходы, движения и звуки.
+        TABS.tools.tab.querySelector(".tab-label").textContent = "Монтаж";
+        TABS.tools.tab.setAttribute("aria-label", "Монтаж");
+        TABS.tools.tab.setAttribute("data-info", "Монтаж|Переходы на стык клипов, движения появления и исчезновения, звуки. Щелчок по карточке — сразу на таймлайн; всё ставится ключами, их видно и можно править в Effect Controls.");
         ui.tabClaude.setAttribute("data-info", "AI|Опишите задачу словами — Claude напишет скрипт и выполнит его в Premiere Pro: клипы, дорожки, маркеры, эффекты, экспорт.");
         ui.exAme.parentNode.querySelector("span:last-child").textContent = "Через Media Encoder — Premiere не занят";
         ui.exAmeRow.title = "Media Encoder сохраняет видео в фоне, а Premiere Pro в это время свободен.";
@@ -4660,7 +4667,10 @@
         { id: "graphic", label: "Графика" },
         { id: "sfx", label: "Звуки" },
         { id: "orbit", label: "Макеты" }
-    ];
+    ].filter(function (s) {
+        // В Premiere Pro вкладка называется «Монтаж»: только то, что Premiere умеет сам — переходы, движения, звуки.
+        return !IS_PR || s.id === "trans" || s.id === "anim" || s.id === "sfx";
+    });
     var AC_PRESETS = {
         trans: [],
         text: [],
@@ -4683,7 +4693,7 @@
         { id: "shake", label: "Тряска" }, { id: "glitch", label: "Глитч" }, { id: "light", label: "Засветки" },
         { id: "fade", label: "Размытие и затемнение" }, { id: "shapes", label: "Шейпы" }
     ];
-    var TR_LIST = [
+    var TR_LIST_AE = [
         ["zoom", "zoom-in", "Наезд"], ["zoom", "zoom-out", "Отъезд"], ["zoom", "zoom-in-out", "Наезд и отъезд"],
         ["zoom", "zoom-distort-in", "Наезд с искажением"], ["zoom", "zoom-distort-out", "Отъезд с искажением"], ["zoom", "zoom-hit", "Мощный наезд с ударом"],
         ["pan", "pan-left", "Панорама влево"], ["pan", "pan-right", "Панорама вправо"], ["pan", "pan-up", "Панорама вверх"], ["pan", "pan-down", "Панорама вниз"],
@@ -4694,6 +4704,22 @@
         ["fade", "blur-dissolve", "Через размытие"], ["fade", "fade-black", "Через чёрный"], ["fade", "fade-white", "Через белый"],
         ["shapes", "wipe-left", "Шторка"], ["shapes", "wipe-up", "Шторка вверх"], ["shapes", "circle", "Круг"]
     ];
+    // Premiere Pro: встроенные переходы Premiere (ставятся на стык) и наши — ключами на двух клипах у стыка.
+    // Глитча, засветок и шейпов нет: в Premiere их скриптом не собрать.
+    var TR_LIST_PR = [
+        ["builtin", "pr-cross-dissolve", "Наплыв"], ["builtin", "pr-film-dissolve", "Плёночный наплыв"], ["builtin", "pr-dip-black", "Через чёрный"],
+        ["builtin", "pr-dip-white", "Через белый"], ["builtin", "pr-push", "Сдвиг"], ["builtin", "pr-cross-zoom", "Перекрёстный зум"]
+    ].concat(TR_LIST_AE.filter(function (t) {
+        return ["zoom-in", "zoom-out", "zoom-in-out", "zoom-hit", "pan-left", "pan-right", "pan-up", "pan-down",
+            "rotate", "roll", "zoom-rotate", "shake", "blur-dissolve"].indexOf(t[1]) >= 0;
+    }));
+    var TR_LIST = IS_PR ? TR_LIST_PR : TR_LIST_AE;
+    if (IS_PR) {
+        TR_FOLDERS = [
+            { id: "all", label: "Все" }, { id: "builtin", label: "Premiere" }, { id: "zoom", label: "Зум" }, { id: "pan", label: "Панорама" },
+            { id: "rotate", label: "Поворот" }, { id: "shake", label: "Тряска" }, { id: "fade", label: "Размытие" }
+        ];
+    }
     var TR_BY_ID = {};
 
     // Пресеты, поставленные прошлыми версиями ключами (до 1.18): нужны только для названий во «✎ Изменить».
@@ -4949,7 +4975,7 @@
         for (k in AC_DEFAULTS) {
             if (AC_DEFAULTS.hasOwnProperty(k)) { out[k] = typeof s[k] === typeof AC_DEFAULTS[k] ? s[k] : AC_DEFAULTS[k]; }
         }
-        if (!AC_PRESETS.hasOwnProperty(out.sec) && out.sec !== "edit") { out.sec = "trans"; }
+        if (!AC_SECTIONS.some(function (x) { return x.id === out.sec; }) && (out.sec !== "edit" || IS_PR)) { out.sec = "trans"; }
         if (["in", "out", "both"].indexOf(out.mode) < 0) { out.mode = "in"; }
         out.dur = Math.min(3, Math.max(0.2, Math.round(Number(out.dur) * 10) / 10 || 0.6));
         out.size = Math.min(200, Math.max(80, Number(out.size) || 112));
@@ -5206,7 +5232,9 @@
         if (id === "blur-dissolve") { o.s = 1 + 0.15 * bell; o.blur = 10 * bell; }
         if (id === "leak-warm" || id === "leak-cool") { o.ov = Math.pow(Math.sin(Math.PI * t), 1.2); }
         if (id === "flash") { o.ov = peak; }
-        if (id === "fade-black" || id === "fade-white") { o.ov = Math.min(1, Math.sin(Math.PI * t) * 1.4); }
+        if (id === "fade-black" || id === "fade-white" || id === "pr-dip-black" || id === "pr-dip-white") { o.ov = Math.min(1, Math.sin(Math.PI * t) * 1.4); }
+        if (id === "pr-push") { o.x = t < 0.5 ? -t : 1 - t; }
+        if (id === "pr-cross-zoom") { o.s = 1 + trCut(t, 2, 2); o.blur = 8 * peak; }
         if (id === "wipe-left" || id === "wipe-up" || id === "circle") {
             var f = t < 0.5 ? 0.5 * trOut(t * 2) : 0.5 + 0.5 * trIn(t * 2 - 1);
             o.ov = 1;
@@ -5219,7 +5247,7 @@
 
     // В покое карточка показывает кадр незадолго до склейки — так видно, чем переходы отличаются.
     function trStill(clips, ov, id) {
-        var o = trLook(id, /^(wipe|circle)/.test(id) ? 0.12 : 0.46);
+        var o = trLook(id, /^(wipe|circle)/.test(id) ? 0.12 : (/^pr-dip/.test(id) ? 0.2 : 0.46));
         clips.style.transform = "translate(" + (o.x * 100).toFixed(1) + "%," + (o.y * 100).toFixed(1) + "%) rotate(" + o.r.toFixed(1) +
             "deg) skewX(" + o.skew.toFixed(1) + "deg) scale(" + o.s.toFixed(3) + ")";
         clips.style.filter = "blur(" + o.blur.toFixed(2) + "px)";
@@ -5244,7 +5272,9 @@
         stopTrPreview(card);
         card.trAnims = [
             clips.animate(cf, { duration: total, iterations: Infinity }),
-            b.animate([{ offset: 0, opacity: 0 }, { offset: 0.4, opacity: 0 }, { offset: 0.4001, opacity: 1 }, { offset: 0.9999, opacity: 1 }, { offset: 1, opacity: 0 }],
+            b.animate(/^pr-(cross|film)-dissolve$/.test(p.id) ?
+                [{ offset: 0, opacity: 0 }, { offset: 0.15, opacity: 0 }, { offset: 0.65, opacity: 1 }, { offset: 0.9999, opacity: 1 }, { offset: 1, opacity: 0 }] :
+                [{ offset: 0, opacity: 0 }, { offset: 0.4, opacity: 0 }, { offset: 0.4001, opacity: 1 }, { offset: 0.9999, opacity: 1 }, { offset: 1, opacity: 0 }],
                 { duration: total, iterations: Infinity }),
             ov.animate(of, { duration: total, iterations: Infinity })
         ];
@@ -5915,6 +5945,18 @@
     }
 
     function acHintText(sec) {
+        if (IS_PR && sec === "sfx") {
+            return "▶ — послушать с выбранными тоном и длиной. Щелчок по карточке кладёт звук на свободную аудиодорожку у указателя. " +
+                "Высота тона меняет только тон, «Длина» — только длину. Выделен звуковой клип — ползунки меняют и его.";
+        }
+        if (IS_PR && sec === "trans") {
+            return "Поставьте указатель на стык двух клипов и щёлкните по карточке. «Premiere» — встроенные переходы Premiere, " +
+                "остальные ставятся ключами на оба клипа: половина до стыка, половина после. Ключи видно в Effect Controls.";
+        }
+        if (IS_PR && sec === "anim") {
+            return "Выделите клипы на таймлайне и щёлкните по карточке: в начале (появление), в конце (исчезновение) или в обоих местах " +
+                "встанут ключи на Motion и Opacity. Править — в Effect Controls.";
+        }
         if (sec === "kit") {
             return "Жидкое стекло: выделите слой-фигуру (шейп, текст, логотип) и щёлкните по карточке — фигура станет стеклом, которое увеличивает, " +
                 "размывает и подсвечивает то, что под ним. Ничего не выделено — панель нарисует скруглённый прямоугольник. Двигайте и анимируйте саму фигуру — " +
@@ -6542,6 +6584,50 @@
         return dest;
     }
 
+    // Premiere Pro: растянуть клип скриптом там нельзя, поэтому и тон, и длина — в самом файле.
+    // Тон сдвигается на тон + 12·log2(длина/100), потом файл играет медленнее (длиннее) ровно на столько же ниже.
+    async function sndMake(src, pitch, len, folder) {
+        var name, dest, snd, shift = sndFileShift(pitch, len);
+        if (!IS_PR) { return sndVariant(src, shift, folder); }
+        if (Math.abs(pitch) < 0.01 && Math.round(len) === 100) { return src; }
+        name = platform.basename(src).replace(/(\.tone[+-]\d+\.\d\d)?(\.len\d+)?\.[^.]*$/i, "") + ".tone" + (pitch < 0 ? "-" : "+") +
+            Math.abs(pitch).toFixed(2) + ".len" + Math.round(len) + ".wav";
+        dest = platform.join(folder, name);
+        if (!(await platform.exists(dest))) {
+            snd = sndPitchShift(await sndRead(src), shift);
+            if (Math.round(len) !== 100) { snd = sndSpeed(snd, 100 / len); }
+            await platform.writeBytes(dest, wavEncode(snd));
+        }
+        sndMetaSet(dest, { src: src, p: pitch, l: len });
+        return dest;
+    }
+
+    // Проиграть в rate раз быстрее (rate < 1 — медленнее и длиннее).
+    function sndSpeed(snd, rate) {
+        return { rate: snd.rate, ch: snd.ch.map(function (x) {
+            var n = Math.max(1, Math.round(x.length / rate)), o = new Float32Array(n), i, t, a, f;
+            for (i = 0; i < n; i++) {
+                t = i * rate; a = Math.floor(t); f = t - a;
+                o[i] = a + 1 < x.length ? x[a] * (1 - f) + x[a + 1] * f : (a < x.length ? x[a] : 0);
+            }
+            return o;
+        }) };
+    }
+
+    // Premiere: из какого звука, с каким тоном и длиной сделан файл на таймлайне (для ползунков у выделенного клипа).
+    var SND_META_KEY = "sayframe.sndMeta.pr.v1";
+    function sndMetaAll() {
+        var m;
+        try { m = JSON.parse(window.localStorage.getItem(SND_META_KEY) || "{}"); } catch (e) { m = {}; }
+        return m && typeof m === "object" ? m : {};
+    }
+    function sndMetaSet(file, meta) {
+        var m = sndMetaAll(), k = Object.keys(m);
+        m[file] = meta;
+        if (k.length > 400) { delete m[k[0]]; }
+        try { window.localStorage.setItem(SND_META_KEY, JSON.stringify(m)); } catch (e) {}
+    }
+
     async function sndFolder() {
         var info = await host("info", []), folder;
         if (!info.fileAccess) { throw new Error(FILE_ACCESS_HINT); }
@@ -6661,6 +6747,12 @@
         if (busy) { return; }
         try { res = await host("sndTargets", []); } catch (e0) { return; }
         if (!res || !res.list || !res.list.length) { return; }
+        if (IS_PR) {
+            res.list = res.list.map(function (t) {
+                var m = sndMetaAll()[t.path] || { src: t.path, p: 0, l: 100 };
+                return { index: t.index, src: m.src, pitch: m.p, len: m.l, volume: t.volume };
+            });
+        }
         setBusy(true);
         setStatus("Пересчитываю звук…", "busy");
         try {
@@ -6669,13 +6761,14 @@
                 t = res.list[i];
                 pitch = change.pitch !== undefined ? change.pitch : t.pitch;
                 len = change.len !== undefined ? change.len : t.len;
-                file = await sndVariant(t.src, sndFileShift(pitch, len), folder);
+                file = await sndMake(t.src, pitch, len, folder);
                 list.push({ index: t.index, file: file, len: len, volume: change.volume !== undefined ? change.volume : t.volume, src: t.src, pitch: pitch });
             }
             res = await host("sndApplyFiles", [list]);
             setBusy(false);
             what = change.pitch !== undefined ? "Высота тона " + pitchText(change.pitch) : change.len !== undefined ? "Длина " + lenText(change.len) : "Громкость " + volText(change.volume);
-            setStatus(what + ": " + (res.count === 1 ? "слой «" + res.name + "»" : plural(res.count, "звуковой слой", "звуковых слоя", "звуковых слоёв")) + ".\nОтменить: Cmd/Ctrl+Z.", "done");
+            setStatus(what + ": " + (IS_PR ? (res.count === 1 ? "клип «" + res.name + "»" : plural(res.count, "звуковой клип", "звуковых клипа", "звуковых клипов")) + "." :
+                (res.count === 1 ? "слой «" + res.name + "»" : plural(res.count, "звуковой слой", "звуковых слоя", "звуковых слоёв")) + ".\nОтменить: Cmd/Ctrl+Z."), "done");
             if (acEdit && acEdit.sound) { loadAcEdit(); }
             return list;
         } catch (e) {
@@ -6701,6 +6794,12 @@
                 setBusy(false);
                 sfSetState(res.state);
                 sfReport(p, res);
+            } else if (p.sec === "trans" && IS_PR) {
+                res = await host("trApply", [p.id, acState.tdur]);
+                setBusy(false);
+                setStatus("«" + p.name + "» — на стыке «" + res.a + "» и «" + res.b + "» (" + secText(res.cut).replace(" с", " с от начала") + "), " + secText(res.dur) + "." +
+                    (res.builtin ? " Это переход Premiere: длину меняйте, потянув за его край." :
+                        " Ключи стоят на обоих клипах — их видно в Effect Controls." + (res.noBlur ? " Размытие не добавилось: Premiere не нашёл Gaussian Blur." : "")), "done");
             } else if (p.sec === "trans") {
                 res = await host("trApply", [p.id, acState.tdur, hexToRgb01(acState.color),
                     { title: p.name, prefix: "Переход: ", marker: "Склейка: ", strength: "Сила" }]);
@@ -6733,9 +6832,14 @@
                 if (!(await platform.exists(dest))) {
                     await platform.writeBytes(dest, base64ToBytes(await platform.readBase64(acSoundPath(p.id))));
                 }
-                res = await host("acSound", [await sndVariant(dest, sndFileShift(acState.pitch, acState.len), folder), "Sayframe SFX", acState.len, acState.vol, "♪ " + p.name,
+                res = await host("acSound", [await sndMake(dest, acState.pitch, acState.len, folder), "Sayframe SFX", acState.len, acState.vol, "♪ " + p.name,
                     { src: dest, p: acState.pitch, l: acState.len }]);
                 setBusy(false);
+                if (IS_PR) {
+                    setStatus("Звук «" + p.name + "» — на дорожке " + (res.track || "") + " у указателя" + (acState.pitch ? ", высота тона " + pitchText(acState.pitch) : "") +
+                        (acState.len !== 100 ? ", длина " + lenText(acState.len) : "") + ". Файл — в корзине «Sayframe SFX». Выделите клип и двигайте ползунки — он поменяется.", "done");
+                    return;
+                }
                 setStatus("Звук «" + p.name + "» добавлен у указателя времени" + (acState.pitch ? ", высота тона " + pitchText(acState.pitch) : "") + (acState.len !== 100 ? ", длина " + lenText(acState.len) : "") + "." +
                     (res.reused ? "" : " Файл лежит в папке «Sayframe SFX» рядом с проектом.") + " Выделите слой и двигайте ползунки внизу — он поменяется.", "done");
             }
@@ -6752,6 +6856,11 @@
     }
 
     function sfReport(p, res, extra) {
+        if (IS_PR) {
+            setStatus("«" + p.name + "» — " + AC_MODE_TEXT[acState.mode] + ", " + plural(res.applied, "клип", "клипа", "клипов") + ". Ключи на Motion и Opacity — " +
+                "их видно и можно править в Effect Controls." + (res.noBlur ? " Размытие не добавилось: Premiere не нашёл Gaussian Blur." : ""), "done");
+            return;
+        }
         var skipped = res.skipped && res.skipped.length ?
             " Свойства со своими выражениями не тронуты: " + res.skipped.filter(function (x, i, a) { return a.indexOf(x) === i; }).join(", ") + "." : "";
         if (res.removed && !res.applied) {

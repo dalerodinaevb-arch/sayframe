@@ -771,17 +771,42 @@ function makePR(opts, tmpDir) {
   }
   const root = Item("root", ProjectItemType.ROOT);
   const T = (s) => ({ seconds: s, ticks: String(Math.round(s * TPS)) });
-  function Clip(name, a, b, sel, item) { return { name, start: T(a), end: T(b), projectItem: item || null, _sel: !!sel, isSelected() { return this._sel; }, components: coll([], "numItems") }; }
+  // A clip parameter with keys at media times ([[sec, value], …]), like ComponentParam.
+  const secOf = (t) => (t && typeof t === "object") ? Number(t.ticks) / TPS : Number(t);
+  function Param(displayName, v) {
+    const p = { displayName, _v: v, _tv: false, keys: [] };
+    p.getValue = () => p._v; p.setValue = (x) => { p._v = x; return true; };
+    p.isTimeVarying = () => p._tv; p.setTimeVarying = (b) => { p._tv = !!b; if (!b) p.keys = []; };
+    p.addKey = (t) => { const x = secOf(t); if (!p.keys.some((k) => Math.abs(k[0] - x) < 1e-6)) p.keys.push([x, p._v]); p.keys.sort((a, b) => a[0] - b[0]); return true; };
+    p.setValueAtKey = (t, v) => { const k = p.keys.find((k) => Math.abs(k[0] - secOf(t)) < 1e-6); if (k) k[1] = v; return true; };
+    p.setInterpolationTypeAtKey = () => true;
+    p.removeKeyRange = (a, b) => { p.keys = p.keys.filter((k) => k[0] < secOf(a) || k[0] > secOf(b)); return true; };
+    p.getValueAtTime = (t) => { const x = secOf(t); let v = p.keys.length ? p.keys[0][1] : p._v; p.keys.forEach((k) => { if (k[0] <= x + 1e-6) v = k[1]; }); return v; };
+    return p;
+  }
+  function Comp(displayName, matchName, params) { return { displayName, matchName, properties: coll(params, "numItems") }; }
+  function videoComps() {
+    return [Comp("Motion", "AE.ADBE Motion", [Param("Position", [0.5, 0.5]), Param("Scale", 100), Param("Scale Width", 100), Param("Uniform Scale", true), Param("Rotation", 0), Param("Anchor Point", [0.5, 0.5])]),
+      Comp("Opacity", "AE.ADBE Opacity", [Param("Opacity", 100), Param("Blend Mode", 0)])];
+  }
+  function audioComps() { return [Comp("Volume", "Internal Volume Stereo", [Param("Bypass", false), Param("Level", 0.17782794)])]; }
+  function Clip(name, a, b, sel, item, kind, inPt) {
+    const c = { name, start: T(a), end: T(b), inPoint: T(inPt || 0), projectItem: item || null, _sel: !!sel, mediaType: kind === "A" ? "Audio" : "Video", isSelected() { return this._sel; },
+      components: coll(kind === "A" ? audioComps() : videoComps(), "numItems") };
+    c.remove = () => { const l = c._track.clips; l.splice(l.indexOf(c), 1); log.removed = (log.removed || []).concat([c.name]); return true; };
+    return c;
+  }
   function Track(name, clips) {
     const tr = { name, clips: coll(clips || [], "numItems"), isLocked: () => false, isMuted: () => false };
-    tr.overwriteClip = (item, sec) => { const c = Clip(item.name, Number(sec), Number(sec) + (item.len || 5), false, item); tr.clips.push(c); log.placed.push({ track: name, item: item.name, at: Number(sec) }); return true; };
+    tr.clips.forEach((c) => { c._track = tr; });
+    tr.overwriteClip = (item, sec) => { const c = Clip(item.name, Number(sec), Number(sec) + (item.len || 5), false, item, /^A/.test(name) ? "A" : "V"); c._track = tr; tr.clips.push(c); tr.clips.sort((x, y) => x.start.seconds - y.start.seconds); log.placed.push({ track: name, item: item.name, at: Number(sec) }); return true; };
     return tr;
   }
   function Seq(name, w, h, fps, opts2) {
     const s = { name, sequenceID: "seq-" + (++nodeN), frameSizeHorizontal: w, frameSizeVertical: h, timebase: String(TPS / fps), end: String(10 * TPS), _ph: (opts2 && opts2.playhead) || 0,
       videoTracks: coll((opts2 && opts2.v) || [Track("V1"), Track("V2")], "numTracks"), audioTracks: coll((opts2 && opts2.a) || [Track("A1")], "numTracks") };
     s.getPlayerPosition = () => T(s._ph);
-    s.getSelection = () => [].concat(...s.videoTracks.map((t) => t.clips.filter((c) => c._sel)));
+    s.getSelection = () => [].concat(...s.videoTracks.map((t) => t.clips.filter((c) => c._sel)), ...s.audioTracks.map((t) => t.clips.filter((c) => c._sel)));
     s.getInPointAsTime = () => T(1); s.getOutPointAsTime = () => T(4);
     s.getSettings = () => ({ videoFrameWidth: s.frameSizeHorizontal, videoFrameHeight: s.frameSizeVertical, videoFrameRate: T(1 / fps) });
     s.setSettings = (st) => { log.settings.push(st); s.frameSizeHorizontal = st.videoFrameWidth; s.frameSizeVertical = st.videoFrameHeight; };
@@ -796,14 +821,38 @@ function makePR(opts, tmpDir) {
     openSequence(id) { log.opened.push(id); const s = seqs.find((x) => x.sequenceID === id); if (s) project.activeSequence = s; return true; },
     createNewSequence(name) { const s = Seq(name, 1920, 1080, 25); seqs.push(s); return s; } };
   if (!opts.noSequence) {
-    const s = Seq("Монтаж", 1920, 1080, 25, { playhead: opts.playhead || 2, v: [Track("V1", [Clip("intro.mp4", 0, 3, true), Clip("main.mp4", 3, 9)]), Track("V2", opts.v2Full ? [Clip("title", 0, 10)] : [])] });
+    const s = Seq("Монтаж", 1920, 1080, 25, { playhead: opts.playhead || 2, v: [Track("V1", [Clip("intro.mp4", 0, 3, opts.noSelection ? false : true), Clip("main.mp4", 3, 9, false, null, "V", 10)]), Track("V2", opts.v2Full ? [Clip("title", 0, 10)] : [])],
+      a: [Track("A1", opts.a1Busy ? [Clip("music.wav", 0, 10, false, null, "A")] : [])] });
     seqs.push(s); project.activeSequence = s;
   }
   function Time() { this.ticks = "0"; }
   Object.defineProperty(Time.prototype, "seconds", { get() { return Number(this.ticks) / TPS; } });
   const qe = { project: {
     newSequence(name, preset) { log.qe.push("newSequence " + name + " " + path.basename(preset)); const s = Seq(name, 1920, 1080, 25); seqs.push(s); log.newSeqs.push(name); return true; },
-    getActiveSequence() { return { addTracks(n) { log.qe.push("addTracks " + n); if (project.activeSequence) project.activeSequence.videoTracks.push(Track("V" + (project.activeSequence.videoTracks.length + 1))); } }; } } };
+    getVideoTransitionByName(n) { return !opts.noTransitions && /^[A-Z]/.test(n) ? { name: n } : null; },
+    getVideoEffectByName(n) { return !opts.noBlurFx && n === "Gaussian Blur" ? { name: n } : null; },
+    getActiveSequence() {
+      const sq = project.activeSequence;
+      return {
+        addTracks(nv, vi, na) {
+          log.qe.push("addTracks " + nv + "," + (na || 0));
+          if (!sq) return;
+          if (nv) sq.videoTracks.push(Track("V" + (sq.videoTracks.length + 1)));
+          if (na) sq.audioTracks.push(Track("A" + (sq.audioTracks.length + 1)));
+        },
+        getVideoTrackAt(i) {
+          // QE lists gaps as "Empty" items between the clips.
+          const items = [];
+          sq.videoTracks[i].clips.forEach((c) => {
+            items.push({ type: "Empty", name: "" });
+            items.push({ type: "Clip", name: c.name, start: { ticks: c.start.ticks },
+              addTransition(tr, atStart, dur, off, align, single, toVideo) { log.transitions = (log.transitions || []).concat([{ name: tr.name, clip: c.name, atStart, dur, align }]); return true; },
+              addVideoEffect(fx) { c.components.push(Comp("Gaussian Blur", "AE.ADBE Gaussian Blur 2", [Param("Blurriness", 0), Param("Blur Dimensions", 1)])); log.effects = (log.effects || []).concat([c.name + ":" + fx.name]); return true; } });
+          });
+          return { numItems: items.length, getItemAt: (j) => items[j] };
+        }
+      };
+    } } };
   const app = { version: "26.0.0", path: prApp, project, enableQE() { log.qe.push("enable"); },
     encoder: { launchEncoder() { log.encodes.push("launch"); return true; }, encodeSequence(s, p, epr, span, rm) { log.encodes.push({ seq: s.name, path: p, span }); return "job1"; }, startBatch() { log.encodes.push("start"); } },
     __ran: (x) => log.ran.push(x) };
@@ -1087,12 +1136,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ ppro: true, width: 420 });
     await p.page.waitForTimeout(300);
     const tabs = await p.page.locator("#tabs .tab").evaluateAll((l) => l.map((b) => b.getAttribute("data-tab")));
-    check("PR1 opens in Premiere without errors: tabs AI and Проекты only, «Premiere» badge, no snapshot or effect search",
-      p.errors.length === 0 && tabs.sort().join() === "brand,claude" && (await p.page.locator(".app-badge").innerText()) === "Premiere" &&
+    check("PR1 opens in Premiere without errors: tabs AI, Монтаж and Проекты, «Premiere» badge, no snapshot or effect search",
+      p.errors.length === 0 && tabs.sort().join() === "brand,claude,tools" && (await p.page.locator(".app-badge").innerText()) === "Premiere" &&
       !(await vis(p, "#snapBtn")) && !(await vis(p, "#fxBtn")) && (await vis(p, "#exportBtn")) && (await p.page.getAttribute("html", "data-app")) === "ppro", p.errors.join(" | ") + " " + tabs.join());
     check("PR1 the panel talks only to host_pr.jsx and only with its own commands",
       p.ae.log.scripts.every((s) => !/^\$\.evalFile/.test(s) || s.indexOf("/jsx/host_pr.jsx") > 0) &&
-      p.ae.log.scripts.filter((s) => /^sayframeHost\./.test(s)).every((s) => /^sayframeHost\.(info|syntax|run|reference|brand\w+|export\w+)\(/.test(s)), p.ae.log.scripts.join(" | "));
+      p.ae.log.scripts.filter((s) => /^sayframeHost\./.test(s)).every((s) => /^sayframeHost\.(info|syntax|run|reference|brand\w+|export\w+|acSound|snd\w+|sf\w+|trApply)\(/.test(s)), p.ae.log.scripts.join(" | "));
     check("PR1 AI tab: no expressions, styles or references; Premiere quick tasks",
       !(await vis(p, '.ai-mode[data-m="expr"]')) && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && !(await vis(p, "#exprCard")) &&
       (await p.page.locator("#quickList").innerText()).indexOf("Переходы между клипами") >= 0 &&
@@ -1140,7 +1189,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.evaluate((v) => localStorage.setItem("sayframe.brands.v1", JSON.stringify(v)), seed);
     await p.restart();
     await p.page.click("#tabBrand"); await p.page.click("#brandLogos .brand-logo-img"); await p.idle();
-    check("PR3b every track busy: Premiere gets a new video track (QE) and the logo goes there", p.ae.log.qe.indexOf("addTracks 1") >= 0 && p.ae.log.placed.length === 1 && p.ae.log.placed[0].track === "V3", JSON.stringify(p.ae.log.placed) + " | " + await p.status());
+    check("PR3b every track busy: Premiere gets a new video track (QE) and the logo goes there", p.ae.log.qe.indexOf("addTracks 1,0") >= 0 && p.ae.log.placed.length === 1 && p.ae.log.placed[0].track === "V3", JSON.stringify(p.ae.log.placed) + " | " + await p.status());
     await p.close();
 
     // Quick export: the sequence, H.264 at the chosen bitrate, rendered by Premiere itself.
@@ -1236,6 +1285,108 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       p = await open({ ownExt: true, apps: ["Adobe After Effects 2026"] });
       await p.page.waitForTimeout(3500);
       check("PO5 no Premiere Pro on the computer: no question", (await p.page.locator("#modal").isHidden()) && !fs.existsSync(prDir(p)));
+      await p.close();
+    }
+    // «Монтаж»: переходы, движения и звуки из «Анимации», ключами на клипах Premiere.
+    {
+      const card = async (q, key) => { await q.page.evaluate((k) => document.querySelector('#acGrid .ac-card[data-key="' + k + '"]').click(), key); await q.idle(); await q.page.waitForTimeout(100); };
+      const sec = async (q, id) => { await q.page.click('#acTabs button[data-sec="' + id + '"]'); await q.page.waitForTimeout(150); };
+      const comp = (c, n) => c.components.find((x) => x.displayName === n);
+      const prm = (c, cn, pn) => comp(c, cn).properties.find((x) => x.displayName === pn);
+      const r3 = (v) => (Array.isArray(v) ? v.map(r3) : Math.round(v * 1000) / 1000);
+      p = await open({ ppro: true, width: 420, playhead: 2.9, settings: { design: "studio", designSet: 2 } });
+      await p.page.click("#tabTools"); await p.page.waitForTimeout(400);
+      const secs = await p.page.locator("#acTabs button[data-sec]").evaluateAll((l) => l.map((b) => b.getAttribute("data-sec")));
+      const trNames = await p.page.locator("#acGrid .ac-card .ac-name").allInnerTexts();
+      check("MT1 the «Анимация» tab is «Монтаж» in Premiere: Переходы, Движения, Звуки only; no Изменить; no glitch, light or shape transitions",
+        (await p.page.locator("#tabTools .tab-label").innerText()) === "Монтаж" && secs.join() === "trans,anim,sfx" && !(await vis(p, "#acEdit")) &&
+        trNames.indexOf("Наплыв") >= 0 && trNames.indexOf("Наезд") >= 0 && trNames.indexOf("Цифровой глитч") < 0 && trNames.indexOf("Шторка") < 0 && trNames.indexOf("Вспышка") < 0 &&
+        (await p.page.locator("#acFolders button").allInnerTexts()).join() === "Все,Premiere,Зум,Панорама,Поворот,Тряска,Размытие" && p.errors.length === 0,
+        secs.join() + " | " + trNames.join() + " | " + p.errors.join(" | "));
+      await p.page.screenshot({ path: path.join(SHOTS, "pr-10-montazh.png") });
+
+      await card(p, "trans:pr-cross-dissolve");
+      t = p.ae.log.transitions || [];
+      check("MT2 a Premiere transition goes on the cut under the playhead through QE: Cross Dissolve at the start of the second clip, 0,8 s = 20 frames, centred",
+        t.length === 1 && t[0].name === "Cross Dissolve" && t[0].clip === "main.mp4" && t[0].atStart === true && t[0].dur === "00:00:00:20" && t[0].align === 0.5 &&
+        /^«Наплыв» — на стыке «intro\.mp4» и «main\.mp4»/.test(await p.status()), JSON.stringify(t) + " " + await p.status());
+
+      await card(p, "trans:zoom-in");
+      const v1 = p.ae.project.activeSequence.videoTracks[0].clips;
+      const sA = prm(v1[0], "Motion", "Scale").keys, sB = prm(v1[1], "Motion", "Scale").keys;
+      check("MT3 our «Наезд» is keys on both clips: the first zooms in up to the cut (media time), the second starts zoomed and settles at 100 % from its own in-point",
+        sA.length >= 8 && Math.abs(sA[0][0] - 2.6) < 0.001 && sA[sA.length - 1][0] < 3 && sA[sA.length - 1][1] > 150 && sA[0][1] === 100 &&
+        Math.abs(sB[0][0] - 10) < 0.001 && sB[0][1] < 100 && Math.abs(sB[sB.length - 1][1] - 100) < 0.01 && Math.abs(sB[sB.length - 1][0] - 10.4) < 0.001,
+        JSON.stringify(r3(sA)) + " | " + JSON.stringify(r3(sB)));
+      check("MT3 the zoom blurs through a Gaussian Blur added with QE, keyed on both sides of the cut",
+        (p.ae.log.effects || []).join() === "intro.mp4:Gaussian Blur,main.mp4:Gaussian Blur" && prm(v1[0], "Gaussian Blur", "Blurriness").keys.some((k) => k[1] > 20) &&
+        /Ключи стоят на обоих клипах/.test(await p.status()), (p.ae.log.effects || []).join() + " " + await p.status());
+      await card(p, "trans:zoom-in");
+      check("MT3 the same transition again replaces its keys instead of adding more", prm(v1[0], "Motion", "Scale").keys.length === sA.length && (p.ae.log.effects || []).length === 2,
+        prm(v1[0], "Motion", "Scale").keys.length + " vs " + sA.length);
+      await card(p, "trans:pan-left");
+      const pA = prm(v1[0], "Motion", "Position").keys;
+      check("MT3 «Панорама влево» moves the normalized Position by whole frames", pA.length > 5 && pA[0][1][0] === 0.5 && pA[pA.length - 1][1][0] < 0.01 && pA[pA.length - 1][1][1] === 0.5, JSON.stringify(r3(pA)));
+      await p.close();
+
+      p = await open({ ppro: true, width: 420, playhead: 6, noSelection: true });
+      await p.page.click("#tabTools"); await p.page.waitForTimeout(300);
+      await card(p, "trans:zoom-in");
+      check("MT4 no cut near the playhead: the panel asks to put it on a cut, nothing changes", /стык двух клипов/.test(await p.status()) && (await p.statusKind()) === "error" &&
+        prm(p.ae.project.activeSequence.videoTracks[0].clips[0], "Motion", "Scale").keys.length === 0, await p.status());
+      await sec(p, "anim");
+      await card(p, "anim:from-bottom.ease");
+      check("MT4 a motion with no clip selected asks to select clips", /Выделите видеоклипы/.test(await p.status()), await p.status());
+      await p.close();
+
+      p = await open({ ppro: true, width: 420 });
+      await p.page.click("#tabTools"); await p.page.waitForTimeout(300); await sec(p, "anim");
+      await p.page.waitForTimeout(900); await p.page.screenshot({ path: path.join(SHOTS, "pr-11-dvizheniya.png") });
+      await card(p, "anim:from-bottom.ease");
+      const c0 = p.ae.project.activeSequence.videoTracks[0].clips[0];
+      const op = prm(c0, "Opacity", "Opacity").keys, ps = prm(c0, "Motion", "Position").keys;
+      check("MT5 «Снизу» on the selected clip: Opacity 0 → 100 and Position from 20 % of the frame lower → its place, over 0,6 s from the clip start",
+        op.length > 5 && op[0][0] === 0 && op[0][1] === 0 && Math.abs(op[op.length - 1][0] - 0.6) < 0.001 && op[op.length - 1][1] === 100 &&
+        Math.abs(ps[0][1][1] - 0.7) < 0.001 && ps[0][1][0] === 0.5 && Math.abs(ps[ps.length - 1][1][1] - 0.5) < 0.001 &&
+        /^«Снизу · плавно» — появление, 1 клип\. Ключи на Motion и Opacity/.test(await p.status()), JSON.stringify(r3(op)) + " | " + JSON.stringify(r3(ps)) + " | " + await p.status());
+      await p.page.click('#acMode button[data-value="both"]');
+      await card(p, "anim:stretch.over");
+      const sh = prm(c0, "Motion", "Scale").keys, sw = prm(c0, "Motion", "Scale Width").keys;
+      check("MT5 «Растяжение» in and out: Uniform Scale off, height and width keyed at both ends of the clip",
+        prm(c0, "Motion", "Uniform Scale").getValue() === false && Math.abs(sh[0][1] - 20) < 0.001 && Math.abs(sw[0][1] - 300) < 0.001 && Math.abs(sh[sh.length - 1][0] - 3) < 0.001 && Math.abs(sh[sh.length - 1][1] - 20) < 0.001 &&
+        sw.some((k) => k[0] > 0.5 && k[0] < 2.5 && Math.abs(k[1] - 100) < 0.01), JSON.stringify(r3(sh)).slice(0, 300));
+      await card(p, "anim:blur.ease");
+      check("MT5 a blur motion adds Gaussian Blur through QE and keys it", (p.ae.log.effects || []).join() === "intro.mp4:Gaussian Blur" && prm(c0, "Gaussian Blur", "Blurriness").keys[0][1] === 40);
+      await p.close();
+
+      p = await open({ ppro: true, width: 420, playhead: 2, a1Busy: true });
+      await p.page.click("#tabTools"); await p.page.waitForTimeout(300); await sec(p, "sfx");
+      await p.page.waitForTimeout(900); await p.page.screenshot({ path: path.join(SHOTS, "pr-12-zvuki.png") });
+      await p.page.evaluate(() => { const r = document.getElementById("acLen"); r.value = "150"; r.dispatchEvent(new Event("input", { bubbles: true })); });
+      await card(p, "sfx:whoosh");
+      const SFX = path.join(path.dirname(p.ae.project.path), "Sayframe SFX");
+      const FR = (f) => { const b = fs.readFileSync(f); return b.readUInt32LE(40) / (b.readUInt16LE(22) * 2); };
+      const LONG = path.join(SFX, "whoosh.tone+0.00.len150.wav");
+      const a2 = p.ae.project.activeSequence.audioTracks[1];
+      check("MT6 a sound goes to a new audio track when A1 is busy, at the playhead, in the «Sayframe SFX» bin; «Длина» 150 % is in the file itself (1,5× longer, same pitch)",
+        p.ae.log.qe.indexOf("addTracks 0,1") >= 0 && a2 && a2.clips.length === 1 && a2.clips[0].start.seconds === 2 && a2.clips[0].name === "♪ Вжух" &&
+        p.ae.log.imports.length === 1 && p.ae.log.imports[0].path === LONG && p.ae.log.imports[0].bin === "Sayframe SFX" &&
+        Math.abs(FR(LONG) / FR(path.join(EXT, "sfx", "whoosh.wav")) - 1.5) < 0.01 && /^Звук «Вжух» — на дорожке A2/.test(await p.status()),
+        JSON.stringify(p.ae.log.imports) + " " + p.ae.log.qe.join() + " " + await p.status());
+      a2.clips[0]._sel = true;
+      const slide = async (sel, v) => { await p.page.evaluate(([q, x]) => { const i = document.querySelector(q); i.value = String(x); i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); }, [sel, v]); await p.idle();
+        for (let k = 0; k < 100 && /^Пересчитываю/.test(await p.status()); k++) { await p.page.waitForTimeout(50); } await p.idle(); await p.page.waitForTimeout(80); };
+      await slide("#acPitch", 4);
+      const P4 = path.join(SFX, "whoosh.tone+4.00.len150.wav");
+      check("MT7 pitch +4 on the selected audio clip: a new file from the original (length 150 % kept), put in the same place on the same track",
+        (p.ae.log.removed || []).join() === "♪ Вжух" && a2.clips.length === 1 && a2.clips[0].start.seconds === 2 && a2.clips[0].projectItem.media === P4 &&
+        a2.clips[0].name === "♪ Вжух" && Math.abs(FR(P4) / FR(LONG) - 1) < 0.01 && /^Высота тона \+4 пт: клип «♪ Вжух»/.test(await p.status()),
+        (p.ae.log.removed || []).join() + " " + (a2.clips[0] && a2.clips[0].projectItem.media) + " " + await p.status());
+      a2.clips[0]._sel = true;
+      await slide("#acVol", -6);
+      check("MT7 volume −6 dB → the clip's Volume Level (Premiere's gain scale), the file stays",
+        Math.abs(prm(a2.clips[0], "Volume", "Level").getValue() - Math.pow(10, -21 / 20)) < 1e-6 && a2.clips[0].projectItem.media === P4, String(prm(a2.clips[0], "Volume", "Level").getValue()));
+      check("MT8 no errors, and the panel only used Premiere's own commands", p.errors.length === 0 && p.ae.log.scripts.filter((s) => /^sayframeHost\./.test(s)).every((s) => /^sayframeHost\.(info|acSound|sndTargets|sndApplyFiles|sfState)\(/.test(s)), p.errors.join(" | "));
       await p.close();
     }
     if (process.env.SAYFRAME_ONLY === "pr") { await browser.close(); console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0); }

@@ -411,6 +411,360 @@ var sayframeHost = (function () {
         return null;
     }
 
+    // ------------------------------------------------------- Montage tab (sounds, motions, transitions)
+    // Premiere has no expressions: motions and our transitions are baked into keys on the clips' own
+    // Motion and Opacity (and a Gaussian Blur added through QE when the look needs blur). Key times of a
+    // clip's parameter are in the clip's media time, so a sequence time t is clip.inPoint + (t - clip.start).
+
+    function mtComp(clip, names) {
+        var i, c, j, dn, mn;
+        for (i = 0; i < clip.components.numItems; i++) {
+            c = clip.components[i];
+            dn = String(c.displayName); mn = String(c.matchName);
+            for (j = 0; j < names.length; j++) { if (dn === names[j] || mn === names[j]) { return c; } }
+        }
+        return null;
+    }
+
+    // A parameter by one of its display names (English or the localized one), else by its place.
+    function mtParam(comp, names, index) {
+        var i, j, p;
+        if (!comp) { return null; }
+        for (i = 0; i < comp.properties.numItems; i++) {
+            p = comp.properties[i];
+            for (j = 0; j < names.length; j++) { if (String(p.displayName) === names[j]) { return p; } }
+        }
+        return index < comp.properties.numItems ? comp.properties[index] : null;
+    }
+
+    var MT_MOTION = ["AE.ADBE Motion", "Motion", "\u0414\u0432\u0438\u0436\u0435\u043d\u0438\u0435"];
+    var MT_OPACITY = ["AE.ADBE Opacity", "Opacity", "\u041d\u0435\u043f\u0440\u043e\u0437\u0440\u0430\u0447\u043d\u043e\u0441\u0442\u044c"];
+    var MT_BLUR = ["AE.ADBE Gaussian Blur 2", "Gaussian Blur", "\u0420\u0430\u0437\u043c\u044b\u0442\u0438\u0435 \u043f\u043e \u0413\u0430\u0443\u0441\u0441\u0443"];
+
+    // { pos, scale, scaleW, uniform, rot, op } of a video clip.
+    function mtProps(clip) {
+        var m = mtComp(clip, MT_MOTION), o = mtComp(clip, MT_OPACITY);
+        return {
+            pos: mtParam(m, ["Position", "\u041f\u043e\u043b\u043e\u0436\u0435\u043d\u0438\u0435"], 0),
+            scale: mtParam(m, ["Scale", "Scale Height", "\u041c\u0430\u0441\u0448\u0442\u0430\u0431"], 1),
+            scaleW: mtParam(m, ["Scale Width", "\u0428\u0438\u0440\u0438\u043d\u0430 \u043c\u0430\u0441\u0448\u0442\u0430\u0431\u0430"], 2),
+            uniform: mtParam(m, ["Uniform Scale", "\u0420\u0430\u0432\u043d\u043e\u043c\u0435\u0440\u043d\u043e\u0435 \u043c\u0430\u0441\u0448\u0442\u0430\u0431\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435"], 3),
+            rot: mtParam(m, ["Rotation", "\u041f\u043e\u0432\u043e\u0440\u043e\u0442"], 4),
+            op: mtParam(o, ["Opacity", "\u041d\u0435\u043f\u0440\u043e\u0437\u0440\u0430\u0447\u043d\u043e\u0441\u0442\u044c"], 0)
+        };
+    }
+
+    function mtMediaTime(clip, t) { return PR.secs(clip.inPoint) + (t - PR.secs(clip.start)); }
+
+    // The parameter's value at sequence time t (its own keys respected).
+    function mtBase(p, clip, t) {
+        var v;
+        try { v = p.isTimeVarying() ? p.getValueAtTime(PR.time(mtMediaTime(clip, t))) : p.getValue(); } catch (e) { v = p.getValue(); }
+        return v;
+    }
+
+    function mtClear(p, clip, a, b) {
+        if (!p) { return; }
+        try { if (p.isTimeVarying()) { p.removeKeyRange(PR.time(mtMediaTime(clip, a) - 0.0001), PR.time(mtMediaTime(clip, b) + 0.0001), true); } } catch (e) {}
+    }
+
+    // Writes keys [[seqTime, value], ...] on p (linear between them).
+    function mtKeys(p, clip, keys) {
+        var i, tm;
+        if (!p || !keys.length) { return; }
+        if (!p.isTimeVarying()) { p.setTimeVarying(true); }
+        for (i = 0; i < keys.length; i++) {
+            tm = PR.time(mtMediaTime(clip, keys[i][0]));
+            p.addKey(tm);
+            p.setValueAtKey(tm, keys[i][1], true);
+            try { p.setInterpolationTypeAtKey(tm, 0, true); } catch (e) {}
+        }
+    }
+
+    // Is a Position value normalized (0..1 of the frame, Premiere 2015+) or in pixels?
+    function mtNormalized(v) { return v && v.length >= 2 && Math.abs(v[0]) <= 2 && Math.abs(v[1]) <= 2; }
+
+    function mtTrackIndex(list, clip) {
+        var i, j, t, c;
+        for (i = 0; i < list.numTracks; i++) {
+            t = list[i];
+            for (j = 0; j < t.clips.numItems; j++) {
+                c = t.clips[j];
+                if (c === clip || (String(c.name) === String(clip.name) && Math.abs(PR.secs(c.start) - PR.secs(clip.start)) < 0.0005)) { return i; }
+            }
+        }
+        return -1;
+    }
+
+    function qeSecs(x) {
+        if (x === null || x === undefined) { return NaN; }
+        if (typeof x === "object") {
+            if (x.ticks !== undefined) { return Number(x.ticks) / TICKS_PER_SECOND; }
+            if (x.secs !== undefined) { return Number(x.secs); }
+        }
+        return Number(x);
+    }
+
+    // The QE item of a video clip (QE lists the gaps too, so it is found by name and start).
+    function qeItem(trackIndex, clip) {
+        var q, tr, i, it;
+        app.enableQE();
+        q = qe.project.getActiveSequence();
+        tr = q.getVideoTrackAt(trackIndex);
+        for (i = 0; i < tr.numItems; i++) {
+            it = tr.getItemAt(i);
+            if (!it || String(it.type) === "Empty") { continue; }
+            if (String(it.name) === String(clip.name) && Math.abs(qeSecs(it.start) - PR.secs(clip.start)) < 0.02) { return it; }
+        }
+        return null;
+    }
+
+    function qeByNames(kind, names) {
+        var i, x;
+        for (i = 0; i < names.length; i++) {
+            try { x = kind === "fx" ? qe.project.getVideoEffectByName(names[i]) : qe.project.getVideoTransitionByName(names[i]); } catch (e) { x = null; }
+            if (x) { return x; }
+        }
+        return null;
+    }
+
+    // The Blurriness parameter of the clip's Gaussian Blur (added through QE when missing), or null.
+    function mtBlur(clip, trackIndex) {
+        var c = mtComp(clip, MT_BLUR), it, fx;
+        if (!c) {
+            try {
+                it = qeItem(trackIndex, clip);
+                fx = qeByNames("fx", MT_BLUR.slice(1));
+                if (it && fx) { it.addVideoEffect(fx); }
+            } catch (e) {}
+            c = mtComp(clip, MT_BLUR);
+        }
+        return c ? mtParam(c, ["Blurriness", "\u0420\u0430\u0437\u043c\u044b\u0442\u0438\u0435"], 0) : null;
+    }
+
+    function mtSelectedVideo(s) {
+        var sel = PR.selected(s), out = [], i, ti;
+        for (i = 0; i < sel.length; i++) {
+            ti = mtTrackIndex(s.videoTracks, sel[i]);
+            if (ti >= 0) { out.push({ clip: sel[i], track: ti }); }
+        }
+        return out;
+    }
+
+    function mtSelectedAudio(s) {
+        var sel = PR.selected(s), out = [], i, ti;
+        for (i = 0; i < sel.length; i++) {
+            ti = mtTrackIndex(s.audioTracks, sel[i]);
+            if (ti >= 0) { out.push({ clip: sel[i], track: ti }); }
+        }
+        return out;
+    }
+
+    // ---- Sounds
+
+    var MT_VOLUME = ["Volume", "\u0413\u0440\u043e\u043c\u043a\u043e\u0441\u0442\u044c"];
+
+    // Premiere keeps clip volume as a gain: 0 dB = 0.1778 (= 10^(-15/20)).
+    function dbToLevel(db) { return Math.pow(10, (Number(db) - 15) / 20); }
+    function levelToDb(v) { return Number(v) > 0 ? Math.round((20 * Math.log(Number(v)) / Math.LN10 + 15) * 10) / 10 : -96; }
+
+    function mtLevel(clip) {
+        var c = mtComp(clip, MT_VOLUME), i;
+        if (!c) {
+            for (i = 0; i < clip.components.numItems; i++) {
+                if (/volume/i.test(String(clip.components[i].matchName))) { c = clip.components[i]; break; }
+            }
+        }
+        return c ? mtParam(c, ["Level", "\u0423\u0440\u043e\u0432\u0435\u043d\u044c"], 1) : null;
+    }
+
+    function itemByMedia(path, binName) {
+        var b = PR.bin(binName), i, it, want = new File(path).fsName;
+        for (i = 0; i < b.children.numItems; i++) {
+            it = b.children[i];
+            try { if (it && new File(String(it.getMediaPath())).fsName === want) { return it; } } catch (e) {}
+        }
+        return null;
+    }
+
+    // The lowest audio track free from sec for len seconds; a new one when none is.
+    function freeAudioTrack(sec, len, s) {
+        var i, q;
+        for (i = 0; i < s.audioTracks.numTracks; i++) {
+            if (!(s.audioTracks[i].isLocked && s.audioTracks[i].isLocked()) && PR.freeAt(s.audioTracks[i], sec, sec + len)) { return s.audioTracks[i]; }
+        }
+        try {
+            app.enableQE();
+            q = qe.project.getActiveSequence();
+            q.addTracks(0, 0, 1, 1, s.audioTracks.numTracks);
+        } catch (e) {}
+        if (s.audioTracks.numTracks > i && PR.freeAt(s.audioTracks[s.audioTracks.numTracks - 1], sec, sec + len)) {
+            return s.audioTracks[s.audioTracks.numTracks - 1];
+        }
+        throw new Error("NO_FREE_TRACK");
+    }
+
+    function clipAt(track, item, at) {
+        var i, c;
+        for (i = track.clips.numItems - 1; i >= 0; i--) {
+            c = track.clips[i];
+            if (Math.abs(PR.secs(c.start) - at) < 0.02) { return c; }
+        }
+        return null;
+    }
+
+    function putSound(s, track, path, binName, at, vol, name) {
+        var item = itemByMedia(path, binName), reused = !!item, len = 1, c, lv;
+        if (!item) { item = PR.importFile(path, binName); }
+        try { len = Math.max(0.05, PR.secs(item.getOutPoint()) - PR.secs(item.getInPoint())); } catch (e) {}
+        if (!track) { track = freeAudioTrack(at, len, s); }
+        track.overwriteClip(item, at);
+        c = clipAt(track, item, at);
+        if (c) {
+            try { if (name) { c.name = name; } } catch (e1) {}
+            lv = mtLevel(c);
+            if (lv) { try { lv.setValue(dbToLevel(vol), true); } catch (e2) {} }
+        }
+        return { track: track, reused: reused };
+    }
+
+    // ---- Motions: the same shapes and curves as in After Effects (host.jsx SF_MOTIONS).
+
+    var MT_MOTIONS = {
+        "fade": { op: 0 }, "from-bottom": { op: 0, dy: 1 }, "from-top": { op: 0, dy: -1 }, "from-left": { op: 0, dx: -1 }, "from-right": { op: 0, dx: 1 },
+        "scale-up": { op: 0, sc: 0 }, "scale-down": { op: 0, sc: 200 }, "rotate": { op: 0, rot: -90 }, "spin": { op: 0, rot: -360, sc: 0 },
+        "blur": { op: 0, blur: 40 }, "blur-scale": { op: 0, blur: 30, sc: 130 }, "rise-rotate": { op: 0, dy: 1, rot: -20 },
+        "rise-scale": { op: 0, dy: 1, sc: 60 }, "stretch": { op: 0, scx: 300, scy: 20 }, "drop": { dy: -1, far: true }
+    };
+
+    function mtCurve(p, c) {
+        var s, q, n, d;
+        p = Math.min(1, Math.max(0, p));
+        if (c === "linear") { return p; }
+        if (c === "over") { s = 1.70158; q = p - 1; return 1 + (s + 1) * q * q * q + s * q * q; }
+        if (c === "bounce") {
+            n = 7.5625; d = 2.75;
+            if (p < 1 / d) { return n * p * p; }
+            if (p < 2 / d) { p -= 1.5 / d; return n * p * p + 0.75; }
+            if (p < 2.5 / d) { p -= 2.25 / d; return n * p * p + 0.9375; }
+            p -= 2.625 / d; return n * p * p + 0.984375;
+        }
+        if (c === "elastic") { if (p <= 0 || p >= 1) { return p; } return Math.pow(2, -10 * p) * Math.sin((p * 10 - 0.75) * 2 * Math.PI / 3) + 1; }
+        return 1 - Math.pow(1 - p, 3);
+    }
+
+    // Sample times of one window: every frame (two keys for a straight line).
+    function mtTimes(a, b, curve, fd) {
+        var out = [], n, i;
+        if (curve === "linear") { return [a, b]; }
+        n = Math.max(2, Math.round((b - a) / fd));
+        for (i = 0; i <= n; i++) { out.push(a + (b - a) * i / n); }
+        return out;
+    }
+
+    function mtMotionOnClip(s, clip, track, m, curve, mode, dur) {
+        var P = mtProps(clip), a0 = PR.secs(clip.start), b0 = PR.secs(clip.end), fd = 1 / PR.fps(s), len = b0 - a0;
+        var W = Number(s.frameSizeHorizontal) || 1920, H = Number(s.frameSizeVertical) || 1080, wins = [], w, i, j, ts, k, p;
+        var dist = H * (m.far ? 0.6 : 0.2), keys, base, kAt, put, blurP = null, noBlur = false, norm;
+        var d = Math.min(Number(dur) || 0.6, mode === "both" ? len / 2 : len);
+        if (mode === "in" || mode === "both") { wins.push({ a: a0, b: a0 + d, dir: "in" }); }
+        if (mode === "out" || mode === "both") { wins.push({ a: b0 - d, b: b0, dir: "out" }); }
+        if (m.blur) { blurP = mtBlur(clip, track); noBlur = !blurP; }
+        if (m.scx !== undefined && P.uniform) { try { P.uniform.setValue(false, true); } catch (e0) {} }
+        for (i = 0; i < wins.length; i++) {
+            w = wins[i];
+            ts = mtTimes(w.a, w.b, curve, fd);
+            kAt = function (t) {
+                p = (t - w.a) / Math.max(w.b - w.a, fd);
+                return w.dir === "in" ? 1 - mtCurve(p, curve) : 1 - mtCurve(1 - p, curve);
+            };
+            put = function (prop, fn) {
+                if (!prop) { return; }
+                base = mtBase(prop, clip, w.dir === "in" ? w.b : w.a);
+                mtClear(prop, clip, w.a, w.b);
+                keys = [];
+                for (j = 0; j < ts.length; j++) { k = kAt(ts[j]); keys.push([ts[j], fn(base, k)]); }
+                mtKeys(prop, clip, keys);
+            };
+            if (m.op !== undefined) { put(P.op, function (b, k) { return Number(b) * (1 - k) + m.op * k; }); }
+            if (m.dx || m.dy) {
+                put(P.pos, function (b, k) {
+                    norm = mtNormalized(b);
+                    return [Number(b[0]) + (m.dx || 0) * dist * k / (norm ? W : 1), Number(b[1]) + (m.dy || 0) * dist * k / (norm ? H : 1)];
+                });
+            }
+            if (m.sc !== undefined) { put(P.scale, function (b, k) { return Number(b) * ((1 - k) + m.sc / 100 * k); }); }
+            if (m.scy !== undefined) { put(P.scale, function (b, k) { return Number(b) * ((1 - k) + m.scy / 100 * k); }); }
+            if (m.scx !== undefined) { put(P.scaleW, function (b, k) { return Number(b) * ((1 - k) + m.scx / 100 * k); }); }
+            if (m.rot !== undefined) { put(P.rot, function (b, k) { return Number(b) + m.rot * k; }); }
+            if (blurP) { put(blurP, function (b, k) { return Number(b) * (1 - k) + m.blur * k; }); }
+        }
+        return noBlur;
+    }
+
+    // ---- Transitions: the looks are the panel's previews (trLook in panel.js), baked per frame.
+
+    function trIn(x) { return x <= 0 ? 0 : Math.pow(2, 10 * x - 10); }
+    function trOut(x) { return x >= 1 ? 1 : 1 - Math.pow(2, -10 * x); }
+    function trCut(t, a, b) { return t < 0.5 ? a * trIn(t * 2) : b * (1 - trOut(t * 2 - 1)); }
+
+    function trLook(id, t) {
+        var bell = Math.pow(Math.sin(Math.PI * t), 2), peak = t < 0.5 ? trIn(t * 2) : trIn(2 - t * 2);
+        var after = t < 0.5 ? 0 : Math.pow(1 - (t * 2 - 1), 2);
+        var o = { s: 1, r: 0, x: 0, y: 0, blur: 0 };
+        if (id === "zoom-in") { o.s = 1 + trCut(t, 2, -0.67); o.blur = 5 * peak; }
+        if (id === "zoom-out") { o.s = 1 + trCut(t, -0.67, 2); o.blur = 5 * peak; }
+        if (id === "zoom-in-out") { o.s = 1 + trCut(t, 2, 2); o.blur = 5 * peak; }
+        if (id === "zoom-hit") { o.s = 1 + trCut(t, 3, -0.75) + 0.12 * after * Math.sin(t * 40); o.x = Math.sin(t * 90) * 0.05 * after; o.blur = 6 * peak; }
+        if (id === "pan-left") { o.x = trCut(t, -1, 1); o.blur = 4 * peak; }
+        if (id === "pan-right") { o.x = trCut(t, 1, -1); o.blur = 4 * peak; }
+        if (id === "pan-up") { o.y = trCut(t, -1, 1); o.blur = 4 * peak; }
+        if (id === "pan-down") { o.y = trCut(t, 1, -1); o.blur = 4 * peak; }
+        if (id === "rotate") { o.s = 1 + 0.2 * bell; o.r = trCut(t, 90, -90); o.blur = 3 * peak; }
+        if (id === "roll") { o.s = 1 + 0.3 * bell; o.r = trCut(t, 180, -180); o.blur = 4 * peak; }
+        if (id === "zoom-rotate") { o.s = 1 + trCut(t, 2, -0.6); o.r = trCut(t, 120, -120); o.blur = 5 * peak; }
+        if (id === "shake") { o.s = 1 + 0.25 * bell; o.x = Math.sin(t * 90) * 0.07 * bell; o.y = Math.cos(t * 71) * 0.05 * bell; o.r = Math.sin(t * 57) * 10 * bell; o.blur = 2 * bell; }
+        if (id === "blur-dissolve") { o.s = 1 + 0.15 * bell; o.blur = 10 * bell; }
+        return o;
+    }
+
+    // Premiere's own transitions: English names first, then the Russian ones.
+    var TR_BUILTIN = {
+        "pr-cross-dissolve": ["Cross Dissolve", "\u041f\u0435\u0440\u0435\u043a\u0440\u0435\u0441\u0442\u043d\u044b\u0439 \u043d\u0430\u043f\u043b\u044b\u0432", "\u041f\u0435\u0440\u0435\u043a\u0440\u0451\u0441\u0442\u043d\u044b\u0439 \u043d\u0430\u043f\u043b\u044b\u0432"],
+        "pr-film-dissolve": ["Film Dissolve", "\u041d\u0430\u043f\u043b\u044b\u0432 \u043f\u043b\u0435\u043d\u043a\u0438", "\u041d\u0430\u043f\u043b\u044b\u0432 \u043f\u043b\u0451\u043d\u043a\u0438"],
+        "pr-dip-black": ["Dip to Black", "\u041f\u0435\u0440\u0435\u0445\u043e\u0434 \u0447\u0435\u0440\u0435\u0437 \u0447\u0435\u0440\u043d\u044b\u0439", "\u041f\u043e\u0433\u0440\u0443\u0436\u0435\u043d\u0438\u0435 \u0432 \u0447\u0435\u0440\u043d\u044b\u0439"],
+        "pr-dip-white": ["Dip to White", "\u041f\u0435\u0440\u0435\u0445\u043e\u0434 \u0447\u0435\u0440\u0435\u0437 \u0431\u0435\u043b\u044b\u0439", "\u041f\u043e\u0433\u0440\u0443\u0436\u0435\u043d\u0438\u0435 \u0432 \u0431\u0435\u043b\u044b\u0439"],
+        "pr-push": ["Push", "\u0421\u0434\u0432\u0438\u0433", "\u0412\u044b\u0442\u0430\u043b\u043a\u0438\u0432\u0430\u043d\u0438\u0435"],
+        "pr-cross-zoom": ["Cross Zoom", "\u041f\u0435\u0440\u0435\u043a\u0440\u0435\u0441\u0442\u043d\u043e\u0435 \u043c\u0430\u0441\u0448\u0442\u0430\u0431\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435"]
+    };
+
+    // The cut nearest the playhead (within reach seconds): two clips on one video track, end to start.
+    // Selected clips win: a selected pair, or the cut at either end of one selected clip.
+    function findCut(s, reach) {
+        var best = null, ph = PR.playhead(s), fd = 1 / PR.fps(s), i, j, t, a, b, cut, d, score, selA, selB;
+        for (i = 0; i < s.videoTracks.numTracks; i++) {
+            t = s.videoTracks[i];
+            for (j = 0; j + 1 < t.clips.numItems; j++) {
+                a = t.clips[j]; b = t.clips[j + 1];
+                if (Math.abs(PR.secs(a.end) - PR.secs(b.start)) > fd / 2) { continue; }
+                cut = PR.secs(b.start);
+                d = Math.abs(cut - ph);
+                selA = false; selB = false;
+                try { selA = !!a.isSelected(); selB = !!b.isSelected(); } catch (e) {}
+                score = (selA && selB) ? -2 : ((selA || selB) ? -1 + d / 1000 : d);
+                if (!(selA || selB) && d > reach) { continue; }
+                if (!best || score < best.score) { best = { a: a, b: b, cut: cut, track: i, score: score }; }
+            }
+        }
+        if (!best) { throw new Error("NO_CUT"); }
+        return best;
+    }
+
+    function timecode(frames, fps) {
+        var f = Math.round(fps), ff = frames % f, sec = Math.floor(frames / f), p2 = function (n) { return (n < 10 ? "0" : "") + n; };
+        return "00:" + p2(Math.floor(sec / 60)) + ":" + p2(sec % 60) + ":" + p2(ff);
+    }
+
     return {
 
         info: function () {
@@ -563,6 +917,140 @@ var sayframeHost = (function () {
                     try { size = new File(file.fsName).length; } catch (e3) {}
                 }
                 return { path: file.fsName, name: decodeURI(file.name), size: size, mode: mode, w: w, h: h, wrapped: !same, template: "", mbps: rate };
+            });
+        },
+
+        // ---- Montage tab
+
+        // Puts a sound at the playhead on a free audio track (a new one when all are busy). The panel has
+        // already made the file with the pitch and length asked; vol is in dB.
+        acSound: function (path, binName, len, vol, name) {
+            return reply(function () {
+                var s = PR.seq(), r = putSound(s, null, path, binName, PR.playhead(s), vol, name);
+                return { track: String(r.track.name || ""), reused: r.reused };
+            });
+        },
+
+        // Selected audio clips: their files and volume, for the pitch / length / volume sliders.
+        sndTargets: function () {
+            return reply(function () {
+                var s = PR.seq(), list = mtSelectedAudio(s), out = [], i, c, lv, v = 0, path = "";
+                for (i = 0; i < list.length; i++) {
+                    c = list[i].clip;
+                    lv = mtLevel(c);
+                    try { v = lv ? levelToDb(lv.getValue()) : 0; } catch (e) { v = 0; }
+                    try { path = c.projectItem ? String(c.projectItem.getMediaPath()) : ""; } catch (e2) { path = ""; }
+                    if (!path) { continue; }
+                    out.push({ index: i, path: path, volume: v, name: String(c.name) });
+                }
+                return { list: out };
+            });
+        },
+
+        // Swaps the selected audio clips for new files (same track, same start) and sets their volume.
+        sndApplyFiles: function (list) {
+            return reply(function () {
+                var s = PR.seq(), sel = mtSelectedAudio(s), n = 0, i, it, c, track, at, name = "";
+                for (i = 0; i < list.length; i++) {
+                    it = list[i];
+                    if (!sel[it.index]) { continue; }
+                    c = sel[it.index].clip;
+                    track = s.audioTracks[sel[it.index].track];
+                    at = PR.secs(c.start);
+                    name = String(c.name);
+                    if (String(c.projectItem ? c.projectItem.getMediaPath() : "") !== String(it.file)) {
+                        c.remove(false, false);
+                        putSound(s, track, it.file, "Sayframe SFX", at, it.volume, name);
+                    } else {
+                        c = mtLevel(c);
+                        if (c) { c.setValue(dbToLevel(it.volume), true); }
+                    }
+                    n++;
+                }
+                return { count: n, name: name };
+            });
+        },
+
+        // Motions on the selected video clips, as keys at their start (in), end (out) or both.
+        sfApply: function (motion, curve, mode, dur) {
+            return reply(function () {
+                var s = PR.seq(), list = mtSelectedVideo(s), m = MT_MOTIONS[motion], i, noBlur = 0;
+                if (!m) { throw new Error("UNKNOWN_PRESET"); }
+                if (!list.length) { throw new Error("NO_CLIPS"); }
+                for (i = 0; i < list.length; i++) {
+                    if (mtMotionOnClip(s, list[i].clip, list[i].track, m, curve, mode, dur)) { noBlur++; }
+                }
+                return { applied: list.length, skipped: [], state: [], noBlur: noBlur };
+            });
+        },
+
+        sfState: function () {
+            return reply(function () { return { state: [] }; });
+        },
+
+        // A transition on the cut nearest the playhead: Premiere's own (pr-...) through QE, ours as keys
+        // on both clips, half before the cut and half after.
+        trApply: function (id, dur) {
+            return reply(function () {
+                var s = PR.seq(), fps = PR.fps(s), fd = 1 / fps, d = Math.max(fd * 2, Number(dur) || 0.8), cut = findCut(s, Math.max(1, d));
+                var W = Number(s.frameSizeHorizontal) || 1920, a0 = cut.cut - d / 2, n, i, t, tt, o, sides, side, P, base, bp, blurOn = false, noBlur = false, j;
+                var tr, item, frames;
+                if (TR_BUILTIN[id]) {
+                    app.enableQE();
+                    tr = qeByNames("tr", TR_BUILTIN[id]);
+                    if (!tr) { throw new Error("NO_TRANSITION"); }
+                    item = qeItem(cut.track, cut.b);
+                    if (!item) { throw new Error("NO_CUT"); }
+                    frames = Math.max(2, Math.round(d * fps));
+                    item.addTransition(tr, true, timecode(frames, fps), "00:00:00:00", 0.5, false, true);
+                    return { cut: cut.cut, dur: frames / fps, a: String(cut.a.name), b: String(cut.b.name), builtin: true };
+                }
+                n = Math.max(2, Math.round(d * fps));
+                for (i = 0; i <= n; i++) { if (trLook(id, i / n).blur > 0.01) { blurOn = true; break; } }
+                // A ends at the cut, B starts there; each one gets the half of the look on its side.
+                sides = [{ clip: cut.a, from: 0, to: Math.ceil(n / 2) - 1 }, { clip: cut.b, from: Math.ceil(n / 2), to: n }];
+                for (j = 0; j < sides.length; j++) {
+                    side = sides[j];
+                    P = mtProps(side.clip);
+                    side.keys = { s: [], r: [], p: [], b: [] };
+                    side.base = {
+                        s: P.scale ? Number(mtBase(P.scale, side.clip, j ? cut.cut + d / 2 : a0)) : 100,
+                        r: P.rot ? Number(mtBase(P.rot, side.clip, j ? cut.cut + d / 2 : a0)) : 0,
+                        p: P.pos ? mtBase(P.pos, side.clip, j ? cut.cut + d / 2 : a0) : null
+                    };
+                    side.P = P;
+                    bp = blurOn ? mtBlur(side.clip, cut.track) : null;
+                    if (blurOn && !bp) { noBlur = true; }
+                    side.blurP = bp;
+                    for (i = side.from; i <= side.to; i++) {
+                        t = i / n;
+                        // The first clip's last frame is just before the cut, the second one's first frame is on it.
+                        tt = j ? Math.max(cut.cut, a0 + t * d) : Math.min(cut.cut - fd, a0 + t * d);
+                        o = trLook(id, t);
+                        side.keys.s.push([tt, side.base.s * o.s]);
+                        side.keys.r.push([tt, side.base.r + o.r]);
+                        base = side.base.p;
+                        if (base) {
+                            side.keys.p.push([tt, mtNormalized(base) ? [Number(base[0]) + o.x, Number(base[1]) + o.y] :
+                                [Number(base[0]) + o.x * W, Number(base[1]) + o.y * (Number(s.frameSizeVertical) || 1080)]]);
+                        }
+                        side.keys.b.push([tt, o.blur * 12]);
+                    }
+                }
+                for (j = 0; j < sides.length; j++) {
+                    side = sides[j];
+                    if (!side.keys.s.length) { continue; }
+                    o = side.keys.s;
+                    mtClear(side.P.scale, side.clip, o[0][0], o[o.length - 1][0]);
+                    mtClear(side.P.rot, side.clip, o[0][0], o[o.length - 1][0]);
+                    mtClear(side.P.pos, side.clip, o[0][0], o[o.length - 1][0]);
+                    if (side.blurP) { mtClear(side.blurP, side.clip, o[0][0], o[o.length - 1][0]); }
+                    mtKeys(side.P.scale, side.clip, side.keys.s);
+                    if (/rotate|roll|shake/.test(id)) { mtKeys(side.P.rot, side.clip, side.keys.r); }
+                    if (/pan|shake|hit/.test(id) && side.keys.p.length) { mtKeys(side.P.pos, side.clip, side.keys.p); }
+                    if (side.blurP) { mtKeys(side.blurP, side.clip, side.keys.b); }
+                }
+                return { cut: cut.cut, dur: d, a: String(cut.a.name), b: String(cut.b.name), builtin: false, noBlur: noBlur };
             });
         },
 
