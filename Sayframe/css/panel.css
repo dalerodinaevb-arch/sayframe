@@ -1411,7 +1411,8 @@ html[data-design="ae"] .set-tabs button[aria-selected="true"] { background: rgba
 .trv-leak-warm { background: radial-gradient(circle at 30% 40%, #ffb347, transparent 60%), radial-gradient(circle at 75% 60%, #ff4d6d, transparent 55%); mix-blend-mode: screen; }
 .trv-leak-cool { background: radial-gradient(circle at 30% 40%, #4da3ff, transparent 60%), radial-gradient(circle at 75% 60%, #9b5cff, transparent 55%); mix-blend-mode: screen; }
 .trv-flash, .trv-fade-white { background: #fff; }
-.trv-fade-black { background: #000; }
+.trv-fade-black, .trv-pr-dip-black { background: #000; }
+.trv-pr-dip-white { background: #fff; }
 .trv-wipe-left, .trv-wipe-up { background: #f4f1ff; }
 .trv-circle { background: #f4f1ff; border-radius: 50%; inset: auto; left: 50%; top: 50%; width: 130%; aspect-ratio: 1; margin: -65% 0 0 -65%; transform: scale(0); }
 .ac-badge {
@@ -2579,5 +2580,20 @@ html[data-solo-kind="tool"] .motion-tools > .solo-card > .tool-head, html[data-s
 [data-app="ppro"] #refBtn,
 [data-app="ppro"] #refLinkBtn { display: none !important; }
 /* Выражений и отдельных окон в Premiere нет. */
+[data-app="ppro"] #acEdit,
 [data-app="ppro"] #exprCard,
 [data-app="ppro"] .win-open { display: none !important; }
+
+/* Premiere: «Инструменты» для клипов. Плавность — плитки типов ключей вместо графика. */
+[data-app="ppro"] .tool-card.pr-off { display: none !important; }
+[data-app="ppro"] .ease-card > :not(.tool-head):not(.tool-grip):not(.pr-ease):not(.tool-resize):not(.tool-info) { display: none !important; }
+[data-app="ppro"] .ec-switch { display: none !important; }
+.pr-ease-group { margin: 12px 2px 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted, rgba(255,255,255,.45)); }
+.pr-ease-group:first-child { margin-top: 4px; }
+.pr-ease-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.pr-ease-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 74px; padding: 8px 2px 9px; border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.03); color: inherit; opacity: .85; font-family: inherit; font-size: 11.5px; font-weight: 600; line-height: 1.15; text-align: center; cursor: pointer; }
+.pr-ease-btn:hover { opacity: 1; background: rgba(255,255,255,.06); }
+.pr-ease-btn[aria-pressed="true"] { opacity: 1; border-color: rgba(var(--accent-rgb, 139,124,255), .8); background: rgba(var(--accent-rgb, 139,124,255), .22); }
+.pr-ease-btn svg { width: 48px; height: 32px; overflow: visible; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.pr-ease-go { width: 100%; margin-top: 10px; }
