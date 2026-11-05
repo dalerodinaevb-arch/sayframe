@@ -492,3 +492,51 @@ func TestWordingIsComplete(t *testing.T) {
 		}
 	}
 }
+
+// With manifest-pr.xml in the payload the installer also puts the Premiere Pro extension next to the panel:
+// the same files in SayframePR, its manifest.xml taken from manifest-pr.xml. Removing takes both away.
+func TestPremiereInstalledBesideAndRemoved(t *testing.T) {
+	const prXML = `<ExtensionManifest ExtensionBundleId="com.sayframe.pr" ExtensionBundleVersion="3.4.5">`
+	files := goodFiles()
+	files["Sayframe/CSXS/manifest-pr.xml"] = prXML
+	files["Sayframe/jsx/host_pr.jsx"] = "var sayframeHost = {pr: 1};"
+	for _, p := range []payload{reader(t, files), folder(t, files)} {
+		ext := filepath.Join(t.TempDir(), "extensions")
+		d, m := &fakeDialogs{answer: choiceInstall}, &fakeMachine{dir: ext}
+		if code := run(d, m, p, macWords); code != 0 {
+			t.Fatalf("exit code %d, fails %v", code, d.fails)
+		}
+		pr := filepath.Join(ext, prPanelName)
+		if read(t, filepath.Join(pr, "CSXS", "manifest.xml")) != prXML || read(t, filepath.Join(ext, panelName, "CSXS", "manifest.xml")) != manifestXML ||
+			read(t, filepath.Join(pr, "jsx", "host_pr.jsx")) != files["Sayframe/jsx/host_pr.jsx"] || read(t, filepath.Join(pr, "index.html")) != files["Sayframe/index.html"] {
+			t.Errorf("Premiere extension is not a copy with its own manifest")
+		}
+		if len(m.prepared) != 2 || m.prepared[1] != pr || !strings.Contains(d.infos[0], "Premiere Pro Sayframe тоже есть") || !strings.Contains(d.confirms[0], "After Effects и Premiere Pro") {
+			t.Errorf("hooks %v, texts %q / %q", m.prepared, d.infos, d.confirms)
+		}
+		// Reinstall replaces the Premiere copy too.
+		files2 := goodFiles()
+		files2["Sayframe/CSXS/manifest-pr.xml"] = prXML + "<!-- 2 -->"
+		d = &fakeDialogs{answer: choiceInstall}
+		if code := run(d, m, reader(t, files2), macWords); code != 0 || read(t, filepath.Join(pr, "CSXS", "manifest.xml")) != prXML+"<!-- 2 -->" || exists(filepath.Join(pr, "jsx", "host_pr.jsx")) {
+			t.Errorf("reinstall: code %d", code)
+		}
+		d = &fakeDialogs{answer: choiceRemove}
+		if code := run(d, m, reader(t, files), macWords); code != 0 || exists(pr) || exists(filepath.Join(ext, panelName)) {
+			t.Errorf("remove left %v %v", exists(pr), exists(filepath.Join(ext, panelName)))
+		}
+		entries, _ := os.ReadDir(ext)
+		for _, e := range entries {
+			t.Errorf("left in extensions: %s", e.Name())
+		}
+	}
+}
+
+// An installer without manifest-pr.xml (older payload) installs only the After Effects panel.
+func TestNoPremiereWithoutItsManifest(t *testing.T) {
+	ext := filepath.Join(t.TempDir(), "extensions")
+	d, m := &fakeDialogs{answer: choiceInstall}, &fakeMachine{dir: ext}
+	if code := run(d, m, reader(t, goodFiles()), windowsWords); code != 0 || exists(filepath.Join(ext, prPanelName)) || strings.Contains(d.infos[0], "Premiere") {
+		t.Errorf("code %d, infos %v", code, d.infos)
+	}
+}
