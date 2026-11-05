@@ -1122,8 +1122,15 @@
         if (!hostReady[key]) {
             hostReady[key] = evalScript(hostProbe(fn)).then(function (t) {
                 if (t === "yes") { return true; }
-                return evalScript("$.evalFile(" + asciiJSON(extensionDir() + HOST_JSX) + "); " + hostProbe(fn)).then(function (t2) {
-                    if (t2 !== "yes") { throw new Error("HOST_NOT_LOADED"); }
+                // try/catch: if the host file fails to load, the reply carries the real error and its line.
+                return evalScript("try { $.evalFile(" + asciiJSON(extensionDir() + HOST_JSX) + "); " + hostProbe(fn) +
+                    " } catch (e) { 'ERR ' + (e.line || '?') + ': ' + e.message }").then(function (t2) {
+                    var err;
+                    if (t2 !== "yes") {
+                        err = new Error("HOST_NOT_LOADED");
+                        if (typeof t2 === "string" && t2.indexOf("ERR ") === 0) { err.hostDetail = t2.slice(4); }
+                        throw err;
+                    }
                     return true;
                 });
             });
@@ -1165,6 +1172,9 @@
         if (m === "EC_NO_TARGET") { return "У выделенного слоя нет такого свойства, откуда копировали. Выделите на таймлайне ключи или само свойство (Position, Scale…), куда вставить."; }
         if (m === "EC_TYPE") { return "Значения можно вставить только в свойство того же типа: позицию — в позицию, цвет — в цвет. Плавность вставляется куда угодно."; }
         if (m === "HOST_UNAVAILABLE") { return "Панель открыта вне " + APP_NAME + ", связи с программой нет."; }
+        if (m === "HOST_NOT_LOADED" && e.hostDetail) {
+            return APP_NAME + " не смог загрузить скрипт панели (строка " + e.hostDetail + "). Пришлите этот текст разработчику.";
+        }
         if (m === "HOST_NOT_LOADED" || m === "HOST_ERROR" || m === "HOST_BAD_REPLY") {
             return APP_NAME + " не ответил панели. Закройте и снова откройте её в меню Window > Extensions.";
         }
@@ -1742,7 +1752,7 @@
             try { window.localStorage.setItem(PR_BAKED_KEY, JSON.stringify(all)); } catch (e1) {}
             setBusy(false);
             setStatus("Плавность «" + name + "»: " + plural(res.clips, "клип", "клипа", "клипов") + ", " + plural(res.params, "свойство", "свойства", "свойств") +
-                (res.native ? ". Это настоящие ключи Premiere — их можно двигать руками." : ", добавлено " + plural(res.keys, "ключ", "ключа", "ключей") + " по кадрам. Другой тип плавности сначала уберёт их."), "done");
+                (res.isNative ? ". Это настоящие ключи Premiere — их можно двигать руками." : ", добавлено " + plural(res.keys, "ключ", "ключа", "ключей") + " по кадрам. Другой тип плавности сначала уберёт их."), "done");
         } catch (e) {
             toolFailed(e);
         }

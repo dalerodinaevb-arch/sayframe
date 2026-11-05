@@ -977,7 +977,7 @@ var sayframeHost = (function () {
 
         brandFilesInUse: function (paths) {
             return reply(function () {
-                var used = [], want = {}, i;
+                var used = [], want = {}, seen = {}, i;
                 function walk(b) {
                     var j, it, p;
                     for (j = 0; j < b.children.numItems; j++) {
@@ -985,7 +985,7 @@ var sayframeHost = (function () {
                         if (!it) { continue; }
                         if (it.type === ProjectItemType.BIN) { walk(it); continue; }
                         try { p = String(it.getMediaPath() || ""); } catch (e) { p = ""; }
-                        if (p && want[p] && used.indexOf(p) < 0) { used.push(p); }
+                        if (p && want[p] && !seen[p]) { seen[p] = true; used.push(p); }
                     }
                 }
                 for (i = 0; i < (paths || []).length; i++) { want[new File(paths[i]).fsName] = true; want[paths[i]] = true; }
@@ -1232,7 +1232,7 @@ var sayframeHost = (function () {
                     }
                 }
                 if (!clips) { throw new Error("NO_KEYS_ON_CLIPS"); }
-                return { clips: clips, params: params, keys: keys, baked: rec, native: !f };
+                return { clips: clips, params: params, keys: keys, baked: rec, isNative: !f };
             });
         },
 
