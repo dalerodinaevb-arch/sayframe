@@ -6739,6 +6739,8 @@ var sayframeHost = (function () {
         // In After Effects the render runs here and blocks until done; with ame it is sent to Media Encoder.
         exportOne: function (o) {
             return reply(function () {
+                var grouped = false;
+                function closeGroup() { if (grouped) { grouped = false; try { app.endUndoGroup(); } catch (eg) {} } }
                 var comp = activeComp(), proj = app.project, rq = proj.renderQueue, w, h, wrap = null, it, om, tpl, file, dir;
                 var parked = [], i, q, mode, base, size = 0, tpls = [], want, rate, ameT = "", epr = "", src = null;
                 if (!o || typeof o !== "object") { throw new Error("BAD_EXPORT"); }
@@ -6751,7 +6753,10 @@ var sayframeHost = (function () {
                 if (!dir.exists) { try { dir.create(); } catch (e0) {} }
                 if (!dir.exists) { throw new Error("EXPORT_NO_FOLDER"); }
                 base = exSafe(String(comp.name) + (o.label ? " \u2014 " + o.label : ""));
+                // Rendering inside an open undo group makes After Effects warn "Undo group mismatch":
+                // the group covers only the setup and is closed before render() (closeGroup).
                 app.beginUndoGroup("Sayframe: export");
+                grouped = true;
                 try {
                     if (w !== comp.width || h !== comp.height) {
                         wrap = exWrap(comp, w, h, o.fit === "crop" ? "crop" : (o.fit === "black" ? "black" : "blur"), base, String(o.bin || "Sayframe Export"));
@@ -6788,6 +6793,7 @@ var sayframeHost = (function () {
                     }
                     if (!tpl && !o.ame) { throw new Error("NO_H264"); }
                     if (epr) {
+                        closeGroup();
                         rq.render();
                         try { it.remove(); } catch (e11) {}
                         if (wrap) { try { wrap.remove(); } catch (e12) {} wrap = null; }
@@ -6800,10 +6806,12 @@ var sayframeHost = (function () {
                             try { size = new File(file.fsName).length; } catch (e14) {}
                         }
                     } else if (o.ame && rq.canQueueInAME) {
+                        closeGroup();
                         rq.queueInAME(true);
                         mode = "ame";
                         try { it.render = false; } catch (e4) {}
                     } else {
+                        closeGroup();
                         rq.render();
                         mode = "ae";
                         try { size = new File(file.fsName).length; } catch (e5) {}
@@ -6816,7 +6824,7 @@ var sayframeHost = (function () {
                     throw err;
                 } finally {
                     for (i = 0; i < parked.length; i++) { try { parked[i].render = true; } catch (e10) {} }
-                    app.endUndoGroup();
+                    closeGroup();
                 }
                 return { path: file.fsName, name: decodeURI(file.name), size: size, mode: mode, w: w, h: h, wrapped: !!wrap || (w !== comp.width || h !== comp.height), template: tpl, mbps: rate || 0 };
             });

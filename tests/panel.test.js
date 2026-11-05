@@ -611,6 +611,7 @@ function makeAE(opts, tmpDir) {
         items.push(it); log.rq.added.push(it); return it;
       } },
       render() {
+        log.undo.push("render");
         if (rqo.renderThrows) throw new Error("render failed");
         items.filter((i) => i.render && i.om).forEach((i) => {
           log.rq.rendered.push({ comp: i.comp.name, w: i.comp.width, h: i.comp.height, file: i.om.file.fsName, tpl: i.om.tpl, span: [i.timeSpanStart, i.timeSpanDuration], others: items.filter((x) => x !== i && x.render).length });
@@ -6118,6 +6119,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("EX3 «Назад к настройкам» brings the sheet back", await vis(p, "#exGo"));
     await p.page.click("#exGo"); await p.page.waitForFunction(() => document.querySelectorAll("#exResults .ex-row.done").length === 1);
     check("EX3 a second run does not overwrite: «Main — Среднее 2.mp4»", mp4s(exDir).indexOf("Main — Среднее 2.mp4") >= 0, mp4s(exDir).join());
+    t = p.ae.log.undo.filter((x) => /export|^end$|^render$/.test(x)).join(" ");
+    check("EX3b the export's undo group closes before the render (no «Undo group mismatch» warning in After Effects)", /^(begin:Sayframe: export end render ?)+$/.test(t + " "), t);
     await p.close();
 
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
