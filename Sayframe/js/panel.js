@@ -1171,6 +1171,7 @@
         if (m === "EC_NO_KEYS") { return "Выделите на таймлайне ключи, куда вставить, или само свойство (у свойства без ключей панель их создаст), или слой — тогда вставится в то же свойство этого слоя."; }
         if (m === "EC_NO_TARGET") { return "У выделенного слоя нет такого свойства, откуда копировали. Выделите на таймлайне ключи или само свойство (Position, Scale…), куда вставить."; }
         if (m === "EC_TYPE") { return "Значения можно вставить только в свойство того же типа: позицию — в позицию, цвет — в цвет. Плавность вставляется куда угодно."; }
+        if (m === "MK_GONE") { return "Этого уже нет в композиции. Нажмите кнопку ещё раз — блок создаст новое."; }
         if (m === "HOST_UNAVAILABLE") { return "Панель открыта вне " + APP_NAME + ", связи с программой нет."; }
         if (m === "HOST_NOT_LOADED" && e.hostDetail) {
             return APP_NAME + " не смог загрузить скрипт панели (строка " + e.hostDetail + "). Пришлите этот текст разработчику.";
@@ -7087,7 +7088,7 @@
         drawGridPreview();
     }
 
-    function setGrid(k, v) { orbit.grid[k] = v; storeOrbit(); drawGrid(); }
+    function setGrid(k, v) { orbit.grid[k] = v; storeOrbit(); drawGrid(); mkTouched("grid"); }
 
     function gridInt(v, lo, hi, def) {
         v = Math.round(Number(v));
@@ -7102,7 +7103,7 @@
         try {
             res = await host("gridMake", [{ rows: g.rows, cols: g.cols, gap: g.gap, split: g.split, gapV: g.gapV, round: g.round, rand: g.rand, seed: g.seed,
                 fit: g.fit, w: g.w, h: g.h, mode: g.mode, numbers: g.numbers, stagger: g.stagger },
-                { tile: "Плитка ", number: "Номер плитки ", ctrl: "Grid: управление", folder: "Grid", shape: "Форма" }]);
+                { tile: "Плитка ", number: "Номер плитки ", ctrl: "Grid: управление", folder: "Grid", shape: "Форма" }, mkArg("grid")]);
             setBusy(false);
             setStatus("Сетка готова: " + plural(res.tiles, "плитка", "плитки", "плиток") + ", " + res.w + "×" + res.h + ". Двигайте всю сетку слоем «" + res.ctrl + "»." +
                 (res.precomp ? " Каждая плитка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео." : "") +
@@ -7409,7 +7410,7 @@
         drawOrbitPreview();
     }
 
-    function setOrbit(k, v) { orbit[k] = v; storeOrbit(); drawOrbit(); }
+    function setOrbit(k, v) { orbit[k] = v; storeOrbit(); drawOrbit(); mkTouched("carousel"); }
 
     function setOrbitCount(v) {
         v = Math.round(Number(v));
@@ -7426,7 +7427,7 @@
             res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: orbit.mode,
                 radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera, back: orbit.back },
                 { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма", back: "обратная сторона", backFx: "Обратная сторона",
-                    fxCount: "Карточек", fxRadius: "Радиус", fxW: "Ширина", fxH: "Высота", fxCorners: "Углы %", fxBack: "Сзади видно цифру и картинку" }]);
+                    fxCount: "Карточек", fxRadius: "Радиус", fxW: "Ширина", fxH: "Высота", fxCorners: "Углы %", fxBack: "Сзади видно цифру и картинку" }, mkArg("carousel")]);
             setBusy(false);
             setStatus("Карусель готова: " + plural(res.cards, "карточка", "карточки", "карточек") + ", " + ORBIT_LAYOUT_NAMES[res.layout] + ". " +
                 "Крутите её слоем «" + res.ctrl + "» (Y Rotation); там же, в Effect Controls, — сколько карточек (до " + (res.cards + (res.spare || 0)) + "), радиус, размер, углы и что видно сзади." +
@@ -9132,6 +9133,7 @@
         tb = tbClean(tb);
         storeTb();
         drawTb();
+        mkTouched("textbox");
     }
 
     function tbRgb(hex) { var c = parseHex(hex); return [c.r / 255, c.g / 255, c.b / 255]; }
@@ -9144,7 +9146,7 @@
             res = await host("textBox", [{ per: tb.per, look: tb.look, style: tb.style, color: tbRgb(tb.color), strokeColor: tbRgb(tb.strokeColor),
                 px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, shadow: tb.shadow },
                 { box: "Плашка", helper: "Плашка: строка", part: "Плашка", side: "По бокам", vert: "Сверху/снизу", round: "Скругление", color: "Цвет",
-                    fillOn: "Заливка", strokeOn: "Обводка", strokeW: "Толщина обводки", strokeColor: "Цвет обводки", skew: "Наклон", defaultText: "Ваш текст" }]);
+                    fillOn: "Заливка", strokeOn: "Обводка", strokeW: "Толщина обводки", strokeColor: "Цвет обводки", skew: "Наклон", defaultText: "Ваш текст" }, mkArg("textbox")]);
             setBusy(false);
             r = res.textBox.boxes;
             n = r.length;
@@ -9284,6 +9286,7 @@
         glass = glClean(glass);
         try { window.localStorage.setItem(GL_KEY, JSON.stringify(glass)); } catch (e) {}
         drawGlass();
+        mkTouched("glass");
     }
 
     function glLabels() {
@@ -9300,10 +9303,11 @@
         var res, g, what;
         if (busy) { return; }
         setBusy(true);
+        if (!mkEdit || mkEdit.kind !== "glass") { mkGlassMine = !!mine; }
         setStatus(mine ? "Делаю фигуру стеклянной…" : "Собираю стекло…", "busy");
         try {
             res = await host("glassMake", [{ mode: mine ? "mine" : glass.mode, text: glass.text, form: glass.form, shape: glass.shape, kind: glass.kind,
-                edge: glass.edge, blur: glass.blur, light: glass.light, size: glass.size }, glLabels()]);
+                edge: glass.edge, blur: glass.blur, light: glass.light, size: glass.size }, glLabels(), mkArg("glass")]);
             setBusy(false);
             g = res.glass;
             what = mine ? "Фигура «" + g.shape + "» стала стеклом." : "Стекло «" + g.shape + "» готово" + (g.texts && g.texts.length ? ", текст — слой «" + g.texts[g.texts.length - 1] + "»" : "") + ".";
@@ -9395,6 +9399,7 @@
         phone = phClean(phone);
         try { window.localStorage.setItem(PH_KEY, JSON.stringify(phone)); } catch (e) {}
         drawPhone();
+        mkTouched("phone");
     }
 
     async function onPhone() {
@@ -9406,7 +9411,7 @@
             res = await host("phoneMake", [{ model: phone.model, color: phone.color, pose: phone.pose, size: phone.size, round: phone.round,
                 shadow: phone.shadow, appear: phone.appear, screen: phone.screen },
                 { ctrl: "Телефон: управление", body: "Корпус", screen: "Экран", screenMask: "Экран", island: "Островок", camera: "Камера",
-                    iphone: "iPhone", android: "Android", bg: "Фон", video: "Ваше видео" }]);
+                    iphone: "iPhone", android: "Android", bg: "Фон", video: "Ваше видео" }, mkArg("phone")]);
             setBusy(false);
             r = res.phoneMake || res;
             name = r.model === "android" ? "Android" : "iPhone";
@@ -9758,6 +9763,7 @@
         rb = rbClean(rb);
         try { window.localStorage.setItem(RB_KEY, JSON.stringify(rb)); } catch (e) {}
         drawRibbon();
+        mkTouched("ribbon");
     }
 
     async function onRibbon() {
@@ -9772,7 +9778,7 @@
                 textGrad: !ring && rb.textColor.indexOf(">") > 0 ? { a: tbRgb(rbStops(rb.textColor)[0]), b: tbRgb(rbStops(rb.textColor)[1]), angle: rb.gAngle } : null, rings: rb.rings, radius: rb.radius, tilt: rb.tilt,
                 backDark: rb.back, camera: rb.camera },
                 { ribbon: "Лента", path: "Линия", text: "Текст ленты", width: "Толщина ленты", speed: "Скорость", color: "Цвет ленты",
-                    piece: "кусок", shadow: "тень", grad: "Градиент", gradMatte: "Градиент: форма", ring: "Кольцо", tilt: "Кольцо: наклон", spin: "Кольцо: вращение", camera: "Камера кольца" }]);
+                    piece: "кусок", shadow: "тень", grad: "Градиент", gradMatte: "Градиент: форма", ring: "Кольцо", tilt: "Кольцо: наклон", spin: "Кольцо: вращение", camera: "Камера кольца" }, mkArg("ribbon")]);
             setBusy(false);
             r = res.ribbonMake || res;
             if (r.mode === "ring") {
@@ -9784,6 +9790,164 @@
         } catch (e) {
             toolFailed(e);
         }
+    }
+
+    // ---- «Макеты»: менять уже созданное. Выделили в After Effects то, что сделал блок, — блок показывает
+    // его настройки и меняет его (пересобирает на месте; то, что вы сдвинули или анимировали, остаётся).
+    var mkEdit = null, mkSkip = "", mkTimer = null, mkLoading = false, mkApplying = false, mkGlassMine = false;
+    var MK_UI_KEYS = { paint: 1, fold: 1, sort: 1 };
+    var MK = {
+        glass: { btns: ["glAdd", "glMine"], go: "glAdd", fresh: "+ Новое стекло", done: "Стекло",
+            state: function () { var s = mkCopy(glass); s._mine = !!mkGlassMine; return s; },
+            load: function (s) { mkGlassMine = !!s._mine; delete s._mine; setGlass(s); },
+            apply: function () { return onGlass(mkGlassMine); } },
+        carousel: { btns: ["orbitBtn"], go: "orbitBtn", fresh: "+ Новая карусель", done: "Карусель",
+            state: function () { var s = mkCopy(orbit); delete s.grid; return s; },
+            load: function (s) { var k; for (k in s) { if (s.hasOwnProperty(k) && ORBIT_DEFAULTS.hasOwnProperty(k) && !MK_UI_KEYS[k]) { orbit[k] = s[k]; } } storeOrbit(); drawOrbit(); },
+            apply: function () { return onOrbit(); } },
+        grid: { btns: ["gridBtn"], go: "gridBtn", fresh: "+ Новая сетка", done: "Сетка",
+            state: function () { return mkCopy(orbit.grid); },
+            load: function (s) { var k; for (k in s) { if (s.hasOwnProperty(k) && GRID_DEFAULTS.hasOwnProperty(k)) { orbit.grid[k] = s[k]; } } storeOrbit(); drawGrid(); },
+            apply: function () { return onGrid(); } },
+        textbox: { btns: ["tbBtn"], go: "tbBtn", fresh: "+ Новая плашка", done: "Плашка",
+            state: function () { return mkCopy(tb); }, load: function (s) { setTb(s); }, apply: function () { return onTextBox(); } },
+        phone: { btns: ["phBtn"], go: "phBtn", fresh: "+ Новый мокап", done: "Мокап",
+            state: function () { return mkCopy(phone); }, load: function (s) { setPhone(s); }, apply: function () { return onPhone(); } },
+        ribbon: { btns: ["rbBtn"], go: "rbBtn", fresh: "+ Новая лента", done: "Лента",
+            state: function () { return mkCopy(rb); }, load: function (s) { setRibbon(s); }, apply: function () { return onRibbon(); } }
+    };
+
+    function mkCopy(o) { var s = {}, k; for (k in o) { if (o.hasOwnProperty(k) && !MK_UI_KEYS[k]) { s[k] = o[k]; } } return JSON.parse(JSON.stringify(s)); }
+    function mkStateStr(kind) { return JSON.stringify(MK[kind].state()); }
+
+    // Последний аргумент для host(…Make): что за блок и, если меняем, какую сборку.
+    function mkArg(kind) { return { gid: mkEdit && mkEdit.kind === kind ? mkEdit.gid : "", state: mkStateStr(kind) }; }
+
+    function mkCard(kind) { return document.querySelector('#orbitPane .mk-card[data-mk="' + kind + '"]'); }
+
+    function mkPaint() {
+        Object.keys(MK).forEach(function (kind) {
+            var card = mkCard(kind), bar, on = !!(mkEdit && mkEdit.kind === kind), K = MK[kind];
+            if (!card) { return; }
+            bar = card.querySelector(".mk-edit");
+            if (!bar) {
+                bar = document.createElement("div");
+                bar.className = "mk-edit";
+                bar.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>' +
+                    '<span class="mk-edit-name"></span><button type="button" class="mk-edit-new"></button>';
+                card.querySelector(".mk-body").insertBefore(bar, card.querySelector(".mk-body").firstChild);
+                bar.querySelector(".mk-edit-new").addEventListener("click", mkNew);
+            }
+            bar.hidden = !on;
+            card.classList.toggle("mk-editing", on);
+            bar.querySelector(".mk-edit-new").textContent = kind === "ribbon" && rb.mode === "ring" ? "+ Новое кольцо" : K.fresh;
+            if (on) { bar.querySelector(".mk-edit-name").textContent = "Изменяется: «" + mkEdit.name + "»"; }
+            K.btns.forEach(function (id) {
+                var b = document.getElementById(id);
+                if (!b) { return; }
+                if (on) {
+                    if (b.getAttribute("data-mk-text") === null) { b.setAttribute("data-mk-text", b.textContent); }
+                    if (id === K.go) { b.textContent = "Готово"; b.hidden = false; } else { b.hidden = true; }
+                } else if (b.getAttribute("data-mk-text") !== null) {
+                    b.textContent = b.getAttribute("data-mk-text");
+                    b.removeAttribute("data-mk-text");
+                    b.hidden = false;
+                }
+            });
+        });
+        // Блоки сами переписывают текст кнопки при отрисовке (лента/кольцо): обновляем запомненный.
+    }
+
+    // Вызывают сеттеры блоков: настройки поменялись. В режиме изменения — пересобрать чуть погодя.
+    function mkTouched(kind) {
+        if (!MK[kind]) { return; }
+        if (mkEdit && mkEdit.kind === kind) {
+            var b = document.getElementById(MK[kind].go);
+            if (b && b.textContent !== "Готово") { b.setAttribute("data-mk-text", b.textContent); b.textContent = "Готово"; }
+        }
+        if (mkLoading || !mkEdit || mkEdit.kind !== kind) { return; }
+        if (mkStateStr(kind) === mkEdit.last) { return; }
+        clearTimeout(mkTimer);
+        mkTimer = setTimeout(mkApply, 450);
+    }
+
+    async function mkApply() {
+        var e = mkEdit, st;
+        mkTimer = null;
+        if (!e) { return; }
+        if (busy || mkApplying) { mkTimer = setTimeout(mkApply, 300); return; }
+        st = mkStateStr(e.kind);
+        if (st === e.last) { return; }
+        e.last = st;
+        mkApplying = true;
+        try { await MK[e.kind].apply(); } finally { mkApplying = false; }
+        if (/\bdone\b/.test(ui.statusBox.className) && mkEdit === e) {
+            setStatus("«" + e.name + "» изменена. Отменить — Cmd/Ctrl+Z.", "done");
+        } else if (/Этого уже нет в композиции/.test(ui.status.textContent)) {
+            mkEdit = null; mkPaint();
+        }
+    }
+
+    function mkLoad(r) {
+        var s = null;
+        try { s = r.state ? JSON.parse(r.state) : null; } catch (e) { s = null; }
+        mkLoading = true;
+        try { if (s && typeof s === "object") { MK[r.kind].load(s); } } catch (e2) {} finally { mkLoading = false; }
+        mkEdit = { kind: r.kind, gid: r.gid, name: r.name, last: mkStateStr(r.kind) };
+        mkPaint();
+        var card = mkCard(r.kind);
+        if (card && card.classList.contains("mk-folded")) { var f = card.querySelector(".mk-fold"); if (f) { f.click(); } }
+    }
+
+    function mkNew() {
+        if (!mkEdit) { return; }
+        mkSkip = mkEdit.gid;
+        clearTimeout(mkTimer); mkTimer = null;
+        mkEdit = null;
+        mkPaint();
+    }
+
+    async function mkDone() {
+        var e = mkEdit;
+        if (mkTimer) { clearTimeout(mkTimer); mkTimer = null; await mkApply(); }
+        while (mkApplying) { await new Promise(function (r) { setTimeout(r, 100); }); }
+        try { await host("mkDeselect", []); } catch (err) {}
+        mkEdit = null;
+        mkPaint();
+        if (e) { setStatus("Готово: «" + e.name + "». Чтобы снова поменять — выделите её в After Effects.", "done"); }
+    }
+
+    // Раз в секунду, пока открыты «Макеты»: не выделено ли то, что сделал блок.
+    async function mkPoll() {
+        var r;
+        if (window.__SAYFRAME_TEST_NO_MK_POLL__ || IS_PR || busy || mkApplying || mkTimer || document.hidden || !ui.orbitPane || ui.orbitPane.offsetParent === null) { return; }
+        try { r = await host("mkSelected", []); } catch (e) { return; }
+        if (busy || mkApplying || mkTimer) { return; }
+        if (r.kind && MK[r.kind] && r.gid !== mkSkip) {
+            mkSkip = "";
+            if (!mkEdit || mkEdit.gid !== r.gid) { mkLoad(r); }
+            else if (mkEdit.name !== r.name) { mkEdit.name = r.name; mkPaint(); }
+            return;
+        }
+        if (!r.kind) { mkSkip = ""; }
+        if (mkEdit) { mkEdit = null; mkPaint(); }
+    }
+
+    function enableMk() {
+        if (!ui.orbitPane || IS_PR) { return; }
+        Object.keys(MK).forEach(function (kind) {
+            var card = mkCard(kind);
+            if (!card) { return; }
+            // В режиме изменения главная кнопка — «Готово»: снимает выделение, блок снова создаёт новое.
+            card.addEventListener("click", function (ev) {
+                var b = ev.target.closest ? ev.target.closest("button") : null;
+                if (!b || !mkEdit || mkEdit.kind !== kind || MK[kind].btns.indexOf(b.id) < 0) { return; }
+                ev.stopImmediatePropagation(); ev.preventDefault();
+                mkDone();
+            }, true);
+        });
+        mkPaint();
+        setInterval(mkPoll, 1000);
     }
 
     function enableRibbon() {
@@ -13049,6 +13213,7 @@
         enableGlass();
         enablePhone();
         enableRibbon();
+        enableMk();
         ui.ecOptsToggle.addEventListener("click", function () {
             motion.ecOpts = motion.ecOpts === false;
             showEcFold();

@@ -3137,6 +3137,222 @@ var sayframeHost = (function () {
 
     function orbitExpr(l, name, e) { try { acP(l, ["ADBE Transform Group", name]).expression = e; } catch (e0) {} }
 
+    // ---- Maketi: change what was made. Every layer a Maketi block makes carries a tag in its comment:
+    // "Sayframe|kind|gid|role|transform|state". role: main (holds the block's settings), part, keep (the user's
+    // own layer the block was used on: a text, a drawn line, a shape). transform: the layer's transform as it
+    // was made, so a change can tell what the user moved afterwards; for a keep layer, "on"/"off" (was it on).
+    var MK_TAG = "Sayframe|";
+    var MK_TR = ["ADBE Anchor Point", "ADBE Position", "ADBE Position_0", "ADBE Position_1", "ADBE Position_2", "ADBE Scale",
+        "ADBE Orientation", "ADBE Rotate X", "ADBE Rotate Y", "ADBE Rotate Z", "ADBE Opacity"];
+    // While a block is rebuilt: its old precomps by name, reused so whatever was put inside them stays.
+    var mkReuse = null;
+
+    function mkTagOf(L) {
+        var c = "", p;
+        try { c = String(L.comment || ""); } catch (e) { return null; }
+        if (c.indexOf(MK_TAG) !== 0) { return null; }
+        p = c.split("|");
+        if (p.length < 4) { return null; }
+        return { kind: p[1], gid: p[2], role: p[3], tr: p[4] || "", state: p.length > 5 ? p.slice(5).join("|") : "" };
+    }
+    function mkAll(comp) { var out = [], i; for (i = 1; i <= comp.numLayers; i++) { out.push(comp.layer(i)); } return out; }
+    function mkIdOf(L) { var v; try { v = L.id; } catch (e) { v = undefined; } return v === undefined || v === null ? null : String(v); }
+    function mkVal(v) {
+        var out = [], i;
+        if (typeof v === "number") { return String(Math.round(v * 10000) / 10000); }
+        if (v && typeof v.length === "number") { for (i = 0; i < v.length; i++) { out.push(Math.round(Number(v[i]) * 10000) / 10000); } return out.join(","); }
+        return "";
+    }
+    function mkTrOf(L) {
+        var out = [], i, P;
+        for (i = 0; i < MK_TR.length; i++) {
+            try { P = acTransform(L, MK_TR[i]); } catch (e) { P = null; }
+            if (!P) { continue; }
+            try { if (P.numKeys > 0) { continue; } out.push(MK_TR[i] + "=" + mkVal(P.value)); } catch (e2) {}
+        }
+        try { out.push("st=" + mkVal(L.startTime)); } catch (e3) {}
+        return out.join(";");
+    }
+    function mkTrParse(s) {
+        var out = {}, a = String(s || "").split(";"), i, k;
+        for (i = 0; i < a.length; i++) { k = a[i].indexOf("="); if (k > 0) { out[a[i].slice(0, k)] = a[i].slice(k + 1); } }
+        return out;
+    }
+    // What the user changed on a made layer: keys, or a value other than the one the block set.
+    function mkCarryOf(L, tag) {
+        var made = mkTrParse(tag.tr), out = { props: [], dt: 0 }, i, P, j, keys, k;
+        for (i = 0; i < MK_TR.length; i++) {
+            try { P = acTransform(L, MK_TR[i]); } catch (e) { P = null; }
+            if (!P) { continue; }
+            try {
+                if (P.numKeys > 0) {
+                    keys = [];
+                    for (j = 1; j <= P.numKeys; j++) {
+                        k = { t: P.keyTime(j), v: P.keyValue(j) };
+                        try { k.ii = P.keyInInterpolationType(j); k.oi = P.keyOutInterpolationType(j); } catch (eI) {}
+                        try { k.ie = P.keyInTemporalEase(j); k.oe = P.keyOutTemporalEase(j); } catch (eE) {}
+                        keys.push(k);
+                    }
+                    out.props.push({ mn: MK_TR[i], keys: keys });
+                } else if (made[MK_TR[i]] !== undefined && mkVal(P.value) !== made[MK_TR[i]]) {
+                    out.props.push({ mn: MK_TR[i], value: P.value });
+                }
+            } catch (e2) {}
+        }
+        try { if (made.st !== undefined) { out.dt = Number(L.startTime) - Number(made.st); } } catch (e3) {}
+        try { out.sep = acTransform(L, "ADBE Position").dimensionsSeparated; } catch (e4) {}
+        return out;
+    }
+    function mkCarryTo(L, c) {
+        var i, j, P, d, k;
+        if (c.sep) { try { acTransform(L, "ADBE Position").dimensionsSeparated = true; } catch (eS) {} }
+        for (i = 0; i < c.props.length; i++) {
+            d = c.props[i];
+            try { P = acTransform(L, d.mn); } catch (e) { P = null; }
+            if (!P) { continue; }
+            try {
+                if (d.keys) {
+                    while (P.numKeys > 0) { P.removeKey(1); }
+                    for (j = 0; j < d.keys.length; j++) { P.setValueAtTime(d.keys[j].t, d.keys[j].v); }
+                    for (j = 0; j < d.keys.length; j++) {
+                        k = P.nearestKeyIndex ? P.nearestKeyIndex(d.keys[j].t) : j + 1;
+                        try { if (d.keys[j].ii !== undefined) { P.setInterpolationTypeAtKey(k, d.keys[j].ii, d.keys[j].oi); } } catch (eI) {}
+                        try { if (d.keys[j].ie) { P.setTemporalEaseAtKey(k, d.keys[j].ie, d.keys[j].oe); } } catch (eE) {}
+                    }
+                } else {
+                    if (P.numKeys > 0) { continue; }
+                    P.setValue(d.value);
+                }
+            } catch (e2) {}
+        }
+        if (c.dt) { try { L.startTime = Number(L.startTime) + c.dt; } catch (eT) {} }
+    }
+    function mkGroupOf(comp, gid) {
+        var all = mkAll(comp), out = { made: [], keep: [], main: null, top: -1 }, i, t;
+        for (i = 0; i < all.length; i++) {
+            t = mkTagOf(all[i]);
+            if (!t || t.gid !== gid) { continue; }
+            if (t.role === "keep") { out.keep.push({ L: all[i], tag: t }); continue; }
+            out.made.push({ L: all[i], tag: t });
+            if (t.role === "main") { out.main = { L: all[i], tag: t }; }
+            if (out.top < 0) { out.top = i; }
+        }
+        return out;
+    }
+    function mkNewGid() { return "g" + new Date().getTime().toString(36) + Math.floor(Math.random() * 1296).toString(36); }
+
+    // A precomp for a Maketi block: on a rebuild the old one of that name comes back with what was put inside.
+    function mkComp(name, w, h, par, dur, fps) {
+        var c = mkReuse && mkReuse.comps[name];
+        if (c) {
+            delete mkReuse.comps[name];
+            mkReuse.used.push(c);
+            try { if (c.width !== w) { c.width = w; } if (c.height !== h) { c.height = h; } } catch (e) {}
+            return c;
+        }
+        return app.project.items.addComp(name, w, h, par, dur, fps);
+    }
+    function mkReused(c) { var i; if (!mkReuse) { return false; } for (i = 0; i < mkReuse.used.length; i++) { if (mkReuse.used[i] === c) { return true; } } return false; }
+    function mkFolder(name) {
+        if (mkReuse && mkReuse.folder) { return mkReuse.folder; }
+        return app.project.items.addFolder(name);
+    }
+
+    // Runs a Maketi build; mk = { gid, state }. With a gid it first takes the old build away (keeping the user's
+    // own layers, the precomps' contents and whatever the user moved or animated), then builds in its place.
+    // opt.keepSel: the block works on the selected layers (they are the user's, not the block's).
+    // opt.cleanKeep(L): undoes on such a layer what the build put on it, before it is built again.
+    function mkWrap(comp, kind, mk, build, opt) {
+        var gid = mk && mk.gid ? String(mk.gid) : "", state = mk && mk.state ? String(mk.state).replace(/[\r\n|]/g, " ") : "";
+        var old = null, carry = {}, above = null, before = {}, all, made = [], keep = [], res, i, j, L, t, id, main = null, sel, wasOn = [], src, nm;
+        opt = opt || {};
+        if (!mk) { return build(); }
+        if (gid) {
+            old = mkGroupOf(comp, gid);
+            if (!old.made.length) { throw new Error("MK_GONE"); }
+            all = mkAll(comp);
+            if (old.top > 0 && !mkTagOf(all[old.top - 1])) { above = all[old.top - 1]; }
+            mkReuse = { comps: {}, used: [], folder: null };
+            for (i = 0; i < old.made.length; i++) {
+                L = old.made[i].L;
+                carry[L.name] = mkCarryOf(L, old.made[i].tag);
+                try {
+                    src = L.source;
+                    if (src && typeof CompItem !== "undefined" && src instanceof CompItem) {
+                        mkReuse.comps[src.name] = src;
+                        if (!mkReuse.folder && src.parentFolder && src.parentFolder !== app.project.rootFolder) { mkReuse.folder = src.parentFolder; }
+                    }
+                } catch (eS) {}
+            }
+            for (i = 0; i < all.length; i++) { try { all[i].selected = false; } catch (eD) {} }
+            for (i = 0; i < old.made.length; i++) {
+                L = old.made[i].L;
+                try { L.locked = false; } catch (eL) {}
+                L.remove();
+            }
+            for (i = 0; i < old.keep.length; i++) {
+                L = old.keep[i].L;
+                try { L.enabled = old.keep[i].tag.tr !== "off"; } catch (eE) {}
+                if (opt.cleanKeep) { try { opt.cleanKeep(L); } catch (eC) {} }
+                try { L.selected = true; } catch (eK) {}
+            }
+        } else {
+            gid = mkNewGid();
+        }
+        all = mkAll(comp);
+        sel = comp.selectedLayers || [];
+        // Layer ids (After Effects 22+) tell the new layers from the old ones; without them nothing is tagged.
+        if (all.length && mkIdOf(all[0]) === null) { mkReuse = null; return build(); }
+        for (i = 0; i < all.length; i++) { id = mkIdOf(all[i]); if (id !== null) { before[id] = true; } }
+        for (i = 0; opt.keepSel && i < sel.length; i++) { if (opt.keepSel === true || opt.keepSel(sel[i])) { wasOn.push({ L: sel[i], on: sel[i].enabled !== false }); } }
+        try {
+            res = build();
+        } finally {
+            if (mkReuse) {
+                // Precomps of the old build nothing uses any more (fewer cards): gone, unless something was put inside.
+                for (nm in mkReuse.comps) {
+                    if (mkReuse.comps.hasOwnProperty(nm)) {
+                        try { if (!mkReuse.comps[nm].usedIn.length && mkReuse.comps[nm].numLayers <= 2) { mkReuse.comps[nm].remove(); } } catch (eR) {}
+                    }
+                }
+            }
+            mkReuse = null;
+        }
+        all = mkAll(comp);
+        if (all.length && mkIdOf(all[0]) === null) { return res; }
+        for (i = 0; i < all.length; i++) {
+            id = mkIdOf(all[i]);
+            if (!before[id]) { made.push(all[i]); }
+        }
+        for (i = 0; i < wasOn.length; i++) { keep.push(wasOn[i]); }
+        // A text the block made for itself (no text was selected) is the user's from now on: it is kept too.
+        if (opt.keepNames) {
+            for (i = made.length - 1; i >= 0; i--) {
+                for (j = 0; j < opt.keepNames.length; j++) {
+                    if (made[i].name === opt.keepNames[j]) { keep.push({ L: made[i], on: true }); made.splice(i, 1); break; }
+                }
+            }
+        }
+        for (i = 0; i < made.length && !main; i++) { try { if (made[i].selected && !made[i].adjustmentLayer) { main = made[i]; } } catch (eM) {} }
+        for (i = 0; i < made.length && !main; i++) { try { if (!made[i].parent && !made[i].adjustmentLayer) { main = made[i]; } } catch (eM2) {} }
+        if (!main && made.length) { main = made[0]; }
+        for (i = 0; i < made.length; i++) {
+            L = made[i];
+            if (carry[L.name]) { mkCarryTo(L, carry[L.name]); }
+            try { L.comment = MK_TAG + kind + "|" + gid + "|" + (L === main ? "main" : "part") + "|" + mkTrOf(L) + "|" + (L === main ? state : ""); } catch (eT) {}
+        }
+        for (i = 0; i < keep.length; i++) {
+            t = mkTagOf(keep[i].L);
+            try { keep[i].L.comment = MK_TAG + kind + "|" + gid + "|keep|" + (t && t.gid === gid ? t.tr : (keep[i].on ? "on" : "off")) + "|"; } catch (eK2) {}
+        }
+        // Back to where the old build stood in the layer stack, in the same order.
+        if (above && !keep.length) {
+            for (i = made.length - 1; i >= 0; i--) { try { made[i].moveAfter(above); } catch (eO) {} }
+        }
+        if (res && typeof res === "object") { res.mk = { gid: gid, name: main ? main.name : "", kind: kind }; }
+        return res;
+    }
+
     function orbitBuild(comp, o, labels) {
         var n = Math.round(orbitNum(o.count, 2, 36, 8)), layout = ORBIT_LAYOUTS[o.layout] ? o.layout : "ring";
         var kind = ORBIT_SIDES.hasOwnProperty(o.shape) ? o.shape : "rect", t = orbitNum(o.corners, 0, 100, 20) / 100;
@@ -3149,7 +3365,7 @@ var sayframeHost = (function () {
         base = labels.card || "Card ";
         var spots = [];
         if (pre) {
-            try { folder = app.project.items.addFolder(labels.folder || "Carousel"); } catch (eF) { folder = null; }
+            try { folder = mkFolder(labels.folder || "Carousel"); } catch (eF) { folder = null; }
         }
         F = orbitFx(ctrlName, labels);
         Fin = orbitFx(ctrlName, labels);
@@ -3158,14 +3374,16 @@ var sayframeHost = (function () {
             sp = orbitSpot(i, i < n ? n : nAll, layout, radius, h);
             if (i < n) { spots.push(sp); }
             if (pre) {
-                cc = app.project.items.addComp(base + (i + 1), w, h, comp.pixelAspect || 1, comp.duration, comp.frameRate);
+                cc = mkComp(base + (i + 1), w, h, comp.pixelAspect || 1, comp.duration, comp.frameRate);
                 if (folder) { try { cc.parentFolder = folder; } catch (eP) {} }
+                if (!mkReused(cc)) {
                 inner = cc.layers.addShape();
                 inner.name = labels.shape || "Shape";
                 orbitCardShape(inner, kind, t, w, h, orbitColor(i));
                 orbitLiveShape(inner, kind, Fin, String(w), String(h));
                 orbitSet(inner, "ADBE Position", [w / 2, h / 2]);
-                if (o.numbers) {
+                }
+                if (o.numbers && !mkReused(cc)) {
                     txt = orbitNumber(cc, String(i + 1), fs);
                     orbitSet(txt, "ADBE Position", [w / 2, h / 2 + fs * 0.35]);
                 }
@@ -3369,7 +3587,7 @@ var sayframeHost = (function () {
         var cw = (W - gx * (cols - 1)) / cols, ch = (H - gy * (rows - 1)) / rows, ox = (comp.width - W) / 2, oy = (comp.height - H) / 2;
         var tiles = [], nums = [], scales = [], i, b, bw, bh, x, y, L, cc, inner, txt, folder = null, ctrl, fs, base = labels.tile || "Tile ", sc, std, k;
         if (cw < 1 || ch < 1) { throw new Error("GRID_TOO_TIGHT"); }
-        if (pre) { try { folder = app.project.items.addFolder(labels.folder || "Grid"); } catch (eF) { folder = null; } }
+        if (pre) { try { folder = mkFolder(labels.folder || "Grid"); } catch (eF) { folder = null; } }
         for (i = boxes.length - 1; i >= 0; i--) {
             b = boxes[i];
             bw = Math.round(b.w * cw + (b.w - 1) * gx); bh = Math.round(b.h * ch + (b.h - 1) * gy);
@@ -3381,13 +3599,15 @@ var sayframeHost = (function () {
                 // tile's shape cuts it, so a photo put inside gets the same rounded corners.
                 std = gridStdSize(bw, bh);
                 sc = Math.max(bw / std[0], bh / std[1]) * 100;
-                cc = app.project.items.addComp(base + (i + 1), std[0], std[1], comp.pixelAspect || 1, comp.duration, comp.frameRate);
+                cc = mkComp(base + (i + 1), std[0], std[1], comp.pixelAspect || 1, comp.duration, comp.frameRate);
                 if (folder) { try { cc.parentFolder = folder; } catch (eP) {} }
+                if (!mkReused(cc)) {
                 inner = cc.layers.addShape();
                 inner.name = labels.shape || "Shape";
                 gridTileShape(inner, std[0], std[1], 0, gridColor(i));
                 orbitSet(inner, "ADBE Position", [std[0] / 2, std[1] / 2]);
-                if (o.numbers) {
+                }
+                if (o.numbers && !mkReused(cc)) {
                     k = Math.round(Math.min(std[0], std[1]) * 0.28);
                     txt = orbitNumber(cc, String(i + 1), k);
                     orbitSet(txt, "ADBE Position", [std[0] / 2, std[1] / 2 + k * 0.35]);
@@ -3488,11 +3708,13 @@ var sayframeHost = (function () {
             lw = sel.width; lh = sel.height;
         } else {
             lw = lie ? M.res[1] : M.res[0]; lh = lie ? M.res[0] : M.res[1];
-            cc = app.project.items.addComp(screenName, lw, lh, comp.pixelAspect || 1, comp.duration, comp.frameRate);
-            t = cc.layers.addSolid([0.29, 0.18, 0.6], labels.bg || "Background", lw, lh, 1);
-            k = Math.round(Math.min(lw, lh) * 0.09);
-            t = orbitNumber(cc, labels.video || "Video", k);
-            orbitSet(t, "ADBE Position", [lw / 2, lh / 2 + k * 0.35]);
+            cc = mkComp(screenName, lw, lh, comp.pixelAspect || 1, comp.duration, comp.frameRate);
+            if (!mkReused(cc)) {
+                t = cc.layers.addSolid([0.29, 0.18, 0.6], labels.bg || "Background", lw, lh, 1);
+                k = Math.round(Math.min(lw, lh) * 0.09);
+                t = orbitNumber(cc, labels.video || "Video", k);
+                orbitSet(t, "ADBE Position", [lw / 2, lh / 2 + k * 0.35]);
+            }
             scr = comp.layers.add(cc);
         }
         // Portrait screen: the layer's width runs across the phone; lying: the layer is turned back by 90 degrees.
@@ -7374,14 +7596,14 @@ var sayframeHost = (function () {
         },
 
         // Liquid glass block (Maketi): o = { mode: "text"|"shape"|"mine", text, form, shape, kind, edge, blur, light, size }.
-        glassMake: function (o, labels) {
+        glassMake: function (o, labels, mk) {
             return reply(function () {
                 var comp = activeComp();
                 var res;
                 if (!o || typeof o !== "object") { throw new Error("BAD_GLASS"); }
                 app.beginUndoGroup("Sayframe: liquid glass");
                 try {
-                    res = glBuild(comp, o, labels || {});
+                    res = mkWrap(comp, "glass", mk, function () { return glBuild(comp, o, labels || {}); }, { keepSel: o.mode === "mine" ? function (L) { return !(L instanceof CameraLayer) && !(L instanceof LightLayer) && !L.adjustmentLayer; } : false });
                 } finally {
                     app.endUndoGroup();
                 }
@@ -7407,14 +7629,14 @@ var sayframeHost = (function () {
         },
 
         // Grid: o = { rows, cols, gap, split, gapV, round, rand, seed, fit, w, h, mode, numbers, stagger }; labels - layer names.
-        gridMake: function (o, labels) {
+        gridMake: function (o, labels, mk) {
             return reply(function () {
                 var comp = activeComp();
                 var res;
                 if (!o || typeof o !== "object") { throw new Error("BAD_GRID"); }
                 app.beginUndoGroup("Sayframe: grid");
                 try {
-                    res = gridBuild(comp, o, labels || {});
+                    res = mkWrap(comp, "grid", mk, function () { return gridBuild(comp, o, labels || {}); });
                 } finally {
                     app.endUndoGroup();
                 }
@@ -7423,14 +7645,15 @@ var sayframeHost = (function () {
         },
 
         // Text on a ribbon / 3D ring: o = { mode: "ribbon"|"ring", form, text, sep, width, textSize, speed, run, ribbonColor, textColor, rings, radius, tilt, backDark, camera }.
-        ribbonMake: function (o, labels) {
+        ribbonMake: function (o, labels, mk) {
             return reply(function () {
                 var comp = activeComp();
                 var res;
                 if (!o || typeof o !== "object") { throw new Error("BAD_RIBBON"); }
                 app.beginUndoGroup(o.mode === "ring" ? "Sayframe: text ring" : "Sayframe: text ribbon");
                 try {
-                    res = o.mode === "ring" ? ringBuild(comp, o, labels || {}) : ribBuild(comp, o, labels || {});
+                    res = mkWrap(comp, "ribbon", mk, function () { return o.mode === "ring" ? ringBuild(comp, o, labels || {}) : ribBuild(comp, o, labels || {}); },
+                        { keepSel: o.mode !== "ring" && o.form === "path" ? function (L) { return !!ribFindPath(L); } : false });
                 } finally {
                     app.endUndoGroup();
                 }
@@ -7439,14 +7662,18 @@ var sayframeHost = (function () {
         },
 
         // Phone mockup: o = { model: "iphone"|"android", color, pose: "flat"|"tilt"|"lie", size, round, shadow, appear, screen: "precomp"|"layer" }.
-        phoneMake: function (o, labels) {
+        phoneMake: function (o, labels, mk) {
             return reply(function () {
                 var comp = activeComp();
                 var res;
                 if (!o || typeof o !== "object") { throw new Error("BAD_PHONE"); }
                 app.beginUndoGroup("Sayframe: phone mockup");
                 try {
-                    res = phoneBuild(comp, o, labels || {});
+                    res = mkWrap(comp, "phone", mk, function () { return phoneBuild(comp, o, labels || {}); }, { keepSel: o.screen === "layer", cleanKeep: function (L) {
+                        // The screen mask the mockup put on the user's layer: it is made again.
+                        var M = L.property("ADBE Mask Parade"), n;
+                        for (n = M.numProperties; n >= 1; n--) { if (M.property(n).name === ((labels || {}).screenMask || "Screen")) { M.property(n).remove(); } }
+                    } });
                 } finally {
                     app.endUndoGroup();
                 }
@@ -7455,14 +7682,14 @@ var sayframeHost = (function () {
         },
 
         // Carousel: o = { count, layout, shape, corners, mode: "shape"|"precomp", radius, w, h, numbers, camera }; labels - layer names.
-        orbitMake: function (o, labels) {
+        orbitMake: function (o, labels, mk) {
             return reply(function () {
                 var comp = activeComp();
                 var res;
                 if (!o || typeof o !== "object") { throw new Error("BAD_ORBIT"); }
                 app.beginUndoGroup("Sayframe: carousel");
                 try {
-                    res = orbitBuild(comp, o, labels || {});
+                    res = mkWrap(comp, "carousel", mk, function () { return orbitBuild(comp, o, labels || {}); });
                 } finally {
                     app.endUndoGroup();
                 }
@@ -7470,23 +7697,54 @@ var sayframeHost = (function () {
             });
         },
 
+        // Maketi: is something a block made selected? Then the block shows its settings and changes it.
+        mkSelected: function () {
+            return reply(function () {
+                var comp = app.project ? app.project.activeItem : null, sel, i, t, g;
+                if (!comp || !(comp instanceof CompItem)) { return { kind: "" }; }
+                sel = comp.selectedLayers || [];
+                for (i = 0; i < sel.length; i++) {
+                    t = mkTagOf(sel[i]);
+                    if (!t) { continue; }
+                    g = mkGroupOf(comp, t.gid);
+                    if (!g.main) { continue; }
+                    return { kind: g.main.tag.kind, gid: t.gid, name: g.main.L.name, state: g.main.tag.state, comp: comp.name };
+                }
+                return { kind: "", comp: comp.name };
+            });
+        },
+
+        mkDeselect: function () {
+            return reply(function () {
+                var comp = app.project ? app.project.activeItem : null, sel, i;
+                if (!comp || !(comp instanceof CompItem)) { return {}; }
+                sel = comp.selectedLayers || [];
+                for (i = sel.length - 1; i >= 0; i--) { try { sel[i].selected = false; } catch (e) {} }
+                return {};
+            });
+        },
+
         // Pathfinder: mode "unite" | "front" | "intersect" | "exclude" | "back"; keep - hide the source layers instead of removing them.
         // Text box: o = { per: "all"|"line", look: "fill"|"stroke"|"both", style: "box"|"marker", color, strokeColor,
         // px, py, round, stroke, skew, opacity, shadow }; lab - control and layer names. The box is not animated.
-        textBox: function (o, lab) {
+        textBox: function (o, lab, mk) {
             return reply(function () {
                 var comp = activeComp(), sel = comp.selectedLayers, texts = [], res = [], i, made = "";
                 if (!o || typeof o !== "object" || !lab) { throw new Error("BAD_TEXTBOX"); }
                 for (i = 0; i < sel.length; i++) { if (sel[i] instanceof TextLayer) { texts.push(sel[i]); } }
                 app.beginUndoGroup("Sayframe: text box");
                 try {
-                    // No text selected: a new text in the middle of the comp gets the box.
-                    if (!texts.length) { texts.push(tbNewText(comp, lab.defaultText || "Text", tbTextColor(o))); made = texts[0].name; }
-                    for (i = 0; i < texts.length; i++) { res.push(tbBuild(comp, texts[i], o, lab)); }
+                    return mkWrap(comp, "textbox", mk, function () {
+                        var j;
+                        if (mk) { sel = comp.selectedLayers; texts = []; for (j = 0; j < sel.length; j++) { if (sel[j] instanceof TextLayer) { texts.push(sel[j]); } } }
+                        // No text selected: a new text in the middle of the comp gets the box.
+                        if (!texts.length) { texts.push(tbNewText(comp, lab.defaultText || "Text", tbTextColor(o))); made = texts[0].name; }
+                        for (i = 0; i < texts.length; i++) { res.push(tbBuild(comp, texts[i], o, lab)); }
+                        return { textBox: { boxes: res, made: made } };
+                    }, { keepSel: function (L) { return L instanceof TextLayer; }, keepNames: [lab.defaultText || "Text"] });
                 } finally {
                     app.endUndoGroup();
                 }
-                return { textBox: { boxes: res, made: made } };
             });
         },
 
