@@ -1185,6 +1185,26 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("SH2 no reload loop: the panel is already as new as the shared file", p.net.reloads === 1, String(p.net.reloads));
     await p.close();
 
+    // Both apps open at once: a brand book imported or changed in one shows up in the other on return to it.
+    p = await open({ ppro: true, settings: {}, shared: { t: 1, app: "AEFT", items: {} } });
+    await p.page.waitForTimeout(600);
+    await p.page.click("#tabBrand");
+    fs.writeFileSync(path.join(p.home, ".sayframe", "shared.json"), JSON.stringify({ t: Date.now() + 1000, app: "AEFT", items: { "sayframe.settings.v1": await p.page.evaluate(() => localStorage.getItem("sayframe.settings.v1")), "sayframe.brands.v1": JSON.stringify(seed) } }));
+    await p.page.evaluate(() => window.dispatchEvent(new Event("focus"))); await p.page.waitForTimeout(500);
+    check("SH4 a brand book imported in After Effects appears in the open Premiere panel when it gets focus, without a reload",
+      (await p.page.locator("#brandLogos .brand-logo").count()) === 1 && /Acme/.test(await p.page.locator("#viewBrand").innerText()) && !p.net.reloads, (await p.page.locator("#viewBrand").innerText()).slice(0, 120) + " reloads " + p.net.reloads);
+    await p.page.fill("#brandColorHex", "#2fc16e"); await p.page.fill("#brandColorName", "Зелёный"); await p.page.click("#brandColorAdd"); await p.page.waitForTimeout(700);
+    t = JSON.parse(fs.readFileSync(path.join(p.home, ".sayframe", "shared.json"), "utf8"));
+    check("SH4 a change made in Premiere goes to the shared file for After Effects", t.app === "PPRO" && /Зелёный/.test(t.items["sayframe.brands.v1"]), JSON.stringify(t).slice(0, 200));
+    await p.close();
+    p = await open({ shared: { t: 1, app: "PPRO", items: {} } });
+    await p.page.waitForTimeout(600);
+    fs.writeFileSync(path.join(p.home, ".sayframe", "shared.json"), JSON.stringify({ t: Date.now() + 1000, app: "PPRO", items: { "sayframe.settings.v1": await p.page.evaluate(() => localStorage.getItem("sayframe.settings.v1")), "sayframe.brands.v1": JSON.stringify(seed) } }));
+    await p.page.evaluate(() => window.dispatchEvent(new Event("focus"))); await p.page.waitForTimeout(500);
+    await p.page.click("#tabBrand");
+    check("SH4 and the other way: imported in Premiere, it appears in After Effects", (await p.page.locator("#brandLogos .brand-logo").count()) === 1 && !p.net.reloads, String(p.net.reloads));
+    await p.close();
+
     p = await open({});
     await p.page.waitForTimeout(800);
     t = fs.existsSync(path.join(p.home, ".sayframe", "shared.json")) ? JSON.parse(fs.readFileSync(path.join(p.home, ".sayframe", "shared.json"), "utf8")) : null;

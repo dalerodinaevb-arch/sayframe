@@ -1324,26 +1324,28 @@
         if (SOLO || !platform.available) { sharedRead = true; return Promise.resolve(false); }
         try { mine = Number(window.localStorage.getItem(SHARED_STAMP_KEY) || 0) || 0; } catch (e) {}
         return platform.readText(sharedPath()).then(function (text) {
-            var data = JSON.parse(text), items = data && data.items, local, next;
+            var data = JSON.parse(text), items = data && data.items, local, next, changed = [];
             if (!data || !(Number(data.t) > mine) || !items || typeof items !== "object") {
                 if (!data || Number(data.t) < mine) { sharedPending = true; }
                 return false;
             }
             sharedKeys().forEach(function (k) {
+                var before = null;
                 if (typeof items[k] !== "string") { return; }
+                try { before = window.localStorage.getItem(k); } catch (e0) {}
                 if (k === SETTINGS_KEY) {
                     try {
                         next = JSON.parse(items[k]);
                         local = JSON.parse(window.localStorage.getItem(k) || "{}") || {};
                         SHARED_LOCAL.forEach(function (n) { if (local.hasOwnProperty(n)) { next[n] = local[n]; } else { delete next[n]; } });
-                        window.localStorage.setItem(k, JSON.stringify(next));
+                        if (JSON.stringify(next) !== JSON.stringify(local)) { window.localStorage.setItem(k, JSON.stringify(next)); changed.push(k); }
                     } catch (e1) {}
                     return;
                 }
-                try { window.localStorage.setItem(k, items[k]); } catch (e2) {}
+                if (items[k] !== before) { try { window.localStorage.setItem(k, items[k]); changed.push(k); } catch (e2) {} }
             });
             try { window.localStorage.setItem(SHARED_STAMP_KEY, String(data.t)); } catch (e3) {}
-            return true;
+            return changed.length ? changed : false;
         }, function () {
             sharedPending = true;
             return false;
@@ -13359,6 +13361,19 @@
         if (fresh && platform.reload) { platform.reload(); return; }
         setTimeout(function () { offerPremiere().catch(function () {}); }, 2500);
     });
+    // Обе программы открыты сразу: вернулись в панель — подхватываем то, что поменяли в другой.
+    // Проекты обновляются на месте; настройки (ключ, тема) — перезапуском панели.
+    if (!SOLO) {
+        window.addEventListener("focus", function () {
+            if (!sharedRead || busy) { return; }
+            readShared().then(function (changed) {
+                if (!changed) { return; }
+                if (changed.indexOf(SETTINGS_KEY) >= 0 && platform.reload) { platform.reload(); return; }
+                brands = loadBrands();
+                renderBrand();
+            });
+        });
+    }
     // Проверка обновлений идёт в фоне и не мешает работе: об ошибках сети молчим.
     // Раньше панель спрашивала сервер только при запуске и не чаще раза в шесть часов, поэтому
     // о свежем выпуске узнавала очень поздно. Теперь — при запуске, раз в несколько минут, пока открыта,
