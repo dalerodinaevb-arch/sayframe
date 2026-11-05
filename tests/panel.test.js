@@ -779,7 +779,11 @@ function makePR(opts, tmpDir) {
     p.isTimeVarying = () => p._tv; p.setTimeVarying = (b) => { p._tv = !!b; if (!b) p.keys = []; };
     p.addKey = (t) => { const x = secOf(t); if (!p.keys.some((k) => Math.abs(k[0] - x) < 1e-6)) p.keys.push([x, p._v]); p.keys.sort((a, b) => a[0] - b[0]); return true; };
     p.setValueAtKey = (t, v) => { const k = p.keys.find((k) => Math.abs(k[0] - secOf(t)) < 1e-6); if (k) k[1] = v; return true; };
-    p.setInterpolationTypeAtKey = () => true;
+    p.interp = {};
+    p.setInterpolationTypeAtKey = (t, type) => { p.interp[Math.round(secOf(t) * 1e4) / 1e4] = type; return true; };
+    p.getKeys = () => p.keys.length ? p.keys.map((k) => ({ ticks: String(Math.round(k[0] * TPS)), seconds: k[0] })) : null;
+    p.getValueAtKey = (t) => { const k = p.keys.find((k) => Math.abs(k[0] - secOf(t)) < 1e-6); return k ? k[1] : undefined; };
+    p.removeKey = (t) => { p.keys = p.keys.filter((k) => Math.abs(k[0] - secOf(t)) >= 1e-6); return true; };
     p.removeKeyRange = (a, b) => { p.keys = p.keys.filter((k) => k[0] < secOf(a) || k[0] > secOf(b)); return true; };
     p.getValueAtTime = (t) => { const x = secOf(t); let v = p.keys.length ? p.keys[0][1] : p._v; p.keys.forEach((k) => { if (k[0] <= x + 1e-6) v = k[1]; }); return v; };
     return p;
@@ -793,6 +797,7 @@ function makePR(opts, tmpDir) {
   function Clip(name, a, b, sel, item, kind, inPt) {
     const c = { name, start: T(a), end: T(b), inPoint: T(inPt || 0), projectItem: item || null, _sel: !!sel, mediaType: kind === "A" ? "Audio" : "Video", isSelected() { return this._sel; },
       components: coll(kind === "A" ? audioComps() : videoComps(), "numItems") };
+    c.move = (t) => { const d = secOf(t); c.start = T(c.start.seconds + d); c.end = T(c.end.seconds + d); log.moves = (log.moves || []).concat([c.name + ":" + Math.round(d * 1000) / 1000]); return true; };
     c.remove = () => { const l = c._track.clips; l.splice(l.indexOf(c), 1); log.removed = (log.removed || []).concat([c.name]); return true; };
     return c;
   }
@@ -859,7 +864,7 @@ function makePR(opts, tmpDir) {
   const ctx = vm.createContext({ app, qe, File, Folder, Time, ProjectItemType, $: { sleep() {} } });
   ctx.$.global = ctx;
   vm.runInContext(hostPrSrc, ctx);
-  return { log, project, ctx, Track, Clip, Seq, evalScript(script) {
+  return { log, project, ctx, Track, Clip, Seq, Item, ProjectItemType, evalScript(script) {
     log.lastScript = script; log.scripts.push(script);
     if (!/^[\x09\x0a\x0d\x20-\x7e]*$/.test(script)) return "EvalScript error.";
     try {
@@ -1136,12 +1141,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ ppro: true, width: 420 });
     await p.page.waitForTimeout(300);
     const tabs = await p.page.locator("#tabs .tab").evaluateAll((l) => l.map((b) => b.getAttribute("data-tab")));
-    check("PR1 opens in Premiere without errors: tabs AI, Монтаж and Проекты, «Premiere» badge, no snapshot or effect search",
-      p.errors.length === 0 && tabs.sort().join() === "brand,claude,tools" && (await p.page.locator(".app-badge").innerText()) === "Premiere" &&
+    check("PR1 opens in Premiere without errors: tabs AI, Монтаж, Инструменты and Проекты, «Premiere» badge, no snapshot or effect search",
+      p.errors.length === 0 && tabs.sort().join() === "brand,claude,motion,tools" && (await p.page.locator(".app-badge").innerText()) === "Premiere" &&
       !(await vis(p, "#snapBtn")) && !(await vis(p, "#fxBtn")) && (await vis(p, "#exportBtn")) && (await p.page.getAttribute("html", "data-app")) === "ppro", p.errors.join(" | ") + " " + tabs.join());
     check("PR1 the panel talks only to host_pr.jsx and only with its own commands",
       p.ae.log.scripts.every((s) => !/^\$\.evalFile/.test(s) || s.indexOf("/jsx/host_pr.jsx") > 0) &&
-      p.ae.log.scripts.filter((s) => /^sayframeHost\./.test(s)).every((s) => /^sayframeHost\.(info|syntax|run|reference|brand\w+|export\w+|acSound|snd\w+|sf\w+|trApply)\(/.test(s)), p.ae.log.scripts.join(" | "));
+      p.ae.log.scripts.filter((s) => /^sayframeHost\./.test(s)).every((s) => /^sayframeHost\.(info|syntax|run|reference|brand\w+|export\w+|acSound|snd\w+|sf\w+|trApply|easePR|ec\w+|stagger|anchor|align|distribute|placeImage|organizeProject|removeUnused|cutout\w+)\(/.test(s)), p.ae.log.scripts.join(" | "));
     check("PR1 AI tab: no expressions, styles or references; Premiere quick tasks",
       !(await vis(p, '.ai-mode[data-m="expr"]')) && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && !(await vis(p, "#exprCard")) &&
       (await p.page.locator("#quickList").innerText()).indexOf("Переходы между клипами") >= 0 &&
@@ -1387,6 +1392,64 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       check("MT7 volume −6 dB → the clip's Volume Level (Premiere's gain scale), the file stays",
         Math.abs(prm(a2.clips[0], "Volume", "Level").getValue() - Math.pow(10, -21 / 20)) < 1e-6 && a2.clips[0].projectItem.media === P4, String(prm(a2.clips[0], "Volume", "Level").getValue()));
       check("MT8 no errors, and the panel only used Premiere's own commands", p.errors.length === 0 && p.ae.log.scripts.filter((s) => /^sayframeHost\./.test(s)).every((s) => /^sayframeHost\.(info|acSound|sndTargets|sndApplyFiles|sfState)\(/.test(s)), p.errors.join(" | "));
+      await p.close();
+    }
+    // «Инструменты» в Premiere: те же блоки для клипов, плавность — плитками.
+    {
+      const comp = (c, n) => c.components.find((x) => x.displayName === n);
+      const prm = (c, cn, pn) => comp(c, cn).properties.find((x) => x.displayName === pn);
+      const r3 = (v) => (Array.isArray(v) ? v.map(r3) : Math.round(v * 1000) / 1000);
+      const go = async (q, sel) => { await q.page.evaluate((x) => document.querySelector(x).click(), sel); await q.idle(); await q.page.waitForTimeout(100); };
+      p = await open({ ppro: true, width: 420, v2Full: true, settings: { design: "studio", designSet: 2 } });
+      await p.page.click("#tabMotion"); await p.page.waitForTimeout(500);
+      const shown = await p.page.evaluate(() => ["paste", "organize", "unused", "cutout", "cache", "nullp", "decompose", "ease", "easecopy", "stagger", "anchor", "align"].filter((t) => { const e = document.querySelector('[data-tool="' + t + '"]'); return e && getComputedStyle(e).display !== "none"; }));
+      check("TL1 «Инструменты» in Premiere: Картинка, По папкам, Лишнее, Вырезка and the blocks; no Кэш, Null, Декомпоз; Плавность is 3 + 12 tiles",
+        shown.join() === "paste,organize,unused,cutout,ease,easecopy,stagger,anchor,align" && (await p.page.locator("#prEase .pr-ease-btn").count()) === 15 &&
+        !(await vis(p, "#easeCurve")) && (await p.page.locator('#prEase [aria-pressed="true"] span').innerText()) === "Плавно" && p.errors.length === 0, shown.join() + " " + p.errors.join(" | "));
+      await p.page.screenshot({ path: path.join(SHOTS, "pr-13-instrumenty.png") });
+      const sq = p.ae.project.activeSequence, intro = sq.videoTracks[0].clips[0], main = sq.videoTracks[0].clips[1], title = sq.videoTracks[1].clips[0];
+      const sc = prm(intro, "Motion", "Scale");
+      sc.setTimeVarying(true); sc.keys = [[0, 100], [1, 150]];
+      await go(p, "#prEaseGo");
+      check("TL2 «Плавно» puts Premiere's own Bezier keys (type 5) on every key of the selected clip", sc.keys.length === 2 && sc.interp[0] === 5 && sc.interp[1] === 5 &&
+        /^Плавность «Плавно»: 1 клип, 1 свойство\. Это настоящие ключи Premiere/.test(await p.status()), JSON.stringify(sc.interp) + " " + await p.status());
+      await go(p, '#prEase [data-ease="bounce"]'); await go(p, "#prEaseGo");
+      const mid = sc.keys.find((k) => Math.abs(k[0] - 0.36) < 1e-6);
+      check("TL3 «Отскок» is baked: a key on every frame between the two keys (25 fps → 26 keys), values on the bounce curve, all linear",
+        sc.keys.length === 26 && Math.abs(mid[1] - (100 + 50 * 7.5625 * 0.36 * 0.36)) < 0.01 && sc.interp[0.4] === 0 && sc.keys[25][1] === 150 &&
+        /по кадрам/.test(await p.status()), sc.keys.length + " " + JSON.stringify(r3(sc.keys.slice(0, 12))) + " " + await p.status());
+      await go(p, '#prEase [data-ease="elastic"]'); await go(p, "#prEaseGo");
+      check("TL3 another baked curve first takes the old frames away (still 26 keys, now the spring)", sc.keys.length === 26 && sc.keys.some((k) => k[1] > 150.5), sc.keys.length);
+      await go(p, '#prEase [data-ease="lin"]'); await go(p, "#prEaseGo");
+      check("TL3 a Premiere key type takes the baked frames away: back to the two keys, linear", sc.keys.length === 2 && sc.interp[0] === 0 && sc.interp[1] === 0, JSON.stringify(sc.keys));
+      await go(p, "#ecCopy");
+      intro._sel = false; main._sel = true;
+      await go(p, "#ecPasteValue");
+      const ms = prm(main, "Motion", "Scale");
+      check("TL4 Копия: the selected clip's keys go onto another clip from its own start (media time)", JSON.stringify(ms.keys) === "[[10,100],[11,150]]" && /^Ключи вставлены: 2 ключа на 1 клип/.test(await p.status()), JSON.stringify(ms.keys) + " " + await p.status());
+      main._sel = false; intro._sel = true; title._sel = true;
+      await go(p, "#staggerBtn");
+      check("TL5 Лесенка: clips one after another from the top track down, by the step in frames", (p.ae.log.moves || []).join() === "intro.mp4:0.04" && intro.start.seconds === 0.04 && /^Лесенка: 2 клипа, шаг 1 кадр/.test(await p.status()),
+        (p.ae.log.moves || []).join() + " " + await p.status());
+      title._sel = false;
+      prm(intro, "Motion", "Scale").setTimeVarying(false); prm(intro, "Motion", "Scale").setValue(50);
+      await p.page.evaluate(() => document.querySelectorAll(".flow-folded").forEach((c) => c.classList.remove("flow-folded")));
+      await go(p, '#alignGrid [data-edge="left"]');
+      check("TL6 Выровнять по кадру: a clip at 50 % goes to the left edge (normalized Position 0.25)", JSON.stringify(r3(prm(intro, "Motion", "Position").getValue())) === "[0.25,0.5]" && /^Выровнено: 1 клип/.test(await p.status()), JSON.stringify(prm(intro, "Motion", "Position").getValue()) + " " + await p.status());
+      prm(intro, "Motion", "Scale").setValue(100); prm(intro, "Motion", "Position").setValue([0.5, 0.5]);
+      await go(p, '#viewMotion .anchor-card button[data-fx="0"][data-fy="0"]');
+      check("TL7 Якорь в левый верхний угол: Anchor Point [0,0], Position moves so the picture stays", JSON.stringify(prm(intro, "Motion", "Anchor Point").getValue()) === "[0,0]" &&
+        JSON.stringify(r3(prm(intro, "Motion", "Position").getValue())) === "[0,0]" && /^Точка привязки перенесена: 1 клип/.test(await p.status()), JSON.stringify(prm(intro, "Motion", "Position").getValue()) + " " + await p.status());
+      // Project: a used video, an unused picture.
+      const root = p.ae.project.rootItem, vid = p.ae.Item("intro.mp4", 1, { media: "/m/intro.mp4" }), pic = p.ae.Item("old.png", 1, { media: "/m/old.png" });
+      [vid, pic].forEach((x) => { x.parent = root; root.children.push(x); });
+      intro.projectItem = vid;
+      await go(p, '[data-tool="unused"] button');
+      check("TL8 Лишнее: files in no sequence go to the bin «Не используется» (Premiere scripts cannot delete)", pic.parent && pic.parent.name === "Не используется" && vid.parent === root &&
+        /в корзину «Не используется»/.test(await p.status()), (pic.parent && pic.parent.name) + " " + await p.status());
+      await go(p, '[data-tool="organize"] button');
+      check("TL9 По папкам: the sequence to «Секвенции», video to «Видео»", vid.parent.name === "Видео" && sq.projectItem.parent.name === "Секвенции" && /Перемещено/.test(await p.status()), vid.parent.name + " " + sq.projectItem.parent.name + " " + await p.status());
+      check("TL10 no errors", p.errors.length === 0, p.errors.join(" | "));
       await p.close();
     }
     if (process.env.SAYFRAME_ONLY === "pr") { await browser.close(); console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0); }

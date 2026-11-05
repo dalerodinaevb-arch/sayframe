@@ -757,7 +757,8 @@
     var HOST_JSX = IS_PR ? "/jsx/host_pr.jsx" : "/jsx/host.jsx";
     // Команды host_pr.jsx: остальные в Premiere сразу отвечают NOT_IN_PREMIERE, не трогая программу.
     var PR_FNS = ["info", "syntax", "run", "reference", "brandLogo", "brandIcon", "brandComp", "brandFilesInUse", "brandSaveDialog",
-        "exportInfo", "exportOne", "exportReveal", "acSound", "sndTargets", "sndApplyFiles", "sfApply", "sfState", "trApply"];
+        "exportInfo", "exportOne", "exportReveal", "acSound", "sndTargets", "sndApplyFiles", "sfApply", "sfState", "trApply",
+        "easePR", "ecCopy", "ecPaste", "stagger", "anchor", "align", "distribute", "placeImage", "organizeProject", "removeUnused", "cutoutSource", "cutoutApply"];
 
     // ---- Sayframe для Premiere Pro у тех, кто поставил панель раньше (обновлялся из After Effects):
     // если на компьютере есть Premiere Pro, а расширения SayframePR рядом нет, панель один раз предлагает
@@ -1171,6 +1172,11 @@
         if (m === "REF_NOT_IN_PREMIERE") { return "В Premiere Pro референсы пока не поддерживаются: опишите задачу словами."; }
         if (m === "NO_SEQUENCE") { return "Откройте секвенцию: инструмент работает с открытой секвенцией."; }
         if (m === "NO_FREE_TRACK") { return "На всех дорожках под указателем уже есть клипы. Добавьте пустую дорожку и нажмите ещё раз."; }
+        if (m === "NO_KEYS_ON_CLIPS") { return "У выделенных клипов нет ключей. Поставьте хотя бы два ключа (секундомер в Effect Controls) и нажмите ещё раз."; }
+        if (IS_PR && m === "STAGGER_NEEDS_TWO") { return "Для лесенки выделите хотя бы два клипа."; }
+        if (IS_PR && m === "ALIGN_NEEDS_TWO") { return "Чтобы выровнять клипы друг по другу, выделите хотя бы два. Один клип выравнивается по кадру."; }
+        if (IS_PR && m === "DISTRIBUTE_NEEDS_THREE") { return "Чтобы распределить, выделите хотя бы три клипа."; }
+        if (IS_PR && m === "CO_NOT_PHOTO") { return "Вырезка работает с фото: выделите на таймлайне клип-картинку (JPG, PNG…) и нажмите ещё раз."; }
         if (m === "NO_CLIPS") { return "Выделите видеоклипы на таймлайне и щёлкните ещё раз."; }
         if (m === "NO_CUT") { return "Поставьте указатель на стык двух клипов (или выделите клипы у стыка) и щёлкните ещё раз."; }
         if (m === "NO_TRANSITION") { return "Premiere Pro не нашёл этот встроенный переход. Возьмите другой или наш из разделов «Зум», «Панорама», «Поворот»."; }
@@ -1624,7 +1630,7 @@
         var root = document.documentElement, badge;
         if (!IS_PR) { return; }
         root.setAttribute("data-app", "ppro");
-        ["motion", "shape"].forEach(function (k) {
+        ["shape"].forEach(function (k) {
             TABS[k].view.hidden = true;
             if (TABS[k].tab.parentNode) { TABS[k].tab.parentNode.removeChild(TABS[k].tab); }
             delete TABS[k];
@@ -1644,10 +1650,102 @@
         if (document.documentElement.getAttribute("data-design") === "studio") { ui.prompt.placeholder = "Что сделать в секвенции?"; }
         ui.exSpan.querySelector('[data-v="all"] span').textContent = "Всю секвенцию";
         ui.exSpan.querySelector('[data-v="work"] span').textContent = "От In до Out";
+        setupPremiereTools();
         badge = document.createElement("span");
         badge.className = "app-badge";
         badge.textContent = "Premiere";
         document.querySelector("header.top .brand").appendChild(badge);
+    }
+
+    // ---- «Инструменты» в Premiere: те же блоки, только для клипов. Плавность — плитки: три настоящих типа ключей
+    // Premiere (Bezier, Linear, Hold) и кривые, которые панель запекает ключом на каждом кадре между ключами.
+    var PR_EASE_KEY = "sayframe.prEase.v1";        // выбранная плитка
+    var PR_BAKED_KEY = "sayframe.prBaked.v1";      // где мы запекали: какие ключи были исходными
+    var PR_EASES = [
+        ["Ключи Premiere", [["ease", "Плавно"], ["lin", "Ровно"], ["hold", "Стоп"]]],
+        ["По кадрам — точно по кривой", [["inn", "Разгон"], ["out", "Торможение"], ["auto", "Авто"], ["cont", "Непрерывно"], ["over", "С перелётом"], ["bounce", "Отскок"],
+            ["elastic", "Пружина"], ["sharp", "Резко"], ["soft", "Очень плавно"], ["slow", "Медленный старт"], ["stop", "Мягкая остановка"], ["back", "Назад-вперёд"]]]
+    ];
+    var PR_EASE_F = {
+        ease: function (t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }, lin: function (t) { return t; }, hold: function (t) { return t < 0.97 ? 0 : 1; },
+        inn: function (t) { return t * t * t; }, out: function (t) { return 1 - Math.pow(1 - t, 3); },
+        auto: function (t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }, cont: function (t) { return t * t * (3 - 2 * t); },
+        over: function (t) { return sfCurve(t, "over"); }, bounce: function (t) { return sfCurve(t, "bounce"); }, elastic: function (t) { return sfCurve(t, "elastic"); },
+        sharp: function (t) { return t <= 0 ? 0 : (t >= 1 ? 1 : (t < 0.5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2)); },
+        soft: function (t) { return t < 0.5 ? 16 * Math.pow(t, 5) : 1 - Math.pow(-2 * t + 2, 5) / 2; },
+        slow: function (t) { return t <= 0 ? 0 : Math.pow(2, 10 * t - 10); }, stop: function (t) { return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t); },
+        back: function (t) { var c = 2.5949095; return t < 0.5 ? (Math.pow(2 * t, 2) * ((c + 1) * 2 * t - c)) / 2 : (Math.pow(2 * t - 2, 2) * ((c + 1) * (t * 2 - 2) + c) + 2) / 2; }
+    };
+
+    function prEaseIcon(f) {
+        var d = "", i, t;
+        for (i = 0; i <= 40; i++) { t = i / 40; d += (i ? "L" : "M") + (4 + t * 40).toFixed(1) + " " + (25 - f(t) * 18).toFixed(1); }
+        return '<svg viewBox="0 0 48 32" aria-hidden="true"><path d="' + d + '"/></svg>';
+    }
+
+    function prEaseKind() {
+        var k;
+        try { k = window.localStorage.getItem(PR_EASE_KEY); } catch (e) { k = null; }
+        return PR_EASE_F[k] ? k : "ease";
+    }
+
+    function prBaked() {
+        var m;
+        try { m = JSON.parse(window.localStorage.getItem(PR_BAKED_KEY) || "{}"); } catch (e) { m = {}; }
+        return m && typeof m === "object" ? m : {};
+    }
+
+    function setupPremiereTools() {
+        var ease = document.querySelector('[data-tool="ease"]'), box, go, kind = prEaseKind(), t;
+        ["cache", "nullp", "decompose"].forEach(function (k) { var c = document.querySelector('[data-tool="' + k + '"]'); if (c) { c.hidden = true; c.classList.add("pr-off"); } });
+        if (ease) {
+            ease.classList.add("pr-ease-card");
+            box = document.createElement("div");
+            box.id = "prEase";
+            box.className = "pr-ease";
+            box.innerHTML = PR_EASES.map(function (g) {
+                return '<div class="pr-ease-group">' + g[0] + '</div><div class="pr-ease-grid">' + g[1].map(function (e) {
+                    return '<button type="button" class="pr-ease-btn" data-ease="' + e[0] + '" aria-pressed="' + (e[0] === kind ? "true" : "false") + '">' + prEaseIcon(PR_EASE_F[e[0]]) + '<span>' + e[1] + '</span></button>';
+                }).join("") + '</div>';
+            }).join("");
+            go = document.createElement("button");
+            go.id = "prEaseGo";
+            go.type = "button";
+            go.className = "shift-do shift-go pr-ease-go";
+            go.textContent = "Поставить на выделенные клипы";
+            go.title = "Premiere не говорит, какие ключи выделены: плавность встаёт на все ключи выделенных клипов.";
+            box.appendChild(go);
+            ease.appendChild(box);
+            box.addEventListener("click", function (e) {
+                var b = e.target && e.target.closest ? e.target.closest(".pr-ease-btn") : null;
+                if (!b) { return; }
+                try { window.localStorage.setItem(PR_EASE_KEY, b.getAttribute("data-ease")); } catch (e1) {}
+                Array.prototype.forEach.call(box.querySelectorAll(".pr-ease-btn"), function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+            });
+            go.addEventListener("click", onPrEase);
+        }
+        t = document.querySelector('#alignTo option[value="comp"]'); if (t) { t.textContent = "Кадру"; }
+        t = document.querySelector('#alignTo option[value="selection"]'); if (t) { t.textContent = "Выделенным клипам"; }
+        Array.prototype.forEach.call(document.querySelectorAll('#viewMotion [data-v="layer"] span, #distLabel'), function (n) { n.textContent = n.textContent.replace("Слои", "Клипы").replace("слои", "клипы"); });
+    }
+
+    async function onPrEase() {
+        var kind = prEaseKind(), res, all, k, name = "";
+        if (busy) { return; }
+        PR_EASES.forEach(function (g) { g[1].forEach(function (e) { if (e[0] === kind) { name = e[1]; } }); });
+        setBusy(true);
+        setStatus("Ставлю плавность «" + name + "»…", "busy");
+        try {
+            all = prBaked();
+            res = await host("easePR", [kind, all]);
+            for (k in res.baked) { if (res.baked.hasOwnProperty(k)) { all[k] = res.baked[k]; } }
+            try { window.localStorage.setItem(PR_BAKED_KEY, JSON.stringify(all)); } catch (e1) {}
+            setBusy(false);
+            setStatus("Плавность «" + name + "»: " + plural(res.clips, "клип", "клипа", "клипов") + ", " + plural(res.params, "свойство", "свойства", "свойств") +
+                (res.native ? ". Это настоящие ключи Premiere — их можно двигать руками." : ", добавлено " + plural(res.keys, "ключ", "ключа", "ключей") + " по кадрам. Другой тип плавности сначала уберёт их."), "done");
+        } catch (e) {
+            toolFailed(e);
+        }
     }
 
     function showTab(name) {
@@ -3645,7 +3743,7 @@
 
             name = platform.basename(src);
             size = await platform.imageSize(src);
-            choice = await modal({
+            choice = IS_PR ? "plain" : await modal({
                 title: "Вставка картинки",
                 text: name + (size ? " — " + size.width + " × " + size.height + " пикс." : "") + "\n" +
                     (info.activeComp ?
@@ -3671,7 +3769,9 @@
                 throw e;
             }
 
-            if (res.placed === "comp-precomp") {
+            if (res.placed === "seq") {
+                made = "Картинка вставлена в «" + res.compName + "» у указателя, дорожка " + res.track + ". Файл — в корзине «" + PASTE_BIN + "».";
+            } else if (res.placed === "comp-precomp") {
                 made = "Картинка вставлена в «" + res.compName + "» прекомпозицией «" + res.preName + "».";
             } else if (res.placed === "comp-plain") {
                 made = "Картинка вставлена слоем в «" + res.compName + "».";
@@ -9772,8 +9872,14 @@
         setBusy(true);
         setStatus("Ищу неиспользуемые файлы…", "busy");
         try {
-            r = await host("removeUnused", []);
+            r = await host("removeUnused", ["Не используется"]);
             setBusy(false);
+            if (IS_PR) {
+                if (!r.removed) { setStatus("Лишних файлов нет: всё в проекте где-то используется.", ""); return; }
+                list = r.names.length > 10 ? r.names.slice(0, 10).join(", ") + " и ещё " + (r.names.length - 10) : r.names.join(", ");
+                setStatus("Файлов, которых нет ни в одной секвенции: " + r.removed + " (" + list + "). Они сложены в корзину «" + r.bin + "» — проверьте и удалите её одной клавишей Delete. Скрипт в Premiere удалять не может.", "done");
+                return;
+            }
             if (!r.removed) { setStatus("Remove unused: лишних файлов нет — всё в проекте где-то используется.", ""); return; }
             list = r.names.length > 10 ? r.names.slice(0, 10).join(", ") + " и ещё " + (r.names.length - 10) : r.names.join(", ");
             setStatus("Remove unused: убрано из проекта файлов: " + r.removed + " (" + list + "). С диска ничего не удалено. Отменить — Cmd/Ctrl+Z.", "done");
@@ -11733,7 +11839,7 @@
             if (res.skipped) { parts.push("Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + " (камера, свет или слой с ключами)."); }
             if (res.failed) { parts.push("Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + " (слой заблокирован?)."); }
             if (!parts.length) { parts.push("Нечего переносить."); }
-            setStatus(parts.join(" ") + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
+            setStatus(prWords(parts.join(" ")) + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
         }).catch(toolFailed);
     }
 
@@ -11749,7 +11855,7 @@
             if (res.skipped) { parts.push("Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + " (3D-слой, камера или свет)."); }
             if (res.failed) { parts.push("Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + " (слой заблокирован?)."); }
             if (!parts.length) { parts.push("Нечего выравнивать."); }
-            setStatus(parts.join(" ") + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
+            setStatus(prWords(parts.join(" ")) + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
         }).catch(toolFailed);
     }
 
@@ -11764,7 +11870,7 @@
             else if (!res.failed) { parts.push("Слои уже стоят через равные промежутки."); }
             if (res.skipped) { parts.push("Пропущено: " + plural(res.skipped, "слой", "слоя", "слоёв") + " (3D-слой, камера или свет)."); }
             if (res.failed) { parts.push("Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + " (слой заблокирован?)."); }
-            setStatus(parts.join(" ") + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
+            setStatus(prWords(parts.join(" ")) + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
         }).catch(toolFailed);
     }
 
@@ -11850,7 +11956,14 @@
         if (res.failed) { parts.push("Не получилось: " + plural(res.failed, "слой", "слоя", "слоёв") + " (слой заблокирован?)."); }
         if (res.keysFailed && !res.failed) { parts.push("Не удалось перенести: " + plural(res.keysFailed, "ключ", "ключа", "ключей") + "."); }
         if (!parts.length) { parts.push("Нечего сдвигать."); }
-        setStatus(parts.join(" ") + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
+        setStatus(prWords(parts.join(" ")) + (res.moved ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.moved ? "done" : res.failed ? "error" : "");
+    }
+
+    // Premiere: в отчётах инструментов вместо слоёв — клипы.
+    function prWords(t) {
+        if (!IS_PR) { return t; }
+        return t.replace(" (камера, свет или слой с ключами)", " (у клипа есть ключи положения или привязки)").replace(" (слой заблокирован?)", "")
+            .replace(/слоёв/g, "клипов").replace(/слоя/g, "клипа").replace(/слой/g, "клип").replace(/Слои/g, "Клипы");
     }
 
     function onStagger() {
@@ -11862,10 +11975,10 @@
         host("stagger", [what, frames, motion.staggerOrder]).then(function (res) {
             setBusy(false);
             if (res.aligned) {
-                showShiftResult(res, what, "К указателю времени: " + plural(res.moved, "слой", "слоя", "слоёв") + ".");
+                showShiftResult(res, what, prWords("К указателю времени: " + plural(res.moved, "слой", "слоя", "слоёв") + "."));
                 return;
             }
-            showShiftResult(res, what, "Лесенка: " + plural(res.steps, "слой", "слоя", "слоёв") + ", шаг " + plural(frames, "кадр", "кадра", "кадров") + ".");
+            showShiftResult(res, what, prWords("Лесенка: " + plural(res.steps, "слой", "слоя", "слоёв") + ", шаг " + plural(frames, "кадр", "кадра", "кадров") + "."));
         }).catch(toolFailed);
     }
 
@@ -12877,7 +12990,8 @@
             try { window.localStorage.setItem(EC_KEY, JSON.stringify(ecClip)); } catch (e1) {}
             showEcClip();
             setStatus("Скопировано: " + plural(res.keys, "ключ", "ключа", "ключей") + (res.groups.length > 1 ? " у " + res.groups.length + " свойств" : "") +
-                ". Выделите другие ключи и нажмите «Вставить плавность» или «Вставить значения».", "done");
+                (IS_PR ? " клипа «" + res.clip + "». Выделите другие клипы и нажмите «Вставить значения» (те же ключи) или «Плавность» (те же места ключей)." :
+                ". Выделите другие ключи и нажмите «Вставить плавность» или «Вставить значения»."), "done");
         } catch (e) {
             toolFailed(e);
         }
@@ -12892,6 +13006,11 @@
         try {
             res = await host("ecPaste", [ecClip, mode, !!motion.ecThrough]);
             setBusy(false);
+            if (IS_PR) {
+                setStatus((mode === "value" ? "Ключи вставлены: " : "Места ключей вставлены: ") + plural(res.keys, "ключ", "ключа", "ключей") + " на " +
+                    plural(res.clips, "клип", "клипа", "клипов") + ". Видно в Effect Controls.", "done");
+                return;
+            }
             if (res.created) {
                 setStatus("У «" + (res.names || []).join("», «") + "» не было ключей — создал " + plural(res.created, "ключ", "ключа", "ключей") + " от указателя времени " +
                     (mode === "value" ? "со скопированными значениями и плавностью." : "с текущим значением и скопированной плавностью: задайте значения ключей, плавность уже стоит.") +

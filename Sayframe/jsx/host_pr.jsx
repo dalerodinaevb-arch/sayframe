@@ -765,6 +765,134 @@ var sayframeHost = (function () {
         return "00:" + p2(Math.floor(sec / 60)) + ":" + p2(sec % 60) + ":" + p2(ff);
     }
 
+    // ------------------------------------------------------- Tools tab
+    // Premiere does not tell scripts which keys are selected: the tools work on the selected clips.
+
+    // Selected clips, video first (top track first), then audio: [{clip, kind, track}]
+    function toolClips(s) {
+        var v = mtSelectedVideo(s), a = mtSelectedAudio(s), out = [], i;
+        v.sort(function (x, y) { return y.track - x.track || PR.secs(x.clip.start) - PR.secs(y.clip.start); });
+        for (i = 0; i < v.length; i++) { out.push({ clip: v[i].clip, kind: "V", track: v[i].track }); }
+        for (i = 0; i < a.length; i++) { out.push({ clip: a[i].clip, kind: "A", track: a[i].track }); }
+        return out;
+    }
+
+    function clipKey(s, it) {
+        return String(s.sequenceID || s.name) + "|" + it.kind + it.track + "|" + String(it.clip.start.ticks !== undefined ? it.clip.start.ticks : PR.secs(it.clip.start)) + "|" + String(it.clip.name);
+    }
+
+    function keyTimes(p) {
+        var k, out = [], i;
+        try { k = p.getKeys(); } catch (e) { k = null; }
+        if (!k) { return out; }
+        for (i = 0; i < k.length; i++) { out.push(PR.secs(k[i])); }
+        out.sort(function (a, b) { return a - b; });
+        return out;
+    }
+
+    function animatable(v) {
+        var i;
+        if (typeof v === "number") { return true; }
+        if (v && v.length !== undefined && typeof v !== "string") {
+            for (i = 0; i < v.length; i++) { if (typeof v[i] !== "number") { return false; } }
+            return v.length > 0;
+        }
+        return false;
+    }
+
+    // Every keyed parameter of a clip: [{p, ci, pi, name}]
+    function keyedParams(clip) {
+        var out = [], i, j, c, p;
+        for (i = 0; i < clip.components.numItems; i++) {
+            c = clip.components[i];
+            for (j = 0; j < c.properties.numItems; j++) {
+                p = c.properties[j];
+                try { if (p.isTimeVarying() && keyTimes(p).length) { out.push({ p: p, ci: i, pi: j, comp: String(c.matchName), name: String(p.displayName) }); } } catch (e) {}
+            }
+        }
+        return out;
+    }
+
+    function near(list, t) {
+        var i;
+        for (i = 0; i < list.length; i++) { if (Math.abs(list[i] - t) < 0.0005) { return true; } }
+        return false;
+    }
+
+    // Keys our baking added earlier go away; the originals stay.
+    function unbake(p, originals) {
+        var cur = keyTimes(p), i;
+        if (!originals || !originals.length) { return false; }
+        for (i = 0; i < originals.length; i++) { if (!near(cur, originals[i])) { return false; } }
+        for (i = 0; i < cur.length; i++) {
+            if (!near(originals, cur[i]) && cur[i] > originals[0] && cur[i] < originals[originals.length - 1]) {
+                try { p.removeKey(PR.time(cur[i])); } catch (e) {}
+            }
+        }
+        return true;
+    }
+
+    function lerpVal(a, b, f) {
+        var out, i;
+        if (typeof a === "number") { return a + (b - a) * f; }
+        out = [];
+        for (i = 0; i < a.length; i++) { out.push(a[i] + (b[i] - a[i]) * f); }
+        return out;
+    }
+
+    var EASE_NATIVE = { ease: 5, lin: 0, hold: 4 };
+    var EASE_F = {
+        inn: function (t) { return t * t * t; },
+        out: function (t) { return 1 - Math.pow(1 - t, 3); },
+        auto: function (t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; },
+        cont: function (t) { return t * t * (3 - 2 * t); },
+        over: function (t) { return mtCurve(t, "over"); },
+        bounce: function (t) { return mtCurve(t, "bounce"); },
+        elastic: function (t) { return mtCurve(t, "elastic"); },
+        sharp: function (t) { return t <= 0 ? 0 : (t >= 1 ? 1 : (t < 0.5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2)); },
+        soft: function (t) { return t < 0.5 ? 16 * Math.pow(t, 5) : 1 - Math.pow(-2 * t + 2, 5) / 2; },
+        slow: function (t) { return t <= 0 ? 0 : Math.pow(2, 10 * t - 10); },
+        stop: function (t) { return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t); },
+        back: function (t) {
+            var c = 2.5949095;
+            return t < 0.5 ? (Math.pow(2 * t, 2) * ((c + 1) * 2 * t - c)) / 2 : (Math.pow(2 * t - 2, 2) * ((c + 1) * (t * 2 - 2) + c) + 2) / 2;
+        }
+    };
+
+    // ---- Align / anchor geometry. Premiere keeps Position and Anchor Point normalized (0..1) in new versions.
+
+    function mediaSize(clip, s) {
+        var md = "", m;
+        try { md = String(clip.projectItem.getProjectMetadata()); } catch (e) {}
+        m = /VideoInfo[^>]*>\s*(\d+)\s*x\s*(\d+)/.exec(md);
+        if (m) { return [Number(m[1]), Number(m[2])]; }
+        return [Number(s.frameSizeHorizontal) || 1920, Number(s.frameSizeVertical) || 1080];
+    }
+
+    function anchorParam(clip) {
+        var m = mtComp(clip, MT_MOTION);
+        return mtParam(m, ["Anchor Point", "\u041e\u043f\u043e\u0440\u043d\u0430\u044f \u0442\u043e\u0447\u043a\u0430"], 5);
+    }
+
+    // Box of a video clip in sequence pixels: {x0, y0, x1, y1}, plus what is needed to move it.
+    function clipBox(clip, s) {
+        var P = mtProps(clip), A = anchorParam(clip), W = Number(s.frameSizeHorizontal) || 1920, H = Number(s.frameSizeVertical) || 1080;
+        var ms = mediaSize(clip, s), pos = P.pos.getValue(), an = A ? A.getValue() : [0.5, 0.5], sc = Number(P.scale.getValue()) / 100, scw = sc;
+        var uni = true, px, py, ax, ay, w, h;
+        try { uni = P.uniform ? P.uniform.getValue() !== false : true; } catch (e) {}
+        if (!uni && P.scaleW) { scw = Number(P.scaleW.getValue()) / 100; }
+        px = mtNormalized(pos) ? pos[0] * W : Number(pos[0]); py = mtNormalized(pos) ? pos[1] * H : Number(pos[1]);
+        ax = mtNormalized(an) ? an[0] * ms[0] : Number(an[0]); ay = mtNormalized(an) ? an[1] * ms[1] : Number(an[1]);
+        w = ms[0] * scw; h = ms[1] * sc;
+        return { x0: px - ax * scw, y0: py - ay * sc, x1: px - ax * scw + w, y1: py - ay * sc + h, P: P, norm: mtNormalized(pos), W: W, H: H };
+    }
+
+    function moveBox(b, dx, dy) {
+        var v = b.P.pos.getValue();
+        if (b.norm) { b.P.pos.setValue([Number(v[0]) + dx / b.W, Number(v[1]) + dy / b.H], true); }
+        else { b.P.pos.setValue([Number(v[0]) + dx, Number(v[1]) + dy], true); }
+    }
+
     return {
 
         info: function () {
@@ -1051,6 +1179,356 @@ var sayframeHost = (function () {
                     if (side.blurP) { mtKeys(side.blurP, side.clip, side.keys.b); }
                 }
                 return { cut: cut.cut, dur: d, a: String(cut.a.name), b: String(cut.b.name), builtin: false, noBlur: noBlur };
+            });
+        },
+
+        // ---- Tools tab
+
+        // Ease on every keyed parameter of the selected clips. kind: ease | lin | hold (Premiere's own key types)
+        // or one of EASE_F (baked: a key on every frame between two keys). baked: {clipKey: {"ci:pi": [original key times]}}
+        // from earlier bakes, so they can be taken back first. Returns the new record of originals.
+        easePR: function (kind, baked) {
+            return reply(function () {
+                var s = PR.seq(), list = toolClips(s), fd = 1 / PR.fps(s), f = EASE_F[kind], rec = {}, keys = 0, params = 0, clips = 0;
+                var i, j, n, k, it, ck, ps, q, times, vals, a, b, m, tm, old;
+                if (!list.length) { throw new Error("NO_CLIPS"); }
+                if (!f && EASE_NATIVE[kind] === undefined) { throw new Error("UNKNOWN_PRESET"); }
+                baked = baked || {};
+                for (i = 0; i < list.length; i++) {
+                    it = list[i];
+                    ck = clipKey(s, it);
+                    ps = keyedParams(it.clip);
+                    if (!ps.length) { continue; }
+                    clips++;
+                    for (j = 0; j < ps.length; j++) {
+                        q = ps[j];
+                        old = baked[ck] ? baked[ck][q.ci + ":" + q.pi] : null;
+                        if (old) { unbake(q.p, old); }
+                        times = keyTimes(q.p);
+                        vals = [];
+                        for (k = 0; k < times.length; k++) { vals.push(q.p.getValueAtKey(PR.time(times[k]))); }
+                        if (!f) {
+                            for (k = 0; k < times.length; k++) { try { q.p.setInterpolationTypeAtKey(PR.time(times[k]), EASE_NATIVE[kind], true); keys++; } catch (e1) {} }
+                            params++;
+                            continue;
+                        }
+                        if (!animatable(vals[0]) || times.length < 2) { continue; }
+                        params++;
+                        for (k = 0; k + 1 < times.length; k++) {
+                            a = times[k]; b = times[k + 1];
+                            try { q.p.setInterpolationTypeAtKey(PR.time(a), 0, true); } catch (e2) {}
+                            n = Math.floor((b - a) / fd + 0.0001);
+                            for (m = 1; m < n; m++) {
+                                tm = PR.time(a + m * fd);
+                                q.p.addKey(tm);
+                                q.p.setValueAtKey(tm, lerpVal(vals[k], vals[k + 1], f(m / n)), true);
+                                try { q.p.setInterpolationTypeAtKey(tm, 0, true); } catch (e3) {}
+                                keys++;
+                            }
+                        }
+                        try { q.p.setInterpolationTypeAtKey(PR.time(times[times.length - 1]), 0, true); } catch (e4) {}
+                        if (!rec[ck]) { rec[ck] = {}; }
+                        rec[ck][q.ci + ":" + q.pi] = times;
+                    }
+                }
+                if (!clips) { throw new Error("NO_KEYS_ON_CLIPS"); }
+                return { clips: clips, params: params, keys: keys, baked: rec, native: !f };
+            });
+        },
+
+        // Copy: the keys of the first selected clip, relative to its start.
+        ecCopy: function () {
+            return reply(function () {
+                var s = PR.seq(), list = toolClips(s), groups = [], n = 0, ps, i, k, q, times, keys;
+                if (!list.length) { throw new Error("NO_CLIPS"); }
+                ps = keyedParams(list[0].clip);
+                if (!ps.length) { throw new Error("NO_KEYS_ON_CLIPS"); }
+                for (i = 0; i < ps.length; i++) {
+                    q = ps[i];
+                    times = keyTimes(q.p);
+                    keys = [];
+                    for (k = 0; k < times.length; k++) {
+                        keys.push({ t: times[k] - PR.secs(list[0].clip.inPoint), v: q.p.getValueAtKey(PR.time(times[k])) });
+                    }
+                    n += keys.length;
+                    groups.push({ name: q.name, comp: q.comp, pi: q.pi, keys: keys });
+                }
+                return { groups: groups, keys: n, clip: String(list[0].clip.name) };
+            });
+        },
+
+        // Paste onto the other selected clips: "value" puts the same keys there (from each clip's start),
+        // "ease" puts the copied key timing (where the keys sit) on the values the clip already has.
+        ecPaste: function (clip, mode) {
+            return reply(function () {
+                var s = PR.seq(), list = toolClips(s), keys = 0, props = 0, i, g, it, c, comp, p, k, cur, tm, j, base, v;
+                if (!list.length) { throw new Error("NO_CLIPS"); }
+                for (i = 0; i < list.length; i++) {
+                    it = list[i];
+                    for (g = 0; g < clip.groups.length; g++) {
+                        comp = mtComp(it.clip, [clip.groups[g].comp]);
+                        if (!comp || clip.groups[g].pi >= comp.properties.numItems) { continue; }
+                        p = comp.properties[clip.groups[g].pi];
+                        cur = keyTimes(p);
+                        base = p.getValue();
+                        if (mode !== "value" && cur.length) { base = p.getValueAtKey(PR.time(cur[0])); }
+                        for (j = 0; j < cur.length; j++) { try { p.removeKey(PR.time(cur[j])); } catch (e1) {} }
+                        if (!p.isTimeVarying()) { p.setTimeVarying(true); }
+                        for (k = 0; k < clip.groups[g].keys.length; k++) {
+                            c = clip.groups[g].keys[k];
+                            tm = PR.time(PR.secs(it.clip.inPoint) + c.t);
+                            v = mode === "value" ? c.v : base;
+                            p.addKey(tm);
+                            p.setValueAtKey(tm, v, true);
+                            keys++;
+                        }
+                        props++;
+                    }
+                }
+                return { keys: keys, properties: props, clips: list.length };
+            });
+        },
+
+        // Stagger: clips one after another by frames (or all to the playhead), or their keys.
+        stagger: function (what, frames, order) {
+            return reply(function () {
+                var s = PR.seq(), list = toolClips(s), fd = 1 / PR.fps(s), moved = 0, steps = 0, skipped = 0, i, it, base, want, d, ps, j, q, times, vals, k, tm, first, all, shuffled, r;
+                if (list.length < (order === "align" ? 1 : 2)) { throw new Error(order === "align" ? "NO_CLIPS" : "STAGGER_NEEDS_TWO"); }
+                if (order === "desc") { list.reverse(); }
+                if (order === "random") {
+                    shuffled = [];
+                    while (list.length) { r = Math.floor(Math.random() * list.length); shuffled.push(list[r]); list.splice(r, 1); }
+                    list = shuffled;
+                }
+                base = order === "align" ? PR.playhead(s) : null;
+                for (i = 0; i < list.length; i++) {
+                    it = list[i];
+                    if (what === "keys") {
+                        ps = keyedParams(it.clip);
+                        if (!ps.length) { skipped++; continue; }
+                        all = [];
+                        for (j = 0; j < ps.length; j++) { all = all.concat(keyTimes(ps[j].p)); }
+                        first = Math.min.apply(null, all);
+                        // first key on the playhead, or the first clip's first key + i steps (in sequence time)
+                        if (base === null) { base = PR.secs(it.clip.start) + (first - PR.secs(it.clip.inPoint)); }
+                        want = order === "align" ? base : base + i * frames * fd;
+                        d = want - (PR.secs(it.clip.start) + (first - PR.secs(it.clip.inPoint)));
+                        if (Math.abs(d) < fd / 2) { steps++; continue; }
+                        for (j = 0; j < ps.length; j++) {
+                            q = ps[j].p;
+                            times = keyTimes(q);
+                            vals = [];
+                            for (k = 0; k < times.length; k++) { vals.push(q.getValueAtKey(PR.time(times[k]))); }
+                            for (k = 0; k < times.length; k++) { q.removeKey(PR.time(times[k])); }
+                            if (!q.isTimeVarying()) { q.setTimeVarying(true); }
+                            for (k = 0; k < times.length; k++) { tm = PR.time(times[k] + d); q.addKey(tm); q.setValueAtKey(tm, vals[k], true); }
+                        }
+                        moved++; steps++;
+                        continue;
+                    }
+                    if (base === null) { base = PR.secs(it.clip.start); }
+                    want = order === "align" ? base : base + i * frames * fd;
+                    d = want - PR.secs(it.clip.start);
+                    steps++;
+                    if (Math.abs(d) < fd / 2) { continue; }
+                    it.clip.move(PR.time(d));
+                    moved++;
+                }
+                return { moved: moved, steps: steps, skipped: skipped, unchanged: 0, failed: 0, aligned: order === "align" };
+            });
+        },
+
+        // Anchor point to a corner, an edge middle or the centre (fx, fy in 0..1); the picture stays where it is.
+        anchor: function (fx, fy, withKeys) {
+            return reply(function () {
+                var s = PR.seq(), list = mtSelectedVideo(s), moved = 0, skipped = 0, unchanged = 0, i, c, P, A, an, ms, sc, scw, dx, dy, pos, W, H, norm, uni;
+                if (!list.length) { throw new Error("NO_CLIPS"); }
+                W = Number(s.frameSizeHorizontal) || 1920; H = Number(s.frameSizeVertical) || 1080;
+                for (i = 0; i < list.length; i++) {
+                    c = list[i].clip; P = mtProps(c); A = anchorParam(c);
+                    if (!A || !P.pos) { skipped++; continue; }
+                    if ((A.isTimeVarying() || P.pos.isTimeVarying()) && !withKeys) { skipped++; continue; }
+                    an = A.getValue(); ms = mediaSize(c, s); norm = mtNormalized(an);
+                    sc = Number(P.scale.getValue()) / 100; scw = sc; uni = true;
+                    try { uni = P.uniform ? P.uniform.getValue() !== false : true; } catch (e) {}
+                    if (!uni && P.scaleW) { scw = Number(P.scaleW.getValue()) / 100; }
+                    dx = (fx - (norm ? an[0] : an[0] / ms[0])) * ms[0] * scw;
+                    dy = (fy - (norm ? an[1] : an[1] / ms[1])) * ms[1] * sc;
+                    if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) { unchanged++; continue; }
+                    A.setValue(norm ? [fx, fy] : [fx * ms[0], fy * ms[1]], true);
+                    pos = P.pos.getValue();
+                    P.pos.setValue(mtNormalized(pos) ? [Number(pos[0]) + dx / W, Number(pos[1]) + dy / H] : [Number(pos[0]) + dx, Number(pos[1]) + dy], true);
+                    moved++;
+                }
+                return { moved: moved, unchanged: unchanged, skipped: skipped, failed: 0 };
+            });
+        },
+
+        // Align to the frame ("comp") or to the selection's box.
+        align: function (edge, to) {
+            return reply(function () {
+                var s = PR.seq(), list = mtSelectedVideo(s), boxes = [], moved = 0, unchanged = 0, i, b, R, dx, dy;
+                if (!list.length) { throw new Error("NO_CLIPS"); }
+                for (i = 0; i < list.length; i++) { boxes.push(clipBox(list[i].clip, s)); }
+                if (to === "selection" && boxes.length < 2) { throw new Error("ALIGN_NEEDS_TWO"); }
+                R = { x0: 0, y0: 0, x1: boxes[0].W, y1: boxes[0].H };
+                if (to === "selection") {
+                    R = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 };
+                    for (i = 0; i < boxes.length; i++) {
+                        R.x0 = Math.min(R.x0, boxes[i].x0); R.y0 = Math.min(R.y0, boxes[i].y0); R.x1 = Math.max(R.x1, boxes[i].x1); R.y1 = Math.max(R.y1, boxes[i].y1);
+                    }
+                }
+                for (i = 0; i < boxes.length; i++) {
+                    b = boxes[i]; dx = 0; dy = 0;
+                    if (edge === "left") { dx = R.x0 - b.x0; }
+                    if (edge === "right") { dx = R.x1 - b.x1; }
+                    if (edge === "hcenter") { dx = (R.x0 + R.x1) / 2 - (b.x0 + b.x1) / 2; }
+                    if (edge === "top") { dy = R.y0 - b.y0; }
+                    if (edge === "bottom") { dy = R.y1 - b.y1; }
+                    if (edge === "vcenter") { dy = (R.y0 + R.y1) / 2 - (b.y0 + b.y1) / 2; }
+                    if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) { unchanged++; continue; }
+                    moveBox(b, dx, dy);
+                    moved++;
+                }
+                return { moved: moved, unchanged: unchanged, skipped: 0, failed: 0 };
+            });
+        },
+
+        distribute: function (edge) {
+            return reply(function () {
+                var s = PR.seq(), list = mtSelectedVideo(s), boxes = [], moved = 0, i, b, n, key, a, z, d, horiz = /^(left|hcenter|right)$/.test(edge);
+                if (list.length < 3) { throw new Error("DISTRIBUTE_NEEDS_THREE"); }
+                for (i = 0; i < list.length; i++) { boxes.push(clipBox(list[i].clip, s)); }
+                key = function (bx) {
+                    if (edge === "left") { return bx.x0; } if (edge === "right") { return bx.x1; } if (edge === "hcenter") { return (bx.x0 + bx.x1) / 2; }
+                    if (edge === "top") { return bx.y0; } if (edge === "bottom") { return bx.y1; } return (bx.y0 + bx.y1) / 2;
+                };
+                boxes.sort(function (x, y) { return key(x) - key(y); });
+                n = boxes.length; a = key(boxes[0]); z = key(boxes[n - 1]);
+                for (i = 1; i < n - 1; i++) {
+                    b = boxes[i]; d = a + (z - a) * i / (n - 1) - key(b);
+                    if (Math.abs(d) < 0.01) { continue; }
+                    moveBox(b, horiz ? d : 0, horiz ? 0 : d);
+                    moved++;
+                }
+                return { moved: moved, spread: n, skipped: 0, failed: 0 };
+            });
+        },
+
+        // A picture from the clipboard (saved by the panel) into a bin and at the playhead.
+        placeImage: function (path, choice, binName) {
+            return reply(function () {
+                var item = PR.importFile(path, binName), s = app.project.activeSequence, t;
+                if (!s) { return { placed: "project" }; }
+                t = PR.place(item);
+                return { placed: "seq", compName: String(s.name), track: String(t.name || "") };
+            });
+        },
+
+        // Project items into bins by kind.
+        organizeProject: function () {
+            return reply(function () {
+                var root = app.project.rootItem, counts = {}, created = [], moved = 0, total = 0, i, j, b, it, kind, path, bins = {};
+                var NAMES = { Compositions: "\u0421\u0435\u043a\u0432\u0435\u043d\u0446\u0438\u0438", Videos: "\u0412\u0438\u0434\u0435\u043e", Audio: "\u0410\u0443\u0434\u0438\u043e",
+                    Images: "\u041a\u0430\u0440\u0442\u0438\u043d\u043a\u0438", Other: "\u041f\u0440\u043e\u0447\u0435\u0435" };
+                var items = [];
+                for (i = 0; i < root.children.numItems; i++) { items.push(root.children[i]); }
+                for (i = 0; i < items.length; i++) {
+                    it = items[i];
+                    if (!it || it.type === ProjectItemType.BIN) { continue; }
+                    total++;
+                    path = "";
+                    try { path = String(it.getMediaPath() || ""); } catch (e) {}
+                    kind = "Other";
+                    try { if (it.isSequence && it.isSequence()) { kind = "Compositions"; } } catch (e1) {}
+                    if (kind === "Other" && !path) { kind = "Compositions"; }
+                    if (/\.(mp4|mov|mxf|avi|m4v|mkv|webm|r3d|braw)$/i.test(path)) { kind = "Videos"; }
+                    if (/\.(wav|mp3|aif|aiff|m4a|aac|flac|ogg)$/i.test(path)) { kind = "Audio"; }
+                    if (/\.(png|jpe?g|gif|tiff?|psd|ai|svg|webp|heic|bmp|exr)$/i.test(path)) { kind = "Images"; }
+                    if (!bins[kind]) {
+                        b = null;
+                        for (j = 0; j < root.children.numItems; j++) {
+                            if (root.children[j].type === ProjectItemType.BIN && String(root.children[j].name) === NAMES[kind]) { b = root.children[j]; }
+                        }
+                        if (!b) { b = root.createBin(NAMES[kind]); created.push(NAMES[kind]); }
+                        bins[kind] = b;
+                    }
+                    it.moveBin(bins[kind]);
+                    counts[kind] = (counts[kind] || 0) + 1;
+                    moved++;
+                }
+                return { organized: { total: total, moved: moved, counts: counts, created: created } };
+            });
+        },
+
+        // Files used in no sequence go to the bin "Not used" (scripts cannot delete project items in Premiere).
+        removeUnused: function (binName) {
+            return reply(function () {
+                var used = {}, names = [], list = [], i, j, k, s, t, c, b = null;
+                for (i = 0; i < app.project.sequences.numSequences; i++) {
+                    s = app.project.sequences[i];
+                    try { used[s.projectItem.nodeId] = true; } catch (e0) {}
+                    for (j = 0; j < s.videoTracks.numTracks; j++) { t = s.videoTracks[j]; for (k = 0; k < t.clips.numItems; k++) { c = t.clips[k]; if (c.projectItem) { used[c.projectItem.nodeId] = true; } } }
+                    for (j = 0; j < s.audioTracks.numTracks; j++) { t = s.audioTracks[j]; for (k = 0; k < t.clips.numItems; k++) { c = t.clips[k]; if (c.projectItem) { used[c.projectItem.nodeId] = true; } } }
+                }
+                function walk(bin) {
+                    var n, it;
+                    for (n = 0; n < bin.children.numItems; n++) {
+                        it = bin.children[n];
+                        if (!it) { continue; }
+                        if (it.type === ProjectItemType.BIN) { if (String(it.name) !== String(binName)) { walk(it); } continue; }
+                        if (!used[it.nodeId]) { list.push(it); }
+                    }
+                }
+                walk(app.project.rootItem);
+                if (list.length) { b = PR.bin(binName); }
+                for (i = 0; i < list.length; i++) { names.push(String(list[i].name)); list[i].moveBin(b); }
+                return { removed: list.length, names: names, bin: binName };
+            });
+        },
+
+        // Cut out: the photo of the selected clip (a still).
+        cutoutSource: function () {
+            return reply(function () {
+                var s = PR.seq(), list = mtSelectedVideo(s), c, path = "", f;
+                if (!list.length) { throw new Error("NO_CLIPS"); }
+                list.sort(function (x, y) { return y.track - x.track; });
+                c = list[0].clip;
+                try { path = String(c.projectItem.getMediaPath()); } catch (e) {}
+                if (!/\.(png|jpe?g|tiff?|bmp|webp|heic|gif)$/i.test(path)) { throw new Error("CO_NOT_PHOTO"); }
+                f = new File(path);
+                return { path: f.fsName, layer: String(c.name), index: 0, item: decodeURI(f.name), comp: String(s.name), many: list.length > 1,
+                    dir: app.project.path ? new File(String(app.project.path)).parent.fsName : "", track: list[0].track, start: PR.secs(c.start) };
+            });
+        },
+
+        // "above": the cut-out photo on a free track over the clip, same length, the original switched off.
+        // "replace": the cut-out photo takes the clip's place.
+        cutoutApply: function (path, index, mode, binName, newName, at) {
+            return reply(function () {
+                var s = PR.seq(), list = mtSelectedVideo(s), c, item, t, a, b, nc, i, ti;
+                list.sort(function (x, y) { return y.track - x.track; });
+                c = list.length ? list[0].clip : null;
+                if (!c) { throw new Error("CO_LAYER_GONE"); }
+                ti = list[0].track;
+                a = PR.secs(c.start); b = PR.secs(c.end);
+                item = PR.importFile(path, binName);
+                if (mode === "above") {
+                    t = PR.freeVideoTrack(a, b - a, s);
+                    try { c.disabled = true; } catch (e0) {}
+                } else {
+                    t = s.videoTracks[ti];
+                    c.remove(false, false);
+                }
+                t.overwriteClip(item, a);
+                for (i = 0; i < t.clips.numItems; i++) {
+                    if (Math.abs(PR.secs(t.clips[i].start) - a) < 0.02) { nc = t.clips[i]; }
+                }
+                if (nc) {
+                    try { nc.end = PR.time(b); } catch (e1) {}
+                    try { nc.name = newName; } catch (e2) {}
+                }
+                return { mode: mode, layer: newName, original: String(c.name) };
             });
         },
 
