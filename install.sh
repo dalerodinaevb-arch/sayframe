@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sayframe для After Effects: установка на Mac одной командой в Терминале.
+# Sayframe для After Effects и Premiere Pro: установка на Mac одной командой в Терминале.
 # Запасной способ на случай, если macOS не даёт открыть программу «Install Sayframe».
 #
 #   curl -fsSL https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/install.sh | bash
@@ -33,13 +33,24 @@ mv "$STAGING" "$DEST"
 rm -rf "$EXT_DIR/ClaudePanel"
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
+# Premiere Pro: та же панель отдельным расширением, со своим манифестом (manifest-pr.xml).
+if [ -f "$DEST/CSXS/manifest-pr.xml" ]; then
+    PR_DEST="$EXT_DIR/SayframePR"
+    PR_STAGING="$EXT_DIR/.SayframePR.installing"
+    rm -rf "$PR_STAGING"
+    cp -R "$DEST" "$PR_STAGING"
+    cp "$DEST/CSXS/manifest-pr.xml" "$PR_STAGING/CSXS/manifest.xml"
+    rm -rf "$PR_DEST"
+    mv "$PR_STAGING" "$PR_DEST"
+fi
+
 for v in 9 10 11 12 13 14 15 16; do
     defaults write "com.adobe.CSXS.$v" PlayerDebugMode 1
 done
 
 VERSION="$(sed -n 's/.*ExtensionBundleVersion="\([0-9.]*\)".*/\1/p' "$DEST/CSXS/manifest.xml" | head -1)"
 echo "Sayframe $VERSION установлен."
-echo "Если After Effects открыт, полностью закройте его и откройте снова."
-echo "Панель находится в меню: Window > Extensions > Sayframe"
+echo "Если After Effects или Premiere Pro открыт, полностью закройте его и откройте снова."
+echo "Панель находится в меню: Window > Extensions > Sayframe (в After Effects и в Premiere Pro)"
 echo "Для референсов и вставки картинок включите в After Effects:"
 echo "Settings > Scripting & Expressions > Allow Scripts to Write Files and Access Network"
