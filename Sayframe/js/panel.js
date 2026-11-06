@@ -1538,7 +1538,9 @@
         gridCols: el("gridCols"), gridColsLess: el("gridColsLess"), gridColsMore: el("gridColsMore"), gridGap: el("gridGap"), gridGapVal: el("gridGapVal"), gridGapName: el("gridGapName"),
         gridGapV: el("gridGapV"), gridGapVVal: el("gridGapVVal"), gridGapVRow: el("gridGapVRow"), gridRound: el("gridRound"), gridRoundVal: el("gridRoundVal"),
         gridRand: el("gridRand"), gridRandVal: el("gridRandVal"), gridSplit: el("gridSplit"), gridSeed: el("gridSeed"), gridDice: el("gridDice"), gridMode: el("gridMode"),
-        gridNumbers: el("gridNumbers"), gridStagger: el("gridStagger"), gridBtn: el("gridBtn"),
+        gridAnim: el("gridAnim"), gridInBtn: el("gridInBtn"), gridOutBtn: el("gridOutBtn"), gridInMini: el("gridInMini"), gridOutMini: el("gridOutMini"), gridInName: el("gridInName"), gridOutName: el("gridOutName"),
+        gridPop: el("gridPop"), gridPopTitle: el("gridPopTitle"), gridTabs: el("gridTabs"), gridPopList: el("gridPopList"), gridDur: el("gridDur"), gridDurVal: el("gridDurVal"), gridStep: el("gridStep"), gridStepVal: el("gridStepVal"),
+        gridNumbers: el("gridNumbers"), gridBtn: el("gridBtn"),
         acBody: el("acBody"),
         acTabs: el("acTabs"), acSearch: el("acSearch"), acFavOnly: el("acFavOnly"), acModeRow: el("acModeRow"), acMode: el("acMode"),
         acDurRow: el("acDurRow"), acDur: el("acDur"), acDurVal: el("acDurVal"), acColorRow: el("acColorRow"), acColor: el("acColor"),
@@ -7004,7 +7006,7 @@
 
     // ---- Grid: бенто-сетка из скруглённых плиток. Раскладка — тот же код, что в host.jsx (gridLayout):
     // одно и то же «Вариант» даёт одну и ту же раскладку и в превью, и в After Effects.
-    var GRID_DEFAULTS = { rows: 4, cols: 5, gap: 20, split: false, gapV: 20, round: 20, rand: 100, seed: 12345, fit: true, w: 1920, h: 1080, mode: "shape", numbers: true, stagger: true };
+    var GRID_DEFAULTS = { rows: 4, cols: 5, gap: 20, split: false, gapV: 20, round: 20, rand: 100, seed: 12345, fit: true, w: 1920, h: 1080, mode: "shape", numbers: true, appear: "seq", disappear: "none", dur: 0.6, step: 0.05 };
 
     function gridImul(a, b) {
         var ah = (a >>> 16) & 0xffff, al = a & 0xffff, bh = (b >>> 16) & 0xffff, bl = b & 0xffff;
@@ -7047,6 +7049,144 @@
         return boxes;
     }
 
+    // ---- Grid tiles coming in and going out. The same code is in panel.js (the preview) and in host.jsx (the keys),
+    // so the preview shows what the comp gets. o: a tile (c, r: its middle in cells; C, R: the grid; i, n: its number;
+    // r1..r3, side: its own random numbers; px, py: its middle, cx, cy: the grid's middle, S: the grid's size, h: its height).
+    var GRFX_WOW = ["explode", "assemble", "domino", "tetris", "spiral", "jelly", "puzzle", "glitch", "deal", "flip3d", "zoom", "snake"];
+    var GRFX_SIMPLE = ["none", "seq", "up", "wave", "center", "rand", "flip", "spring", "wipe", "blur", "drop", "spin"];
+    // These only ease in one go: two keys are enough. The rest overshoot or bounce: a key every second frame.
+    var GRFX_SMOOTH = { seq: 1, up: 1, center: 1, wipe: 1, blur: 1, spin: 1, zoom: 1, flip: 1, deal: 1 };
+    function grfxEz(x) { return 1 - Math.pow(1 - x, 3); }
+    function grfxBack(x) { var c = 2.2; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); }
+    function grfxBounce(x) {
+        var n = 7.5625, d = 2.75;
+        if (x < 1 / d) { return n * x * x; }
+        if (x < 2 / d) { x -= 1.5 / d; return n * x * x + 0.75; }
+        if (x < 2.5 / d) { x -= 2.25 / d; return n * x * x + 0.9375; }
+        x -= 2.625 / d;
+        return n * x * x + 0.984375;
+    }
+    function grfxCap(v) { return Math.max(0, Math.min(1, v)); }
+    // Which tile comes first: the smaller, the earlier.
+    function grfxOrd(fx, o) {
+        var C = o.C, R = o.R, cc, rr, ring;
+        switch (fx) {
+        case "up": return (R - o.r) / R;
+        case "wave": case "flip3d": return (o.c + o.r) / (C + R);
+        case "center": case "zoom": return Math.sqrt(Math.pow(o.c - C / 2, 2) + Math.pow((o.r - R / 2) * 1.2, 2));
+        case "assemble": return -Math.sqrt(Math.pow(o.c - C / 2, 2) + Math.pow(o.r - R / 2, 2));
+        case "rand": case "explode": case "glitch": case "puzzle": return o.r1;
+        case "flip": case "wipe": return o.c / C;
+        case "drop": return o.r / R;
+        case "tetris": return ((R - o.r) / R) * 0.6 + (o.c / C) * 0.4;
+        case "spiral":
+            cc = Math.floor(o.c); rr = Math.floor(o.r); ring = Math.min(cc, rr, C - 1 - cc, R - 1 - rr);
+            return ring + (Math.atan2(rr - R / 2, cc - C / 2) + Math.PI) / (2 * Math.PI);
+        case "snake": rr = Math.floor(o.r); return rr * C + (rr % 2 ? C - o.c : o.c);
+        case "jelly": return o.r2 * 0.4 + (o.c / C) * 0.6;
+        default: return o.i;
+        }
+    }
+    // Each tile's delay: its place in the order times the step.
+    function grfxDelays(fx, os, step) {
+        var idx = [], d = [], i;
+        for (i = 0; i < os.length; i++) { idx.push(i); d.push(0); }
+        idx.sort(function (a, b) { var x = grfxOrd(fx, os[a]) - grfxOrd(fx, os[b]); return Math.abs(x) > 1e-9 ? x : a - b; });
+        for (i = 0; i < idx.length; i++) { d[idx[i]] = i * step; }
+        return d;
+    }
+    // How a tile looks at p (0 not there yet, 1 in its place): offsets, scale, turns (degrees), opacity 0..1, blur in px, wipe 0..1 hidden.
+    function grfxAt(fx, p, o) {
+        var e = grfxEz(p), S = o.S, f = { x: 0, y: 0, z: 0, sx: 1, sy: 1, rz: 0, rx: 0, ry: 0, op: 1, blur: 0, wipe: 0 }, b, w, d, k, a;
+        switch (fx) {
+        case "none": f.op = p > 0 ? 1 : 0; break;
+        case "seq": f.op = e; f.sx = f.sy = 0.6 + 0.4 * e; break;
+        case "up": f.op = e; f.y = (1 - e) * S * 0.12; break;
+        case "wave": f.op = grfxCap(p * 2); f.sx = f.sy = grfxBack(p); break;
+        case "center": f.op = grfxCap(p * 3); f.sx = f.sy = e; break;
+        case "rand": f.op = grfxCap(p * 3); f.sx = f.sy = grfxBack(p); break;
+        case "flip": f.op = p > 0 ? 1 : 0; f.ry = (1 - e) * 90; break;
+        case "spring": f.op = grfxCap(p * 4); f.sx = f.sy = p <= 0 ? 0 : 1 - Math.cos(p * Math.PI * 2.5) * Math.exp(-p * 4); break;
+        case "wipe": f.wipe = 1 - e; break;
+        case "blur": f.op = e; f.blur = (1 - e) * S * 0.03; f.sx = f.sy = 1.15 - 0.15 * e; break;
+        case "drop": f.op = grfxCap(p * 4); f.y = -(1 - grfxBounce(p)) * S * 0.35; break;
+        case "spin": f.op = e; f.rz = (1 - e) * -180; f.sx = f.sy = e; break;
+        case "explode":
+            b = grfxBack(p); f.op = grfxCap(p * 3);
+            f.x = (1 - b) * (o.r1 - 0.5) * S * 1.6; f.y = (1 - b) * (o.r2 - 0.5) * S * 1.2; f.rz = (1 - b) * (o.r3 - 0.5) * 540; f.sx = f.sy = 0.4 + 0.6 * b;
+            break;
+        case "assemble":
+            b = grfxBack(p); f.op = grfxCap(p * 4);
+            f.x = (1 - b) * (o.cx - o.px); f.y = (1 - b) * (o.cy - o.py); f.sx = f.sy = 0.15 + 0.85 * b;
+            break;
+        case "domino":
+            // Falls forward round its top edge.
+            f.op = p > 0 ? 1 : 0; f.rx = (1 - grfxBounce(p)) * -110; a = f.rx * Math.PI / 180;
+            f.y = o.h / 2 * (Math.cos(a) - 1); f.z = o.h / 2 * Math.sin(a);
+            break;
+        case "tetris": f.op = p > 0 ? 1 : 0; f.y = -(1 - grfxBounce(p)) * S * 0.6; break;
+        case "spiral": f.op = grfxCap(p * 3); f.rz = (1 - e) * 180; f.sx = f.sy = grfxBack(p); break;
+        case "jelly": w = Math.sin(p * 11) * Math.exp(-4 * p) * 0.45; f.op = grfxCap(p * 5); f.sx = e * (1 + w); f.sy = e * (1 - w); break;
+        case "puzzle":
+            d = (1 - grfxBack(p)) * S * 0.7; f.op = grfxCap(p * 3);
+            f.x = [d, -d, 0, 0][o.side]; f.y = [0, 0, d, -d][o.side];
+            break;
+        case "glitch":
+            if (p <= 0) { f.op = 0; break; }
+            if (p < 0.7) { k = Math.floor(p * 30 + o.i * 3); f.op = k % 3 ? 1 : 0.15; f.x = ((k * 7) % 5 - 2) * S * 0.012; }
+            break;
+        case "deal":
+            f.op = p > 0 ? 1 : 0;
+            f.x = (1 - e) * (o.cx - S * 0.55 - o.px); f.y = (1 - e) * (o.cy + S * 0.45 - o.py); f.rz = (1 - e) * -70; f.sx = f.sy = 0.7 + 0.3 * e;
+            break;
+        case "flip3d": f.op = p > 0 ? 1 : 0; f.rx = (1 - grfxBack(p)) * -90; break;
+        case "zoom": f.op = grfxCap(p * 2); f.sx = f.sy = 1 + (1 - e) * 2.2; f.blur = (1 - e) * S * 0.02; break;
+        }
+        return f;
+    }
+    // Each tile's own random numbers: the same variant number gives the same ones.
+    function grfxTiles(os, seed) {
+        var rng = gridRng((Math.floor(Number(seed) || 0) + 99) >>> 0), i;
+        for (i = 0; i < os.length; i++) { os[i].r1 = rng(); os[i].r2 = rng(); os[i].r3 = rng(); os[i].side = Math.floor(rng() * 4); os[i].i = i; os[i].n = os.length; }
+        return os;
+    }
+    var GRFX_NAMES = { explode: "Взрыв", assemble: "Сборка", domino: "Домино", tetris: "Тетрис", spiral: "Спираль", jelly: "Желе", puzzle: "Пазл",
+        glitch: "Глитч", deal: "Раздача", flip3d: "3D-волна", zoom: "Удар", snake: "Змейка", none: "Нет", seq: "По очереди", up: "Снизу", wave: "Волна",
+        center: "Из центра", rand: "Случайно", flip: "Переворот", spring: "Пружинка", wipe: "Шторка", blur: "Размытие", drop: "Падение", spin: "Вращение" };
+
+    // The look at p as CSS on a preview tile (the same numbers After Effects gets as keys).
+    function grfxCss(el, f) {
+        el.style.transform = "translate3d(" + f.x.toFixed(1) + "px," + f.y.toFixed(1) + "px," + f.z.toFixed(1) + "px) rotateX(" + f.rx.toFixed(1) + "deg) rotateY(" + f.ry.toFixed(1) +
+            "deg) rotate(" + f.rz.toFixed(1) + "deg) scale(" + f.sx.toFixed(3) + "," + f.sy.toFixed(3) + ")";
+        el.style.opacity = String(f.op);
+        el.style.filter = f.blur > 0.05 ? "blur(" + f.blur.toFixed(1) + "px)" : "";
+        el.style.clipPath = f.wipe > 0.001 ? "inset(0 " + (f.wipe * 100).toFixed(1) + "% 0 0)" : "";
+    }
+    // A set of preview tiles at time t of a play: mode "in" / "out", dur and step in seconds.
+    function grfxShow(set, fx, mode, t, dur, step) {
+        var d = grfxDelays(fx, set.os, step), i, p;
+        for (i = 0; i < set.els.length; i++) {
+            p = grfxCap((t - d[i]) / dur);
+            if (mode === "out") { p = 1 - p; }
+            if (mode === "show") { p = 1; }
+            grfxCss(set.els[i], grfxAt(fx, p, set.os[i]));
+        }
+        return Math.max.apply(null, d.concat([0])) + dur;
+    }
+    // A tiny grid (5 tiles) for the buttons and the choice list.
+    var GRFX_MINI = [[0, 0, 1, 1], [1, 0, 1, 2], [2, 0, 1, 1], [0, 1, 1, 1], [2, 1, 1, 1]];
+    function grfxMini(host) {
+        var W = host.clientWidth || 38, H = host.clientHeight || 28, pad = 3, g = 2, cw = (W - pad * 2) / 3, ch = (H - pad * 2) / 2, html = "", os = [], els;
+        GRFX_MINI.forEach(function (b, i) {
+            var w = b[2] * cw - g, h = b[3] * ch - g, x = pad + b[0] * cw, y = pad + b[1] * ch;
+            html += "<i class=\"gr-mb\" style=\"--h:" + (250 + i * 22) + ";left:" + x.toFixed(1) + "px;top:" + y.toFixed(1) + "px;width:" + w.toFixed(1) + "px;height:" + h.toFixed(1) + "px\"></i>";
+            os.push({ c: b[0] + b[2] / 2, r: b[1] + b[3] / 2, C: 3, R: 2, px: x + w / 2, py: y + h / 2, cx: W / 2, cy: H / 2, S: Math.max(W, H), h: h });
+        });
+        host.innerHTML = html;
+        els = Array.prototype.slice.call(host.querySelectorAll(".gr-mb"));
+        return { els: els, os: grfxTiles(os, 7) };
+    }
+
     function drawGridPreview() {
         var g = orbit.grid, st = ui.gridStage, boxes, W, H, sw, sh, k, gx, gy, cw, ch, html = "", pad = 10, ox, oy;
         if (!st || st.offsetParent === null) { return; }
@@ -7057,13 +7197,85 @@
         gx = g.gap * k; gy = (g.split ? g.gapV : g.gap) * k;
         cw = (W * k - gx * (g.cols - 1)) / g.cols; ch = (H * k - gy * (g.rows - 1)) / g.rows;
         ox = pad + (sw - W * k) / 2; oy = pad + (sh - H * k) / 2;
+        grPrev = { els: [], os: [] };
         boxes.forEach(function (b, i) {
             var bw = b.w * cw + (b.w - 1) * gx, bh = b.h * ch + (b.h - 1) * gy;
+            grPrev.os.push({ c: b.c + b.w / 2, r: b.r + b.h / 2, C: g.cols, R: g.rows, px: ox + b.c * (cw + gx) + bw / 2, py: oy + b.r * (ch + gy) + bh / 2,
+                cx: ox + W * k / 2, cy: oy + H * k / 2, S: Math.max(W, H) * k, h: bh });
             html += "<div class=\"gr-box\" style=\"--h:" + (250 + i * 9) + ";left:" + (ox + b.c * (cw + gx)).toFixed(1) + "px;top:" + (oy + b.r * (ch + gy)).toFixed(1) +
                 "px;width:" + Math.max(1, bw).toFixed(1) + "px;height:" + Math.max(1, bh).toFixed(1) + "px;border-radius:" + Math.min(g.round * k, Math.min(bw, bh) / 2).toFixed(1) + "px\">" +
                 (g.numbers && bh > 12 ? "<span style=\"font-size:" + Math.round(Math.max(9, Math.min(15, Math.min(bw, bh) * 0.35))) + "px\">" + (i + 1) + "</span>" : "") + "</div>";
         });
         st.innerHTML = html;
+        grPrev.els = Array.prototype.slice.call(st.querySelectorAll(".gr-box"));
+        grfxTiles(grPrev.os, g.seed);
+    }
+    var grPrev = { els: [], os: [] };
+
+    // Playing in the preview: one at a time; «loop» repeats while the pointer is on a choice.
+    var grPlaying = null, grRaf = 0, grPop = "";
+    function grNow() { return (window.performance && performance.now ? performance.now() : Date.now()) / 1000; }
+    function grPlay(fx, mode, loop) {
+        grPlaying = { fx: fx, mode: mode, t0: grNow(), loop: !!loop };
+        grKick();
+    }
+    function grKick() { if (!grRaf) { grRaf = requestAnimationFrame(grTick); } }
+    function grTick() {
+        var now = grNow(), g = orbit.grid, len, t, busyMinis = false;
+        grRaf = 0;
+        if (grPlaying && grPrev.els.length) {
+            t = now - grPlaying.t0;
+            len = grfxShow(grPrev, grPlaying.fx, grPlaying.mode, t, g.dur, g.step);
+            if (t > len + 0.6) {
+                if (grPlaying.loop) { grPlaying.t0 = now; } else { grPlaying = null; grfxShow(grPrev, "none", "show", 0, 1, 0); }
+            }
+        }
+        // The little pictures move while the list is open or the pointer is on a button.
+        Array.prototype.forEach.call(document.querySelectorAll(".gr-mini.gr-live"), function (m) {
+            var tt = (now % 2.2), out = m.getAttribute("data-mode") === "out";
+            if (!m.grSet) { m.grSet = grfxMini(m); }
+            grfxShow(m.grSet, m.getAttribute("data-fx"), tt < 1.6 ? (out ? "out" : "in") : (out ? "hide" : "show"), tt, 0.45, 0.08);
+            busyMinis = true;
+        });
+        if (grPlaying || busyMinis) { grKick(); }
+    }
+    function grMiniStill(m, fx, out) {
+        m.setAttribute("data-fx", fx); m.setAttribute("data-mode", out ? "out" : "in");
+        m.grSet = grfxMini(m);
+        grfxShow(m.grSet, fx, "show", 0, 1, 0);
+    }
+
+    function grOpenPop(which) {
+        var g = orbit.grid, cur;
+        if (grPop === which) { grClosePop(); return; }
+        grPop = which;
+        ui.gridPop.hidden = false;
+        ui.gridPop.closest(".mk-card").classList.add("gr-popping");
+        ui.gridPop.style.top = (ui.gridAnim.offsetTop + ui.gridAnim.offsetHeight + 6) + "px";
+        ui.gridPopTitle.textContent = which === "in" ? "Появление" : "Исчезновение";
+        ui.gridInBtn.setAttribute("aria-expanded", String(which === "in"));
+        ui.gridOutBtn.setAttribute("aria-expanded", String(which === "out"));
+        cur = which === "in" ? g.appear : g.disappear;
+        grFillPop(GRFX_SIMPLE.indexOf(cur) > 1 ? "simple" : "wow");
+    }
+    function grClosePop() {
+        grPop = "";
+        if (!ui.gridPop) { return; }
+        ui.gridPop.hidden = true;
+        ui.gridPop.closest(".mk-card").classList.remove("gr-popping");
+        ui.gridInBtn.setAttribute("aria-expanded", "false");
+        ui.gridOutBtn.setAttribute("aria-expanded", "false");
+        ui.gridPopList.innerHTML = "";
+    }
+    function grFillPop(tab) {
+        var g = orbit.grid, cur = grPop === "in" ? g.appear : g.disappear, list = tab === "simple" ? GRFX_SIMPLE : GRFX_WOW, html = "";
+        pressGroupV(ui.gridTabs, tab);
+        list.forEach(function (fx) {
+            html += "<button type=\"button\" class=\"kr-b gr-opt\" data-v=\"" + fx + "\" aria-pressed=\"" + (fx === cur) + "\"><span class=\"gr-mini gr-live\" data-fx=\"" + fx +
+                "\" data-mode=\"" + grPop + "\"></span><span>" + GRFX_NAMES[fx] + "</span></button>";
+        });
+        ui.gridPopList.innerHTML = html;
+        grKick();
     }
 
     function drawGrid() {
@@ -7084,7 +7296,12 @@
         ui.gridSeed.value = String(g.seed);
         pressGroupV(ui.gridMode, g.mode);
         ui.gridNumbers.checked = g.numbers;
-        ui.gridStagger.checked = g.stagger;
+        ui.gridInName.textContent = GRFX_NAMES[g.appear];
+        ui.gridOutName.textContent = GRFX_NAMES[g.disappear];
+        grMiniStill(ui.gridInMini, g.appear, false);
+        grMiniStill(ui.gridOutMini, g.disappear, true);
+        ui.gridDur.value = String(g.dur); ui.gridDurVal.textContent = g.dur.toFixed(2).replace(/0$/, "") + " с";
+        ui.gridStep.value = String(g.step); ui.gridStepVal.textContent = g.step.toFixed(2) + " с";
         drawGridPreview();
     }
 
@@ -7102,12 +7319,13 @@
         setStatus("Строю сетку…", "busy");
         try {
             res = await host("gridMake", [{ rows: g.rows, cols: g.cols, gap: g.gap, split: g.split, gapV: g.gapV, round: g.round, rand: g.rand, seed: g.seed,
-                fit: g.fit, w: g.w, h: g.h, mode: g.mode, numbers: g.numbers, stagger: g.stagger },
-                { tile: "Плитка ", number: "Номер плитки ", ctrl: "Grid: управление", folder: "Grid", shape: "Форма" }, mkArg("grid")]);
+                fit: g.fit, w: g.w, h: g.h, mode: g.mode, numbers: g.numbers, appear: g.appear, disappear: g.disappear, dur: g.dur, step: g.step },
+                { tile: "Плитка ", number: "Номер плитки ", ctrl: "Grid: управление", folder: "Grid", shape: "Форма", fxBlur: "Размытие", fxWipe: "Шторка" }, mkArg("grid")]);
             setBusy(false);
             setStatus("Сетка готова: " + plural(res.tiles, "плитка", "плитки", "плиток") + ", " + res.w + "×" + res.h + ". Двигайте всю сетку слоем «" + res.ctrl + "»." +
                 (res.precomp ? " Каждая плитка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео." : "") +
-                (res.stagger ? " Плитки появляются по очереди от указателя времени." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
+                (res.appear !== "none" ? " Появление «" + GRFX_NAMES[res.appear] + "» — от указателя времени." : "") +
+                (res.disappear !== "none" ? " Исчезновение «" + GRFX_NAMES[res.disappear] + "» — к концу композиции." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
         } catch (e) {
             toolFailed(e);
         }
@@ -7128,7 +7346,34 @@
         ui.gridFit.addEventListener("click", function () { setGrid("fit", !orbit.grid.fit); });
         ui.gridSplit.addEventListener("change", function () { setGrid("split", ui.gridSplit.checked); });
         ui.gridNumbers.addEventListener("change", function () { setGrid("numbers", ui.gridNumbers.checked); });
-        ui.gridStagger.addEventListener("change", function () { setGrid("stagger", ui.gridStagger.checked); });
+        ui.gridInBtn.addEventListener("click", function () { grOpenPop("in"); });
+        ui.gridOutBtn.addEventListener("click", function () { grOpenPop("out"); });
+        [[ui.gridInBtn, ui.gridInMini], [ui.gridOutBtn, ui.gridOutMini]].forEach(function (pr) {
+            pr[0].addEventListener("mouseenter", function () { pr[1].classList.add("gr-live"); grKick(); });
+            pr[0].addEventListener("mouseleave", function () { pr[1].classList.remove("gr-live"); grMiniStill(pr[1], pr[1].getAttribute("data-fx"), pr[1].getAttribute("data-mode") === "out"); });
+        });
+        Array.prototype.forEach.call(ui.gridTabs.querySelectorAll("button[data-v]"), function (b) {
+            b.addEventListener("click", function () { grFillPop(b.getAttribute("data-v")); });
+        });
+        ui.gridPopList.addEventListener("mouseover", function (e) {
+            var b = e.target.closest ? e.target.closest(".gr-opt") : null;
+            if (b && (!grPlaying || grPlaying.fx !== b.getAttribute("data-v") || !grPlaying.loop)) { grPlay(b.getAttribute("data-v"), grPop, true); }
+        });
+        ui.gridPopList.addEventListener("mouseleave", function () { if (grPlaying && grPlaying.loop) { grPlaying.loop = false; } });
+        ui.gridPopList.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest(".gr-opt") : null, fx, mode = grPop;
+            if (!b) { return; }
+            fx = b.getAttribute("data-v");
+            grClosePop();
+            setGrid(mode === "in" ? "appear" : "disappear", fx);
+            grPlay(fx, mode, false);
+        });
+        ui.gridDur.addEventListener("input", function () { setGrid("dur", Math.round(Number(ui.gridDur.value) * 100) / 100); });
+        ui.gridStep.addEventListener("input", function () { setGrid("step", Math.round(Number(ui.gridStep.value) * 100) / 100); });
+        document.addEventListener("mousedown", function (e) {
+            if (grPop && !ui.gridPop.contains(e.target) && !ui.gridAnim.contains(e.target)) { grClosePop(); }
+        });
+        document.addEventListener("keydown", function (e) { if (grPop && e.key === "Escape") { grClosePop(); } });
         ui.gridDice.addEventListener("click", function () { setGrid("seed", Math.floor(Math.random() * 99999) + 1); });
         Array.prototype.forEach.call(ui.gridMode.querySelectorAll("button[data-v]"), function (b) {
             b.addEventListener("click", function () { setGrid("mode", b.getAttribute("data-v")); });
@@ -7317,6 +7562,12 @@
         g.rand = gridInt(g.rand, 0, 100, 100); g.seed = gridInt(g.seed, 0, 999999, 12345);
         g.w = gridInt(g.w, 16, 16000, 1920); g.h = gridInt(g.h, 16, 16000, 1080);
         if (g.mode !== "precomp") { g.mode = "shape"; }
+        // «По очереди» was a switch before: off means the tiles are simply there.
+        if (typeof s.grid === "object" && s.grid && s.grid.appear === undefined && s.grid.stagger === false) { g.appear = "none"; }
+        if (!GRFX_NAMES.hasOwnProperty(g.appear)) { g.appear = "seq"; }
+        if (!GRFX_NAMES.hasOwnProperty(g.disappear)) { g.disappear = "none"; }
+        g.dur = Math.max(0.2, Math.min(2, Math.round((Number(g.dur) || 0.6) * 100) / 100));
+        g.step = Math.max(0, Math.min(0.3, Math.round((Number(g.step) >= 0 ? Number(g.step) : 0.05) * 100) / 100));
         return out;
     }
 

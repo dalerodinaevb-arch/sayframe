@@ -3555,14 +3555,156 @@ var sayframeHost = (function () {
         acFill(l, gi, color);
     }
 
-    // Tiles come in one after another: opacity 0 -> 100 and scale 85% -> 100% of their own size over 10 frames, 2 frames apart.
-    function gridReveal(l, comp, k, sc) {
-        var f = comp.frameDuration || 1 / 30, t0 = comp.time + k * 2 * f, t1 = t0 + 10 * f;
-        sc = sc || 100;
-        try {
-            acKeys(acTransform(l, "ADBE Opacity"), [t0, t1], [0, 100], 70);
-            acKeys(acTransform(l, "ADBE Scale"), [t0, t1], [[sc * 0.85, sc * 0.85, 100], [sc, sc, 100]], 70);
-        } catch (e0) {}
+    // ---- Grid tiles coming in and going out. The same code is in panel.js (the preview) and in host.jsx (the keys),
+    // so the preview shows what the comp gets. o: a tile (c, r: its middle in cells; C, R: the grid; i, n: its number;
+    // r1..r3, side: its own random numbers; px, py: its middle, cx, cy: the grid's middle, S: the grid's size, h: its height).
+    var GRFX_WOW = ["explode", "assemble", "domino", "tetris", "spiral", "jelly", "puzzle", "glitch", "deal", "flip3d", "zoom", "snake"];
+    var GRFX_SIMPLE = ["none", "seq", "up", "wave", "center", "rand", "flip", "spring", "wipe", "blur", "drop", "spin"];
+    // These only ease in one go: two keys are enough. The rest overshoot or bounce: a key every second frame.
+    var GRFX_SMOOTH = { seq: 1, up: 1, center: 1, wipe: 1, blur: 1, spin: 1, zoom: 1, flip: 1, deal: 1 };
+    function grfxEz(x) { return 1 - Math.pow(1 - x, 3); }
+    function grfxBack(x) { var c = 2.2; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); }
+    function grfxBounce(x) {
+        var n = 7.5625, d = 2.75;
+        if (x < 1 / d) { return n * x * x; }
+        if (x < 2 / d) { x -= 1.5 / d; return n * x * x + 0.75; }
+        if (x < 2.5 / d) { x -= 2.25 / d; return n * x * x + 0.9375; }
+        x -= 2.625 / d;
+        return n * x * x + 0.984375;
+    }
+    function grfxCap(v) { return Math.max(0, Math.min(1, v)); }
+    // Which tile comes first: the smaller, the earlier.
+    function grfxOrd(fx, o) {
+        var C = o.C, R = o.R, cc, rr, ring;
+        switch (fx) {
+        case "up": return (R - o.r) / R;
+        case "wave": case "flip3d": return (o.c + o.r) / (C + R);
+        case "center": case "zoom": return Math.sqrt(Math.pow(o.c - C / 2, 2) + Math.pow((o.r - R / 2) * 1.2, 2));
+        case "assemble": return -Math.sqrt(Math.pow(o.c - C / 2, 2) + Math.pow(o.r - R / 2, 2));
+        case "rand": case "explode": case "glitch": case "puzzle": return o.r1;
+        case "flip": case "wipe": return o.c / C;
+        case "drop": return o.r / R;
+        case "tetris": return ((R - o.r) / R) * 0.6 + (o.c / C) * 0.4;
+        case "spiral":
+            cc = Math.floor(o.c); rr = Math.floor(o.r); ring = Math.min(cc, rr, C - 1 - cc, R - 1 - rr);
+            return ring + (Math.atan2(rr - R / 2, cc - C / 2) + Math.PI) / (2 * Math.PI);
+        case "snake": rr = Math.floor(o.r); return rr * C + (rr % 2 ? C - o.c : o.c);
+        case "jelly": return o.r2 * 0.4 + (o.c / C) * 0.6;
+        default: return o.i;
+        }
+    }
+    // Each tile's delay: its place in the order times the step.
+    function grfxDelays(fx, os, step) {
+        var idx = [], d = [], i;
+        for (i = 0; i < os.length; i++) { idx.push(i); d.push(0); }
+        idx.sort(function (a, b) { var x = grfxOrd(fx, os[a]) - grfxOrd(fx, os[b]); return Math.abs(x) > 1e-9 ? x : a - b; });
+        for (i = 0; i < idx.length; i++) { d[idx[i]] = i * step; }
+        return d;
+    }
+    // How a tile looks at p (0 not there yet, 1 in its place): offsets, scale, turns (degrees), opacity 0..1, blur in px, wipe 0..1 hidden.
+    function grfxAt(fx, p, o) {
+        var e = grfxEz(p), S = o.S, f = { x: 0, y: 0, z: 0, sx: 1, sy: 1, rz: 0, rx: 0, ry: 0, op: 1, blur: 0, wipe: 0 }, b, w, d, k, a;
+        switch (fx) {
+        case "none": f.op = p > 0 ? 1 : 0; break;
+        case "seq": f.op = e; f.sx = f.sy = 0.6 + 0.4 * e; break;
+        case "up": f.op = e; f.y = (1 - e) * S * 0.12; break;
+        case "wave": f.op = grfxCap(p * 2); f.sx = f.sy = grfxBack(p); break;
+        case "center": f.op = grfxCap(p * 3); f.sx = f.sy = e; break;
+        case "rand": f.op = grfxCap(p * 3); f.sx = f.sy = grfxBack(p); break;
+        case "flip": f.op = p > 0 ? 1 : 0; f.ry = (1 - e) * 90; break;
+        case "spring": f.op = grfxCap(p * 4); f.sx = f.sy = p <= 0 ? 0 : 1 - Math.cos(p * Math.PI * 2.5) * Math.exp(-p * 4); break;
+        case "wipe": f.wipe = 1 - e; break;
+        case "blur": f.op = e; f.blur = (1 - e) * S * 0.03; f.sx = f.sy = 1.15 - 0.15 * e; break;
+        case "drop": f.op = grfxCap(p * 4); f.y = -(1 - grfxBounce(p)) * S * 0.35; break;
+        case "spin": f.op = e; f.rz = (1 - e) * -180; f.sx = f.sy = e; break;
+        case "explode":
+            b = grfxBack(p); f.op = grfxCap(p * 3);
+            f.x = (1 - b) * (o.r1 - 0.5) * S * 1.6; f.y = (1 - b) * (o.r2 - 0.5) * S * 1.2; f.rz = (1 - b) * (o.r3 - 0.5) * 540; f.sx = f.sy = 0.4 + 0.6 * b;
+            break;
+        case "assemble":
+            b = grfxBack(p); f.op = grfxCap(p * 4);
+            f.x = (1 - b) * (o.cx - o.px); f.y = (1 - b) * (o.cy - o.py); f.sx = f.sy = 0.15 + 0.85 * b;
+            break;
+        case "domino":
+            // Falls forward round its top edge.
+            f.op = p > 0 ? 1 : 0; f.rx = (1 - grfxBounce(p)) * -110; a = f.rx * Math.PI / 180;
+            f.y = o.h / 2 * (Math.cos(a) - 1); f.z = o.h / 2 * Math.sin(a);
+            break;
+        case "tetris": f.op = p > 0 ? 1 : 0; f.y = -(1 - grfxBounce(p)) * S * 0.6; break;
+        case "spiral": f.op = grfxCap(p * 3); f.rz = (1 - e) * 180; f.sx = f.sy = grfxBack(p); break;
+        case "jelly": w = Math.sin(p * 11) * Math.exp(-4 * p) * 0.45; f.op = grfxCap(p * 5); f.sx = e * (1 + w); f.sy = e * (1 - w); break;
+        case "puzzle":
+            d = (1 - grfxBack(p)) * S * 0.7; f.op = grfxCap(p * 3);
+            f.x = [d, -d, 0, 0][o.side]; f.y = [0, 0, d, -d][o.side];
+            break;
+        case "glitch":
+            if (p <= 0) { f.op = 0; break; }
+            if (p < 0.7) { k = Math.floor(p * 30 + o.i * 3); f.op = k % 3 ? 1 : 0.15; f.x = ((k * 7) % 5 - 2) * S * 0.012; }
+            break;
+        case "deal":
+            f.op = p > 0 ? 1 : 0;
+            f.x = (1 - e) * (o.cx - S * 0.55 - o.px); f.y = (1 - e) * (o.cy + S * 0.45 - o.py); f.rz = (1 - e) * -70; f.sx = f.sy = 0.7 + 0.3 * e;
+            break;
+        case "flip3d": f.op = p > 0 ? 1 : 0; f.rx = (1 - grfxBack(p)) * -90; break;
+        case "zoom": f.op = grfxCap(p * 2); f.sx = f.sy = 1 + (1 - e) * 2.2; f.blur = (1 - e) * S * 0.02; break;
+        }
+        return f;
+    }
+    // Each tile's own random numbers: the same variant number gives the same ones.
+    function grfxTiles(os, seed) {
+        var rng = gridRng((Math.floor(Number(seed) || 0) + 99) >>> 0), i;
+        for (i = 0; i < os.length; i++) { os[i].r1 = rng(); os[i].r2 = rng(); os[i].r3 = rng(); os[i].side = Math.floor(rng() * 4); os[i].i = i; os[i].n = os.length; }
+        return os;
+    }
+
+    // Keys for a tile coming in (mode "in": p 0 -> 1 from t0) or going out ("out": p 1 -> 0). Only what changes gets keys:
+    // position, scale, the turns, opacity, a Gaussian blur, a linear wipe. it = { L, o, pos, sc }.
+    function gridAnim(comp, it, fx, mode, t0, dur, labels, fxs) {
+        var fr = comp.frameDuration || 1 / 30, smooth = GRFX_SMOOTH[fx] === 1, ns, k, q, times = [], F = [], L = it.L, d3, vals, P, ef, key;
+        if (fx === "none" || !(dur > 0)) { return; }
+        ns = smooth ? 1 : Math.max(2, Math.round(dur / fr / 2));
+        for (k = 0; k <= ns; k++) {
+            q = k / ns;
+            times.push(t0 + q * dur);
+            F.push(grfxAt(fx, mode === "in" ? q : 1 - q, it.o));
+        }
+        function moves(n, rest) { var j; for (j = 0; j < F.length; j++) { if (Math.abs(F[j][n] - rest) > 1e-6) { return true; } } return false; }
+        function put(prop, fn) {
+            var j, vv = [];
+            if (!prop) { return; }
+            for (j = 0; j < F.length; j++) { vv.push(fn(F[j])); }
+            if (smooth) { acKeys(prop, times, vv, 70); return; }
+            for (j = 0; j < times.length; j++) { prop.setValueAtKey(prop.addKey(times[j]), vv[j]); }
+        }
+        d3 = moves("z", 0) || moves("rx", 0) || moves("ry", 0);
+        if (d3 && !L.threeDLayer) { L.threeDLayer = true; }
+        if (moves("x", 0) || moves("y", 0) || moves("z", 0)) {
+            put(acTransform(L, "ADBE Position"), function (f) { return d3 || L.threeDLayer ? [it.pos[0] + f.x, it.pos[1] + f.y, (it.pos[2] || 0) + f.z] : [it.pos[0] + f.x, it.pos[1] + f.y]; });
+        }
+        if (moves("sx", 1) || moves("sy", 1)) { put(acTransform(L, "ADBE Scale"), function (f) { return [it.sc * f.sx, it.sc * f.sy, 100]; }); }
+        if (moves("rz", 0)) { put(acTransform(L, "ADBE Rotate Z"), function (f) { return f.rz; }); }
+        if (moves("rx", 0)) { put(acTransform(L, "ADBE Rotate X"), function (f) { return f.rx; }); }
+        if (moves("ry", 0)) { put(acTransform(L, "ADBE Rotate Y"), function (f) { return f.ry; }); }
+        if (moves("op", 1)) { put(acTransform(L, "ADBE Opacity"), function (f) { return f.op * 100; }); }
+        // The effects are added once per tile, the second mode (in, then out) keys the same one.
+        for (key in { blur: 1, wipe: 1 }) {
+            if (!moves(key, 0)) { continue; }
+            ef = fxs[key];
+            if (!ef) {
+                try {
+                    ef = L.property("ADBE Effect Parade").addProperty(key === "blur" ? "ADBE Gaussian Blur 2" : "ADBE Linear Wipe");
+                    ef.name = key === "blur" ? (labels.fxBlur || "Blur") : (labels.fxWipe || "Wipe");
+                    if (key === "wipe") { try { ef.property("ADBE Linear Wipe-0002").setValue(270); } catch (eA) {} }
+                    if (key === "blur") { try { ef.property("ADBE Gaussian Blur 2-0003").setValue(1); } catch (eR) {} }
+                    fxs[key] = ef;
+                } catch (eF) { ef = null; }
+            }
+            if (!ef) { continue; }
+            try {
+                P = ef.property(key === "blur" ? "ADBE Gaussian Blur 2-0001" : "ADBE Linear Wipe-0001");
+                put(P, key === "blur" ? function (f) { return f.blur; } : function (f) { return f.wipe * 100; });
+            } catch (eP) {}
+        }
     }
 
     // A tile comp has a standard size by the tile's shape: square-ish 1000x1000, wide 1920x1080, tall 1080x1920.
@@ -3623,7 +3765,9 @@ var sayframeHost = (function () {
         var gx = orbitNum(o.gap, 0, 1000, 20), gy = o.split ? orbitNum(o.gapV, 0, 1000, 20) : gx, round = orbitNum(o.round, 0, 2000, 20);
         var boxes = gridLayout(rows, cols, orbitNum(o.rand, 0, 100, 100), o.seed), pre = o.mode === "precomp";
         var cw = (W - gx * (cols - 1)) / cols, ch = (H - gy * (rows - 1)) / rows, ox = (comp.width - W) / 2, oy = (comp.height - H) / 2;
-        var tiles = [], nums = [], scales = [], i, b, bw, bh, x, y, L, cc, inner, txt, folder = null, ctrl, fs, base = labels.tile || "Tile ", sc, std, k;
+        var tiles = [], nums = [], scales = [], geo = [], i, b, bw, bh, x, y, L, cc, inner, txt, folder = null, ctrl, fs, base = labels.tile || "Tile ", sc, std, k;
+        var fxIn = o.appear || (o.stagger === false ? "none" : "seq"), fxOut = o.disappear || "none", dur = orbitNum(o.dur, 0.05, 5, 0.6), step = orbitNum(o.step, 0, 2, 0.05);
+        var os = [], dIn, dOut, it, fxs, tIn, tOut, endIn, fr = comp.frameDuration || 1 / 30;
         if (cw < 1 || ch < 1) { throw new Error("GRID_TOO_TIGHT"); }
         if (pre) { try { folder = mkFolder(labels.folder || "Grid"); } catch (eF) { folder = null; } }
         for (i = boxes.length - 1; i >= 0; i--) {
@@ -3662,6 +3806,7 @@ var sayframeHost = (function () {
             orbitSet(L, "ADBE Position", [x, y]);
             tiles.unshift(L);
             scales.unshift(sc);
+            geo.unshift({ c: b.c + b.w / 2, r: b.r + b.h / 2, C: cols, R: rows, px: x, py: y, cx: comp.width / 2, cy: comp.height / 2, S: Math.max(W, H), h: bh });
             if (o.numbers && !pre) {
                 txt = orbitNumber(comp, String(i + 1), fs);
                 txt.name = (labels.number || "Number ") + (i + 1);
@@ -3675,11 +3820,24 @@ var sayframeHost = (function () {
         for (i = 0; i < tiles.length; i++) {
             if (nums[i]) { nums[i].parent = tiles[i]; }
             tiles[i].parent = ctrl;
-            if (o.stagger) { gridReveal(tiles[i], comp, i, scales[i]); }
             try { tiles[i].selected = false; if (nums[i]) { nums[i].selected = false; } } catch (eS) {}
         }
+        // In from the current time; out so that the last tile is gone at the end of the comp (never before all are in).
+        grfxTiles(geo, o.seed);
+        dIn = grfxDelays(fxIn, geo, step); dOut = grfxDelays(fxOut, geo, step);
+        tIn = comp.time || 0;
+        endIn = tIn + (fxIn === "none" ? 0 : dur + Math.max.apply(null, dIn.concat([0])));
+        tOut = Math.max(endIn + 0.5, comp.duration - fr - dur - Math.max.apply(null, dOut.concat([0])));
+        for (i = 0; i < tiles.length; i++) {
+            it = { L: tiles[i], o: geo[i], sc: scales[i], pos: acTransform(tiles[i], "ADBE Position").value };
+            fxs = {};
+            try { gridAnim(comp, it, fxIn, "in", tIn + dIn[i], dur, labels, fxs); } catch (eI) {}
+            if (fxOut !== "none") { try { gridAnim(comp, it, fxOut, "out", tOut + dOut[i], dur, labels, fxs); } catch (eO) {} }
+            // A number on a shape tile is its own layer: it fades with its tile.
+            if (nums[i] && (fxIn !== "none" || fxOut !== "none")) { try { acTransform(nums[i], "ADBE Opacity").expression = "parent.transform.opacity"; } catch (eN) {} }
+        }
         ctrl.selected = true;
-        return { tiles: tiles.length, ctrl: ctrl.name, precomp: pre, folder: folder ? folder.name : "", w: W, h: H, stagger: !!o.stagger };
+        return { tiles: tiles.length, ctrl: ctrl.name, precomp: pre, folder: folder ? folder.name : "", w: W, h: H, appear: fxIn, disappear: fxOut };
     }
 
     // ---- Phone mockup (section "Layouts"): an iPhone-like or an Android-like phone drawn with shapes (no brand marks).

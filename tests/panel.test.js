@@ -5827,8 +5827,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await mkTab(p);
     check("GR1 «Макеты»: six blocks, «Жидкое стекло», «Карусель», «Grid», «Плашка под текстом», «Мокап телефона» and «Текст по ленте», open; the grid preview shows numbered tiles", (await p.page.locator("#orbitPane .mk-card").evaluateAll((l) => l.map((c) => c.getAttribute("data-mk")).join())) === "glass,carousel,grid,textbox,phone,ribbon" &&
       (await p.page.isVisible("#orbitStage")) && (await p.page.isVisible("#gridStage")) && (await tiles(p)) > 4 && (await tiles(p)) < 20 && (await p.page.locator("#gridStage .gr-box span").first().innerText()) === "1" && (await overflow(p)) <= 0);
-    check("GR1 defaults: 4 rows, 5 columns, gap 20, roundness 20, spread 100%, variant 12345, the comp size, numbers and one-by-one on", (await p.page.inputValue("#gridRows")) === "4" && (await p.page.inputValue("#gridCols")) === "5" && (await p.page.locator("#gridGapVal").innerText()) === "20" &&
-      (await p.page.locator("#gridRandVal").innerText()) === "100%" && (await p.page.inputValue("#gridSeed")) === "12345" && (await p.page.getAttribute("#gridFit", "aria-pressed")) === "true" && (await p.page.isDisabled("#gridW")) && (await p.page.isChecked("#gridNumbers")) && (await p.page.isChecked("#gridStagger")));
+    check("GR1 defaults: 4 rows, 5 columns, gap 20, roundness 20, spread 100%, variant 12345, the comp size, numbers; in «По очереди», out «Нет»", (await p.page.inputValue("#gridRows")) === "4" && (await p.page.inputValue("#gridCols")) === "5" && (await p.page.locator("#gridGapVal").innerText()) === "20" &&
+      (await p.page.locator("#gridRandVal").innerText()) === "100%" && (await p.page.inputValue("#gridSeed")) === "12345" && (await p.page.getAttribute("#gridFit", "aria-pressed")) === "true" && (await p.page.isDisabled("#gridW")) && (await p.page.isChecked("#gridNumbers")) && (await p.page.innerText("#gridInName")) === "По очереди" && (await p.page.innerText("#gridOutName")) === "Нет");
     const n0 = await tiles(p);
     await p.page.click('#orbitPane [data-mk="carousel"] .mk-head');
     check("GR2 a click on «Карусель» folds it to one line; Grid stays open", !(await p.page.isVisible("#orbitStage")) && (await p.page.isVisible("#gridStage")) && (await p.page.getAttribute('#orbitPane [data-mk="carousel"] .mk-fold', "aria-expanded")) === "false");
@@ -5848,7 +5848,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const ctrl = Lx(p, "Grid: управление"), t1 = Lx(p, "Плитка 1");
     const made = p.ae.log.dcMain.list.filter((l) => /^Плитка \d+$/.test(l.name)).length;
     check("GR5 «Создать сетку»: as many tiles as in the preview, each with its number, all hanging on «Grid: управление»; one undo step", made === n0 && !!ctrl && ctrl.nullLayer && t1.parent === ctrl && Lx(p, "Номер плитки 1").parent === t1 && p.ae.log.undo.join() === "begin:Sayframe: grid,end", names(p));
-    check("GR5 tiles come in one after another: opacity and scale keys, 2 frames apart", acAt(t1, "ADBE Transform Group", "ADBE Opacity").keys.length === 2 && Math.abs(acAt(Lx(p, "Плитка 2"), "ADBE Transform Group", "ADBE Opacity").keys[0].t - 2 / 30) < 1e-6 && /^Сетка готова: \d+ плит/.test(await p.status()), await p.status());
+    check("GR5 «По очереди»: tiles come in one after another, opacity and scale keys, 0.05 s apart", acAt(t1, "ADBE Transform Group", "ADBE Opacity").keys.length === 2 && Math.abs(acAt(Lx(p, "Плитка 2"), "ADBE Transform Group", "ADBE Opacity").keys[0].t - 0.05) < 1e-6 && /^Сетка готова: \d+ плит/.test(await p.status()) && /Появление «По очереди»/.test(await p.status()), await p.status());
     await p.close();
 
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
@@ -5856,7 +5856,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await setRange(p, "#gridRand", 0);
     await p.page.click('#gridMode [data-v="precomp"]');
     await p.page.locator("label.switch", { has: p.page.locator("#gridNumbers") }).locator(".track").click();
-    await p.page.locator("label.switch", { has: p.page.locator("#gridStagger") }).locator(".track").click();
+    await p.page.click("#gridInBtn"); await p.page.click('#gridTabs [data-v="simple"]'); await p.page.click('#gridPopList [data-v="none"]');
     await p.page.click("#gridBtn"); await p.idle();
     t = Lx(p, "Плитка 1");
     const comps = p.ae.log.orbitComps || [];
@@ -5865,6 +5865,74 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const mk = t && acAt(t, "ADBE Mask Parade", "ADBE Mask Atom"), ms = mk && acAt(mk, "ADBE Mask Shape").value, xs = ms ? ms.vertices.map((v) => v[0]) : [], ys = ms ? ms.vertices.map((v) => v[1]) : [];
     check("GR6 the comp is scaled to cover the tile (23.6%) and cut by a mask in the tile's shape: 368×255 with 20 px corners, so a photo inside gets the same corners", !!ms && Math.abs(tf(t, "ADBE Scale")[0] - 2550 / 108) < 0.01 && ms.vertices.length === 8 && ms.closed &&
       Math.abs((Math.max(...xs) - Math.min(...xs)) * 0.23611 - 368) < 0.5 && Math.abs((Math.max(...ys) - Math.min(...ys)) * 0.23611 - 255) < 0.5 && Math.abs(ms.vertices[0][0] - Math.min(...xs) - 20 * 108 / 25.5) < 0.01, JSON.stringify(ms && ms.vertices) + " " + JSON.stringify(tf(t, "ADBE Scale")));
+    await p.close();
+  }
+
+  // Grid: «Появление» and «Исчезновение» — two buttons, a list of 24 looks over the block, the preview plays them; the comp gets the same as keys.
+  {
+    const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const T = (l, n) => acAt(l, "ADBE Transform Group", n) || { keys: [] };
+    const mkTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    const tr = (p) => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#gridStage .gr-box"), (b) => b.style.transform + "|" + b.style.opacity).join(";"));
+    p = await open({ orbit: { layers: [{ name: "BG" }] } });
+    await mkTab(p);
+    check("GX1 two buttons with a little picture; no list yet; the old «По очереди» switch is gone", (await vis(p, "#gridInBtn")) && (await vis(p, "#gridOutBtn")) && !(await vis(p, "#gridPop")) &&
+      (await p.page.locator("#gridInMini .gr-mb").count()) === 5 && !(await p.page.$("#gridStagger")));
+    await p.page.click("#gridInBtn");
+    const opts = await p.page.locator("#gridPopList .gr-opt").evaluateAll((l) => l.map((b) => b.innerText.trim()).join(","));
+    check("GX2 «Появление» opens the list over the block: 12 «✨ Эффектные» with moving pictures", (await vis(p, "#gridPop")) && (await p.page.getAttribute("#gridInBtn", "aria-expanded")) === "true" &&
+      opts === "Взрыв,Сборка,Домино,Тетрис,Спираль,Желе,Пазл,Глитч,Раздача,3D-волна,Удар,Змейка" && (await p.page.locator("#gridPopList .gr-mini.gr-live").count()) === 12, opts);
+    const mt = () => p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll('#gridPopList [data-v="explode"] .gr-mb'), (b) => b.style.transform).join(";"));
+    const seen = new Set(); for (let i = 0; i < 6; i++) { seen.add(await mt()); await p.page.waitForTimeout(170); }
+    check("GX2 the little pictures move", seen.size >= 3, String(seen.size));
+    const box = await p.page.locator("#gridPop").boundingBox(), bb = await p.page.locator("#gridAnim").boundingBox();
+    check("GX2 the list sits right under the buttons", box && bb && Math.abs(box.y - (bb.y + bb.height + 6)) < 2, JSON.stringify([box, bb]));
+    await p.page.click('#gridTabs [data-v="simple"]');
+    check("GX3 «Простые»: the other 12, «По очереди» marked", (await p.page.locator("#gridPopList .gr-opt").count()) === 12 && (await p.page.getAttribute('#gridPopList [data-v="seq"]', "aria-pressed")) === "true");
+    await p.page.click('#gridTabs [data-v="wow"]');
+    const still = await tr(p);
+    await p.page.hover('#gridPopList [data-v="explode"]'); await p.page.waitForTimeout(250);
+    const mid = await tr(p);
+    check("GX4 the pointer on «Взрыв»: the preview plays it (tiles off their places)", mid !== still && /rotate\((?!0\.0deg)/.test(mid), mid.slice(0, 160));
+    await p.page.click('#gridPopList [data-v="explode"]');
+    check("GX5 a click picks it: the list closes, the button says «Взрыв»", !(await vis(p, "#gridPop")) && (await p.page.innerText("#gridInName")) === "Взрыв");
+    await p.page.click("#gridOutBtn");
+    check("GX5 «Исчезновение» has its own list and title", (await vis(p, "#gridPop")) && (await p.page.innerText("#gridPopTitle")) === "Исчезновение");
+    await p.page.keyboard.press("Escape");
+    check("GX5 Esc closes it", !(await vis(p, "#gridPop")));
+    await p.page.click("#gridOutBtn"); await p.page.click('#gridPopList [data-v="tetris"]');
+    await p.page.click("#gridInBtn"); await p.page.mouse.click(5, 5);
+    check("GX5 a click elsewhere closes it too", !(await vis(p, "#gridPop")));
+    await p.restart(); await mkTab(p);
+    check("GX6 the choices survive a restart", (await p.page.innerText("#gridInName")) === "Взрыв" && (await p.page.innerText("#gridOutName")) === "Тетрис");
+    await p.page.click("#gridBtn"); await p.idle();
+    const t1 = Lx(p, "Плитка 1"), keysP = T(t1, "ADBE Position").keys, keysR = T(t1, "ADBE Rotate Z").keys;
+    const lastT = Math.max(...p.ae.log.dcMain.list.filter((l) => /^Плитка /.test(l.name)).map((l) => Math.max(...T(l, "ADBE Position").keys.map((k) => k.t))));
+    check("GX7 «Взрыв» in: position, rotation and scale keys from the current time, a key every second frame; tiles end in their places", keysP.length > 6 && keysR.length > 6 && T(t1, "ADBE Scale").keys.length > 6 &&
+      Math.min(...keysR.map((k) => k.t)) >= 0 && JSON.stringify(T(t1, "ADBE Position").keys.find((k) => Math.abs(k.t - Math.max(...keysP.filter((q) => q.t < 3).map((q) => q.t))) < 1e-9).v) === JSON.stringify(T(t1, "ADBE Position").value), keysP.length + " " + keysR.length);
+    const cdur = p.ae.log.dcMain.duration;
+    check("GX7 «Тетрис» out: position keys that end by the end of the comp", lastT <= cdur + 1e-6 && lastT > cdur - 1, lastT + " / " + cdur);
+    check("GX7 the status names both", /Появление «Взрыв»/.test(await p.status()) && /Исчезновение «Тетрис»/.test(await p.status()), await p.status());
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "BG" }] } });
+    await mkTab(p);
+    await p.page.click("#gridInBtn"); await p.page.click('#gridPopList [data-v="zoom"]');
+    await p.page.click("#gridOutBtn"); await p.page.click('#gridPopList [data-v="domino"]');
+    await p.page.click("#gridBtn"); await p.idle();
+    const z1 = Lx(p, "Плитка 1"), blur = acAt(z1, "ADBE Effect Parade").children.find((e) => e.matchName === "ADBE Gaussian Blur 2");
+    check("GX8 «Удар»: a Gaussian blur «Размытие» with keys, scale from big; «Домино» out makes the tile 3D and turns it round X", !!blur && blur.name === "Размытие" && blur.children.find((c) => c.matchName === "ADBE Gaussian Blur 2-0001").keys.length === 2 &&
+      T(z1, "ADBE Scale").keys[0].v[0] > 250 && z1.threeDLayer === true && T(z1, "ADBE Rotate X").keys.length > 6 && p.errors.length === 0, p.errors.join("|"));
+    await p.close();
+    {
+      const src = fs.readFileSync(path.join(__dirname, "..", "Sayframe", "js", "panel.js"), "utf8"), hsrc = fs.readFileSync(path.join(__dirname, "..", "Sayframe", "jsx", "host.jsx"), "utf8");
+      const a = src.indexOf("    // ---- Grid tiles coming in and going out."), b = src.indexOf("    var GRFX_NAMES");
+      check("GX9 the preview and After Effects use one and the same code for the looks", a > 0 && b > a && hsrc.includes(src.slice(a, b).trimEnd()));
+    }
+    // An old setting «По очереди» off comes back as «Нет».
+    p = await open({ orbit: { layers: [{ name: "BG" }] } });
+    await p.page.evaluate(() => localStorage.setItem("sayframe.orbit.v1", JSON.stringify({ grid: { stagger: false } })));
+    await p.restart(); await mkTab(p);
+    check("GX10 the old «По очереди» off becomes «Появление: Нет»", (await p.page.innerText("#gridInName")) === "Нет");
     await p.close();
   }
 

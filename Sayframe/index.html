@@ -428,7 +428,26 @@
             </div>
             <div class="kr-sw">
               <label class="switch"><input id="gridNumbers" type="checkbox"><span class="track"></span><span class="text">Номера</span></label>
-              <label class="switch"><input id="gridStagger" type="checkbox"><span class="track"></span><span class="text">По очереди</span></label>
+            </div>
+            <div id="gridAnim" class="gr-anim">
+              <button id="gridInBtn" type="button" class="kr-b gr-pill" aria-haspopup="true" aria-expanded="false" title="Как плитки появляются: от указателя времени"><span id="gridInMini" class="gr-mini" aria-hidden="true"></span><span class="gr-pt"><small>Появление</small><b id="gridInName"></b></span><span class="gr-ar" aria-hidden="true">▾</span></button>
+              <button id="gridOutBtn" type="button" class="kr-b gr-pill" aria-haspopup="true" aria-expanded="false" title="Как плитки исчезают: к концу композиции"><span id="gridOutMini" class="gr-mini" aria-hidden="true"></span><span class="gr-pt"><small>Исчезновение</small><b id="gridOutName"></b></span><span class="gr-ar" aria-hidden="true">▾</span></button>
+            </div>
+            <div id="gridPop" class="gr-pop" role="dialog" aria-label="Выбор анимации плиток" hidden>
+              <b id="gridPopTitle" class="gr-pop-t" title="Наведите на вариант — превью покажет его">Появление</b>
+              <div id="gridTabs" class="gr-tabs" role="group" aria-label="Набор">
+                <button type="button" data-v="wow">✨ Эффектные</button>
+                <button type="button" data-v="simple">Простые</button>
+              </div>
+              <div id="gridPopList" class="gr-plist"></div>
+              <label class="ac-row ac-slider">Длительность
+                <input id="gridDur" class="range" type="range" min="0.2" max="2" step="0.05" title="Сколько длится появление одной плитки">
+                <output id="gridDurVal" for="gridDur"></output>
+              </label>
+              <label class="ac-row ac-slider">Между плитками
+                <input id="gridStep" class="range" type="range" min="0" max="0.3" step="0.01" title="Через сколько начинает следующая плитка">
+                <output id="gridStepVal" for="gridStep"></output>
+              </label>
             </div>
             <button id="gridBtn" class="shift-do shift-go">Создать сетку</button>
           </div>
