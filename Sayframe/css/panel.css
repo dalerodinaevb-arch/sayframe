@@ -2243,7 +2243,8 @@ html[data-design="ae"] .mk-pane .mk-card, html[data-design="ae"] .gr-stage, html
 .tb-text span::before { content: ""; position: absolute; z-index: -1; left: 0; right: 0; top: calc(4px - var(--py, 6px)); bottom: calc(4px - var(--py, 6px));
   background: var(--fill, #3a0f63); border: var(--sw, 0px) solid var(--stroke, #fff); border-radius: var(--r, 0px); opacity: var(--op, 1);
   transform: skewX(calc(-1deg * var(--skew, 0))); box-shadow: var(--shadow, none); }
-.tb-text span { z-index: 0; isolation: isolate; }
+/* Все плашки строк лежат под всем текстом: плашка второй строки не закрывает первую. */
+.tb-text { position: relative; isolation: isolate; }
 .tb-text.tb-marker span::before { top: 52%; bottom: calc(6px - var(--py, 6px)); }
 .tb-text.tb-all { display: inline-block; position: relative; isolation: isolate; padding: var(--py, 6px) var(--px, 18px); }
 .tb-text.tb-all span { padding: 0; }
