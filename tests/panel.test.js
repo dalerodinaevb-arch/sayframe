@@ -142,9 +142,10 @@ function sfEval(layer, prop, t, extra) {
 const exprProps = (p, out = []) => { (p.children || []).forEach((c) => { if (c.expression) out.push(c); exprProps(c, out); }); return out; };
 // Finds a child by match names along a path (for checks).
 const acAt = (p, ...path) => path.reduce((n, k) => n && (typeof k === "number" ? n.children[k - 1] : n.children.find((x) => x.matchName === k)), p);
+let mkLayerId = 0;
 function mkAcLayer(name, kind, log) {
   const L = acInit(kind === "text" ? new TextLayer() : kind === "camera" ? new CameraLayer() : {}, name, null, log);
-  Object.assign(L, { name, inPoint: 0, outPoint: 5, startTime: 0, selected: true, propertyDepth: 0, comment: "" });
+  Object.assign(L, { name, inPoint: 0, outPoint: 5, startTime: 0, selected: true, propertyDepth: 0, comment: "", id: ++mkLayerId });
   const mk = L.property("ADBE Marker");
   mk.keyValue = (i) => mk.keys[i - 1].v;   // MarkerValue objects keep their methods
   return L;
@@ -611,6 +612,7 @@ function makeAE(opts, tmpDir) {
         items.push(it); log.rq.added.push(it); return it;
       } },
       render() {
+        log.undo.push("render");
         if (rqo.renderThrows) throw new Error("render failed");
         items.filter((i) => i.render && i.om).forEach((i) => {
           log.rq.rendered.push({ comp: i.comp.name, w: i.comp.width, h: i.comp.height, file: i.om.file.fsName, tpl: i.om.tpl, span: [i.timeSpanStart, i.timeSpanDuration], others: items.filter((x) => x !== i && x.render).length });
@@ -717,7 +719,7 @@ function makeAE(opts, tmpDir) {
     log.lastScript = script; log.scripts.push(script);
     if (!/^[\x09\x0a\x0d\x20-\x7e]*$/.test(script)) return "EvalScript error."; // the bridge must stay ASCII
     try {
-      if (/^\$\.evalFile\(/.test(script)) { log.evalFiles = (log.evalFiles || 0) + 1; vm.runInContext(hostSrc, ctx); const rest = script.replace(/^\$\.evalFile\([^)]*\);\s*/, ""); const r0 = vm.runInContext(rest, ctx); return typeof r0 === "string" ? r0 : String(r0); }
+      if (/^try \{ \$\.evalFile\(/.test(script)) { log.evalFiles = (log.evalFiles || 0) + 1; vm.runInContext(hostSrc, ctx); const rest = script.replace(/^try \{ \$\.evalFile\([^)]*\);\s*/, "").replace(/ \} catch[\s\S]*$/, ""); const r0 = vm.runInContext(rest, ctx); return typeof r0 === "string" ? r0 : String(r0); }
       const r = vm.runInContext(script, ctx); return typeof r === "string" ? r : String(r);
     } catch (e) { return "EvalScript error."; }
   } };
@@ -863,12 +865,12 @@ function makePR(opts, tmpDir) {
     __ran: (x) => log.ran.push(x) };
   const ctx = vm.createContext({ app, qe, File, Folder, Time, ProjectItemType, $: { sleep() {} } });
   ctx.$.global = ctx;
-  vm.runInContext(hostPrSrc, ctx);
+  if (!opts.brokenHost) vm.runInContext(hostPrSrc, ctx);
   return { log, project, ctx, Track, Clip, Seq, Item, ProjectItemType, evalScript(script) {
     log.lastScript = script; log.scripts.push(script);
     if (!/^[\x09\x0a\x0d\x20-\x7e]*$/.test(script)) return "EvalScript error.";
     try {
-      if (/^\$\.evalFile\(/.test(script)) { log.evalFiles = (log.evalFiles || 0) + 1; if (script.indexOf("/jsx/host_pr.jsx") < 0) return "EvalScript error."; vm.runInContext(hostPrSrc, ctx); const rest = script.replace(/^\$\.evalFile\([^)]*\);\s*/, ""); const r0 = vm.runInContext(rest, ctx); return typeof r0 === "string" ? r0 : String(r0); }
+      if (/^try \{ \$\.evalFile\(/.test(script)) { log.evalFiles = (log.evalFiles || 0) + 1; if (script.indexOf("/jsx/host_pr.jsx") < 0) return "EvalScript error."; if (opts.brokenHost) return "ERR 1235: Illegal use of reserved word"; vm.runInContext(hostPrSrc, ctx); const rest = script.replace(/^try \{ \$\.evalFile\([^)]*\);\s*/, "").replace(/ \} catch[\s\S]*$/, ""); const r0 = vm.runInContext(rest, ctx); return typeof r0 === "string" ? r0 : String(r0); }
       const r = vm.runInContext(script, ctx); return typeof r === "string" ? r : String(r);
     } catch (e) { return "EvalScript error."; }
   } };
@@ -1010,7 +1012,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     });
 
     const stored = opts.settings === null ? null : Object.assign({ apiKey: "sk-ant-test", selfCheck: false, infoTips: false, design: "glass", designSet: 2 }, opts.settings || {});
-    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin, extId, hostExts, ppro, apps }) => {
+    await page.addInitScript(({ stored, fresh, tmpDir, home, hostPath, withSystemPath, updateUrl, updateKey, updateState, updateEveryMs, statsUrl, keyWatch, skin, extId, hostExts, ppro, apps, mkPoll }) => {
+      if (!mkPoll) window.__SAYFRAME_TEST_NO_MK_POLL__ = true;
       window.__SAYFRAME_TEST_UPDATE_URL__ = updateUrl;
       window.__SAYFRAME_TEST_UPDATE_KEY__ = updateKey;
       window.__SAYFRAME_TEST_RETRY_MS__ = [40, 40, 40];
@@ -1080,7 +1083,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
           return { kill() { s.killed = true; } };
         };
       }
-    }, { stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null, extId: opts.extId || "", hostExts: opts.hostExts || null, ppro: !!opts.ppro, apps: opts.apps ? path.join(tmpDir, "Apps") : "" });
+    }, { mkPoll: !!opts.mkPoll, stored, fresh: !!opts.fresh, tmpDir, home, hostPath: extDir, withSystemPath: true, updateUrl: opts.updateUrl || "", updateKey: opts.updateKey === undefined ? RELEASE_KEYS.publicKey : opts.updateKey, updateState: opts.updateState || null, updateEveryMs: opts.updateEveryMs || 0, statsUrl: opts.statsUrl || "", keyWatch: !!opts.keyWatch, skin: opts.skin || null, extId: opts.extId || "", hostExts: opts.hostExts || null, ppro: !!opts.ppro, apps: opts.apps ? path.join(tmpDir, "Apps") : "" });
     if (opts.apps) opts.apps.forEach((a) => fs.mkdirSync(path.join(tmpDir, "Apps", a), { recursive: true }));
 
     // The panel is served over http from its folder: with file:// pages Chromium starts a new process on
@@ -1138,6 +1141,19 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       /ExtensionBundleId="com\.sayframe\.pr"/.test(prMan) && /<Extension Id="com\.sayframe\.pr\.panel" Version="([\d.]+)"\/>/.test(prMan) && /<Host Name="PPRO"/.test(prMan) && !/AEFT/.test(prMan) &&
       /<ScriptPath>\.\/jsx\/host_pr\.jsx<\/ScriptPath>/.test(prMan) && /ExtensionBundleVersion="([\d.]+)"/.exec(prMan)[1] === /ExtensionBundleVersion="([\d.]+)"/.exec(aeMan)[1]);
 
+    // ExtendScript is ES3: future reserved words (native, int, class…) as keys or after a dot stop the whole file
+    // from loading, and arrays have no indexOf/forEach/map/filter.
+    const es3Bad = [];
+    const es3W = "abstract|boolean|byte|char|class|const|debugger|double|enum|export|extends|final|float|goto|implements|import|int|interface|long|native|package|private|protected|public|short|static|super|synchronized|throws|transient|volatile|delete|default|in|new|function|typeof|instanceof|void|with|case|catch|finally|throw|try|switch|this|var|do|if|else|for|while|break|continue|return|null|true|false";
+    const es3Re = new RegExp("(?:\\.(" + es3W + ")\\b(?!\\s*\\()|[{,]\\s*(" + es3W + ")\\s*:)", "g");
+    [["host.jsx", hostSrc], ["host_pr.jsx", hostPrSrc]].forEach(([f, src]) => src.split("\n").forEach((l, i) => {
+      const c = l.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""').replace(/\/\/.*$/, "");
+      let m; es3Re.lastIndex = 0;
+      while ((m = es3Re.exec(c))) es3Bad.push(f + ":" + (i + 1) + " " + m[0]);
+      if (/\b(used|list|names|out|arr|items|parts)\.(indexOf|forEach|map|filter)\(/.test(c)) es3Bad.push(f + ":" + (i + 1) + " array method");
+    }));
+    check("PR0 host files use no ES3 reserved words as names and no ES5 array methods (ExtendScript would not load them)", es3Bad.length === 0, es3Bad.join(" | "));
+
     p = await open({ ppro: true, width: 420 });
     await p.page.waitForTimeout(300);
     const tabs = await p.page.locator("#tabs .tab").evaluateAll((l) => l.map((b) => b.getAttribute("data-tab")));
@@ -1145,7 +1161,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       p.errors.length === 0 && tabs.sort().join() === "brand,claude,motion,tools" && (await p.page.locator(".app-badge").innerText()) === "Premiere" &&
       !(await vis(p, "#snapBtn")) && !(await vis(p, "#fxBtn")) && (await vis(p, "#exportBtn")) && (await p.page.getAttribute("html", "data-app")) === "ppro", p.errors.join(" | ") + " " + tabs.join());
     check("PR1 the panel talks only to host_pr.jsx and only with its own commands",
-      p.ae.log.scripts.every((s) => !/^\$\.evalFile/.test(s) || s.indexOf("/jsx/host_pr.jsx") > 0) &&
+      p.ae.log.scripts.every((s) => s.indexOf("$.evalFile(") < 0 || s.indexOf("/jsx/host_pr.jsx") > 0) &&
       p.ae.log.scripts.filter((s) => /^sayframeHost\./.test(s)).every((s) => /^sayframeHost\.(info|syntax|run|reference|brand\w+|export\w+|acSound|snd\w+|sf\w+|trApply|easePR|ec\w+|stagger|anchor|align|distribute|placeImage|organizeProject|removeUnused|cutout\w+)\(/.test(s)), p.ae.log.scripts.join(" | "));
     check("PR1 AI tab: no expressions, styles or references; Premiere quick tasks",
       !(await vis(p, '.ai-mode[data-m="expr"]')) && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && !(await vis(p, "#exprCard")) &&
@@ -1450,6 +1466,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       await go(p, '[data-tool="organize"] button');
       check("TL9 По папкам: the sequence to «Секвенции», video to «Видео»", vid.parent.name === "Видео" && sq.projectItem.parent.name === "Секвенции" && /Перемещено/.test(await p.status()), vid.parent.name + " " + sq.projectItem.parent.name + " " + await p.status());
       check("TL10 no errors", p.errors.length === 0, p.errors.join(" | "));
+      await p.close();
+      p = await open({ ppro: true, width: 420, v2Full: true, brokenHost: true, settings: { design: "studio", designSet: 2 } });
+      await p.page.click("#tabMotion"); await p.page.waitForTimeout(300);
+      await go(p, "#prEaseGo");
+      check("TL11 if Premiere cannot load host_pr.jsx, the status shows the real error and its line", /не смог загрузить скрипт панели \(строка 1235: Illegal use of reserved word\)/.test(await p.status()), await p.status());
       await p.close();
     }
     if (process.env.SAYFRAME_ONLY === "pr") { await browser.close(); console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0); }
@@ -5187,7 +5208,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("U7 panel restarted on the new version", p.net.reloads === 1 && (await p.page.locator("#versionText").innerText()) === "Sayframe 9.9.9");
   check("U7 every file replaced with the verified download", Object.keys(rel.files).every((r) => fs.readFileSync(path.join(p.extDir, r)).equals(rel.files[r])));
   check("U7 files fetched from the folder next to version.json", p.net.downloads.length === 6 && p.net.downloads.every((u) => u.indexOf(BASE) === 0 && /\?v=[0-9a-f]{12}$/.test(u)), p.net.downloads[0]);
-  check("U7 host.jsx re-read by After Effects", p.ae.log.scripts.some((x) => x.indexOf("$.evalFile(") === 0 && x.indexOf("/jsx/host.jsx") > 0 && x.indexOf(p.extDir) > 0));
+  check("U7 host.jsx re-read by After Effects", p.ae.log.scripts.some((x) => x.indexOf("$.evalFile(") >= 0 && x.indexOf("/jsx/host.jsx") > 0 && x.indexOf(p.extDir) > 0));
   check("U7 says it was updated, once", (await p.status()) === "Sayframe обновлён до версии 9.9.9." && (await p.statusKind()) === "done");
   await settle(p);
   check("U7 no banner after updating", !(await barVisible(p)));
@@ -6118,6 +6139,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("EX3 «Назад к настройкам» brings the sheet back", await vis(p, "#exGo"));
     await p.page.click("#exGo"); await p.page.waitForFunction(() => document.querySelectorAll("#exResults .ex-row.done").length === 1);
     check("EX3 a second run does not overwrite: «Main — Среднее 2.mp4»", mp4s(exDir).indexOf("Main — Среднее 2.mp4") >= 0, mp4s(exDir).join());
+    t = p.ae.log.undo.filter((x) => /export|^end$|^render$/.test(x)).join(" ");
+    check("EX3b the export's undo group closes before the render (no «Undo group mismatch» warning in After Effects)", /^(begin:Sayframe: export end render ?)+$/.test(t + " "), t);
     await p.close();
 
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
@@ -6495,6 +6518,125 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("RB6 the camera stands far enough back for the whole ring, level with it", camP[2] < -2500 && camP[1] === 540 && camP[0] === 960, JSON.stringify(camP));
     await p.restart(); await rbTab(p);
     check("RB5 the settings survive a restart", (await p.page.getAttribute('#rbMode [data-v="ring"]', "aria-pressed")) === "true" && p.errors.length === 0, p.errors.join("|"));
+    await p.close();
+  }
+  // «Макеты»: select what a block made and the block changes it (rebuilt in place; what the user moved stays).
+  {
+    const names = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const tf = (l, n) => acAt(l, "ADBE Transform Group", n);
+    const tag = (l) => String(l && l.comment || "");
+    const mkTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    const settle = async (p, ms) => { await p.page.waitForTimeout(ms || 1400); await p.idle(); };
+    let p = await open({ mkPoll: true, orbit: { layers: [{ name: "BG", selected: false }] } });
+    await mkTab(p);
+    await p.page.evaluate(() => { document.querySelector('#rbForm [data-v="wave"]').click(); });
+    await p.page.click("#rbBtn"); await p.idle();
+    const R0 = L(p, "Лента"), T0 = L(p, "Текст ленты");
+    check("MK1 what a block makes carries its tag: the ribbon is the main layer with the block's settings, the text a part; the user's layer has none",
+      /^Sayframe\|ribbon\|g\w+\|main\|.*ADBE Position=960,540.*\|\{.*"form":"wave"/.test(tag(R0)) && /^Sayframe\|ribbon\|g\w+\|part\|/.test(tag(T0)) && tag(L(p, "BG")) === "", tag(R0) + " / " + tag(T0));
+    await settle(p);
+    check("MK2 the ribbon is selected after «Создать»: the block shows «Изменяется: «Лента»», «+ Новая лента», and the button is «Готово»",
+      (await p.page.locator('[data-mk="ribbon"] .mk-edit').isVisible()) && /Изменяется: «Лента»/.test(await p.page.locator('[data-mk="ribbon"] .mk-edit-name').innerText()) &&
+      (await p.page.locator('[data-mk="ribbon"] .mk-edit-new').innerText()) === "+ Новая лента" && (await p.page.locator("#rbBtn").innerText()) === "Готово" &&
+      !(await p.page.locator('[data-mk="glass"] .mk-edit').isVisible()), await p.status());
+    // The user moves the ribbon and animates its opacity; then makes it thicker in the block.
+    tf(R0, "ADBE Position").setValue([700, 300]);
+    const op = tf(R0, "ADBE Opacity"); op.setValueAtTime(0, 0); op.setValueAtTime(1, 100);
+    const before = p.ae.log.dcMain.list.length;
+    await p.page.evaluate(() => { const r = document.querySelector("#rbWidth"); r.value = "200"; r.dispatchEvent(new Event("input", { bubbles: true })); });
+    await settle(p, 1200);
+    const R1 = L(p, "Лента"), T1 = L(p, "Текст ленты");
+    check("MK3 a change in the block rebuilds that ribbon: the old layers are gone, no second ribbon, the new width",
+      R1 !== R0 && p.ae.log.dcMain.list.length === before && p.ae.log.dcMain.list.indexOf(R0) < 0 && p.ae.log.dcMain.list.indexOf(T0) < 0 &&
+      acAt(T1, "ADBE Effect Parade").children.find((e) => e.name === "Толщина ленты").children[0].value === 200 && tag(R1).split("|")[2] === tag(R0).split("|")[2], names(p) + " " + tag(R1));
+    check("MK3 what the user did stays: the ribbon where it was moved, its opacity keys; the text did not move (the user did not move it)",
+      JSON.stringify(tf(R1, "ADBE Position").value) === "[700,300]" && tf(R1, "ADBE Opacity").numKeys === 2 && tf(R1, "ADBE Opacity").keyValue(2) === 100 &&
+      JSON.stringify(tf(T1, "ADBE Position").value) === "[960,540]", JSON.stringify(tf(R1, "ADBE Position").value) + " " + tf(R1, "ADBE Opacity").numKeys);
+    check("MK3 the status says it changed", /«Лента» изменена/.test(await p.status()), await p.status());
+    await settle(p);
+    check("MK3 still changing the same ribbon after the rebuild", (await p.page.locator('[data-mk="ribbon"] .mk-edit').isVisible()));
+    await p.page.click('[data-mk="ribbon"] .mk-edit-new');
+    check("MK4 «+ Новая лента»: back to making a new one", !(await p.page.locator('[data-mk="ribbon"] .mk-edit').isVisible()) && (await p.page.locator("#rbBtn").innerText()) === "Создать ленту");
+    await settle(p);
+    check("MK4 … and it stays so while that ribbon is still selected", !(await p.page.locator('[data-mk="ribbon"] .mk-edit').isVisible()));
+    await p.page.click("#rbBtn"); await p.idle();
+    check("MK4 a second ribbon is made next to the first, with its own tag", p.ae.log.dcMain.list.filter((l) => /^Sayframe\|ribbon\|\w+\|main/.test(tag(l))).length === 2 &&
+      new Set(p.ae.log.dcMain.list.filter((l) => /^Sayframe\|ribbon/.test(tag(l))).map((l) => tag(l).split("|")[2])).size === 2, names(p));
+    await settle(p);
+    await p.page.click("#rbBtn"); await settle(p, 600);
+    check("MK5 «Готово» takes the selection off; the block makes new ones again", p.ae.log.dcMain.list.every((l) => !l.selected) && !(await p.page.locator('[data-mk="ribbon"] .mk-edit').isVisible()) &&
+      (await p.page.locator("#rbBtn").innerText()) === "Создать ленту" && /Готово: «Лента/.test(await p.status()), await p.status());
+    // Select the first ribbon's text: its settings come back into the block.
+    await p.page.evaluate(() => { const r = document.querySelector("#rbWidth"); r.value = "50"; r.dispatchEvent(new Event("input", { bubbles: true })); });
+    T1.selected = true;
+    await settle(p);
+    check("MK6 selecting any layer of a made ribbon opens it with its own settings (width 200, not the 50 set meanwhile)",
+      (await p.page.locator('[data-mk="ribbon"] .mk-edit').isVisible()) && (await p.page.inputValue("#rbWidth")) === "200", await p.page.inputValue("#rbWidth"));
+    T1.selected = false;
+    await settle(p);
+    check("MK6 nothing selected: the bar goes away", !(await p.page.locator('[data-mk="ribbon"] .mk-edit').isVisible()));
+    check("MK7 no errors", p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
+
+    // A carousel of precomps: a photo put into a card stays when the carousel is changed.
+    p = await open({ mkPoll: true, orbit: { layers: [{ name: "BG", selected: false }] } });
+    await mkTab(p);
+    await p.page.click('#orbitMode [data-v="precomp"]');
+    await p.page.click("#orbitBtn"); await p.idle();
+    const card1 = p.ae.log.orbitComps.find((c) => c.name === "Карточка 1");
+    card1.layers.addSolid([1, 0, 0], "Моё фото", 100, 100);
+    const comps0 = p.ae.log.orbitComps.length;
+    await settle(p);
+    check("MK8 the carousel opens in its block after «Создать»", (await p.page.locator('[data-mk="carousel"] .mk-edit').isVisible()) && (await p.page.locator("#orbitBtn").innerText()) === "Готово");
+    await p.page.evaluate(() => { const r = document.querySelector("#orbitRadius"); r.value = "900"; r.dispatchEvent(new Event("input", { bubbles: true })); });
+    await settle(p, 1200);
+    const used = p.ae.log.dcMain.list.filter((l) => l.source === card1);
+    check("MK8 a change keeps the card comps: no new «Карточка 1», the photo still inside, the card layer uses the same comp",
+      p.ae.log.orbitComps.length === comps0 && card1.list.some((l) => l.name === "Моё фото") && used.length === 1 && /изменена/.test(await p.status()), p.ae.log.orbitComps.length + " vs " + comps0 + " " + await p.status());
+    check("MK8 no errors", p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
+
+    // A text box on the user's text: the text is the user's, it stays; only the box is made again.
+    const slide = (sel, v) => p.page.evaluate(([q, x]) => { const r = document.querySelector(q); r.value = String(x); r.dispatchEvent(new Event("input", { bubbles: true })); }, [sel, v]);
+    p = await open({ mkPoll: true, orbit: { layers: [{ name: "Title", kind: "text", text: "Hello" }, { name: "BG", selected: false }] } });
+    await mkTab(p);
+    await p.page.click("#tbBtn"); await p.idle();
+    const title = L(p, "Title"), boxes = () => p.ae.log.dcMain.list.filter((l) => /^Плашка/.test(l.name)).length, nBox = boxes();
+    await settle(p);
+    check("MK9 the text box opens in its block; the user's text is tagged as kept", (await p.page.locator('[data-mk="textbox"] .mk-edit').isVisible()) && /^Sayframe\|textbox\|\w+\|keep\|on\|/.test(tag(title)), tag(title));
+    await slide("#tbRound", 40); await settle(p, 1200);
+    check("MK9 a change: the same text (not a new one), the same number of box layers, the new roundness",
+      L(p, "Title") === title && p.ae.log.dcMain.list.filter((l) => l.name === "Title").length === 1 && boxes() === nBox && !L(p, "Ваш текст") &&
+      acAt(L(p, "Плашка: Title"), "ADBE Effect Parade").children.find((e) => e.name === "Скругление").children[0].value === 40, names(p));
+    check("MK9 no errors", p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
+
+    // A phone with the user's video on the screen: the video stays, with one screen mask.
+    p = await open({ mkPoll: true, orbit: { layers: [{ name: "Видео" }, { name: "BG", selected: false }] } });
+    p.ae.log.dcMain.list[0].width = 1920; p.ae.log.dcMain.list[0].height = 1080;
+    await mkTab(p);
+    await p.page.click('#phScreen [data-v="layer"]');
+    await p.page.click("#phBtn"); await p.idle();
+    const vid = L(p, "Видео"), n0 = p.ae.log.dcMain.list.length;
+    await settle(p);
+    await p.page.click('#phColors button:not([aria-pressed="true"])'); await settle(p, 1200);
+    check("MK10 a phone change: the user's video stays (one screen mask, on), the phone rebuilt, nothing doubled",
+      L(p, "Видео") === vid && acAt(vid, "ADBE Mask Parade").children.length === 1 && vid.enabled !== false && p.ae.log.dcMain.list.length === n0 &&
+      p.ae.log.dcMain.list.filter((l) => l.name === "Телефон: управление").length === 1 && /изменена/.test(await p.status()), names(p) + " | " + await p.status());
+    check("MK10 no errors", p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
+
+    // Grid: more columns, the same grid.
+    p = await open({ mkPoll: true, orbit: { layers: [{ name: "BG", selected: false }] } });
+    await mkTab(p);
+    await p.page.click("#gridBtn"); await p.idle();
+    await settle(p);
+    const tiles = () => p.ae.log.dcMain.list.filter((l) => /^Плитка /.test(l.name)).length, t0 = tiles();
+    await p.page.click("#gridColsMore"); await settle(p, 1200);
+    check("MK11 a grid change: still one grid, all its tiles carry one tag", p.ae.log.dcMain.list.filter((l) => l.name === "Grid: управление").length === 1 && tiles() > 0 &&
+      new Set(p.ae.log.dcMain.list.filter((l) => /^Плитка /.test(l.name)).map((l) => tag(l).split("|")[2])).size === 1 && /изменена/.test(await p.status()), t0 + " -> " + tiles() + " " + await p.status());
+    check("MK11 no errors", p.errors.length === 0, p.errors.join(" | "));
     await p.close();
   }
   // «Текст по ленте»: a random line by number, the line's direction, the text running forward or back.

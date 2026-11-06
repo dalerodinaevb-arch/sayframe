@@ -2597,3 +2597,13 @@ html[data-solo-kind="tool"] .motion-tools > .solo-card > .tool-head, html[data-s
 .pr-ease-btn[aria-pressed="true"] { opacity: 1; border-color: rgba(var(--accent-rgb, 139,124,255), .8); background: rgba(var(--accent-rgb, 139,124,255), .22); }
 .pr-ease-btn svg { width: 48px; height: 32px; overflow: visible; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .pr-ease-go { width: 100%; margin-top: 10px; }
+
+/* «Макеты»: выделено то, что сделал блок, — он его меняет. */
+.mk-edit { display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 12px; margin: 0 0 4px; border-radius: 12px;
+  background: rgba(var(--accent-rgb), .16); border: 1px solid rgba(var(--accent-rgb), .55); color: var(--text); font-weight: 600; font-size: 13px; }
+.mk-edit[hidden] { display: none; }
+.mk-edit > svg { width: 16px; height: 16px; flex: none; }
+.mk-edit-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-edit-new { flex: none; font: inherit; font-size: 12px; color: var(--text); background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 9px; padding: 5px 10px; cursor: pointer; }
+.mk-edit-new:hover { background: rgba(255, 255, 255, .12); }
