@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.76.0";
+    var VERSION = "1.77.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -1225,6 +1225,8 @@
         if (m === "NO_ACTIVE_COMP") { return "Откройте композицию: инструмент работает с открытой композицией."; }
         if (m === "NO_KEYS_SELECTED") { return "Выделите ключевые кадры на таймлайне и нажмите ещё раз."; }
         if (m === "NO_LAYERS_SELECTED") { return "Выделите слой в композиции и нажмите ещё раз."; }
+        if (m === "OR_NO_CAROUSEL") { return "Сначала создайте карусель (или выделите её слой «Карусель: управление»)."; }
+        if (m === "OR_NO_PHOTOS") { return "Выделите фото или видео в окне Project и нажмите «Фото в карточки» ещё раз."; }
         if (m === "GL_NO_SHAPE") { return "Нарисуйте фигуру (пером или прямоугольником), выделите её и нажмите «Сделать стеклом»."; }
         if (m === "LOGO_NOT_FOUND") { return "Файл логотипа не найден. Удалите его из проекта и добавьте снова."; }
         if (m === "ICON_NOT_FOUND") { return "Файл иконки не найден. Удалите её из проекта и добавьте снова."; }
@@ -1531,14 +1533,16 @@
         fxBtn: el("fxBtn"), snapBtn: el("snapBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
         orbitPane: el("orbitPane"), orbitStage: el("orbitStage"), orbitRing: el("orbitRing"), orbitLayout: el("orbitLayout"), orbitShape: el("orbitShape"),
         orbitCornerRow: el("orbitCornerRow"), orbitCornerIco: el("orbitCornerIco"), orbitCorners: el("orbitCorners"), orbitCornersVal: el("orbitCornersVal"),
-        orbitMode: el("orbitMode"), orbitLess: el("orbitLess"), orbitMore: el("orbitMore"), orbitCount: el("orbitCount"),
+        orbitBackC: el("orbitBackC"), orbitBackHex: el("orbitBackHex"), orbitBackDot: el("orbitBackDot"), orbitPhotos: el("orbitPhotos"), orbitLess: el("orbitLess"), orbitMore: el("orbitMore"), orbitCount: el("orbitCount"),
         orbitRadius: el("orbitRadius"), orbitRadiusVal: el("orbitRadiusVal"), orbitW: el("orbitW"), orbitWVal: el("orbitWVal"), orbitH: el("orbitH"), orbitHVal: el("orbitHVal"),
-        orbitNumbers: el("orbitNumbers"), orbitCamera: el("orbitCamera"), orbitBack: el("orbitBack"), orbitBackRow: el("orbitBackRow"), orbitBtn: el("orbitBtn"),
+        orbitNumbers: el("orbitNumbers"), orbitCamera: el("orbitCamera"), orbitBtn: el("orbitBtn"),
         gridStage: el("gridStage"), gridW: el("gridW"), gridH: el("gridH"), gridFit: el("gridFit"), gridRows: el("gridRows"), gridRowsLess: el("gridRowsLess"), gridRowsMore: el("gridRowsMore"),
         gridCols: el("gridCols"), gridColsLess: el("gridColsLess"), gridColsMore: el("gridColsMore"), gridGap: el("gridGap"), gridGapVal: el("gridGapVal"), gridGapName: el("gridGapName"),
         gridGapV: el("gridGapV"), gridGapVVal: el("gridGapVVal"), gridGapVRow: el("gridGapVRow"), gridRound: el("gridRound"), gridRoundVal: el("gridRoundVal"),
         gridRand: el("gridRand"), gridRandVal: el("gridRandVal"), gridSplit: el("gridSplit"), gridSeed: el("gridSeed"), gridDice: el("gridDice"), gridMode: el("gridMode"),
-        gridNumbers: el("gridNumbers"), gridStagger: el("gridStagger"), gridBtn: el("gridBtn"),
+        gridAnim: el("gridAnim"), gridInBtn: el("gridInBtn"), gridOutBtn: el("gridOutBtn"), gridInMini: el("gridInMini"), gridOutMini: el("gridOutMini"), gridInName: el("gridInName"), gridOutName: el("gridOutName"),
+        gridPop: el("gridPop"), gridPopTitle: el("gridPopTitle"), gridTabs: el("gridTabs"), gridPopList: el("gridPopList"), gridDur: el("gridDur"), gridDurVal: el("gridDurVal"), gridStep: el("gridStep"), gridStepVal: el("gridStepVal"),
+        gridNumbers: el("gridNumbers"), gridBtn: el("gridBtn"),
         acBody: el("acBody"),
         acTabs: el("acTabs"), acSearch: el("acSearch"), acFavOnly: el("acFavOnly"), acModeRow: el("acModeRow"), acMode: el("acMode"),
         acDurRow: el("acDurRow"), acDur: el("acDur"), acDurVal: el("acDurVal"), acColorRow: el("acColorRow"), acColor: el("acColor"),
@@ -1555,7 +1559,7 @@
         tbSwatches: el("tbSwatches"), tbColor: el("tbColor"), tbStrokeColor: el("tbStrokeColor"), tbStrokeRow: el("tbStrokeRow"), tbStrokeWRow: el("tbStrokeWRow"),
         tbPx: el("tbPx"), tbPxVal: el("tbPxVal"), tbPy: el("tbPy"), tbPyVal: el("tbPyVal"), tbRound: el("tbRound"), tbRoundVal: el("tbRoundVal"),
         tbStroke: el("tbStroke"), tbStrokeVal: el("tbStrokeVal"), tbSkew: el("tbSkew"), tbSkewVal: el("tbSkewVal"), tbOpacity: el("tbOpacity"), tbOpacityVal: el("tbOpacityVal"),
-        tbShadow: el("tbShadow"), tbBtn: el("tbBtn"),
+        tbShadow: el("tbShadow"), tbGlow: el("tbGlow"), tbBtn: el("tbBtn"),
         glPane: document.querySelector(".gl-pane"), glMode: el("glMode"), glTextPart: el("glTextPart"), glShapePart: el("glShapePart"), glText: el("glText"), glForms: el("glForms"),
         glStage: el("glStage"), glShapes: el("glShapes"), glKinds: el("glKinds"), glKindName: el("glKindName"), glEdges: el("glEdges"), glBlur: el("glBlur"), glBlurVal: el("glBlurVal"),
         glLight: el("glLight"), glLightVal: el("glLightVal"), glSize: el("glSize"), glSizeVal: el("glSizeVal"), glSizeRow: el("glSizeRow"), glAdd: el("glAdd"), glMine: el("glMine"),
@@ -7004,7 +7008,7 @@
 
     // ---- Grid: бенто-сетка из скруглённых плиток. Раскладка — тот же код, что в host.jsx (gridLayout):
     // одно и то же «Вариант» даёт одну и ту же раскладку и в превью, и в After Effects.
-    var GRID_DEFAULTS = { rows: 4, cols: 5, gap: 20, split: false, gapV: 20, round: 20, rand: 100, seed: 12345, fit: true, w: 1920, h: 1080, mode: "shape", numbers: true, stagger: true };
+    var GRID_DEFAULTS = { rows: 4, cols: 5, gap: 20, split: false, gapV: 20, round: 20, rand: 100, seed: 12345, fit: true, w: 1920, h: 1080, mode: "shape", numbers: true, appear: "seq", disappear: "none", dur: 0.6, step: 0.05 };
 
     function gridImul(a, b) {
         var ah = (a >>> 16) & 0xffff, al = a & 0xffff, bh = (b >>> 16) & 0xffff, bl = b & 0xffff;
@@ -7047,6 +7051,144 @@
         return boxes;
     }
 
+    // ---- Grid tiles coming in and going out. The same code is in panel.js (the preview) and in host.jsx (the keys),
+    // so the preview shows what the comp gets. o: a tile (c, r: its middle in cells; C, R: the grid; i, n: its number;
+    // r1..r3, side: its own random numbers; px, py: its middle, cx, cy: the grid's middle, S: the grid's size, h: its height).
+    var GRFX_WOW = ["explode", "assemble", "domino", "tetris", "spiral", "jelly", "puzzle", "glitch", "deal", "flip3d", "zoom", "snake"];
+    var GRFX_SIMPLE = ["none", "seq", "up", "wave", "center", "rand", "flip", "spring", "wipe", "blur", "drop", "spin"];
+    // These only ease in one go: two keys are enough. The rest overshoot or bounce: a key every second frame.
+    var GRFX_SMOOTH = { seq: 1, up: 1, center: 1, wipe: 1, blur: 1, spin: 1, zoom: 1, flip: 1, deal: 1 };
+    function grfxEz(x) { return 1 - Math.pow(1 - x, 3); }
+    function grfxBack(x) { var c = 2.2; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); }
+    function grfxBounce(x) {
+        var n = 7.5625, d = 2.75;
+        if (x < 1 / d) { return n * x * x; }
+        if (x < 2 / d) { x -= 1.5 / d; return n * x * x + 0.75; }
+        if (x < 2.5 / d) { x -= 2.25 / d; return n * x * x + 0.9375; }
+        x -= 2.625 / d;
+        return n * x * x + 0.984375;
+    }
+    function grfxCap(v) { return Math.max(0, Math.min(1, v)); }
+    // Which tile comes first: the smaller, the earlier.
+    function grfxOrd(fx, o) {
+        var C = o.C, R = o.R, cc, rr, ring;
+        switch (fx) {
+        case "up": return (R - o.r) / R;
+        case "wave": case "flip3d": return (o.c + o.r) / (C + R);
+        case "center": case "zoom": return Math.sqrt(Math.pow(o.c - C / 2, 2) + Math.pow((o.r - R / 2) * 1.2, 2));
+        case "assemble": return -Math.sqrt(Math.pow(o.c - C / 2, 2) + Math.pow(o.r - R / 2, 2));
+        case "rand": case "explode": case "glitch": case "puzzle": return o.r1;
+        case "flip": case "wipe": return o.c / C;
+        case "drop": return o.r / R;
+        case "tetris": return ((R - o.r) / R) * 0.6 + (o.c / C) * 0.4;
+        case "spiral":
+            cc = Math.floor(o.c); rr = Math.floor(o.r); ring = Math.min(cc, rr, C - 1 - cc, R - 1 - rr);
+            return ring + (Math.atan2(rr - R / 2, cc - C / 2) + Math.PI) / (2 * Math.PI);
+        case "snake": rr = Math.floor(o.r); return rr * C + (rr % 2 ? C - o.c : o.c);
+        case "jelly": return o.r2 * 0.4 + (o.c / C) * 0.6;
+        default: return o.i;
+        }
+    }
+    // Each tile's delay: its place in the order times the step.
+    function grfxDelays(fx, os, step) {
+        var idx = [], d = [], i;
+        for (i = 0; i < os.length; i++) { idx.push(i); d.push(0); }
+        idx.sort(function (a, b) { var x = grfxOrd(fx, os[a]) - grfxOrd(fx, os[b]); return Math.abs(x) > 1e-9 ? x : a - b; });
+        for (i = 0; i < idx.length; i++) { d[idx[i]] = i * step; }
+        return d;
+    }
+    // How a tile looks at p (0 not there yet, 1 in its place): offsets, scale, turns (degrees), opacity 0..1, blur in px, wipe 0..1 hidden.
+    function grfxAt(fx, p, o) {
+        var e = grfxEz(p), S = o.S, f = { x: 0, y: 0, z: 0, sx: 1, sy: 1, rz: 0, rx: 0, ry: 0, op: 1, blur: 0, wipe: 0 }, b, w, d, k, a;
+        switch (fx) {
+        case "none": f.op = p > 0 ? 1 : 0; break;
+        case "seq": f.op = e; f.sx = f.sy = 0.6 + 0.4 * e; break;
+        case "up": f.op = e; f.y = (1 - e) * S * 0.12; break;
+        case "wave": f.op = grfxCap(p * 2); f.sx = f.sy = grfxBack(p); break;
+        case "center": f.op = grfxCap(p * 3); f.sx = f.sy = e; break;
+        case "rand": f.op = grfxCap(p * 3); f.sx = f.sy = grfxBack(p); break;
+        case "flip": f.op = p > 0 ? 1 : 0; f.ry = (1 - e) * 90; break;
+        case "spring": f.op = grfxCap(p * 4); f.sx = f.sy = p <= 0 ? 0 : 1 - Math.cos(p * Math.PI * 2.5) * Math.exp(-p * 4); break;
+        case "wipe": f.wipe = 1 - e; break;
+        case "blur": f.op = e; f.blur = (1 - e) * S * 0.03; f.sx = f.sy = 1.15 - 0.15 * e; break;
+        case "drop": f.op = grfxCap(p * 4); f.y = -(1 - grfxBounce(p)) * S * 0.35; break;
+        case "spin": f.op = e; f.rz = (1 - e) * -180; f.sx = f.sy = e; break;
+        case "explode":
+            b = grfxBack(p); f.op = grfxCap(p * 3);
+            f.x = (1 - b) * (o.r1 - 0.5) * S * 1.6; f.y = (1 - b) * (o.r2 - 0.5) * S * 1.2; f.rz = (1 - b) * (o.r3 - 0.5) * 540; f.sx = f.sy = 0.4 + 0.6 * b;
+            break;
+        case "assemble":
+            b = grfxBack(p); f.op = grfxCap(p * 4);
+            f.x = (1 - b) * (o.cx - o.px); f.y = (1 - b) * (o.cy - o.py); f.sx = f.sy = 0.15 + 0.85 * b;
+            break;
+        case "domino":
+            // Falls forward round its top edge.
+            f.op = p > 0 ? 1 : 0; f.rx = (1 - grfxBounce(p)) * -110; a = f.rx * Math.PI / 180;
+            f.y = o.h / 2 * (Math.cos(a) - 1); f.z = o.h / 2 * Math.sin(a);
+            break;
+        case "tetris": f.op = p > 0 ? 1 : 0; f.y = -(1 - grfxBounce(p)) * S * 0.6; break;
+        case "spiral": f.op = grfxCap(p * 3); f.rz = (1 - e) * 180; f.sx = f.sy = grfxBack(p); break;
+        case "jelly": w = Math.sin(p * 11) * Math.exp(-4 * p) * 0.45; f.op = grfxCap(p * 5); f.sx = e * (1 + w); f.sy = e * (1 - w); break;
+        case "puzzle":
+            d = (1 - grfxBack(p)) * S * 0.7; f.op = grfxCap(p * 3);
+            f.x = [d, -d, 0, 0][o.side]; f.y = [0, 0, d, -d][o.side];
+            break;
+        case "glitch":
+            if (p <= 0) { f.op = 0; break; }
+            if (p < 0.7) { k = Math.floor(p * 30 + o.i * 3); f.op = k % 3 ? 1 : 0.15; f.x = ((k * 7) % 5 - 2) * S * 0.012; }
+            break;
+        case "deal":
+            f.op = p > 0 ? 1 : 0;
+            f.x = (1 - e) * (o.cx - S * 0.55 - o.px); f.y = (1 - e) * (o.cy + S * 0.45 - o.py); f.rz = (1 - e) * -70; f.sx = f.sy = 0.7 + 0.3 * e;
+            break;
+        case "flip3d": f.op = p > 0 ? 1 : 0; f.rx = (1 - grfxBack(p)) * -90; break;
+        case "zoom": f.op = grfxCap(p * 2); f.sx = f.sy = 1 + (1 - e) * 2.2; f.blur = (1 - e) * S * 0.02; break;
+        }
+        return f;
+    }
+    // Each tile's own random numbers: the same variant number gives the same ones.
+    function grfxTiles(os, seed) {
+        var rng = gridRng((Math.floor(Number(seed) || 0) + 99) >>> 0), i;
+        for (i = 0; i < os.length; i++) { os[i].r1 = rng(); os[i].r2 = rng(); os[i].r3 = rng(); os[i].side = Math.floor(rng() * 4); os[i].i = i; os[i].n = os.length; }
+        return os;
+    }
+    var GRFX_NAMES = { explode: "Взрыв", assemble: "Сборка", domino: "Домино", tetris: "Тетрис", spiral: "Спираль", jelly: "Желе", puzzle: "Пазл",
+        glitch: "Глитч", deal: "Раздача", flip3d: "3D-волна", zoom: "Удар", snake: "Змейка", none: "Нет", seq: "По очереди", up: "Снизу", wave: "Волна",
+        center: "Из центра", rand: "Случайно", flip: "Переворот", spring: "Пружинка", wipe: "Шторка", blur: "Размытие", drop: "Падение", spin: "Вращение" };
+
+    // The look at p as CSS on a preview tile (the same numbers After Effects gets as keys).
+    function grfxCss(el, f) {
+        el.style.transform = "translate3d(" + f.x.toFixed(1) + "px," + f.y.toFixed(1) + "px," + f.z.toFixed(1) + "px) rotateX(" + f.rx.toFixed(1) + "deg) rotateY(" + f.ry.toFixed(1) +
+            "deg) rotate(" + f.rz.toFixed(1) + "deg) scale(" + f.sx.toFixed(3) + "," + f.sy.toFixed(3) + ")";
+        el.style.opacity = String(f.op);
+        el.style.filter = f.blur > 0.05 ? "blur(" + f.blur.toFixed(1) + "px)" : "";
+        el.style.clipPath = f.wipe > 0.001 ? "inset(0 " + (f.wipe * 100).toFixed(1) + "% 0 0)" : "";
+    }
+    // A set of preview tiles at time t of a play: mode "in" / "out", dur and step in seconds.
+    function grfxShow(set, fx, mode, t, dur, step) {
+        var d = grfxDelays(fx, set.os, step), i, p;
+        for (i = 0; i < set.els.length; i++) {
+            p = grfxCap((t - d[i]) / dur);
+            if (mode === "out") { p = 1 - p; }
+            if (mode === "show") { p = 1; }
+            grfxCss(set.els[i], grfxAt(fx, p, set.os[i]));
+        }
+        return Math.max.apply(null, d.concat([0])) + dur;
+    }
+    // A tiny grid (5 tiles) for the buttons and the choice list.
+    var GRFX_MINI = [[0, 0, 1, 1], [1, 0, 1, 2], [2, 0, 1, 1], [0, 1, 1, 1], [2, 1, 1, 1]];
+    function grfxMini(host) {
+        var W = host.clientWidth || 38, H = host.clientHeight || 28, pad = 3, g = 2, cw = (W - pad * 2) / 3, ch = (H - pad * 2) / 2, html = "", os = [], els;
+        GRFX_MINI.forEach(function (b, i) {
+            var w = b[2] * cw - g, h = b[3] * ch - g, x = pad + b[0] * cw, y = pad + b[1] * ch;
+            html += "<i class=\"gr-mb\" style=\"--h:" + (250 + i * 22) + ";left:" + x.toFixed(1) + "px;top:" + y.toFixed(1) + "px;width:" + w.toFixed(1) + "px;height:" + h.toFixed(1) + "px\"></i>";
+            os.push({ c: b[0] + b[2] / 2, r: b[1] + b[3] / 2, C: 3, R: 2, px: x + w / 2, py: y + h / 2, cx: W / 2, cy: H / 2, S: Math.max(W, H), h: h });
+        });
+        host.innerHTML = html;
+        els = Array.prototype.slice.call(host.querySelectorAll(".gr-mb"));
+        return { els: els, os: grfxTiles(os, 7) };
+    }
+
     function drawGridPreview() {
         var g = orbit.grid, st = ui.gridStage, boxes, W, H, sw, sh, k, gx, gy, cw, ch, html = "", pad = 10, ox, oy;
         if (!st || st.offsetParent === null) { return; }
@@ -7057,13 +7199,85 @@
         gx = g.gap * k; gy = (g.split ? g.gapV : g.gap) * k;
         cw = (W * k - gx * (g.cols - 1)) / g.cols; ch = (H * k - gy * (g.rows - 1)) / g.rows;
         ox = pad + (sw - W * k) / 2; oy = pad + (sh - H * k) / 2;
+        grPrev = { els: [], os: [] };
         boxes.forEach(function (b, i) {
             var bw = b.w * cw + (b.w - 1) * gx, bh = b.h * ch + (b.h - 1) * gy;
+            grPrev.os.push({ c: b.c + b.w / 2, r: b.r + b.h / 2, C: g.cols, R: g.rows, px: ox + b.c * (cw + gx) + bw / 2, py: oy + b.r * (ch + gy) + bh / 2,
+                cx: ox + W * k / 2, cy: oy + H * k / 2, S: Math.max(W, H) * k, h: bh });
             html += "<div class=\"gr-box\" style=\"--h:" + (250 + i * 9) + ";left:" + (ox + b.c * (cw + gx)).toFixed(1) + "px;top:" + (oy + b.r * (ch + gy)).toFixed(1) +
                 "px;width:" + Math.max(1, bw).toFixed(1) + "px;height:" + Math.max(1, bh).toFixed(1) + "px;border-radius:" + Math.min(g.round * k, Math.min(bw, bh) / 2).toFixed(1) + "px\">" +
                 (g.numbers && bh > 12 ? "<span style=\"font-size:" + Math.round(Math.max(9, Math.min(15, Math.min(bw, bh) * 0.35))) + "px\">" + (i + 1) + "</span>" : "") + "</div>";
         });
         st.innerHTML = html;
+        grPrev.els = Array.prototype.slice.call(st.querySelectorAll(".gr-box"));
+        grfxTiles(grPrev.os, g.seed);
+    }
+    var grPrev = { els: [], os: [] };
+
+    // Playing in the preview: one at a time; «loop» repeats while the pointer is on a choice.
+    var grPlaying = null, grRaf = 0, grPop = "";
+    function grNow() { return (window.performance && performance.now ? performance.now() : Date.now()) / 1000; }
+    function grPlay(fx, mode, loop) {
+        grPlaying = { fx: fx, mode: mode, t0: grNow(), loop: !!loop };
+        grKick();
+    }
+    function grKick() { if (!grRaf) { grRaf = requestAnimationFrame(grTick); } }
+    function grTick() {
+        var now = grNow(), g = orbit.grid, len, t, busyMinis = false;
+        grRaf = 0;
+        if (grPlaying && grPrev.els.length) {
+            t = now - grPlaying.t0;
+            len = grfxShow(grPrev, grPlaying.fx, grPlaying.mode, t, g.dur, g.step);
+            if (t > len + 0.6) {
+                if (grPlaying.loop) { grPlaying.t0 = now; } else { grPlaying = null; grfxShow(grPrev, "none", "show", 0, 1, 0); }
+            }
+        }
+        // The little pictures move while the list is open or the pointer is on a button.
+        Array.prototype.forEach.call(document.querySelectorAll(".gr-mini.gr-live"), function (m) {
+            var tt = (now % 2.2), out = m.getAttribute("data-mode") === "out";
+            if (!m.grSet) { m.grSet = grfxMini(m); }
+            grfxShow(m.grSet, m.getAttribute("data-fx"), tt < 1.6 ? (out ? "out" : "in") : (out ? "hide" : "show"), tt, 0.45, 0.08);
+            busyMinis = true;
+        });
+        if (grPlaying || busyMinis) { grKick(); }
+    }
+    function grMiniStill(m, fx, out) {
+        m.setAttribute("data-fx", fx); m.setAttribute("data-mode", out ? "out" : "in");
+        m.grSet = grfxMini(m);
+        grfxShow(m.grSet, fx, "show", 0, 1, 0);
+    }
+
+    function grOpenPop(which) {
+        var g = orbit.grid, cur;
+        if (grPop === which) { grClosePop(); return; }
+        grPop = which;
+        ui.gridPop.hidden = false;
+        ui.gridPop.closest(".mk-card").classList.add("gr-popping");
+        ui.gridPop.style.top = (ui.gridAnim.offsetTop + ui.gridAnim.offsetHeight + 6) + "px";
+        ui.gridPopTitle.textContent = which === "in" ? "Появление" : "Исчезновение";
+        ui.gridInBtn.setAttribute("aria-expanded", String(which === "in"));
+        ui.gridOutBtn.setAttribute("aria-expanded", String(which === "out"));
+        cur = which === "in" ? g.appear : g.disappear;
+        grFillPop(GRFX_SIMPLE.indexOf(cur) > 1 ? "simple" : "wow");
+    }
+    function grClosePop() {
+        grPop = "";
+        if (!ui.gridPop) { return; }
+        ui.gridPop.hidden = true;
+        ui.gridPop.closest(".mk-card").classList.remove("gr-popping");
+        ui.gridInBtn.setAttribute("aria-expanded", "false");
+        ui.gridOutBtn.setAttribute("aria-expanded", "false");
+        ui.gridPopList.innerHTML = "";
+    }
+    function grFillPop(tab) {
+        var g = orbit.grid, cur = grPop === "in" ? g.appear : g.disappear, list = tab === "simple" ? GRFX_SIMPLE : GRFX_WOW, html = "";
+        pressGroupV(ui.gridTabs, tab);
+        list.forEach(function (fx) {
+            html += "<button type=\"button\" class=\"kr-b gr-opt\" data-v=\"" + fx + "\" aria-pressed=\"" + (fx === cur) + "\"><span class=\"gr-mini gr-live\" data-fx=\"" + fx +
+                "\" data-mode=\"" + grPop + "\"></span><span>" + GRFX_NAMES[fx] + "</span></button>";
+        });
+        ui.gridPopList.innerHTML = html;
+        grKick();
     }
 
     function drawGrid() {
@@ -7084,7 +7298,12 @@
         ui.gridSeed.value = String(g.seed);
         pressGroupV(ui.gridMode, g.mode);
         ui.gridNumbers.checked = g.numbers;
-        ui.gridStagger.checked = g.stagger;
+        ui.gridInName.textContent = GRFX_NAMES[g.appear];
+        ui.gridOutName.textContent = GRFX_NAMES[g.disappear];
+        grMiniStill(ui.gridInMini, g.appear, false);
+        grMiniStill(ui.gridOutMini, g.disappear, true);
+        ui.gridDur.value = String(g.dur); ui.gridDurVal.textContent = g.dur.toFixed(2).replace(/0$/, "") + " с";
+        ui.gridStep.value = String(g.step); ui.gridStepVal.textContent = g.step.toFixed(2) + " с";
         drawGridPreview();
     }
 
@@ -7102,12 +7321,13 @@
         setStatus("Строю сетку…", "busy");
         try {
             res = await host("gridMake", [{ rows: g.rows, cols: g.cols, gap: g.gap, split: g.split, gapV: g.gapV, round: g.round, rand: g.rand, seed: g.seed,
-                fit: g.fit, w: g.w, h: g.h, mode: g.mode, numbers: g.numbers, stagger: g.stagger },
-                { tile: "Плитка ", number: "Номер плитки ", ctrl: "Grid: управление", folder: "Grid", shape: "Форма" }, mkArg("grid")]);
+                fit: g.fit, w: g.w, h: g.h, mode: g.mode, numbers: g.numbers, appear: g.appear, disappear: g.disappear, dur: g.dur, step: g.step },
+                { tile: "Плитка ", number: "Номер плитки ", ctrl: "Grid: управление", folder: "Grid", shape: "Форма", fxBlur: "Размытие", fxWipe: "Шторка" }, mkArg("grid")]);
             setBusy(false);
             setStatus("Сетка готова: " + plural(res.tiles, "плитка", "плитки", "плиток") + ", " + res.w + "×" + res.h + ". Двигайте всю сетку слоем «" + res.ctrl + "»." +
                 (res.precomp ? " Каждая плитка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео." : "") +
-                (res.stagger ? " Плитки появляются по очереди от указателя времени." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
+                (res.appear !== "none" ? " Появление «" + GRFX_NAMES[res.appear] + "» — от указателя времени." : "") +
+                (res.disappear !== "none" ? " Исчезновение «" + GRFX_NAMES[res.disappear] + "» — к концу композиции." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
         } catch (e) {
             toolFailed(e);
         }
@@ -7128,7 +7348,34 @@
         ui.gridFit.addEventListener("click", function () { setGrid("fit", !orbit.grid.fit); });
         ui.gridSplit.addEventListener("change", function () { setGrid("split", ui.gridSplit.checked); });
         ui.gridNumbers.addEventListener("change", function () { setGrid("numbers", ui.gridNumbers.checked); });
-        ui.gridStagger.addEventListener("change", function () { setGrid("stagger", ui.gridStagger.checked); });
+        ui.gridInBtn.addEventListener("click", function () { grOpenPop("in"); });
+        ui.gridOutBtn.addEventListener("click", function () { grOpenPop("out"); });
+        [[ui.gridInBtn, ui.gridInMini], [ui.gridOutBtn, ui.gridOutMini]].forEach(function (pr) {
+            pr[0].addEventListener("mouseenter", function () { pr[1].classList.add("gr-live"); grKick(); });
+            pr[0].addEventListener("mouseleave", function () { pr[1].classList.remove("gr-live"); grMiniStill(pr[1], pr[1].getAttribute("data-fx"), pr[1].getAttribute("data-mode") === "out"); });
+        });
+        Array.prototype.forEach.call(ui.gridTabs.querySelectorAll("button[data-v]"), function (b) {
+            b.addEventListener("click", function () { grFillPop(b.getAttribute("data-v")); });
+        });
+        ui.gridPopList.addEventListener("mouseover", function (e) {
+            var b = e.target.closest ? e.target.closest(".gr-opt") : null;
+            if (b && (!grPlaying || grPlaying.fx !== b.getAttribute("data-v") || !grPlaying.loop)) { grPlay(b.getAttribute("data-v"), grPop, true); }
+        });
+        ui.gridPopList.addEventListener("mouseleave", function () { if (grPlaying && grPlaying.loop) { grPlaying.loop = false; } });
+        ui.gridPopList.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest(".gr-opt") : null, fx, mode = grPop;
+            if (!b) { return; }
+            fx = b.getAttribute("data-v");
+            grClosePop();
+            setGrid(mode === "in" ? "appear" : "disappear", fx);
+            grPlay(fx, mode, false);
+        });
+        ui.gridDur.addEventListener("input", function () { setGrid("dur", Math.round(Number(ui.gridDur.value) * 100) / 100); });
+        ui.gridStep.addEventListener("input", function () { setGrid("step", Math.round(Number(ui.gridStep.value) * 100) / 100); });
+        document.addEventListener("mousedown", function (e) {
+            if (grPop && !ui.gridPop.contains(e.target) && !ui.gridAnim.contains(e.target)) { grClosePop(); }
+        });
+        document.addEventListener("keydown", function (e) { if (grPop && e.key === "Escape") { grClosePop(); } });
         ui.gridDice.addEventListener("click", function () { setGrid("seed", Math.floor(Math.random() * 99999) + 1); });
         Array.prototype.forEach.call(ui.gridMode.querySelectorAll("button[data-v]"), function (b) {
             b.addEventListener("click", function () { setGrid("mode", b.getAttribute("data-v")); });
@@ -7284,7 +7531,7 @@
 
     // ---- Раздел «Макеты»: карусель. Настройки хранятся отдельно; превью — те же карточки в CSS 3D, его можно крутить мышкой.
     var ORBIT_KEY = "sayframe.orbit.v1";
-    var ORBIT_DEFAULTS = { layout: "ring", shape: "rect", corners: 20, mode: "shape", count: 8, radius: 600, w: 400, h: 560, numbers: true, camera: true, back: true };
+    var ORBIT_DEFAULTS = { layout: "ring", shape: "rect", corners: 20, mode: "precomp", count: 8, radius: 600, w: 400, h: 560, numbers: true, camera: true, backColor: "card", backHex: "#3d6bff" };
     var ORBIT_LAYOUT_NAMES = { ring: "кольцо", half: "полукруг", spiral: "спираль", wave: "волна" };
     var ORBIT_SIDES = { rect: 4, circle: 0, tri: 3, hex: 6 };
     var orbit = loadOrbit(), orbitSpin = -24, orbitDrag = null;
@@ -7298,7 +7545,9 @@
         }
         if (!ORBIT_LAYOUT_NAMES[out.layout]) { out.layout = "ring"; }
         if (!ORBIT_SIDES.hasOwnProperty(out.shape)) { out.shape = "rect"; }
-        if (out.mode !== "precomp") { out.mode = "shape"; }
+        out.mode = "precomp";   // карточки всегда композиции: внутрь кладут фото
+        if (["card", "white", "black", "custom"].indexOf(out.backColor) < 0) { out.backColor = "card"; }
+        if (!/^#[0-9a-f]{6}$/i.test(out.backHex)) { out.backHex = "#3d6bff"; }
         out.corners = Math.max(0, Math.min(100, Math.round(out.corners) || 0));
         out.count = Math.max(2, Math.min(36, Math.round(out.count) || 8));
         out.radius = Math.max(100, Math.min(3000, Math.round(out.radius) || 600));
@@ -7317,6 +7566,12 @@
         g.rand = gridInt(g.rand, 0, 100, 100); g.seed = gridInt(g.seed, 0, 999999, 12345);
         g.w = gridInt(g.w, 16, 16000, 1920); g.h = gridInt(g.h, 16, 16000, 1080);
         if (g.mode !== "precomp") { g.mode = "shape"; }
+        // «По очереди» was a switch before: off means the tiles are simply there.
+        if (typeof s.grid === "object" && s.grid && s.grid.appear === undefined && s.grid.stagger === false) { g.appear = "none"; }
+        if (!GRFX_NAMES.hasOwnProperty(g.appear)) { g.appear = "seq"; }
+        if (!GRFX_NAMES.hasOwnProperty(g.disappear)) { g.disappear = "none"; }
+        g.dur = Math.max(0.2, Math.min(2, Math.round((Number(g.dur) || 0.6) * 100) / 100));
+        g.step = Math.max(0, Math.min(0.3, Math.round((Number(g.step) >= 0 ? Number(g.step) : 0.05) * 100) / 100));
         return out;
     }
 
@@ -7370,6 +7625,9 @@
         return "<svg viewBox=\"0 0 " + w + " " + h + "\" aria-hidden=\"true\">" + body + " fill=\"" + fill + "\" stroke=\"rgba(255,255,255,.25)\" stroke-width=\"" + (Math.min(w, h) / 60).toFixed(2) + "\"/></svg>";
     }
 
+    function orbitBackCss() { return orbit.backColor === "white" ? "#f4f4f4" : orbit.backColor === "black" ? "#151515" : orbit.backHex; }
+    function orbitHexRgb(h) { return [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255]; }
+
     function drawOrbitPreview() {
         var n = orbit.count, ring = ui.orbitRing, i, sp, d, k, w, h, t = orbit.corners / 100, html = "", front, ext;
         if (!ring) { return; }
@@ -7382,8 +7640,8 @@
             front = Math.cos((sp.ry + orbitSpin) * Math.PI / 180) > 0.15;
             html += "<div class=\"kr-it\" style=\"width:" + w.toFixed(1) + "px;height:" + h.toFixed(1) + "px;left:" + (-w / 2).toFixed(1) + "px;top:" + (-h / 2).toFixed(1) +
                 "px;transform:translate3d(" + sp.x.toFixed(1) + "px," + sp.y.toFixed(1) + "px," + (-sp.z).toFixed(1) + "px) rotateY(" + sp.ry + "deg)\">" +
-                orbitShapeSvg(orbit.shape, t, Math.round(orbit.w), Math.round(orbit.h), "hsl(" + orbitHue(i) + ",80%,62%)") +
-                (orbit.numbers && (front || orbit.back) && h > 18 ? "<span style=\"font-size:" + Math.max(9, Math.round(Math.min(w, h) * 0.32)) + "px\">" + (i + 1) + "</span>" : "") + "</div>";
+                orbitShapeSvg(orbit.shape, t, Math.round(orbit.w), Math.round(orbit.h), front || orbit.backColor === "card" ? "hsl(" + orbitHue(i) + ",80%,62%)" : orbitBackCss()) +
+                (orbit.numbers && front && h > 18 ? "<span style=\"font-size:" + Math.max(9, Math.round(Math.min(w, h) * 0.32)) + "px\">" + (i + 1) + "</span>" : "") + "</div>";
         }
         d = ring;
         d.innerHTML = html;
@@ -7394,7 +7652,9 @@
         var corner = orbit.shape !== "circle";
         pressGroupV(ui.orbitLayout, orbit.layout);
         pressGroupV(ui.orbitShape, orbit.shape);
-        pressGroupV(ui.orbitMode, orbit.mode);
+        pressGroupV(ui.orbitBackC, orbit.backColor);
+        ui.orbitBackDot.style.background = orbit.backHex;
+        ui.orbitBackHex.value = orbit.backHex;
         ui.orbitCornerRow.hidden = !corner;
         if (corner) { ui.orbitCornerIco.innerHTML = ui.orbitShape.querySelector("button[data-v=\"" + orbit.shape + "\"] svg").outerHTML; }
         ui.orbitCorners.value = String(orbit.corners);
@@ -7405,8 +7665,6 @@
         ui.orbitH.value = String(orbit.h); ui.orbitHVal.textContent = String(orbit.h);
         ui.orbitNumbers.checked = orbit.numbers;
         ui.orbitCamera.checked = orbit.camera;
-        ui.orbitBack.checked = orbit.back;
-        ui.orbitBackRow.hidden = !orbit.numbers && orbit.mode !== "precomp";   // в прекомпе сзади может быть видна и картинка
         drawOrbitPreview();
     }
 
@@ -7424,14 +7682,15 @@
         setBusy(true);
         setStatus("Строю карусель…", "busy");
         try {
-            res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: orbit.mode,
-                radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera, back: orbit.back },
+            res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: "precomp",
+                radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera, back: false,
+                backColor: orbit.backColor === "white" ? [0.96, 0.96, 0.96] : orbit.backColor === "black" ? [0.08, 0.08, 0.08] : orbit.backColor === "custom" ? orbitHexRgb(orbit.backHex) : null },
                 { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма", back: "обратная сторона", backFx: "Обратная сторона",
-                    fxCount: "Карточек", fxRadius: "Радиус", fxW: "Ширина", fxH: "Высота", fxCorners: "Углы %", fxBack: "Сзади видно цифру и картинку" }, mkArg("carousel")]);
+                    fxCount: "Карточек", fxRadius: "Радиус", fxW: "Ширина", fxH: "Высота", fxCorners: "Углы %" }, mkArg("carousel")]);
             setBusy(false);
             setStatus("Карусель готова: " + plural(res.cards, "карточка", "карточки", "карточек") + ", " + ORBIT_LAYOUT_NAMES[res.layout] + ". " +
-                "Крутите её слоем «" + res.ctrl + "» (Y Rotation); там же, в Effect Controls, — сколько карточек (до " + (res.cards + (res.spare || 0)) + "), радиус, размер, углы и что видно сзади." +
-                (res.precomp ? " Каждая карточка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео — она обрежется по форме карточки." : "") +
+                "Крутите её слоем «" + res.ctrl + "» (Y Rotation); там же, в Effect Controls, — сколько карточек (до " + (res.cards + (res.spare || 0)) + "), радиус, размер и углы." +
+                (res.precomp ? " Каждая карточка — композиция в папке «" + res.folder + "»: положите внутрь фото (или нажмите «Фото в карточки») — оно обрежется по форме карточки, сзади будет просто цвет." : "") +
                 (res.camera ? " Добавлена камера «" + res.camera + "»" + (res.camRig ? " на 3D-нуле «" + res.camRig + "»: крутите или двигайте его, чтобы облететь карусель." : ".") : (res.hadCamera ? " Камера в композиции уже была." : "")) +
                 " Отменить — Cmd/Ctrl+Z.", "done");
         } catch (e) {
@@ -7439,9 +7698,25 @@
         }
     }
 
+    // Фото, выделенные в окне Project, по одному в каждую карточку карусели (выделенной или единственной в композиции).
+    async function onOrbitPhotos() {
+        var res;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Кладу фото в карточки…", "busy");
+        try {
+            res = await host("orbitPhotos", [{ card: "Карточка ", ctrl: "Карусель: управление", photo: "Фото" }]);
+            setBusy(false);
+            setStatus("Готово: " + plural(res.placed, "фото", "фото", "фото") + " в карточках 1–" + res.placed + "." +
+                (res.extra ? " Ещё " + res.extra + " не поместились: карточек всего " + res.cards + "." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
     function enableOrbit() {
         if (!ui.orbitPane) { return; }
-        [["orbitLayout", "layout"], ["orbitShape", "shape"], ["orbitMode", "mode"]].forEach(function (g) {
+        [["orbitLayout", "layout"], ["orbitShape", "shape"], ["orbitBackC", "backColor"]].forEach(function (g) {
             Array.prototype.forEach.call(ui[g[0]].querySelectorAll("button[data-v]"), function (b) {
                 b.addEventListener("click", function () { setOrbit(g[1], b.getAttribute("data-v")); });
             });
@@ -7459,8 +7734,11 @@
         });
         ui.orbitNumbers.addEventListener("change", function () { setOrbit("numbers", ui.orbitNumbers.checked); });
         ui.orbitCamera.addEventListener("change", function () { setOrbit("camera", ui.orbitCamera.checked); });
-        ui.orbitBack.addEventListener("change", function () { setOrbit("back", ui.orbitBack.checked); });
+        // «Свой» цвет: щелчок по уже выбранному «Свой» открывает выбор цвета.
+        ui.orbitBackC.querySelector('[data-v="custom"]').addEventListener("click", function () { try { ui.orbitBackHex.click(); } catch (e) {} });
+        ui.orbitBackHex.addEventListener("input", function () { orbit.backColor = "custom"; setOrbit("backHex", ui.orbitBackHex.value); });
         ui.orbitBtn.addEventListener("click", onOrbit);
+        ui.orbitPhotos.addEventListener("click", onOrbitPhotos);
         // Крутить превью мышкой. События мыши, не указателя: указательные в After Effects не приходят.
         ui.orbitStage.addEventListener("mousedown", function (e) {
             if (e.button !== 0) { return; }
@@ -9066,15 +9344,27 @@
     // ---- «Плашка под текстом» (вкладка «Шейп»): шейп-слой под текстом, который подстраивается под текст.
     // Превью в блоке рисуется CSS и меняется сразу; в After Effects то же самое делают выражения (host textBox).
     var TB_KEY = "sayframe.textbox.v1";
-    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, shadow: false };
+    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, shadow: false, glow: false };
+    // Готовый стиль задаёт всё сразу (то, чего в нём нет, — как в TB_BASE), чтобы от прошлого стиля ничего не оставалось.
+    var TB_BASE = { look: "fill", style: "box", strokeColor: "#ffffff", stroke: 4, round: 0, skew: 0, opacity: 100, shadow: false, glow: false };
     var TB_PRESETS = {
-        news: { per: "line", look: "fill", style: "box", color: "#111111", px: 16, py: 4, round: 0, skew: 0, shadow: false },
-        sport: { per: "line", look: "fill", style: "box", color: "#ff4f6d", px: 22, py: 6, round: 0, skew: 14, shadow: false },
-        sticker: { per: "all", look: "fill", style: "box", color: "#ffffff", px: 26, py: 12, round: 18, skew: 0, shadow: true },
-        pill: { per: "all", look: "fill", style: "box", color: "#3a0f63", px: 34, py: 12, round: 100, skew: 0, shadow: false },
-        frame: { per: "all", look: "stroke", style: "box", strokeColor: "#ffffff", stroke: 4, px: 28, py: 14, round: 40, skew: 0, shadow: false },
-        marker: { per: "line", look: "fill", style: "marker", color: "#ffcc33", px: 6, py: 0, round: 0, skew: 0, shadow: false }
+        news: { per: "line", color: "#111111", px: 16, py: 4 },
+        sport: { per: "line", color: "#ff4f6d", px: 22, py: 6, skew: 14 },
+        sticker: { per: "all", color: "#ffffff", px: 26, py: 12, round: 18, shadow: true },
+        pill: { per: "all", color: "#3a0f63", px: 34, py: 12, round: 100 },
+        frame: { per: "all", look: "stroke", strokeColor: "#ffffff", stroke: 4, px: 28, py: 14, round: 40 },
+        marker: { per: "line", style: "marker", color: "#ffcc33", px: 6, py: 0 },
+        neon: { per: "all", look: "stroke", strokeColor: "#39ff88", stroke: 6, px: 30, py: 12, round: 100, glow: true },
+        caption: { per: "line", color: "#ffffff", px: 14, py: 6, round: 12 },
+        comic: { per: "all", look: "both", color: "#ffe14d", strokeColor: "#111111", stroke: 6, px: 22, py: 10, round: 6, skew: -6, shadow: true },
+        cinema: { per: "all", color: "#000000", px: 40, py: 10, opacity: 70 },
+        soft: { per: "line", color: "#ff7ab6", px: 20, py: 4, round: 100 },
+        slant: { per: "line", color: "#1e90ff", px: 26, py: 6, skew: 25 },
+        brutal: { per: "all", look: "both", color: "#ffffff", strokeColor: "#111111", stroke: 4, px: 22, py: 10, shadow: true },
+        glass: { per: "all", look: "both", color: "#ffffff", strokeColor: "#ffffff", stroke: 2, px: 26, py: 12, round: 24, opacity: 30 },
+        price: { per: "all", color: "#ff3b30", px: 22, py: 8, round: 8, skew: -10, shadow: true }
     };
+    function tbPreset(k) { var o = {}, j; for (j in TB_BASE) { if (TB_BASE.hasOwnProperty(j)) { o[j] = TB_BASE[j]; } } for (j in TB_PRESETS[k]) { if (TB_PRESETS[k].hasOwnProperty(j)) { o[j] = TB_PRESETS[k][j]; } } return o; }
     var TB_RANGES = { px: [0, 120], py: [0, 80], round: [0, 100], stroke: [1, 30], skew: [-40, 40], opacity: [0, 100] };
     var TB_CHOICES = { per: ["all", "line"], look: ["fill", "stroke", "both"], style: ["box", "marker"] };
 
@@ -9098,34 +9388,47 @@
 
     function storeTb() { try { window.localStorage.setItem(TB_KEY, JSON.stringify(tb)); } catch (e) {} }
 
+    // Превью плашки o на элементе t; z — масштаб (плитки стилей маленькие).
+    function tbLook(t, o, z) {
+        var s = t.style, fill = o.look !== "stroke", line = o.look !== "fill", k, glow;
+        z = z || 1;
+        t.classList.toggle("tb-all", o.per === "all");
+        t.classList.toggle("tb-marker", o.style === "marker");
+        s.setProperty("--px", o.px * z + "px");
+        s.setProperty("--py", o.py * z + "px");
+        s.setProperty("--r", o.round * z + "px");
+        s.setProperty("--fill", fill ? o.color : "transparent");
+        s.setProperty("--stroke", o.strokeColor);
+        s.setProperty("--sw", line ? Math.max(1, Math.round(o.stroke / 2 * z)) + "px" : "0px");
+        s.setProperty("--skew", String(o.skew));
+        s.setProperty("--op", String(o.opacity / 100));
+        glow = line ? o.strokeColor : o.color;
+        s.setProperty("--shadow", [o.shadow ? 6 * z + "px " + 6 * z + "px 0 rgba(0,0,0,.45)" : "", o.glow ? "0 0 " + 12 * z + "px " + glow + ", inset 0 0 " + 6 * z + "px " + glow : ""].filter(Boolean).join(", ") || "none");
+        // Светлая плотная плашка — тёмный текст, чтобы его было видно.
+        k = parseHex(o.color);
+        s.color = fill && o.style === "box" && o.opacity >= 60 && k && (0.299 * k.r + 0.587 * k.g + 0.114 * k.b) / 255 > 0.6 ? "#3a0f63" : "#fff";
+    }
+
     function drawTb() {
-        var t = ui.tbText, s = t.style, fill = tb.look !== "stroke", line = tb.look !== "fill", k;
+        var t = ui.tbText, k, cur = "";
         if (!t) { return; }
-        t.classList.toggle("tb-all", tb.per === "all");
-        t.classList.toggle("tb-marker", tb.style === "marker");
-        s.setProperty("--px", tb.px + "px");
-        s.setProperty("--py", tb.py + "px");
-        s.setProperty("--r", tb.round + "px");
-        s.setProperty("--fill", fill ? tb.color : "transparent");
-        s.setProperty("--stroke", tb.strokeColor);
-        s.setProperty("--sw", line ? Math.max(1, Math.round(tb.stroke / 2)) + "px" : "0px");
-        s.setProperty("--skew", String(tb.skew));
-        s.setProperty("--op", String(tb.opacity / 100));
-        s.setProperty("--shadow", tb.shadow ? "6px 6px 0 rgba(0,0,0,.45)" : "none");
-        // Светлая плашка — тёмный текст, чтобы его было видно.
-        k = parseHex(tb.color);
-        t.style.color = fill && tb.style === "box" && k && (0.299 * k.r + 0.587 * k.g + 0.114 * k.b) / 255 > 0.6 ? "#3a0f63" : "#fff";
+        tbLook(t, tb, 1);
+        // Какой готовый стиль сейчас (если ничего не меняли после него) — подсвечен.
+        for (k in TB_PRESETS) { if (TB_PRESETS.hasOwnProperty(k) && !cur && tbSame(tbPreset(k))) { cur = k; } }
+        Array.prototype.forEach.call(ui.tbPresets.querySelectorAll("button[data-v]"), function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-v") === cur)); });
         ["per", "look", "style"].forEach(function (key) { pressGroupV(ui["tb" + key.charAt(0).toUpperCase() + key.slice(1)], tb[key]); });
         Array.prototype.forEach.call(ui.tbSwatches.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === tb.color ? "true" : "false"); });
         ui.tbColor.value = tb.color;
         ui.tbStrokeColor.value = tb.strokeColor;
-        ui.tbStrokeRow.hidden = ui.tbStrokeWRow.hidden = !line;
+        ui.tbStrokeRow.hidden = ui.tbStrokeWRow.hidden = tb.look === "fill";
         [["Px", "px", ""], ["Py", "py", ""], ["Round", "round", ""], ["Stroke", "stroke", ""], ["Skew", "skew", "°"], ["Opacity", "opacity", "%"]].forEach(function (d) {
             ui["tb" + d[0]].value = String(tb[d[1]]);
             ui["tb" + d[0] + "Val"].textContent = tb[d[1]] + d[2];
         });
         ui.tbShadow.checked = tb.shadow;
+        ui.tbGlow.checked = tb.glow;
     }
+    function tbSame(o) { var k; for (k in o) { if (o.hasOwnProperty(k) && String(o[k]).toLowerCase() !== String(tb[k]).toLowerCase()) { return false; } } return true; }
 
     function setTb(changes) {
         var k;
@@ -9144,7 +9447,7 @@
         setBusy(true);
         try {
             res = await host("textBox", [{ per: tb.per, look: tb.look, style: tb.style, color: tbRgb(tb.color), strokeColor: tbRgb(tb.strokeColor),
-                px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, shadow: tb.shadow },
+                px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, shadow: tb.shadow, glow: tb.glow },
                 { box: "Плашка", helper: "Плашка: строка", part: "Плашка", side: "По бокам", vert: "Сверху/снизу", round: "Скругление", color: "Цвет",
                     fillOn: "Заливка", strokeOn: "Обводка", strokeW: "Толщина обводки", strokeColor: "Цвет обводки", skew: "Наклон", defaultText: "Ваш текст" }, mkArg("textbox")]);
             setBusy(false);
@@ -9171,7 +9474,7 @@
         });
         ui.tbPresets.addEventListener("click", function (e) {
             var b = e.target.closest ? e.target.closest("button[data-v]") : null;
-            if (b && TB_PRESETS[b.getAttribute("data-v")]) { setTb(TB_PRESETS[b.getAttribute("data-v")]); }
+            if (b && TB_PRESETS[b.getAttribute("data-v")]) { setTb(tbPreset(b.getAttribute("data-v"))); }
         });
         ui.tbSwatches.addEventListener("click", function (e) {
             var b = e.target.closest ? e.target.closest("button[data-v]") : null;
@@ -9183,6 +9486,11 @@
             ui["tb" + d[0]].addEventListener("input", function () { var ch = {}; ch[d[1]] = Number(ui["tb" + d[0]].value); setTb(ch); });
         });
         ui.tbShadow.addEventListener("change", function () { setTb({ shadow: ui.tbShadow.checked }); });
+        ui.tbGlow.addEventListener("change", function () { setTb({ glow: ui.tbGlow.checked }); });
+        Array.prototype.forEach.call(ui.tbPresets.querySelectorAll("button[data-v]"), function (b) {
+            var tx = b.querySelector(".tb-text");
+            if (tx && TB_PRESETS[b.getAttribute("data-v")]) { tbLook(tx, tbClean(tbPreset(b.getAttribute("data-v"))), 0.5); }
+        });
         ui.tbBtn.addEventListener("click", onTextBox);
         drawTb();
     }
@@ -11982,7 +12290,7 @@
 
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT" || m === "RB_NO_PATH" || m === "NO_TEXT_LAYER" || m === "GL_NO_SHAPE";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT" || m === "RB_NO_PATH" || m === "NO_TEXT_LAYER" || m === "GL_NO_SHAPE" || m === "OR_NO_CAROUSEL" || m === "OR_NO_PHOTOS";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }

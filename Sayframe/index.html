@@ -340,10 +340,6 @@
               </label>
               <span class="kr-ci" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></span>
             </div>
-            <div id="orbitMode" class="kr-seg" role="group" aria-label="Из чего карточки">
-              <button type="button" class="kr-b" data-v="shape" title="Каждая карточка — шейп-слой"><span>Шейп</span></button>
-              <button type="button" class="kr-b" data-v="precomp" title="Каждая карточка — композиция: внутрь можно положить картинку или видео"><span>Шейп + прекомп</span></button>
-            </div>
             <div class="kr-count"><span>Сколько карточек</span>
               <div class="shift-row">
                 <button id="orbitLess" class="shift-arrow" aria-label="Меньше карточек" title="Меньше карточек"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg></button>
@@ -368,9 +364,19 @@
             <div class="kr-sw">
               <label class="switch"><input id="orbitNumbers" type="checkbox"><span class="track"></span><span class="text">Номера</span></label>
               <label class="switch"><input id="orbitCamera" type="checkbox"><span class="track"></span><span class="text">Камера</span></label>
-              <label id="orbitBackRow" class="switch kr-back"><input id="orbitBack" type="checkbox"><span class="track"></span><span class="text">Сзади видно цифру и картинку</span></label>
             </div>
-            <button id="orbitBtn" class="shift-do shift-go">Создать карусель</button>
+            <span class="kr-lab">Обратная сторона</span>
+            <div id="orbitBackC" class="kr-grid4 kr-backc" role="group" aria-label="Цвет обратной стороны">
+              <button type="button" class="kr-b" data-v="card" title="Сзади карточка того же цвета, что спереди"><i class="kr-dot kr-dot-card"></i><span>Как карточка</span></button>
+              <button type="button" class="kr-b" data-v="white" title="Белая обратная сторона"><i class="kr-dot" style="background:#f4f4f4"></i><span>Белый</span></button>
+              <button type="button" class="kr-b" data-v="black" title="Чёрная обратная сторона"><i class="kr-dot" style="background:#151515"></i><span>Чёрный</span></button>
+              <button type="button" class="kr-b" data-v="custom" title="Свой цвет обратной стороны"><i id="orbitBackDot" class="kr-dot"></i><span>Свой</span></button>
+            </div>
+            <input id="orbitBackHex" class="kr-hex" type="color" value="#3d6bff" aria-label="Свой цвет обратной стороны" tabindex="-1">
+            <div class="kr-btns">
+              <button id="orbitBtn" class="shift-do shift-go">Создать карусель</button>
+              <button id="orbitPhotos" type="button" class="shift-do kr-photos" title="Выделите фото или видео в окне Project — они разложатся по карточкам по порядку"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg>Фото в карточки</button>
+            </div>
           </div>
         </section>
         <section class="card mk-card" data-mk="grid">
@@ -428,7 +434,26 @@
             </div>
             <div class="kr-sw">
               <label class="switch"><input id="gridNumbers" type="checkbox"><span class="track"></span><span class="text">Номера</span></label>
-              <label class="switch"><input id="gridStagger" type="checkbox"><span class="track"></span><span class="text">По очереди</span></label>
+            </div>
+            <div id="gridAnim" class="gr-anim">
+              <button id="gridInBtn" type="button" class="kr-b gr-pill" aria-haspopup="true" aria-expanded="false" title="Как плитки появляются: от указателя времени"><span id="gridInMini" class="gr-mini" aria-hidden="true"></span><span class="gr-pt"><small>Появление</small><b id="gridInName"></b></span><span class="gr-ar" aria-hidden="true">▾</span></button>
+              <button id="gridOutBtn" type="button" class="kr-b gr-pill" aria-haspopup="true" aria-expanded="false" title="Как плитки исчезают: к концу композиции"><span id="gridOutMini" class="gr-mini" aria-hidden="true"></span><span class="gr-pt"><small>Исчезновение</small><b id="gridOutName"></b></span><span class="gr-ar" aria-hidden="true">▾</span></button>
+            </div>
+            <div id="gridPop" class="gr-pop" role="dialog" aria-label="Выбор анимации плиток" hidden>
+              <b id="gridPopTitle" class="gr-pop-t" title="Наведите на вариант — превью покажет его">Появление</b>
+              <div id="gridTabs" class="gr-tabs" role="group" aria-label="Набор">
+                <button type="button" data-v="wow">✨ Эффектные</button>
+                <button type="button" data-v="simple">Простые</button>
+              </div>
+              <div id="gridPopList" class="gr-plist"></div>
+              <label class="ac-row ac-slider">Длительность
+                <input id="gridDur" class="range" type="range" min="0.2" max="2" step="0.05" title="Сколько длится появление одной плитки">
+                <output id="gridDurVal" for="gridDur"></output>
+              </label>
+              <label class="ac-row ac-slider">Между плитками
+                <input id="gridStep" class="range" type="range" min="0" max="0.3" step="0.01" title="Через сколько начинает следующая плитка">
+                <output id="gridStepVal" for="gridStep"></output>
+              </label>
             </div>
             <button id="gridBtn" class="shift-do shift-go">Создать сетку</button>
           </div>
@@ -437,13 +462,22 @@
           <div class="mk-head" title="Потяните за название, чтобы поменять блоки местами; щелчок — свернуть"><span class="mk-grip" aria-hidden="true"></span><span class="mk-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 12h10"/></svg></span><b>Плашка под текстом</b><button type="button" class="mk-fold" aria-expanded="true" aria-label="Свернуть"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button></div>
           <div class="mk-body tb-pane">
             <div id="tbStage" class="tb-stage" aria-hidden="true"><div id="tbText" class="tb-text"><span>TEXT BOX</span><br><span>BOUNDING</span></div></div>
-            <div id="tbPresets" class="tb-presets" role="group" aria-label="Готовые стили">
-              <button type="button" class="gr-chip" data-v="news">Новости</button>
-              <button type="button" class="gr-chip" data-v="sport">Спорт</button>
-              <button type="button" class="gr-chip" data-v="sticker">Стикер</button>
-              <button type="button" class="gr-chip" data-v="pill">Таблетка</button>
-              <button type="button" class="gr-chip" data-v="frame">Рамка</button>
-              <button type="button" class="gr-chip" data-v="marker">Маркер</button>
+            <div id="tbPresets" class="tb-presets tb-tiles" role="group" aria-label="Готовые стили">
+              <button type="button" class="tb-tile" data-v="news" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Новости</span></button>
+              <button type="button" class="tb-tile" data-v="sport" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Спорт</span></button>
+              <button type="button" class="tb-tile" data-v="sticker" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Стикер</span></button>
+              <button type="button" class="tb-tile" data-v="pill" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Таблетка</span></button>
+              <button type="button" class="tb-tile" data-v="frame" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Рамка</span></button>
+              <button type="button" class="tb-tile" data-v="marker" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Маркер</span></button>
+              <button type="button" class="tb-tile" data-v="neon" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Неон</span></button>
+              <button type="button" class="tb-tile" data-v="caption" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Субтитры</span></button>
+              <button type="button" class="tb-tile" data-v="comic" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Комикс</span></button>
+              <button type="button" class="tb-tile" data-v="cinema" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Кино</span></button>
+              <button type="button" class="tb-tile" data-v="soft" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Мягкая</span></button>
+              <button type="button" class="tb-tile" data-v="slant" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Скос</span></button>
+              <button type="button" class="tb-tile" data-v="brutal" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Бруталь</span></button>
+              <button type="button" class="tb-tile" data-v="glass" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Стекло</span></button>
+              <button type="button" class="tb-tile" data-v="price" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Ценник</span></button>
             </div>
             <div id="tbPer" class="kr-seg" role="group" aria-label="Одна плашка или под каждой строкой">
               <button type="button" class="kr-b" data-v="all"><span>Вся плашка</span></button>
@@ -484,6 +518,7 @@
             </div>
             <div class="kr-sw">
               <label class="switch"><input id="tbShadow" type="checkbox"><span class="track"></span><span class="text">Тень</span></label>
+              <label class="switch"><input id="tbGlow" type="checkbox"><span class="track"></span><span class="text">Свечение</span></label>
             </div>
             <button id="tbBtn" class="shift-do shift-go">Добавить плашку</button>
           </div>

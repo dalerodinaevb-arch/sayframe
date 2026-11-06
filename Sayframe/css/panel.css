@@ -2243,7 +2243,8 @@ html[data-design="ae"] .mk-pane .mk-card, html[data-design="ae"] .gr-stage, html
 .tb-text span::before { content: ""; position: absolute; z-index: -1; left: 0; right: 0; top: calc(4px - var(--py, 6px)); bottom: calc(4px - var(--py, 6px));
   background: var(--fill, #3a0f63); border: var(--sw, 0px) solid var(--stroke, #fff); border-radius: var(--r, 0px); opacity: var(--op, 1);
   transform: skewX(calc(-1deg * var(--skew, 0))); box-shadow: var(--shadow, none); }
-.tb-text span { z-index: 0; isolation: isolate; }
+/* Все плашки строк лежат под всем текстом: плашка второй строки не закрывает первую. */
+.tb-text { position: relative; isolation: isolate; }
 .tb-text.tb-marker span::before { top: 52%; bottom: calc(6px - var(--py, 6px)); }
 .tb-text.tb-all { display: inline-block; position: relative; isolation: isolate; padding: var(--py, 6px) var(--px, 18px); }
 .tb-text.tb-all span { padding: 0; }
@@ -2607,3 +2608,48 @@ html[data-solo-kind="tool"] .motion-tools > .solo-card > .tool-head, html[data-s
 .mk-edit-new { flex: none; font: inherit; font-size: 12px; color: var(--text); background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .14);
   border-radius: 9px; padding: 5px 10px; cursor: pointer; }
 .mk-edit-new:hover { background: rgba(255, 255, 255, .12); }
+
+/* Grid: появление и исчезновение плиток — две кнопки и окошко с вариантами поверх блока. */
+.gr-stage { perspective: 700px; }
+.gr-box { will-change: transform, opacity; }
+.mk-card[data-mk="grid"] > .mk-body { position: relative; }
+.mk-card.gr-popping { position: relative; z-index: 40; }
+.gr-anim { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gr-pill { display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: flex-start !important; gap: 9px; min-height: 50px; padding: 0 10px !important; text-align: left; min-width: 0; }
+.gr-pill[aria-expanded="true"] { border-color: rgba(var(--accent-rgb), .7); background: rgba(var(--accent-rgb), .16); }
+.gr-pt { display: flex; flex-direction: column; min-width: 0; }
+.gr-pt small { font-size: 10.5px; color: var(--muted); }
+.gr-pt b { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gr-ar { margin-left: auto; font-size: 10px; color: var(--muted); }
+.gr-mini { position: relative; flex: none; display: block; width: 38px; height: 28px; border-radius: 6px; background: rgba(0, 0, 0, .4); overflow: hidden; perspective: 160px; }
+.gr-mb { position: absolute; border-radius: 2px; background: linear-gradient(160deg, hsl(var(--h), 70%, 62%), hsl(calc(var(--h) + 25), 72%, 52%)); }
+.gr-pop { position: absolute; left: 0; right: 0; z-index: 41; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 14px;
+  background: var(--bg, #1b1a22); background-image: linear-gradient(rgba(var(--accent-rgb), .07), rgba(var(--accent-rgb), .07)); border: 1px solid rgba(var(--accent-rgb), .35); box-shadow: 0 18px 40px rgba(0, 0, 0, .55); }
+.gr-pop[hidden] { display: none; }
+.gr-pop-t { font-size: 12px; }
+.gr-tabs { display: flex; gap: 6px; }
+.gr-tabs button { font: inherit; font-size: 11px; padding: 4px 10px; border-radius: 8px; border: 0; cursor: pointer; background: rgba(255, 255, 255, .06); color: var(--muted); }
+.gr-tabs button[aria-pressed="true"] { background: rgba(var(--accent-rgb), .3); color: var(--text, #fff); }
+.gr-plist { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.gr-opt { display: flex !important; flex-direction: column !important; align-items: stretch !important; gap: 4px !important; padding: 5px !important; font-size: 11px; min-width: 0; }
+.gr-opt .gr-mini { width: 100%; height: 38px; }
+html[data-design="ae"] .gr-pop, html[data-design="ae"] .gr-pill, html[data-design="ae"] .gr-opt { border-radius: 4px; }
+
+/* Карусель: цвет обратной стороны и «Фото в карточки». */
+.kr-backc .kr-b { gap: 5px; }
+.kr-dot { display: block; width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .28); }
+.kr-dot-card { background: conic-gradient(#e85d75, #f0a35e, #e8c547, #5fc98a, #5b8def, #9b6cf0, #e85d75); }
+.kr-hex { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.kr-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kr-btns .shift-do { margin: 0; min-width: 0; }
+.kr-photos { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.kr-photos svg { width: 16px; height: 16px; flex: none; }
+
+/* Плашка: готовые стили — плитки с маленьким превью. */
+.tb-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.tb-tile { display: flex; flex-direction: column; gap: 5px; padding: 5px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03);
+  font: inherit; font-size: 11px; color: var(--text); cursor: pointer; min-width: 0; }
+.tb-tile[aria-pressed="true"] { border-color: rgba(var(--accent-rgb), .8); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), .8); }
+.tb-mst { display: flex; align-items: center; justify-content: center; height: 46px; border-radius: 7px; overflow: hidden; background: linear-gradient(120deg, #c43ad6, #7b2ff2); }
+.tb-mst .tb-text { font-size: 10px; line-height: 1.55; }
+html[data-design="ae"] .tb-tile, html[data-design="ae"] .tb-mst { border-radius: 4px; }
