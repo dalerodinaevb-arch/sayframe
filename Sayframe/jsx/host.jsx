@@ -3242,12 +3242,31 @@ var sayframeHost = (function () {
     function mkNewGid() { return "g" + new Date().getTime().toString(36) + Math.floor(Math.random() * 1296).toString(36); }
 
     // A precomp for a Maketi block: on a rebuild the old one of that name comes back with what was put inside.
+    function mkShiftAll(c, dx, dy) {
+        var j, L, P, k, v, sh = function (a) { var o = [Number(a[0]) + dx, Number(a[1]) + dy]; if (a.length > 2) { o.push(a[2]); } return o; };
+        for (j = 1; j <= c.numLayers; j++) {
+            L = c.layer(j);
+            try {
+                if (L.parent) { continue; }
+                P = acTransform(L, "ADBE Position");
+                if (!P || P.dimensionsSeparated) { continue; }
+                if (P.numKeys > 0) {
+                    for (k = 1; k <= P.numKeys; k++) { v = P.keyValue(k); P.setValueAtKey(k, sh(v)); }
+                } else {
+                    P.setValue(sh(P.value));
+                }
+            } catch (e) {}
+        }
+    }
     function mkComp(name, w, h, par, dur, fps) {
-        var c = mkReuse && mkReuse.comps[name];
+        var c = mkReuse && mkReuse.comps[name], dx, dy;
         if (c) {
             delete mkReuse.comps[name];
             mkReuse.used.push(c);
+            dx = (w - c.width) / 2; dy = (h - c.height) / 2;
             try { if (c.width !== w) { c.width = w; } if (c.height !== h) { c.height = h; } } catch (e) {}
+            // A new size: everything inside moves with the middle, so a photo put in stays centred.
+            if (dx || dy) { mkShiftAll(c, dx, dy); }
             return c;
         }
         return app.project.items.addComp(name, w, h, par, dur, fps);
@@ -3547,6 +3566,25 @@ var sayframeHost = (function () {
     }
 
     // A tile comp has a standard size by the tile's shape: square-ish 1000x1000, wide 1920x1080, tall 1080x1920.
+    // A tile comp used again at another size: its own coloured shape fills the new size, its number sits in the middle.
+    function gridRefit(cc, shapeName, std, num) {
+        var j, L, P, doc, k = Math.round(Math.min(std[0], std[1]) * 0.28);
+        for (j = 1; j <= cc.numLayers; j++) {
+            L = cc.layer(j);
+            try {
+                if (L.name === shapeName) {
+                    acP(L, ["ADBE Root Vectors Group", 1, "ADBE Vectors Group", 1, "ADBE Vector Rect Size"]).setValue([std[0], std[1]]);
+                    orbitSet(L, "ADBE Position", [std[0] / 2, std[1] / 2]);
+                    continue;
+                }
+                P = acP(L, ["ADBE Text Properties", "ADBE Text Document"]);
+                if (num && P && String(P.value.text) === num) {
+                    doc = P.value; doc.fontSize = k; P.setValue(doc);
+                    orbitSet(L, "ADBE Position", [std[0] / 2, std[1] / 2 + k * 0.35]);
+                }
+            } catch (e) {}
+        }
+    }
     function gridStdSize(bw, bh) {
         var a = bw / bh;
         if (a > 1.25) { return [1920, 1080]; }
@@ -3612,6 +3650,7 @@ var sayframeHost = (function () {
                     txt = orbitNumber(cc, String(i + 1), k);
                     orbitSet(txt, "ADBE Position", [std[0] / 2, std[1] / 2 + k * 0.35]);
                 }
+                if (mkReused(cc)) { gridRefit(cc, labels.shape || "Shape", std, o.numbers ? String(i + 1) : ""); }
                 L = comp.layers.add(cc);
                 orbitSet(L, "ADBE Scale", [sc, sc, 100]);
                 gridMask(L, std[0], std[1], bw * 100 / sc, bh * 100 / sc, round * 100 / sc);

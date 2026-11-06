@@ -6638,6 +6638,40 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       new Set(p.ae.log.dcMain.list.filter((l) => /^Плитка /.test(l.name)).map((l) => tag(l).split("|")[2])).size === 1 && /изменена/.test(await p.status()), t0 + " -> " + tiles() + " " + await p.status());
     check("MK11 no errors", p.errors.length === 0, p.errors.join(" | "));
     await p.close();
+
+    // Grid of precomps, «Другой вариант»: a tile comp used again at another size is filled by its shape, its number in the middle,
+    // and what the user put inside moves with the middle.
+    p = await open({ mkPoll: true, orbit: { layers: [{ name: "BG", selected: false }] } });
+    await mkTab(p);
+    await p.page.click('#gridMode [data-v="precomp"]');
+    await p.page.click("#gridBtn"); await p.idle();
+    await settle(p);
+    const size0 = {};
+    p.ae.log.orbitComps.filter((c) => /^Плитка /.test(c.name)).forEach((c) => { size0[c.name] = [c.width, c.height]; });
+    const ph = p.ae.log.orbitComps.find((c) => /^Плитка /.test(c.name));
+    const phName = ph.name, phLayer = ph.layers.addSolid([1, 0, 0], "Моё фото", 100, 100);
+    const phPos = phLayer.property("ADBE Transform Group").property("ADBE Position"); phPos.setValue([ph.width / 2, ph.height / 2]);
+    let changed = 0, tries = 0;
+    while (!changed && tries++ < 8) {
+      await p.page.click("#gridDice"); await settle(p, 1200);
+      changed = p.ae.log.orbitComps.filter((c) => /^Плитка /.test(c.name) && size0[c.name] && (c.width !== size0[c.name][0] || c.height !== size0[c.name][1])).length;
+    }
+    const bad = [];
+    p.ae.log.orbitComps.filter((c) => /^Плитка /.test(c.name) && c.list.length).forEach((c) => {
+      const sh = c.list.find((l) => l.name === "Форма");
+      if (sh) {
+        const sz = acAt(acAt(sh, "ADBE Root Vectors Group").children[0], "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value;
+        const ps = sh.property("ADBE Transform Group").property("ADBE Position").value;
+        if (sz[0] !== c.width || sz[1] !== c.height || ps[0] !== c.width / 2 || ps[1] !== c.height / 2) bad.push(c.name + " shape " + sz + " @" + ps + " in " + c.width + "x" + c.height);
+      }
+      const nm = c.list.find((l) => /^\d+$/.test(l.name));
+      if (nm) { const q = nm.property("ADBE Transform Group").property("ADBE Position").value; if (Math.abs(q[0] - c.width / 2) > 0.5) bad.push(c.name + " number x " + q[0]); }
+    });
+    const phc = p.ae.log.orbitComps.find((c) => c.name === phName), pp = phPos.value;
+    check("MK12 «Другой вариант» on a precomp grid: tile comps of a new size are filled by their shape, numbers centred", changed > 0 && !bad.length, changed + " " + bad.join(" | "));
+    check("MK12 a photo put inside stays in the middle of its tile comp", Math.abs(pp[0] - phc.width / 2) < 0.5 && Math.abs(pp[1] - phc.height / 2) < 0.5, pp + " in " + phc.width + "x" + phc.height);
+    check("MK12 no errors", p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
   }
   // «Текст по ленте»: a random line by number, the line's direction, the text running forward or back.
   {
