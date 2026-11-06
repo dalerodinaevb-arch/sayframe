@@ -5224,6 +5224,8 @@
         });
         ui.acFavOnly.setAttribute("aria-pressed", acState.favOnly ? "true" : "false");
         if (el("acEdit")) { el("acEdit").setAttribute("aria-pressed", editing ? "true" : "false"); }
+        // «Авто / Наведение» нужен только там, где есть превью-анимации: в «Звуках» и «Макетах» его нет.
+        el("acPlay").hidden = !searching && (sec === "sfx" || orbitOn);
         Array.prototype.forEach.call(el("acPlay").querySelectorAll("button[data-value]"), function (b) {
             b.setAttribute("aria-pressed", b.getAttribute("data-value") === (settings.previewPlay === "hover" ? "hover" : "always") ? "true" : "false");
         });
