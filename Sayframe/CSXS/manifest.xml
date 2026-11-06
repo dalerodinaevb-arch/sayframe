@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.sayframe.ae" ExtensionBundleVersion="1.75.0" ExtensionBundleName="Sayframe" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.sayframe.ae" ExtensionBundleVersion="1.76.0" ExtensionBundleName="Sayframe" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <ExtensionList>
-    <Extension Id="com.sayframe.ae.panel" Version="1.75.0"/>
+    <Extension Id="com.sayframe.ae.panel" Version="1.76.0"/>
     <Extension Id="com.sayframe.ae.win.anim" Version="1.0.0"/>
     <Extension Id="com.sayframe.ae.win.tools" Version="1.0.0"/>
     <Extension Id="com.sayframe.ae.win.shape" Version="1.0.0"/>
