@@ -12540,6 +12540,16 @@
                 b.innerHTML = keyActIcon(b.getAttribute("data-a"));
                 b.addEventListener("click", function () { onKeyAct(b.getAttribute("data-a")); });
             });
+            // В узком блоке пять кнопок не помещаются с понятными иконками — по три в ряд.
+            if (typeof window.ResizeObserver === "function") {
+                new window.ResizeObserver(function () {
+                    var w = ui.staggerActs.clientWidth, narrow = w > 0 && w < 224;
+                    if (w > 0 && narrow !== ui.staggerActs.classList.contains("narrow")) {
+                        ui.staggerActs.classList.toggle("narrow", narrow);
+                        relayoutTools();
+                    }
+                }).observe(ui.staggerActs);
+            }
         }
         // «i» рядом со списком: объяснение появляется в строке состояния (и во всплывающей подсказке).
         for (i = 0; i < infos.length; i++) {

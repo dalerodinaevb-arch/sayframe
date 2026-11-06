@@ -2054,6 +2054,7 @@ html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:
 /* «Ключи»: пять действий под «Расставить», значки в стиле кнопок порядка */
 .st-acts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .st-acts[hidden] { display: none; }
+.st-acts.narrow { grid-template-columns: repeat(3, 1fr); }
 .st-acts button { height: 38px; min-width: 0; padding: 6px 4px; border: 1px solid var(--line); border-radius: 9px; background: rgba(0, 0, 0, 0.22); color: var(--muted); cursor: pointer; }
 .st-acts button svg { display: block; width: 100%; height: 100%; fill: currentColor; }
 .st-acts button .st-key-line { stroke: currentColor; stroke-width: 1.2; opacity: 0.55; fill: none; }
