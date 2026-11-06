@@ -462,13 +462,22 @@
           <div class="mk-head" title="Потяните за название, чтобы поменять блоки местами; щелчок — свернуть"><span class="mk-grip" aria-hidden="true"></span><span class="mk-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 12h10"/></svg></span><b>Плашка под текстом</b><button type="button" class="mk-fold" aria-expanded="true" aria-label="Свернуть"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button></div>
           <div class="mk-body tb-pane">
             <div id="tbStage" class="tb-stage" aria-hidden="true"><div id="tbText" class="tb-text"><span>TEXT BOX</span><br><span>BOUNDING</span></div></div>
-            <div id="tbPresets" class="tb-presets" role="group" aria-label="Готовые стили">
-              <button type="button" class="gr-chip" data-v="news">Новости</button>
-              <button type="button" class="gr-chip" data-v="sport">Спорт</button>
-              <button type="button" class="gr-chip" data-v="sticker">Стикер</button>
-              <button type="button" class="gr-chip" data-v="pill">Таблетка</button>
-              <button type="button" class="gr-chip" data-v="frame">Рамка</button>
-              <button type="button" class="gr-chip" data-v="marker">Маркер</button>
+            <div id="tbPresets" class="tb-presets tb-tiles" role="group" aria-label="Готовые стили">
+              <button type="button" class="tb-tile" data-v="news" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Новости</span></button>
+              <button type="button" class="tb-tile" data-v="sport" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Спорт</span></button>
+              <button type="button" class="tb-tile" data-v="sticker" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Стикер</span></button>
+              <button type="button" class="tb-tile" data-v="pill" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Таблетка</span></button>
+              <button type="button" class="tb-tile" data-v="frame" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Рамка</span></button>
+              <button type="button" class="tb-tile" data-v="marker" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Маркер</span></button>
+              <button type="button" class="tb-tile" data-v="neon" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Неон</span></button>
+              <button type="button" class="tb-tile" data-v="caption" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Субтитры</span></button>
+              <button type="button" class="tb-tile" data-v="comic" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Комикс</span></button>
+              <button type="button" class="tb-tile" data-v="cinema" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Кино</span></button>
+              <button type="button" class="tb-tile" data-v="soft" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Мягкая</span></button>
+              <button type="button" class="tb-tile" data-v="slant" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Скос</span></button>
+              <button type="button" class="tb-tile" data-v="brutal" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Бруталь</span></button>
+              <button type="button" class="tb-tile" data-v="glass" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Стекло</span></button>
+              <button type="button" class="tb-tile" data-v="price" aria-pressed="false"><span class="tb-mst"><span class="tb-text"><span>ВАШ</span><br><span>ТЕКСТ</span></span></span><span class="tb-tn">Ценник</span></button>
             </div>
             <div id="tbPer" class="kr-seg" role="group" aria-label="Одна плашка или под каждой строкой">
               <button type="button" class="kr-b" data-v="all"><span>Вся плашка</span></button>
@@ -509,6 +518,7 @@
             </div>
             <div class="kr-sw">
               <label class="switch"><input id="tbShadow" type="checkbox"><span class="track"></span><span class="text">Тень</span></label>
+              <label class="switch"><input id="tbGlow" type="checkbox"><span class="track"></span><span class="text">Свечение</span></label>
             </div>
             <button id="tbBtn" class="shift-do shift-go">Добавить плашку</button>
           </div>

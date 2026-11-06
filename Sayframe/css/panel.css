@@ -2644,3 +2644,12 @@ html[data-design="ae"] .gr-pop, html[data-design="ae"] .gr-pill, html[data-desig
 .kr-btns .shift-do { margin: 0; min-width: 0; }
 .kr-photos { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .kr-photos svg { width: 16px; height: 16px; flex: none; }
+
+/* Плашка: готовые стили — плитки с маленьким превью. */
+.tb-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.tb-tile { display: flex; flex-direction: column; gap: 5px; padding: 5px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03);
+  font: inherit; font-size: 11px; color: var(--text); cursor: pointer; min-width: 0; }
+.tb-tile[aria-pressed="true"] { border-color: rgba(var(--accent-rgb), .8); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), .8); }
+.tb-mst { display: flex; align-items: center; justify-content: center; height: 46px; border-radius: 7px; overflow: hidden; background: linear-gradient(120deg, #c43ad6, #7b2ff2); }
+.tb-mst .tb-text { font-size: 10px; line-height: 1.55; }
+html[data-design="ae"] .tb-tile, html[data-design="ae"] .tb-mst { border-radius: 4px; }

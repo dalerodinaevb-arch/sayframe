@@ -1559,7 +1559,7 @@
         tbSwatches: el("tbSwatches"), tbColor: el("tbColor"), tbStrokeColor: el("tbStrokeColor"), tbStrokeRow: el("tbStrokeRow"), tbStrokeWRow: el("tbStrokeWRow"),
         tbPx: el("tbPx"), tbPxVal: el("tbPxVal"), tbPy: el("tbPy"), tbPyVal: el("tbPyVal"), tbRound: el("tbRound"), tbRoundVal: el("tbRoundVal"),
         tbStroke: el("tbStroke"), tbStrokeVal: el("tbStrokeVal"), tbSkew: el("tbSkew"), tbSkewVal: el("tbSkewVal"), tbOpacity: el("tbOpacity"), tbOpacityVal: el("tbOpacityVal"),
-        tbShadow: el("tbShadow"), tbBtn: el("tbBtn"),
+        tbShadow: el("tbShadow"), tbGlow: el("tbGlow"), tbBtn: el("tbBtn"),
         glPane: document.querySelector(".gl-pane"), glMode: el("glMode"), glTextPart: el("glTextPart"), glShapePart: el("glShapePart"), glText: el("glText"), glForms: el("glForms"),
         glStage: el("glStage"), glShapes: el("glShapes"), glKinds: el("glKinds"), glKindName: el("glKindName"), glEdges: el("glEdges"), glBlur: el("glBlur"), glBlurVal: el("glBlurVal"),
         glLight: el("glLight"), glLightVal: el("glLightVal"), glSize: el("glSize"), glSizeVal: el("glSizeVal"), glSizeRow: el("glSizeRow"), glAdd: el("glAdd"), glMine: el("glMine"),
@@ -9344,15 +9344,27 @@
     // ---- «Плашка под текстом» (вкладка «Шейп»): шейп-слой под текстом, который подстраивается под текст.
     // Превью в блоке рисуется CSS и меняется сразу; в After Effects то же самое делают выражения (host textBox).
     var TB_KEY = "sayframe.textbox.v1";
-    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, shadow: false };
+    var TB_DEFAULTS = { per: "line", look: "fill", style: "box", color: "#3a0f63", strokeColor: "#ffffff", px: 18, py: 6, round: 0, stroke: 4, skew: 0, opacity: 100, shadow: false, glow: false };
+    // Готовый стиль задаёт всё сразу (то, чего в нём нет, — как в TB_BASE), чтобы от прошлого стиля ничего не оставалось.
+    var TB_BASE = { look: "fill", style: "box", strokeColor: "#ffffff", stroke: 4, round: 0, skew: 0, opacity: 100, shadow: false, glow: false };
     var TB_PRESETS = {
-        news: { per: "line", look: "fill", style: "box", color: "#111111", px: 16, py: 4, round: 0, skew: 0, shadow: false },
-        sport: { per: "line", look: "fill", style: "box", color: "#ff4f6d", px: 22, py: 6, round: 0, skew: 14, shadow: false },
-        sticker: { per: "all", look: "fill", style: "box", color: "#ffffff", px: 26, py: 12, round: 18, skew: 0, shadow: true },
-        pill: { per: "all", look: "fill", style: "box", color: "#3a0f63", px: 34, py: 12, round: 100, skew: 0, shadow: false },
-        frame: { per: "all", look: "stroke", style: "box", strokeColor: "#ffffff", stroke: 4, px: 28, py: 14, round: 40, skew: 0, shadow: false },
-        marker: { per: "line", look: "fill", style: "marker", color: "#ffcc33", px: 6, py: 0, round: 0, skew: 0, shadow: false }
+        news: { per: "line", color: "#111111", px: 16, py: 4 },
+        sport: { per: "line", color: "#ff4f6d", px: 22, py: 6, skew: 14 },
+        sticker: { per: "all", color: "#ffffff", px: 26, py: 12, round: 18, shadow: true },
+        pill: { per: "all", color: "#3a0f63", px: 34, py: 12, round: 100 },
+        frame: { per: "all", look: "stroke", strokeColor: "#ffffff", stroke: 4, px: 28, py: 14, round: 40 },
+        marker: { per: "line", style: "marker", color: "#ffcc33", px: 6, py: 0 },
+        neon: { per: "all", look: "stroke", strokeColor: "#39ff88", stroke: 6, px: 30, py: 12, round: 100, glow: true },
+        caption: { per: "line", color: "#ffffff", px: 14, py: 6, round: 12 },
+        comic: { per: "all", look: "both", color: "#ffe14d", strokeColor: "#111111", stroke: 6, px: 22, py: 10, round: 6, skew: -6, shadow: true },
+        cinema: { per: "all", color: "#000000", px: 40, py: 10, opacity: 70 },
+        soft: { per: "line", color: "#ff7ab6", px: 20, py: 4, round: 100 },
+        slant: { per: "line", color: "#1e90ff", px: 26, py: 6, skew: 25 },
+        brutal: { per: "all", look: "both", color: "#ffffff", strokeColor: "#111111", stroke: 4, px: 22, py: 10, shadow: true },
+        glass: { per: "all", look: "both", color: "#ffffff", strokeColor: "#ffffff", stroke: 2, px: 26, py: 12, round: 24, opacity: 30 },
+        price: { per: "all", color: "#ff3b30", px: 22, py: 8, round: 8, skew: -10, shadow: true }
     };
+    function tbPreset(k) { var o = {}, j; for (j in TB_BASE) { if (TB_BASE.hasOwnProperty(j)) { o[j] = TB_BASE[j]; } } for (j in TB_PRESETS[k]) { if (TB_PRESETS[k].hasOwnProperty(j)) { o[j] = TB_PRESETS[k][j]; } } return o; }
     var TB_RANGES = { px: [0, 120], py: [0, 80], round: [0, 100], stroke: [1, 30], skew: [-40, 40], opacity: [0, 100] };
     var TB_CHOICES = { per: ["all", "line"], look: ["fill", "stroke", "both"], style: ["box", "marker"] };
 
@@ -9376,34 +9388,47 @@
 
     function storeTb() { try { window.localStorage.setItem(TB_KEY, JSON.stringify(tb)); } catch (e) {} }
 
+    // Превью плашки o на элементе t; z — масштаб (плитки стилей маленькие).
+    function tbLook(t, o, z) {
+        var s = t.style, fill = o.look !== "stroke", line = o.look !== "fill", k, glow;
+        z = z || 1;
+        t.classList.toggle("tb-all", o.per === "all");
+        t.classList.toggle("tb-marker", o.style === "marker");
+        s.setProperty("--px", o.px * z + "px");
+        s.setProperty("--py", o.py * z + "px");
+        s.setProperty("--r", o.round * z + "px");
+        s.setProperty("--fill", fill ? o.color : "transparent");
+        s.setProperty("--stroke", o.strokeColor);
+        s.setProperty("--sw", line ? Math.max(1, Math.round(o.stroke / 2 * z)) + "px" : "0px");
+        s.setProperty("--skew", String(o.skew));
+        s.setProperty("--op", String(o.opacity / 100));
+        glow = line ? o.strokeColor : o.color;
+        s.setProperty("--shadow", [o.shadow ? 6 * z + "px " + 6 * z + "px 0 rgba(0,0,0,.45)" : "", o.glow ? "0 0 " + 12 * z + "px " + glow + ", inset 0 0 " + 6 * z + "px " + glow : ""].filter(Boolean).join(", ") || "none");
+        // Светлая плотная плашка — тёмный текст, чтобы его было видно.
+        k = parseHex(o.color);
+        s.color = fill && o.style === "box" && o.opacity >= 60 && k && (0.299 * k.r + 0.587 * k.g + 0.114 * k.b) / 255 > 0.6 ? "#3a0f63" : "#fff";
+    }
+
     function drawTb() {
-        var t = ui.tbText, s = t.style, fill = tb.look !== "stroke", line = tb.look !== "fill", k;
+        var t = ui.tbText, k, cur = "";
         if (!t) { return; }
-        t.classList.toggle("tb-all", tb.per === "all");
-        t.classList.toggle("tb-marker", tb.style === "marker");
-        s.setProperty("--px", tb.px + "px");
-        s.setProperty("--py", tb.py + "px");
-        s.setProperty("--r", tb.round + "px");
-        s.setProperty("--fill", fill ? tb.color : "transparent");
-        s.setProperty("--stroke", tb.strokeColor);
-        s.setProperty("--sw", line ? Math.max(1, Math.round(tb.stroke / 2)) + "px" : "0px");
-        s.setProperty("--skew", String(tb.skew));
-        s.setProperty("--op", String(tb.opacity / 100));
-        s.setProperty("--shadow", tb.shadow ? "6px 6px 0 rgba(0,0,0,.45)" : "none");
-        // Светлая плашка — тёмный текст, чтобы его было видно.
-        k = parseHex(tb.color);
-        t.style.color = fill && tb.style === "box" && k && (0.299 * k.r + 0.587 * k.g + 0.114 * k.b) / 255 > 0.6 ? "#3a0f63" : "#fff";
+        tbLook(t, tb, 1);
+        // Какой готовый стиль сейчас (если ничего не меняли после него) — подсвечен.
+        for (k in TB_PRESETS) { if (TB_PRESETS.hasOwnProperty(k) && !cur && tbSame(tbPreset(k))) { cur = k; } }
+        Array.prototype.forEach.call(ui.tbPresets.querySelectorAll("button[data-v]"), function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-v") === cur)); });
         ["per", "look", "style"].forEach(function (key) { pressGroupV(ui["tb" + key.charAt(0).toUpperCase() + key.slice(1)], tb[key]); });
         Array.prototype.forEach.call(ui.tbSwatches.querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-v") === tb.color ? "true" : "false"); });
         ui.tbColor.value = tb.color;
         ui.tbStrokeColor.value = tb.strokeColor;
-        ui.tbStrokeRow.hidden = ui.tbStrokeWRow.hidden = !line;
+        ui.tbStrokeRow.hidden = ui.tbStrokeWRow.hidden = tb.look === "fill";
         [["Px", "px", ""], ["Py", "py", ""], ["Round", "round", ""], ["Stroke", "stroke", ""], ["Skew", "skew", "°"], ["Opacity", "opacity", "%"]].forEach(function (d) {
             ui["tb" + d[0]].value = String(tb[d[1]]);
             ui["tb" + d[0] + "Val"].textContent = tb[d[1]] + d[2];
         });
         ui.tbShadow.checked = tb.shadow;
+        ui.tbGlow.checked = tb.glow;
     }
+    function tbSame(o) { var k; for (k in o) { if (o.hasOwnProperty(k) && String(o[k]).toLowerCase() !== String(tb[k]).toLowerCase()) { return false; } } return true; }
 
     function setTb(changes) {
         var k;
@@ -9422,7 +9447,7 @@
         setBusy(true);
         try {
             res = await host("textBox", [{ per: tb.per, look: tb.look, style: tb.style, color: tbRgb(tb.color), strokeColor: tbRgb(tb.strokeColor),
-                px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, shadow: tb.shadow },
+                px: tb.px, py: tb.py, round: tb.round, stroke: tb.stroke, skew: tb.skew, opacity: tb.opacity, shadow: tb.shadow, glow: tb.glow },
                 { box: "Плашка", helper: "Плашка: строка", part: "Плашка", side: "По бокам", vert: "Сверху/снизу", round: "Скругление", color: "Цвет",
                     fillOn: "Заливка", strokeOn: "Обводка", strokeW: "Толщина обводки", strokeColor: "Цвет обводки", skew: "Наклон", defaultText: "Ваш текст" }, mkArg("textbox")]);
             setBusy(false);
@@ -9449,7 +9474,7 @@
         });
         ui.tbPresets.addEventListener("click", function (e) {
             var b = e.target.closest ? e.target.closest("button[data-v]") : null;
-            if (b && TB_PRESETS[b.getAttribute("data-v")]) { setTb(TB_PRESETS[b.getAttribute("data-v")]); }
+            if (b && TB_PRESETS[b.getAttribute("data-v")]) { setTb(tbPreset(b.getAttribute("data-v"))); }
         });
         ui.tbSwatches.addEventListener("click", function (e) {
             var b = e.target.closest ? e.target.closest("button[data-v]") : null;
@@ -9461,6 +9486,11 @@
             ui["tb" + d[0]].addEventListener("input", function () { var ch = {}; ch[d[1]] = Number(ui["tb" + d[0]].value); setTb(ch); });
         });
         ui.tbShadow.addEventListener("change", function () { setTb({ shadow: ui.tbShadow.checked }); });
+        ui.tbGlow.addEventListener("change", function () { setTb({ glow: ui.tbGlow.checked }); });
+        Array.prototype.forEach.call(ui.tbPresets.querySelectorAll("button[data-v]"), function (b) {
+            var tx = b.querySelector(".tb-text");
+            if (tx && TB_PRESETS[b.getAttribute("data-v")]) { tbLook(tx, tbClean(tbPreset(b.getAttribute("data-v"))), 0.5); }
+        });
         ui.tbBtn.addEventListener("click", onTextBox);
         drawTb();
     }

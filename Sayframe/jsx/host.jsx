@@ -4694,6 +4694,14 @@ var sayframeHost = (function () {
             kitSet(B, fx, "ADBE Drop Shadow-0004", 10);
             kitSet(B, fx, "ADBE Drop Shadow-0005", 0);
         }
+        // A neon look: the box glows in its own colour.
+        if (o.glow) {
+            try {
+                fx = acAdd(B, ["ADBE Effect Parade"], "ADBE Glo2");
+                kitSet(B, fx, "ADBE Glo2-0003", 25);
+                kitSet(B, fx, "ADBE Glo2-0004", 1.5);
+            } catch (eG) {}
+        }
         B.parent = t;
         orbitSet(B, "ADBE Anchor Point", [0, 0]);
         orbitSet(B, "ADBE Position", [0, 0]);

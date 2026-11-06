@@ -6144,7 +6144,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const parentOf = (s) => ({ sourceRectAtTime: () => ({ left: -100, top: -32, width: 200, height: 88 }), text: { sourceText: txt(s) } });
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hello\rworld" }, { name: "BG", selected: false }] } });
     await tbTab(p);
-    check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "glass,carousel,grid,textbox,phone,ribbon" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 6 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
+    check("TB1 a «Плашка под текстом» block in «Макеты» (Animation tab), after Grid: preview, ready styles, «Добавить плашку»", (await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitPane .mk-card"), (c) => c.getAttribute("data-mk")).join())) === "glass,carousel,grid,textbox,phone,ribbon" && (await p.page.locator("#viewShape [data-tool='textbox']").count()) === 0 && (await vis(p, "#tbStage")) && (await p.page.locator("#tbPresets button").count()) === 15 && (await p.page.locator("#tbBtn").innerText()).trim() === "Добавить плашку" && (await overflow(p)) <= 0);
     check("TB7 in the preview every line's box lies under all the text (one layer for the text, boxes behind): the 2nd line's box never covers the 1st line",
       await p.page.evaluate(() => { const t = document.getElementById("tbText"), sp = t.querySelector("span"); return getComputedStyle(t).isolation === "isolate" && getComputedStyle(sp).zIndex === "auto" && getComputedStyle(sp).isolation === "auto" && getComputedStyle(sp, "::before").zIndex === "-1"; }));
     check("TB1 defaults: each line, fill, dark purple, no stroke row; no animation choice", (await p.page.locator("#tbAppear").count()) === 0 && (await p.page.getAttribute('#tbPer [data-v="line"]', "aria-pressed")) === "true" && (await p.page.getAttribute('#tbLook [data-v="fill"]', "aria-pressed")) === "true" && !(await vis(p, "#tbStrokeRow")) && (await p.page.inputValue("#tbColor")) === "#3a0f63");
@@ -6164,6 +6164,23 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const ex = (i, mn, w) => sfEval(B, rectP(B, i, mn), 0, { parent: parentOf("Hello\rworld"), thisComp: lay("Плашка: строка Title " + i, w) });
     check("TB4 each box takes its line's size plus the margins, and sits on its line (2nd one 48 px lower)", JSON.stringify(ex(1, "ADBE Vector Rect Size", 200)) === "[244,52]" && JSON.stringify(ex(1, "ADBE Vector Rect Position", 200)) === "[0,-12]" && JSON.stringify(ex(2, "ADBE Vector Rect Position", 120)) === "[0,36]" && JSON.stringify(ex(3, "ADBE Vector Rect Size", 0)) === "[0,0]", JSON.stringify([ex(1, "ADBE Vector Rect Size", 200), ex(1, "ADBE Vector Rect Position", 200), ex(2, "ADBE Vector Rect Position", 120)]));
     check("TB4 «Наклон» leans the boxes; the box is not animated (no keys)", /-effect\("Наклон"\)\(1\)/.test(acAt(grp(B, 1), "ADBE Vector Transform Group", "ADBE Vector Skew").expression) && !((acAt(grp(B, 1), "ADBE Vector Transform Group", "ADBE Vector Scale") || {}).keys || []).length && !((acAt(grp(B, 2), "ADBE Vector Transform Group", "ADBE Vector Scale") || {}).keys || []).length);
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hi" }] } });
+    await tbTab(p);
+    check("TB8 15 ready styles as tiles, each a little preview of itself («Неон» glows, «Субтитры» white)", (await p.page.locator("#tbPresets .tb-tile .tb-mst .tb-text").count()) === 15 &&
+      /0 0 6px #39ff88/.test(await p.page.evaluate(() => document.querySelector('#tbPresets [data-v="neon"] .tb-text').style.getPropertyValue("--shadow"))) &&
+      (await p.page.evaluate(() => document.querySelector('#tbPresets [data-v="caption"] .tb-text').style.getPropertyValue("--fill"))) === "#ffffff");
+    await p.close();
+    p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hi" }] } });
+    await tbTab(p);
+    await p.page.click('#tbPresets [data-v="comic"]');
+    await p.page.click('#tbPresets [data-v="neon"]');
+    check("TB8 «Неон» after «Комикс»: only its own look stays (stroke, glow on, shadow and slant gone); its tile is marked", (await p.page.getAttribute('#tbLook [data-v="stroke"]', "aria-pressed")) === "true" && (await p.page.isChecked("#tbGlow")) && !(await p.page.isChecked("#tbShadow")) &&
+      (await p.page.locator("#tbSkewVal").innerText()) === "0°" && (await p.page.getAttribute('#tbPresets [data-v="neon"]', "aria-pressed")) === "true");
+    await p.page.click("#tbBtn"); await p.idle();
+    check("TB8 in the comp the neon box gets a Glow", /ADBE Glo2/.test(fxNames(L(p, "Плашка: Title"))) && p.errors.length === 0, fxNames(L(p, "Плашка: Title")));
+    await setRange(p, "#tbRound", 50);
+    check("TB8 a change after the style: no tile marked any more", (await p.page.locator('#tbPresets [aria-pressed="true"]').count()) === 0);
     await p.close();
     p = await open({ orbit: { layers: [{ name: "Title", kind: "text", text: "Hi" }] } });
     await tbTab(p);
