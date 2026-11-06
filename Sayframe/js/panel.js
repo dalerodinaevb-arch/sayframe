@@ -1225,6 +1225,8 @@
         if (m === "NO_ACTIVE_COMP") { return "Откройте композицию: инструмент работает с открытой композицией."; }
         if (m === "NO_KEYS_SELECTED") { return "Выделите ключевые кадры на таймлайне и нажмите ещё раз."; }
         if (m === "NO_LAYERS_SELECTED") { return "Выделите слой в композиции и нажмите ещё раз."; }
+        if (m === "OR_NO_CAROUSEL") { return "Сначала создайте карусель (или выделите её слой «Карусель: управление»)."; }
+        if (m === "OR_NO_PHOTOS") { return "Выделите фото или видео в окне Project и нажмите «Фото в карточки» ещё раз."; }
         if (m === "GL_NO_SHAPE") { return "Нарисуйте фигуру (пером или прямоугольником), выделите её и нажмите «Сделать стеклом»."; }
         if (m === "LOGO_NOT_FOUND") { return "Файл логотипа не найден. Удалите его из проекта и добавьте снова."; }
         if (m === "ICON_NOT_FOUND") { return "Файл иконки не найден. Удалите её из проекта и добавьте снова."; }
@@ -1531,9 +1533,9 @@
         fxBtn: el("fxBtn"), snapBtn: el("snapBtn"), fxConsole: el("fxConsole"), fxSearch: el("fxSearch"), fxSnap: el("fxSnap"), fxClose: el("fxClose"), fxList: el("fxList"),
         orbitPane: el("orbitPane"), orbitStage: el("orbitStage"), orbitRing: el("orbitRing"), orbitLayout: el("orbitLayout"), orbitShape: el("orbitShape"),
         orbitCornerRow: el("orbitCornerRow"), orbitCornerIco: el("orbitCornerIco"), orbitCorners: el("orbitCorners"), orbitCornersVal: el("orbitCornersVal"),
-        orbitMode: el("orbitMode"), orbitLess: el("orbitLess"), orbitMore: el("orbitMore"), orbitCount: el("orbitCount"),
+        orbitBackC: el("orbitBackC"), orbitBackHex: el("orbitBackHex"), orbitBackDot: el("orbitBackDot"), orbitPhotos: el("orbitPhotos"), orbitLess: el("orbitLess"), orbitMore: el("orbitMore"), orbitCount: el("orbitCount"),
         orbitRadius: el("orbitRadius"), orbitRadiusVal: el("orbitRadiusVal"), orbitW: el("orbitW"), orbitWVal: el("orbitWVal"), orbitH: el("orbitH"), orbitHVal: el("orbitHVal"),
-        orbitNumbers: el("orbitNumbers"), orbitCamera: el("orbitCamera"), orbitBack: el("orbitBack"), orbitBackRow: el("orbitBackRow"), orbitBtn: el("orbitBtn"),
+        orbitNumbers: el("orbitNumbers"), orbitCamera: el("orbitCamera"), orbitBtn: el("orbitBtn"),
         gridStage: el("gridStage"), gridW: el("gridW"), gridH: el("gridH"), gridFit: el("gridFit"), gridRows: el("gridRows"), gridRowsLess: el("gridRowsLess"), gridRowsMore: el("gridRowsMore"),
         gridCols: el("gridCols"), gridColsLess: el("gridColsLess"), gridColsMore: el("gridColsMore"), gridGap: el("gridGap"), gridGapVal: el("gridGapVal"), gridGapName: el("gridGapName"),
         gridGapV: el("gridGapV"), gridGapVVal: el("gridGapVVal"), gridGapVRow: el("gridGapVRow"), gridRound: el("gridRound"), gridRoundVal: el("gridRoundVal"),
@@ -7529,7 +7531,7 @@
 
     // ---- Раздел «Макеты»: карусель. Настройки хранятся отдельно; превью — те же карточки в CSS 3D, его можно крутить мышкой.
     var ORBIT_KEY = "sayframe.orbit.v1";
-    var ORBIT_DEFAULTS = { layout: "ring", shape: "rect", corners: 20, mode: "shape", count: 8, radius: 600, w: 400, h: 560, numbers: true, camera: true, back: true };
+    var ORBIT_DEFAULTS = { layout: "ring", shape: "rect", corners: 20, mode: "precomp", count: 8, radius: 600, w: 400, h: 560, numbers: true, camera: true, backColor: "card", backHex: "#3d6bff" };
     var ORBIT_LAYOUT_NAMES = { ring: "кольцо", half: "полукруг", spiral: "спираль", wave: "волна" };
     var ORBIT_SIDES = { rect: 4, circle: 0, tri: 3, hex: 6 };
     var orbit = loadOrbit(), orbitSpin = -24, orbitDrag = null;
@@ -7543,7 +7545,9 @@
         }
         if (!ORBIT_LAYOUT_NAMES[out.layout]) { out.layout = "ring"; }
         if (!ORBIT_SIDES.hasOwnProperty(out.shape)) { out.shape = "rect"; }
-        if (out.mode !== "precomp") { out.mode = "shape"; }
+        out.mode = "precomp";   // карточки всегда композиции: внутрь кладут фото
+        if (["card", "white", "black", "custom"].indexOf(out.backColor) < 0) { out.backColor = "card"; }
+        if (!/^#[0-9a-f]{6}$/i.test(out.backHex)) { out.backHex = "#3d6bff"; }
         out.corners = Math.max(0, Math.min(100, Math.round(out.corners) || 0));
         out.count = Math.max(2, Math.min(36, Math.round(out.count) || 8));
         out.radius = Math.max(100, Math.min(3000, Math.round(out.radius) || 600));
@@ -7621,6 +7625,9 @@
         return "<svg viewBox=\"0 0 " + w + " " + h + "\" aria-hidden=\"true\">" + body + " fill=\"" + fill + "\" stroke=\"rgba(255,255,255,.25)\" stroke-width=\"" + (Math.min(w, h) / 60).toFixed(2) + "\"/></svg>";
     }
 
+    function orbitBackCss() { return orbit.backColor === "white" ? "#f4f4f4" : orbit.backColor === "black" ? "#151515" : orbit.backHex; }
+    function orbitHexRgb(h) { return [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255]; }
+
     function drawOrbitPreview() {
         var n = orbit.count, ring = ui.orbitRing, i, sp, d, k, w, h, t = orbit.corners / 100, html = "", front, ext;
         if (!ring) { return; }
@@ -7633,8 +7640,8 @@
             front = Math.cos((sp.ry + orbitSpin) * Math.PI / 180) > 0.15;
             html += "<div class=\"kr-it\" style=\"width:" + w.toFixed(1) + "px;height:" + h.toFixed(1) + "px;left:" + (-w / 2).toFixed(1) + "px;top:" + (-h / 2).toFixed(1) +
                 "px;transform:translate3d(" + sp.x.toFixed(1) + "px," + sp.y.toFixed(1) + "px," + (-sp.z).toFixed(1) + "px) rotateY(" + sp.ry + "deg)\">" +
-                orbitShapeSvg(orbit.shape, t, Math.round(orbit.w), Math.round(orbit.h), "hsl(" + orbitHue(i) + ",80%,62%)") +
-                (orbit.numbers && (front || orbit.back) && h > 18 ? "<span style=\"font-size:" + Math.max(9, Math.round(Math.min(w, h) * 0.32)) + "px\">" + (i + 1) + "</span>" : "") + "</div>";
+                orbitShapeSvg(orbit.shape, t, Math.round(orbit.w), Math.round(orbit.h), front || orbit.backColor === "card" ? "hsl(" + orbitHue(i) + ",80%,62%)" : orbitBackCss()) +
+                (orbit.numbers && front && h > 18 ? "<span style=\"font-size:" + Math.max(9, Math.round(Math.min(w, h) * 0.32)) + "px\">" + (i + 1) + "</span>" : "") + "</div>";
         }
         d = ring;
         d.innerHTML = html;
@@ -7645,7 +7652,9 @@
         var corner = orbit.shape !== "circle";
         pressGroupV(ui.orbitLayout, orbit.layout);
         pressGroupV(ui.orbitShape, orbit.shape);
-        pressGroupV(ui.orbitMode, orbit.mode);
+        pressGroupV(ui.orbitBackC, orbit.backColor);
+        ui.orbitBackDot.style.background = orbit.backHex;
+        ui.orbitBackHex.value = orbit.backHex;
         ui.orbitCornerRow.hidden = !corner;
         if (corner) { ui.orbitCornerIco.innerHTML = ui.orbitShape.querySelector("button[data-v=\"" + orbit.shape + "\"] svg").outerHTML; }
         ui.orbitCorners.value = String(orbit.corners);
@@ -7656,8 +7665,6 @@
         ui.orbitH.value = String(orbit.h); ui.orbitHVal.textContent = String(orbit.h);
         ui.orbitNumbers.checked = orbit.numbers;
         ui.orbitCamera.checked = orbit.camera;
-        ui.orbitBack.checked = orbit.back;
-        ui.orbitBackRow.hidden = !orbit.numbers && orbit.mode !== "precomp";   // в прекомпе сзади может быть видна и картинка
         drawOrbitPreview();
     }
 
@@ -7675,14 +7682,15 @@
         setBusy(true);
         setStatus("Строю карусель…", "busy");
         try {
-            res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: orbit.mode,
-                radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera, back: orbit.back },
+            res = await host("orbitMake", [{ count: orbit.count, layout: orbit.layout, shape: orbit.shape, corners: orbit.corners, mode: "precomp",
+                radius: orbit.radius, w: orbit.w, h: orbit.h, numbers: orbit.numbers, camera: orbit.camera, back: false,
+                backColor: orbit.backColor === "white" ? [0.96, 0.96, 0.96] : orbit.backColor === "black" ? [0.08, 0.08, 0.08] : orbit.backColor === "custom" ? orbitHexRgb(orbit.backHex) : null },
                 { ctrl: "Карусель: управление", card: "Карточка ", number: "Номер ", camera: "Карусель: камера", camRig: "Карусель: управление камерой", folder: "Карусель", shape: "Форма", back: "обратная сторона", backFx: "Обратная сторона",
-                    fxCount: "Карточек", fxRadius: "Радиус", fxW: "Ширина", fxH: "Высота", fxCorners: "Углы %", fxBack: "Сзади видно цифру и картинку" }, mkArg("carousel")]);
+                    fxCount: "Карточек", fxRadius: "Радиус", fxW: "Ширина", fxH: "Высота", fxCorners: "Углы %" }, mkArg("carousel")]);
             setBusy(false);
             setStatus("Карусель готова: " + plural(res.cards, "карточка", "карточки", "карточек") + ", " + ORBIT_LAYOUT_NAMES[res.layout] + ". " +
-                "Крутите её слоем «" + res.ctrl + "» (Y Rotation); там же, в Effect Controls, — сколько карточек (до " + (res.cards + (res.spare || 0)) + "), радиус, размер, углы и что видно сзади." +
-                (res.precomp ? " Каждая карточка — композиция в папке «" + res.folder + "»: откройте и положите внутрь картинку или видео — она обрежется по форме карточки." : "") +
+                "Крутите её слоем «" + res.ctrl + "» (Y Rotation); там же, в Effect Controls, — сколько карточек (до " + (res.cards + (res.spare || 0)) + "), радиус, размер и углы." +
+                (res.precomp ? " Каждая карточка — композиция в папке «" + res.folder + "»: положите внутрь фото (или нажмите «Фото в карточки») — оно обрежется по форме карточки, сзади будет просто цвет." : "") +
                 (res.camera ? " Добавлена камера «" + res.camera + "»" + (res.camRig ? " на 3D-нуле «" + res.camRig + "»: крутите или двигайте его, чтобы облететь карусель." : ".") : (res.hadCamera ? " Камера в композиции уже была." : "")) +
                 " Отменить — Cmd/Ctrl+Z.", "done");
         } catch (e) {
@@ -7690,9 +7698,25 @@
         }
     }
 
+    // Фото, выделенные в окне Project, по одному в каждую карточку карусели (выделенной или единственной в композиции).
+    async function onOrbitPhotos() {
+        var res;
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Кладу фото в карточки…", "busy");
+        try {
+            res = await host("orbitPhotos", [{ card: "Карточка ", ctrl: "Карусель: управление", photo: "Фото" }]);
+            setBusy(false);
+            setStatus("Готово: " + plural(res.placed, "фото", "фото", "фото") + " в карточках 1–" + res.placed + "." +
+                (res.extra ? " Ещё " + res.extra + " не поместились: карточек всего " + res.cards + "." : "") + " Отменить — Cmd/Ctrl+Z.", "done");
+        } catch (e) {
+            toolFailed(e);
+        }
+    }
+
     function enableOrbit() {
         if (!ui.orbitPane) { return; }
-        [["orbitLayout", "layout"], ["orbitShape", "shape"], ["orbitMode", "mode"]].forEach(function (g) {
+        [["orbitLayout", "layout"], ["orbitShape", "shape"], ["orbitBackC", "backColor"]].forEach(function (g) {
             Array.prototype.forEach.call(ui[g[0]].querySelectorAll("button[data-v]"), function (b) {
                 b.addEventListener("click", function () { setOrbit(g[1], b.getAttribute("data-v")); });
             });
@@ -7710,8 +7734,11 @@
         });
         ui.orbitNumbers.addEventListener("change", function () { setOrbit("numbers", ui.orbitNumbers.checked); });
         ui.orbitCamera.addEventListener("change", function () { setOrbit("camera", ui.orbitCamera.checked); });
-        ui.orbitBack.addEventListener("change", function () { setOrbit("back", ui.orbitBack.checked); });
+        // «Свой» цвет: щелчок по уже выбранному «Свой» открывает выбор цвета.
+        ui.orbitBackC.querySelector('[data-v="custom"]').addEventListener("click", function () { try { ui.orbitBackHex.click(); } catch (e) {} });
+        ui.orbitBackHex.addEventListener("input", function () { orbit.backColor = "custom"; setOrbit("backHex", ui.orbitBackHex.value); });
         ui.orbitBtn.addEventListener("click", onOrbit);
+        ui.orbitPhotos.addEventListener("click", onOrbitPhotos);
         // Крутить превью мышкой. События мыши, не указателя: указательные в After Effects не приходят.
         ui.orbitStage.addEventListener("mousedown", function (e) {
             if (e.button !== 0) { return; }
@@ -12233,7 +12260,7 @@
 
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT" || m === "RB_NO_PATH" || m === "NO_TEXT_LAYER" || m === "GL_NO_SHAPE";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT" || m === "RB_NO_PATH" || m === "NO_TEXT_LAYER" || m === "GL_NO_SHAPE" || m === "OR_NO_CAROUSEL" || m === "OR_NO_PHOTOS";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }

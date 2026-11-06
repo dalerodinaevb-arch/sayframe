@@ -3376,7 +3376,7 @@ var sayframeHost = (function () {
         var n = Math.round(orbitNum(o.count, 2, 36, 8)), layout = ORBIT_LAYOUTS[o.layout] ? o.layout : "ring";
         var kind = ORBIT_SIDES.hasOwnProperty(o.shape) ? o.shape : "rect", t = orbitNum(o.corners, 0, 100, 20) / 100;
         var radius = orbitNum(o.radius, 0, 10000, 600), w = Math.round(orbitNum(o.w, 4, 8000, 400)), h = Math.round(orbitNum(o.h, 4, 8000, 560));
-        var pre = o.mode === "precomp", cx = comp.width / 2, cy = comp.height / 2, fs = Math.round(Math.min(w, h) * 0.32);
+        var pre = o.mode !== "shape", cx = comp.width / 2, cy = comp.height / 2, fs = Math.round(Math.min(w, h) * 0.32);
         var ctrl, cam = "", had = false, cards = [], nums = [], backs = [], bk, i, j, sp, L, txt, cc, inner, folder = null, base, camL, rig = null;
         var showBack = o.back !== false, ctrlName = labels.ctrl || "Carousel Control", F, Fin, an, sx, face, k;
         // A few spare cards past the chosen count, hidden: the "Cards" control can show them later without building again.
@@ -3427,7 +3427,7 @@ var sayframeHost = (function () {
                 try {
                     bk = L.property("ADBE Effect Parade").addProperty("ADBE Fill");
                     bk.name = labels.backFx || "Back side";
-                    bk.property("ADBE Fill-0002").setValue(orbitColor(i));
+                    bk.property("ADBE Fill-0002").setValue(o.backColor && o.backColor.length === 3 ? [Number(o.backColor[0]), Number(o.backColor[1]), Number(o.backColor[2])] : orbitColor(i));
                 } catch (eBk) { bk = null; }
                 backs.unshift(bk);
             } else {
@@ -3451,7 +3451,7 @@ var sayframeHost = (function () {
         kitControl(ctrl, "ADBE Slider Control", labels.fxW || "Width", w);
         kitControl(ctrl, "ADBE Slider Control", labels.fxH || "Height", h);
         kitControl(ctrl, "ADBE Slider Control", labels.fxCorners || "Corners %", Math.round(t * 100));
-        kitControl(ctrl, "ADBE Checkbox Control", labels.fxBack || "Back visible", showBack ? 1 : 0);
+        if (labels.fxBack) { kitControl(ctrl, "ADBE Checkbox Control", labels.fxBack, showBack ? 1 : 0); }
         an = [0, 0, 0];
         try { an = acP(ctrl, ["ADBE Transform Group", "ADBE Anchor Point"]).value; } catch (eA) {}
         an = [Number(an && an[0]) || 0, Number(an && an[1]) || 0, Number(an && an[2]) || 0];
@@ -3465,7 +3465,7 @@ var sayframeHost = (function () {
             if (pre) {
                 orbitExpr(cards[i], "ADBE Scale", "[" + F.w + "/" + w + "*100," + F.h + "/" + h + "*100,100]");
                 orbitExpr(cards[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n?value:0");
-                if (backs[i]) { try { backs[i].property("ADBE Fill-0005").expression = F.b + "!=1&&!(" + face + ")?value:0"; } catch (eBx) {} }
+                if (backs[i]) { try { backs[i].property("ADBE Fill-0005").expression = (labels.fxBack ? F.b + "!=1&&" : "") + "!(" + face + ")?value:0"; } catch (eBx) {} }
             } else {
                 orbitExpr(cards[i], "ADBE Opacity", "var n=Math.max(1,Math.round(" + F.n + "));" + i + "<n?value:0");
             }
@@ -7826,6 +7826,59 @@ var sayframeHost = (function () {
         },
 
         // Grid: o = { rows, cols, gap, split, gapV, round, rand, seed, fit, w, h, mode, numbers, stagger }; labels - layer names.
+        // Photos selected in the Project panel go into the card comps of a carousel, one per card, in order.
+        orbitPhotos: function (labels) {
+            return reply(function () {
+            var comp = activeComp(), sel = [], cards = {}, n = 0, i, j, k, L, src, m, it, cc, nl, sc, placed = 0, ctrl = null, base = labels.card || "Card ", pw, ph, num;
+            try { sel = app.project.selection || []; } catch (eS) { sel = []; }
+            labels = labels || {};
+            num = function (nm) { nm = String(nm); return nm.indexOf(base) === 0 && /^\d+$/.test(nm.slice(base.length)) ? Number(nm.slice(base.length)) : 0; };
+            // The carousel: the selected one's control (or a card), else the only one in the comp.
+            for (i = 1; i <= comp.numLayers; i++) {
+                L = comp.layer(i);
+                if (L.name.indexOf(labels.ctrl || "Carousel Control") === 0 && (!ctrl || L.selected)) { ctrl = L; }
+            }
+            for (i = 1; i <= comp.numLayers; i++) {
+                L = comp.layer(i);
+                try { src = L.source; } catch (eSrc) { src = null; }
+                if (!src || !(typeof CompItem === "undefined" || src instanceof CompItem)) { continue; }
+                if (ctrl && L.parent !== ctrl) { continue; }
+                m = num(src.name);
+                if (m) { cards[m] = src; n = Math.max(n, m); }
+            }
+            if (!n) { throw new Error("OR_NO_CAROUSEL"); }
+            var list = [];
+            for (i = 0; i < sel.length; i++) {
+                it = sel[i];
+                if (!it || (typeof FolderItem !== "undefined" && it instanceof FolderItem)) { continue; }
+                if (num(it.name)) { continue; }
+                if (!(it.width > 0)) { continue; }
+                list.push(it);
+            }
+            if (!list.length) { throw new Error("OR_NO_PHOTOS"); }
+            app.beginUndoGroup("Sayframe: photos into cards");
+            try {
+                for (k = 0; k < list.length && k < n; k++) {
+                    cc = cards[k + 1];
+                    if (!cc) { continue; }
+                    // A photo put here before by this button goes away; the card's own shape and number stay under.
+                    for (j = cc.numLayers; j >= 1; j--) { try { if (cc.layer(j).comment === "Sayframe|photo") { cc.layer(j).remove(); } } catch (eR) {} }
+                    nl = cc.layers.add(list[k]);
+                    try { nl.comment = "Sayframe|photo"; } catch (eC) {}
+                    try { nl.moveToBeginning(); } catch (eB) {}
+                    pw = Number(list[k].width) || cc.width; ph = Number(list[k].height) || cc.height;
+                    sc = Math.max(cc.width / pw, cc.height / ph) * 100;
+                    orbitSet(nl, "ADBE Scale", [sc, sc]);
+                    orbitSet(nl, "ADBE Position", [cc.width / 2, cc.height / 2]);
+                    placed++;
+                }
+            } finally {
+                app.endUndoGroup();
+            }
+            return { placed: placed, cards: n, extra: Math.max(0, list.length - n) };
+            });
+        },
+
         gridMake: function (o, labels, mk) {
             return reply(function () {
                 var comp = activeComp();

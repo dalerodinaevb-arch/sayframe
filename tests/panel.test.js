@@ -573,7 +573,7 @@ function makeAE(opts, tmpDir) {
   log.dcMain = dcMain;
   // opts.unused: [{ name, used }] — footage in the project, used in a comp or not.
   (opts.unused || []).forEach((u) => projItems.push(Object.assign(new FootageItem(), { name: u.name, usedIn: u.used ? [comp] : [], parentFolder: rootFolder })));
-  const project = { get numItems() { return projItems.length; },
+  const project = { get numItems() { return projItems.length; }, get selection() { return projItems.filter((x) => x && x.selected); },
     removeUnusedFootage() { const gone = projItems.filter((x) => x instanceof FootageItem && x.usedIn && !x.usedIn.length); gone.forEach((x) => projItems.splice(projItems.indexOf(x), 1)); log.unusedRemoved = gone.map((x) => x.name); return gone.length; }, activeItem: opts.noActiveComp ? null : dcMain || comp, item(i) { return projItems[i - 1]; },
     file: opts.projectFile ? new File(opts.projectFile) : null, rootFolder,
     addFootage(it) { projItems.push(it); },
@@ -5774,39 +5774,42 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
 
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
     await orbitTab(p); await p.page.click("#orbitBtn"); await p.idle();
-    const ctrl = Lx(p, "Карусель: управление"), c1 = Lx(p, "Карточка 1"), c3 = Lx(p, "Карточка 3"), n1 = Lx(p, "Номер 1");
-    check("OR2 «Создать карусель»: a camera on its own 3D null, the controller null, 8 cards with their numbers, one undo step", names(p) === "Карусель: управление камерой,Карусель: камера,Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => "Номер " + i + ",Карточка " + i).join(",") + ",BG" &&
-      p.ae.log.undo.join() === "begin:Sayframe: carousel,end", names(p));
-    check("OR2 the camera stands back and a little above, looking at the middle: the whole ring fits (3642 px away, 18° up); numbers show from behind too (default)", near(tf(Lx(p, "Карусель: камера"), "ADBE Position"), [960, -585, -3464]) && near(tf(Lx(p, "Карусель: камера"), "ADBE Camera Point of Interest"), [960, 540, 0]) &&
-      runX((acAt(Lx(p, "Номер 1"), "ADBE Transform Group", "ADBE Opacity") || {}).expression, FX0, { facing: false }) === 100 && (await p.page.isChecked("#orbitBack")), JSON.stringify(tf(Lx(p, "Карусель: камера"), "ADBE Position")) + " " + await p.status());
+    const ctrl = Lx(p, "Карусель: управление"), c1 = Lx(p, "Карточка 1"), c3 = Lx(p, "Карточка 3");
+    const cc1 = c1 && c1.source, inner1 = cc1 && cc1.list.find((l) => l.name === "Форма"), num1 = cc1 && cc1.list.find((l) => l.name === "1");
+    check("OR2 «Создать карусель»: a camera on its own 3D null, the controller null, 8 card comps (and 4 spare), one undo step", names(p) === "Карусель: управление камерой,Карусель: камера,Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => "Карточка " + i).join(",") + ",BG" &&
+      p.ae.log.undo.join() === "begin:Sayframe: carousel,end" && !!cc1 && p.ae.log.bins.indexOf("Карусель") >= 0, names(p));
+    check("OR2 the camera stands back and a little above, looking at the middle: the whole ring fits (3642 px away, 18° up)", near(tf(Lx(p, "Карусель: камера"), "ADBE Position"), [960, -585, -3464]) && near(tf(Lx(p, "Карусель: камера"), "ADBE Camera Point of Interest"), [960, 540, 0]), JSON.stringify(tf(Lx(p, "Карусель: камера"), "ADBE Position")));
     check("OR2 the cards are 3D, on a ring of 600 around the middle, turned to face out, hanging on the null", c1.threeDLayer && ctrl.threeDLayer && ctrl.nullLayer && c1.parent === ctrl && c3.parent === ctrl && near(tf(ctrl, "ADBE Position"), [960, 540, 0]) &&
       near(tf(c1, "ADBE Position"), [960, 540, -600]) && tf(c1, "ADBE Rotate Y") === 0 && near(tf(c3, "ADBE Position"), [1560, 540, 0]) && tf(c3, "ADBE Rotate Y") === -90 &&
       Lx(p, "Карусель: камера").parent === Lx(p, "Карусель: управление камерой") && Lx(p, "Карусель: управление камерой").threeDLayer && near(tf(Lx(p, "Карусель: управление камерой"), "ADBE Position"), [960, 540, 0]), JSON.stringify(tf(c3, "ADBE Position")));
-    check("OR2 a card: a 400×560 rectangle, corners 20% (40 px), its own colour; the number hangs on its card", JSON.stringify(acAt(c1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[400,560]" &&
-      acAt(c1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Roundness").value === 40 && !!acAt(c1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Graphic - Fill") &&
-      n1.parent === c1 && n1.threeDLayer && ctrl.selected && !c1.selected);
+    check("OR2 a card comp 400×560: its coloured shape (corners 20% = 40 px) and its number inside", cc1 && cc1.width === 400 && cc1.height === 560 && !!inner1 && !!num1 &&
+      JSON.stringify(acAt(inner1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Size").value) === "[400,560]" &&
+      acAt(inner1, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", "ADBE Vector Rect Roundness").value === 40 && ctrl.selected && !c1.selected, cc1 && cc1.list.map((l) => l.name).join());
+    const fill1 = acAt(c1, "ADBE Effect Parade").children.find((e) => e.matchName === "ADBE Fill"), fop1 = fill1 && fill1.children.find((c) => c.matchName === "ADBE Fill-0005").expression;
+    check("OR2 from behind a card is plain colour (its own colour by default): no photo, no number", !!fill1 && fill1.name === "Обратная сторона" && runX(fop1, FX0, { facing: false }) === 100 && runX(fop1, FX0) === 0, String(fop1));
     const ex = (l, n) => (acAt(l, "ADBE Transform Group", n) || {}).expression, rectX = (l, n) => acAt(l, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Rect", n).expression;
-    check("OR5 after «Создать карусель» it stays live: Effect Controls of «Карусель: управление» hold count, radius, size, corners and the back switch", acAt(ctrl, "ADBE Effect Parade").children.map((e) => e.name).join() === "Карточек,Радиус,Ширина,Высота,Углы %,Сзади видно цифру и картинку", acAt(ctrl, "ADBE Effect Parade").children.map((e) => e.name).join());
+    check("OR5 after «Создать карусель» it stays live: Effect Controls of «Карусель: управление» hold count, radius, size and corners", acAt(ctrl, "ADBE Effect Parade").children.map((e) => e.name).join() === "Карточек,Радиус,Ширина,Высота,Углы %", acAt(ctrl, "ADBE Effect Parade").children.map((e) => e.name).join());
     const pos3 = (fx) => runX(ex(c3, "ADBE Position"), fx).map((v) => Math.round(v));
     check("OR5 the cards follow the controls: card 3 at 90° of 8 on a 600 ring; with 4 cards it moves to 180°, with a 900 radius it goes out; it turns with them", JSON.stringify(pos3(FX0)) === "[600,0,0]" && JSON.stringify(pos3({ ...FX0, "Карточек": 4 })) === "[0,0,600]" && JSON.stringify(pos3({ ...FX0, "Радиус": 900 })) === "[900,0,0]" &&
       runX(ex(c3, "ADBE Rotate Y"), FX0) === -90 && runX(ex(c3, "ADBE Rotate Y"), { ...FX0, "Карточек": 4 }) === -180, JSON.stringify(pos3(FX0)) + JSON.stringify(pos3({ ...FX0, "Карточек": 4 })));
-    check("OR5 4 spare cards wait hidden: card 9 shows only when «Карточек» is 9 or more", runX(ex(Lx(p, "Карточка 9"), "ADBE Opacity"), FX0) === 0 && runX(ex(Lx(p, "Карточка 9"), "ADBE Opacity"), { ...FX0, "Карточек": 10 }) === 100 && runX(ex(Lx(p, "Номер 9"), "ADBE Opacity"), FX0) === 0 && runX(ex(c3, "ADBE Opacity"), FX0) === 100);
-    check("OR5 size and corners follow too", JSON.stringify(runX(rectX(c1, "ADBE Vector Rect Size"), { ...FX0, "Ширина": 500 })) === "[500,560]" && runX(rectX(c1, "ADBE Vector Rect Roundness"), { ...FX0, "Ширина": 500, "Углы %": 50 }) === 125);
-    check("OR2 the report", /^Карусель готова: 8 карточек, кольцо\. Крутите её слоем «Карусель: управление»/.test(await p.status()) && /до 12\), радиус, размер, углы/.test(await p.status()) && /камера «Карусель: камера»/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+    check("OR5 4 spare cards wait hidden: card 9 shows only when «Карточек» is 9 or more", runX(ex(Lx(p, "Карточка 9"), "ADBE Opacity"), FX0) === 0 && runX(ex(Lx(p, "Карточка 9"), "ADBE Opacity"), { ...FX0, "Карточек": 10 }) === 100 && runX(ex(c3, "ADBE Opacity"), FX0) === 100);
+    check("OR5 size and corners follow too (inside the card comp, and the card layer scales)", runX(rectX(inner1, "ADBE Vector Rect Roundness"), { ...FX0, "Углы %": 50 }) === 100 &&
+      JSON.stringify(runX(ex(c1, "ADBE Scale"), { ...FX0, "Ширина": 800 })) === "[200,100,100]");
+    check("OR2 the report", /^Карусель готова: 8 карточек, кольцо\. Крутите её слоем «Карусель: управление»/.test(await p.status()) && /до 12\), радиус, размер и углы/.test(await p.status()) && /камера «Карусель: камера»/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
     await p.close();
 
     p = await open({ orbit: { layers: [{ name: "Cam", kind: "camera" }, { name: "BG" }] } });
     await orbitTab(p);
     await p.page.click('#orbitShape [data-v="tri"]'); await setRange(p, "#orbitCorners", 50);
-    await p.page.click('#orbitMode [data-v="precomp"]'); await p.page.click('#orbitLayout [data-v="half"]');
+    await p.page.click('#orbitLayout [data-v="half"]');
     await p.page.click(".kr-sw label:first-child .track");
     for (let i = 0; i < 5; i++) await p.page.click("#orbitLess");
     await p.page.click("#orbitBtn"); await p.idle();
     const comps = p.ae.log.orbitComps || [];
     t = Lx(p, "Карточка 1");
-    check("OR3 «Шейп + прекомп»: 3 card comps (and 9 spare ones) in a «Карусель» folder, each with the shape (a rounded triangle path) and no number", comps.length === 12 && comps.map((c) => c.name).indexOf("Карточка 3") >= 0 && p.ae.log.bins.indexOf("Карусель") >= 0 &&
+    check("OR3 3 card comps (and 9 spare ones) in a «Карусель» folder, each with the shape (a rounded triangle path) and no number", comps.length === 12 && comps.map((c) => c.name).indexOf("Карточка 3") >= 0 && p.ae.log.bins.indexOf("Карусель") >= 0 &&
       comps.every((c) => c.list.length === 1 && c.list[0].name === "Форма" && acAt(c.list[0], "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").value.vertices.length === 6), comps.map((c) => c.name + ":" + c.list.map((l) => l.name)).join(" "));
-    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one; numbers off — the back switch still shows, a picture can be inside", (await vis(p, "#orbitBackRow")) && !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => "Карточка " + i).join(",") + ",Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
+    check("OR3 half ring: the first card (left, −90° round the ring) turned by 90°, the last by −90°; a camera was there, no second one", !!t && t.source && tf(t, "ADBE Rotate Y") === 90 && tf(Lx(p, "Карточка 3"), "ADBE Rotate Y") === -90 && names(p) === "Карусель: управление," + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => "Карточка " + i).join(",") + ",Cam,BG" && /Камера в композиции уже была/.test(await p.status()) && p.errors.length === 0, names(p) + " " + (await p.status()));
     const fx3 = { ...FX0, "Карточек": 3, "Углы %": 50 }, inShape = comps[0].list[0], tpath = acAt(inShape, "ADBE Root Vectors Group", 1, "ADBE Vectors Group", "ADBE Vector Shape - Group", "ADBE Vector Shape").expression;
     const mpath = acAt(t, "ADBE Mask Parade").children[0].children.find((c) => c.matchName === "ADBE Mask Shape").expression;
     check("OR5 in «Шейп + прекомп» the triangle's corners follow «Углы %» (inside the card comp and in its mask): 6 points rounded, 3 sharp; the card comp layer scales to «Ширина» × «Высота»", runX(tpath, fx3).P.length === 6 && runX(tpath, { ...fx3, "Углы %": 0 }).P.length === 3 && runX(mpath, fx3).P.length === 6 &&
@@ -5936,36 +5939,44 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
-  // Carousel: «Сзади видно цифру и картинку» off — a number (or the whole card comp) hides when its card turns away from the camera.
+  // Carousel: the back of a card is plain colour (its own, white, black or one's own) — never the photo; «Фото в карточки» puts
+  // the photos selected in the Project panel into the card comps.
   {
-    // Runs a carousel expression the way After Effects would: the controller's Effect Controls, the card's facing, createPath.
-    const runX = (expr, fx, o = {}) => vm.runInNewContext("var value=" + JSON.stringify(o.value === undefined ? 100 : o.value) + ";function degreesToRadians(d){return d*Math.PI/180}" +
-      "function createPath(P,I,O,c){return {P:P,I:I,O:O,c:c}}var thisLayer={toCompVec:function(){return [0,0," + (o.facing === false ? -1 : 1) + "]}};" +
-      "var FX=" + JSON.stringify(fx) + ";var thisComp={layer:function(){return {effect:function(n){return function(){return FX[n]}}}}};function comp(){return thisComp}" + expr);
-    const FX0 = { "Карточек": 8, "Радиус": 600, "Ширина": 400, "Высота": 560, "Углы %": 20, "Сзади видно цифру и картинку": 1 };
-    const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
-    const names2 = (p) => p.ae.log.dcMain.list.map((l) => l.name).join(",");
+    const runX = (expr, fx, o = {}) => vm.runInNewContext("var value=" + JSON.stringify(o.value === undefined ? 100 : o.value) + ";var thisLayer={toCompVec:function(){return [0,0," + (o.facing === false ? -1 : 1) + "]}};" +
+      "var FX=" + JSON.stringify(fx) + ";var thisComp={layer:function(){return {effect:function(n){return function(){return FX[n]}}}}};" + expr);
+    const Lx = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n && l.source);
+    const orbitTab = async (p) => { await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]'); };
+    const fillOf = (l) => acAt(l, "ADBE Effect Parade").children.find((e) => e.matchName === "ADBE Fill");
     p = await open({ orbit: { layers: [{ name: "BG" }] } });
-    await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]');
-    const spans0 = await p.page.locator("#orbitRing .kr-it span").count();
-    await p.page.locator("label.switch", { has: p.page.locator("#orbitBack") }).locator(".track").click();
-    const spans1 = await p.page.locator("#orbitRing .kr-it span").count();
+    await orbitTab(p);
+    check("OR4 no «Шейп / Шейп + прекомп» choice and no back switch any more; «Обратная сторона»: 4 colours, «Как карточка» on", !(await p.page.$("#orbitMode")) && !(await p.page.$("#orbitBack")) &&
+      (await p.page.locator("#orbitBackC .kr-b").count()) === 4 && (await p.page.getAttribute('#orbitBackC [data-v="card"]', "aria-pressed")) === "true" && (await vis(p, "#orbitPhotos")));
+    await p.page.click("#orbitPhotos"); await p.idle();
+    check("OR6 «Фото в карточки» with no carousel yet says to make one first", /Сначала создайте карусель/.test(await p.status()), await p.status());
+    await p.page.click('#orbitBackC [data-v="white"]');
+    const backs = await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#orbitRing .kr-it svg [fill]"), (e) => e.getAttribute("fill")).filter((f) => f === "#f4f4f4").length);
+    check("OR4 «Белый»: the back cards in the preview turn white", backs > 0 && backs < 8, String(backs));
     await p.page.click("#orbitBtn"); await p.idle();
-    const ex = (acAt(Lx(p, "Номер 3"), "ADBE Transform Group", "ADBE Opacity") || {}).expression;
-    check("OR4 «Цифра видна сзади» off: the preview drops the numbers of the back cards; each number layer hides when its card faces away", spans0 === 8 && spans1 < 8 && spans1 > 0 && runX(ex, { ...FX0, "Сзади видно цифру и картинку": 0 }, { facing: false }) === 0 && runX(ex, { ...FX0, "Сзади видно цифру и картинку": 0 }) === 100, spans0 + " " + spans1 + " " + ex);
-    await p.page.click('#orbitMode [data-v="precomp"]'); await p.page.click("#orbitBtn"); await p.idle();
-    const cardL = p.ae.log.dcMain.list.find((l) => l.name === "Карточка 2" && l.source);
-    const op = (l) => (acAt(l, "ADBE Transform Group", "ADBE Opacity") || {}).expression;
-    const off = { ...FX0, "Сзади видно цифру и картинку": 0 };
-    const fill = cardL && acAt(cardL, "ADBE Effect Parade").children.find((e) => e.matchName === "ADBE Fill"), fop = fill && fill.children.find((c) => c.matchName === "ADBE Fill-0005").expression;
-    check("OR4 …in «Шейп + прекомп» the back is a Fill effect «Обратная сторона» on the card itself (no extra layer): it paints the card plain in its colour when it faces away; the switch in Effect Controls flips it live", !!cardL && !!fill && fill.name === "Обратная сторона" &&
-      runX(fop, off, { facing: false }) === 100 && runX(fop, off) === 0 && runX(fop, FX0, { facing: false }) === 0 && runX(op(cardL), off, { facing: false }) === 100 &&
-      JSON.stringify(fill.children.find((c) => c.matchName === "ADBE Fill-0002").value) !== "null" && !p.ae.log.dcMain.list.some((l) => /обратная сторона/.test(l.name)), (cardL ? op(cardL) : "no card") + " | " + fop + " | " + names2(p));
-    const mk = cardL && acAt(cardL, "ADBE Mask Parade").children[0];
-    check("OR4 …and a picture put inside gets the card's shape: a mask of the rounded card on the card comp layer", !!mk && mk.name === "Card" && mk.children.find((c) => c.matchName === "ADBE Mask Shape").value.vertices.length === 8, mk ? JSON.stringify(mk.children.find((c) => c.matchName === "ADBE Mask Shape").value.vertices) : "no mask");
-    check("OR4 the switch is named «Сзади видно цифру и картинку»", (await p.page.innerText("#orbitBackRow")).trim() === "Сзади видно цифру и картинку");
-    await p.restart(); await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]');
-    check("OR4 the switch survives a restart", !(await p.page.isChecked("#orbitBack")));
+    const c2 = Lx(p, "Карточка 2"), f2 = fillOf(c2), fop = f2 && f2.children.find((c) => c.matchName === "ADBE Fill-0005").expression;
+    check("OR4 the comp: a card's back is a Fill «Обратная сторона» in white, on only when the card faces away", !!f2 && JSON.stringify(f2.children.find((c) => c.matchName === "ADBE Fill-0002").value) === "[0.96,0.96,0.96]" &&
+      runX(fop, {}, { facing: false }) === 100 && runX(fop, {}) === 0, String(fop));
+    await p.page.click("#orbitPhotos"); await p.idle();
+    check("OR6 nothing selected in Project: it says what to do", /Выделите фото или видео в окне Project/.test(await p.status()), await p.status());
+    const proj = p.ae.project;
+    const photo = (name, w, h) => { const it = Object.assign(new FootageItem(), { name, width: w, height: h, selected: true }); proj.addFootage(it); return it; };
+    const ph1 = photo("beach.jpg", 2000, 1000), ph2 = photo("city.jpg", 800, 1600);
+    await p.page.click("#orbitPhotos"); await p.idle();
+    const cc1 = Lx(p, "Карточка 1").source, cc2 = Lx(p, "Карточка 2").source, top1 = cc1.list[0], top2 = cc2.list[0];
+    const sc = (l) => acAt(l, "ADBE Transform Group", "ADBE Scale").value, ps = (l) => acAt(l, "ADBE Transform Group", "ADBE Position").value;
+    check("OR6 two photos selected: the first goes into card 1, the second into card 2, on top, centred, scaled to cover the card", top1.source === ph1 && top2.source === ph2 &&
+      Math.abs(sc(top1)[0] - 56) < 0.01 && Math.abs(sc(top2)[0] - 50) < 0.01 && JSON.stringify(ps(top1)) === "[200,280]" && /Готово: 2 фото в карточках 1–2/.test(await p.status()), JSON.stringify([sc(top1), sc(top2), ps(top1)]) + " " + await p.status());
+    ph1.selected = false;
+    await p.page.click("#orbitPhotos"); await p.idle();
+    check("OR6 again with one photo: card 1 gets it in place of the old one (one photo per card)", cc1.list.filter((l) => l.comment === "Sayframe|photo").length === 1 && cc1.list[0].source === ph2 && p.errors.length === 0, cc1.list.map((l) => l.name).join());
+    await p.restart(); await orbitTab(p);
+    check("OR4 the back colour survives a restart", (await p.page.getAttribute('#orbitBackC [data-v="white"]', "aria-pressed")) === "true");
+    await p.page.evaluate(() => { const i = document.getElementById("orbitBackHex"); i.value = "#ff0000"; i.dispatchEvent(new Event("input", { bubbles: true })); });
+    check("OR4 «Свой»: a picked colour selects it and shows on its dot", (await p.page.getAttribute('#orbitBackC [data-v="custom"]', "aria-pressed")) === "true" && /255, 0, 0/.test(await p.page.evaluate(() => getComputedStyle(document.getElementById("orbitBackDot")).backgroundColor)));
     await p.close();
   }
 
@@ -6650,7 +6661,6 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     // A carousel of precomps: a photo put into a card stays when the carousel is changed.
     p = await open({ mkPoll: true, orbit: { layers: [{ name: "BG", selected: false }] } });
     await mkTab(p);
-    await p.page.click('#orbitMode [data-v="precomp"]');
     await p.page.click("#orbitBtn"); await p.idle();
     const card1 = p.ae.log.orbitComps.find((c) => c.name === "Карточка 1");
     card1.layers.addSolid([1, 0, 0], "Моё фото", 100, 100);
