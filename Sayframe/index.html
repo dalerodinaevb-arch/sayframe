@@ -799,7 +799,7 @@
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Выравнивание»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>
 
-    <section class="card tool-card stagger-card" data-tool="stagger" data-info="Лесенка|Расставляет выделенные слои один за другим: каждый следующий на N кадров позже предыдущего. «Слои» — слои целиком, «Ключи» — все ключи слоя, а сам слой остаётся на месте (край слоя у анимации едет вместе с ней). Порядок: сверху вниз, случайно или снизу вверх; четвёртая кнопка ставит все слои (или первые ключи) на указатель времени. Нажмёте ещё раз — ступеньки станут вдвое больше." aria-label="Лесенка" title="Двойной щелчок по свободному месту — поменять блоки местами">
+    <section class="card tool-card stagger-card" data-tool="stagger" data-info="Лесенка|Расставляет выделенные слои один за другим: каждый следующий на N кадров позже предыдущего. «Слои» — слои целиком, «Ключи» — все ключи слоя, а сам слой остаётся на месте (край слоя у анимации едет вместе с ней). Порядок: сверху вниз, случайно или снизу вверх; у слоёв четвёртая кнопка ставит все слои на указатель времени. В режиме «Ключи» внизу пять действий: Отразить, Развернуть, По первому, По последнему, Клон — с выделенными ключами, а если ключи не выделены, со всеми ключами выделенных слоёв. Нажмёте ещё раз — ступеньки станут вдвое больше." aria-label="Лесенка" title="Двойной щелчок по свободному месту — поменять блоки местами">
       <button class="tool-grip" aria-label="Переместить блок «Лесенка»" title="Стрелки меняют блоки местами"><span aria-hidden="true"></span></button>
       <button id="staggerOptsToggle" class="tool-toggle" aria-expanded="true" aria-controls="staggerPrevText" aria-label="Скрыть подсказку" title="Скрыть подсказку">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6h8"/><path class="tool-toggle-plus" d="M6 2v8"/></svg>
@@ -826,6 +826,13 @@
         </div>
         <small id="staggerPrevText" class="tl-cap st-cap" aria-live="polite"></small>
         <button id="staggerBtn" class="shift-do shift-go" title="Каждый следующий — на столько кадров позже предыдущего">Расставить</button>
+        <div id="staggerActs" class="st-acts" role="group" aria-label="Действия с ключами" hidden>
+          <button type="button" data-a="mirror" title="Отразить: те же ключи ещё раз, задом наперёд, после последнего ключа" aria-label="Отразить"></button>
+          <button type="button" data-a="reverse" title="Развернуть: ключи остаются на местах, а значения идут в обратном порядке" aria-label="Развернуть"></button>
+          <button type="button" data-a="first" title="По первому: первые ключи всех слоёв встают на указатель времени, остальные едут следом" aria-label="По первому"></button>
+          <button type="button" data-a="last" title="По последнему: последние ключи всех слоёв встают на указатель времени, остальные едут следом" aria-label="По последнему"></button>
+          <button type="button" data-a="clone" title="Клон: копия ключей у указателя времени, с теми же промежутками и плавностью" aria-label="Клон"></button>
+        </div>
       </div>
       <div class="tool-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Ширина блока «Лесенка»" title="Потяните, чтобы изменить ширину блока. Двойной щелчок — ширина по умолчанию"></div>
     </section>

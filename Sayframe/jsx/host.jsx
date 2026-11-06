@@ -6331,6 +6331,158 @@ var sayframeHost = (function () {
         return out;
     }
 
+    // ---- Key actions in the stagger block, keys mode (like Animation Composer's Keyframe Actions).
+    // They work on the selected keyframes of the selected layers; with no keyframe selected, on all keys of those layers.
+    // mode: "mirror" (the keys again, backwards, after the last one), "reverse" (same times, values in the opposite order),
+    // "first"/"last" (each layer's first/last key to the time indicator, the rest follow), "clone" (a copy at the time indicator).
+
+    function kaIsMarker(p) {
+        try { if (p.matchName === "ADBE Marker") { return true; } } catch (e) {}
+        try { p.keyInTemporalEase(1); } catch (e2) { return true; }
+        return false;
+    }
+
+    // [{ layer, entries: [{ prop, times, marker }] }] and whether only selected keys were taken.
+    function kaCollect(comp) {
+        var layers = comp.selectedLayers, out = [], selected = false, i, j, k, list, sel, all, times;
+        for (i = 0; i < layers.length; i++) {
+            list = [];
+            eachKeyedProperty(layers[i], function (p) {
+                var s = [], a = [], n;
+                try { sel = p.selectedKeys; } catch (e) { sel = null; }
+                for (n = 0; sel && n < sel.length; n++) { s.push(p.keyTime(sel[n])); }
+                for (n = 1; n <= p.numKeys; n++) { a.push(p.keyTime(n)); }
+                list.push({ prop: p, sel: s, all: a });
+            }, 0);
+            out.push({ layer: layers[i], list: list });
+            for (j = 0; j < list.length; j++) { if (list[j].sel.length) { selected = true; } }
+        }
+        for (i = 0; i < out.length; i++) {
+            all = [];
+            for (j = 0; j < out[i].list.length; j++) {
+                times = selected ? out[i].list[j].sel : out[i].list[j].all;
+                if (!times.length) { continue; }
+                times.sort(function (a, b) { return a - b; });
+                all.push({ prop: out[i].list[j].prop, times: times, marker: kaIsMarker(out[i].list[j].prop) });
+            }
+            out[i].entries = all;
+            delete out[i].list;
+        }
+        for (k = out.length - 1; k >= 0; k--) { if (!out[k].entries.length) { out.splice(k, 1); } }
+        return { layers: out, selected: selected };
+    }
+
+    function kaRead(prop, t) {
+        var idx = prop.nearestKeyIndex(t);
+        var d = { value: prop.keyValue(idx) };
+        try { d.inEase = prop.keyInTemporalEase(idx); d.outEase = prop.keyOutTemporalEase(idx); } catch (e1) { d.inEase = null; }
+        try { d.inType = prop.keyInInterpolationType(idx); d.outType = prop.keyOutInterpolationType(idx); } catch (e2) { d.inType = null; }
+        try { d.tCont = prop.keyTemporalContinuous(idx); d.tAuto = prop.keyTemporalAutoBezier(idx); d.hasTemporal = true; } catch (e3) {}
+        try {
+            if (prop.isSpatial) {
+                d.inTan = prop.keyInSpatialTangent(idx); d.outTan = prop.keyOutSpatialTangent(idx);
+                d.sCont = prop.keySpatialContinuous(idx); d.sAuto = prop.keySpatialAutoBezier(idx);
+                d.hasSpatial = true;
+            }
+        } catch (e4) {}
+        try { d.label = prop.keyLabel(idx); } catch (e5) { d.label = null; }
+        return d;
+    }
+
+    // Puts a key with d's value and look at time t. flip: the key now plays backwards, so its two sides swap.
+    function kaWrite(prop, t, d, flip) {
+        var n;
+        prop.setValueAtTime(t, d.value);
+        n = prop.nearestKeyIndex(t);
+        if (d.inEase) { try { prop.setTemporalEaseAtKey(n, freshEases(flip ? d.outEase : d.inEase), freshEases(flip ? d.inEase : d.outEase)); } catch (e1) {} }
+        if (d.inType) { try { prop.setInterpolationTypeAtKey(n, flip ? d.outType : d.inType, flip ? d.inType : d.outType); } catch (e2) {} }
+        if (d.hasSpatial) {
+            try {
+                prop.setSpatialTangentsAtKey(n, flip ? d.outTan : d.inTan, flip ? d.inTan : d.outTan);
+                prop.setSpatialContinuousAtKey(n, d.sCont);
+                prop.setSpatialAutoBezierAtKey(n, d.sAuto);
+            } catch (e3) {}
+        }
+        if (d.hasTemporal) { try { prop.setTemporalContinuousAtKey(n, d.tCont); prop.setTemporalAutoBezierAtKey(n, d.tAuto); } catch (e4) {} }
+        if (d.label) { try { prop.setLabelAtKey(n, d.label); } catch (e5) {} }
+    }
+
+    // A key put outside the layer would not play: the layer grows to take it in.
+    function kaFit(layer, first, last, frame) {
+        var span = layerSpan(layer);
+        var start = Math.min(span.start, first), end = Math.max(span.end, last + frame);
+        if (start < span.start - frame / 4 || end > span.end + frame / 4) { trimLayer(layer, start, end); }
+    }
+
+    function keyActSelected(comp, mode) {
+        var frame = comp.frameDuration;
+        var got = kaCollect(comp);
+        var out = { keys: 0, layers: 0, failed: 0, few: 0, selected: got.selected, mode: mode };
+        var i, j, m, e, d, list, t0, lo, hi, dt, T, made, before, move;
+        if (!got.layers.length) { throw new Error("KA_NO_KEYS"); }
+        // Clone: one start for all layers, so the copies keep their timing against each other.
+        t0 = null;
+        for (i = 0; i < got.layers.length; i++) {
+            for (j = 0; j < got.layers[i].entries.length; j++) {
+                e = got.layers[i].entries[j];
+                if (e.marker) { continue; }
+                if (t0 === null || e.times[0] < t0) { t0 = e.times[0]; }
+            }
+        }
+        for (i = 0; i < got.layers.length; i++) {
+            made = 0; lo = null; hi = null;
+            if (mode === "first" || mode === "last") {
+                // Markers move with the animation, as in the stagger tool.
+                for (j = 0; j < got.layers[i].entries.length; j++) {
+                    e = got.layers[i].entries[j];
+                    if (lo === null || e.times[0] < lo) { lo = e.times[0]; }
+                    if (hi === null || e.times[e.times.length - 1] > hi) { hi = e.times[e.times.length - 1]; }
+                }
+                dt = comp.time - (mode === "first" ? lo : hi);
+                if (Math.abs(dt) < frame / 1000) { out.layers++; continue; }
+                move = { keys: 0, keysFailed: 0 };
+                for (j = 0; j < got.layers[i].entries.length; j++) { moveKeysOf(got.layers[i].entries[j], dt, frame / 4, move); }
+                out.keys += move.keys; out.failed += move.keysFailed;
+                if (move.keys) { kaFit(got.layers[i].layer, lo + dt, hi + dt, frame); out.layers++; }
+                continue;
+            }
+            for (j = 0; j < got.layers[i].entries.length; j++) {
+                e = got.layers[i].entries[j];
+                if (e.marker) { continue; }
+                if ((mode === "mirror" || mode === "reverse") && e.times.length < 2) { out.few++; continue; }
+                try {
+                    list = [];
+                    for (m = 0; m < e.times.length; m++) { list.push(kaRead(e.prop, e.times[m])); }
+                    if (mode === "reverse") {
+                        for (m = 0; m < list.length; m++) { kaWrite(e.prop, e.times[m], list[list.length - 1 - m], true); made++; }
+                    } else if (mode === "mirror") {
+                        T = e.times[e.times.length - 1];
+                        for (m = list.length - 2; m >= 0; m--) {
+                            kaWrite(e.prop, 2 * T - e.times[m], list[m], true); made++;
+                            if (hi === null || 2 * T - e.times[m] > hi) { hi = 2 * T - e.times[m]; }
+                        }
+                        lo = e.times[0];
+                    } else {
+                        for (m = 0; m < list.length; m++) {
+                            d = comp.time + e.times[m] - t0;
+                            kaWrite(e.prop, d, list[m], false); made++;
+                            if (lo === null || d < lo) { lo = d; }
+                            if (hi === null || d > hi) { hi = d; }
+                        }
+                    }
+                } catch (err) {
+                    out.failed++;
+                }
+            }
+            if (made) {
+                out.keys += made; out.layers++;
+                if (lo !== null && hi !== null) { kaFit(got.layers[i].layer, lo, hi, frame); }
+            }
+        }
+        if (!out.keys && !out.failed && out.few && mode !== "clone") { throw new Error("KA_NEED_TWO"); }
+        return out;
+    }
+
     // ---- expressions: put one on the selected properties, or find the broken ones and fix them
 
     var EXPR_SCAN_MAX = 60;
@@ -8323,6 +8475,23 @@ var sayframeHost = (function () {
                 app.beginUndoGroup("Sayframe: stagger");
                 try {
                     res = staggerSelected(comp, what, frames, order);
+                } finally {
+                    app.endUndoGroup();
+                }
+                return res;
+            });
+        },
+
+        // Key actions of the stagger block (keys mode): mirror, reverse, first, last, clone.
+        keyAct: function (mode) {
+            return reply(function () {
+                var comp = activeComp();
+                var res;
+                if (mode !== "mirror" && mode !== "reverse" && mode !== "first" && mode !== "last" && mode !== "clone") { throw new Error("BAD_KEY_ACTION"); }
+                if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }
+                app.beginUndoGroup("Sayframe: keys");
+                try {
+                    res = keyActSelected(comp, mode);
                 } finally {
                     app.endUndoGroup();
                 }
