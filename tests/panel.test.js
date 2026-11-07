@@ -4880,12 +4880,11 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T1 the choices are buttons: what to move, and four orders (the last one: to the time indicator)", (await p.page.locator("#staggerWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "layer,keys" && (await orderIds(p)) === "asc,random,desc,align" && (await p.page.locator("#staggerWhat button span").allInnerTexts()).join() === "Слои,Ключи" && (await p.page.getAttribute('#staggerOrder button[data-v="align"]', "aria-label")) === "К указателю времени");
   check("T1 the four order buttons sit in one row", await p.page.evaluate(() => new Set(Array.prototype.map.call(document.querySelectorAll("#staggerOrder button"), (b) => Math.round(b.getBoundingClientRect().top))).size === 1));
   check("T1 defaults: layers, one frame, top to bottom", [await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "layer,1,asc" && (await p.page.locator("#staggerPrevText").innerText()) === "Каждый следующий слой — на 1 кадр позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 12 && (await p.page.locator('#staggerOrder button[data-v="align"] svg .st-playhead').count()) === 1 && (await p.page.locator("#staggerBtn").innerText()) === "Расставить");
-  check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".stagger-card button:not(.tool-grip), .stagger-card input"), (el) => { const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
+  check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".stagger-card button:not(.tool-grip), .stagger-card input"), (el) => { if (el.closest("[hidden]")) return true; const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
   await pickSeg(p, "staggerOrder", "desc"); await pickSeg(p, "staggerWhat", "keys"); await p.page.click("#staggerMore"); await p.page.click("#staggerMore");
   check("T1 «Ключи»: the order icons turn into keyframes, the text says so; + and - change the step", (await p.page.locator("#staggerPrevText").innerText()) === "Ключи каждого следующего слоя — на 3 кадра позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 0 && (await p.page.locator("#staggerOrder button svg path").count()) === 37 && (await p.page.locator("#staggerOrderName").innerText()) === "Снизу вверх" && (await p.page.inputValue("#staggerStep")) === "3", await p.page.locator("#staggerPrevText").innerText());
-  await pickSeg(p, "staggerOrder", "align");
-  check("T1 «К указателю времени» with keys: no step row, the button says «Выровнять», the text explains", !(await vis(p, ".stagger-card .shift-row-step")) && (await p.page.locator("#staggerBtn").innerText()) === "Выровнять" && (await p.page.locator("#staggerPrevText").innerText()) === "Первый ключ каждого слоя встанет на указатель времени, остальные ключи сдвинутся вместе с ним." && (await p.page.locator("#staggerOrderName").innerText()) === "К указателю времени");
-  await pickSeg(p, "staggerWhat", "layer");
+  check("T1 «Ключи»: no «К указателю времени» order (the «По первому» action does it)", !(await vis(p, '#staggerOrder button[data-v="align"]')) && (await vis(p, '#staggerActs button[data-a="first"]')));
+  await pickSeg(p, "staggerWhat", "layer"); await pickSeg(p, "staggerOrder", "align");
   check("T1 … and with layers", (await p.page.locator("#staggerPrevText").innerText()) === "Все выделенные слои начнутся там, где стоит указатель времени." && !(await vis(p, "#staggerStep")) && (await vis(p, "#staggerBtn")));
   await pickSeg(p, "staggerOrder", "random");
   check("T1 another order brings the step back", (await vis(p, ".stagger-card .shift-row-step")) && (await p.page.locator("#staggerBtn").innerText()) === "Расставить");
@@ -4985,14 +4984,15 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p.ae.comp.time = 40 * F;
   R(L2).keys.forEach((k) => { k.time += 10 * F; }); SC(L2).keys.forEach((k) => { k.time += 10 * F; });   // L2's animation now starts at frame 43, inside the layer
   t = [fr(L.startTime), fr(L2.startTime)].join();
-  await pickSeg(p, "staggerWhat", "keys"); await press(p, "staggerBtn");
-  check("T5 keys: the first key of each layer lands on the time indicator (frame 40), the other keys keep their distance", times(R(L)) === "40,55,145,159" && times(SC(L)) === "40,55" && times(R(L2)) === "40,55,145,159" && times(SC(L2)) === "40,55", times(R(L)) + " | " + times(R(L2)));
-  check("T5 keys: the layers themselves stay where they were", [fr(L.startTime), fr(L2.startTime)].join() === t && (await p.status()) === "К указателю времени: 2 слоя.\nОтменить: Cmd/Ctrl+Z.", [fr(L.startTime), fr(L2.startTime)].join() + " " + await p.status());
+  [L, L2].forEach((l) => [R(l), SC(l)].forEach((pr) => pr.keys.forEach((k) => { k.selected = false; })));
+  await pickSeg(p, "staggerWhat", "keys"); await p.page.click('#staggerActs button[data-a="first"]'); await p.idle();
+  check("T5 keys («По первому»): the first key of each layer lands on the time indicator (frame 40), the other keys keep their distance", times(R(L)) === "40,55,145,159" && times(SC(L)) === "40,55" && times(R(L2)) === "40,55,145,159" && times(SC(L2)) === "40,55", times(R(L)) + " | " + times(R(L2)));
+  check("T5 keys: the layers themselves stay where they were", [fr(L.startTime), fr(L2.startTime)].join() === t && (await p.status()) === "По первому: 2 слоя — первые ключи на указателе времени (ключи не выделены — взял все ключи слоя).\nОтменить: Cmd/Ctrl+Z.", [fr(L.startTime), fr(L2.startTime)].join() + " " + await p.status());
   L3 = mkLayer(clock, { name: "plain", inPoint: 0, outPoint: 4 });
   p.ae.comp.selectedLayers = [L3];
-  await press(p, "staggerBtn");
+  await p.page.click('#staggerActs button[data-a="first"]'); await p.idle();
   check("T5 keys on a layer without keys -> a hint, nothing changes", (await p.statusKind()) === "" && L3.inPoint === 0, await p.status());
-  await pickSeg(p, "staggerWhat", "layer"); await press(p, "staggerBtn");
+  await pickSeg(p, "staggerWhat", "layer"); await pickSeg(p, "staggerOrder", "align"); await press(p, "staggerBtn");
   check("T5 one layer is enough (no «two layers» rule here)", close2(fr(L3.inPoint), 40) && /^К указателю времени: 1 слой\./.test(await p.status()), fr(L3.inPoint) + " " + await p.status());
   check("T5 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
@@ -5046,6 +5046,114 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T8 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
+
+  // ---------------------------------------------------------------- «Лесенка» › «Ключи»: key actions
+  console.log("\n=== animation: key actions (Отразить, Развернуть, По первому, По последнему, Клон) ===");
+  const kaH = async (p, mode) => JSON.parse(await hostCall(p, "sayframeHost.keyAct(" + JSON.stringify(mode) + ")"));
+  const vals = (prop) => prop.keys.map((k) => Array.isArray(k.value) ? k.value.join("/") : k.value).join();
+  // A layer from 0 to 5 s; rotation 0 -> 90 from 1 s to 2 s, both keys selected, with eases that tell the two sides apart.
+  const kaLayer = (o) => {
+    const l = mkLayer(clock, Object.assign({ inPoint: 0, outPoint: 5 }, o));
+    R(l).addKey(1, 0, { selected: true, inType: KIT.LINEAR, outType: KIT.BEZIER }).addKey(2, 90, { selected: true, inType: KIT.BEZIER, outType: KIT.HOLD });
+    R(l).keys[0].outEase = R(l)._ease(0, 75); R(l).keys[1].inEase = R(l)._ease(0, 40); R(l).keys[1].label = 5;
+    SC(l).addKey(1, [0, 0, 100]).addKey(2, [100, 100, 100]);   // not selected: left alone
+    return l;
+  };
+
+  clock = { time: 0 };
+  L = kaLayer({});
+  p = await open({ selectedLayers: [L] });
+  t = await kaH(p, "reverse");
+  check("KA1 «Развернуть»: same times, values in the opposite order", times(R(L)) === "30,60" && vals(R(L)) === "90,0" && t.ok && t.keys === 2 && t.selected === true, times(R(L)) + " " + vals(R(L)) + " " + JSON.stringify(t));
+  check("KA1 … each key takes the other key's look, its two sides swapped (it now plays backwards)", eases(R(L).keys[0].outEase) === "0/40" && R(L).keys[0].outType === KIT.BEZIER && R(L).keys[0].inType === KIT.HOLD && eases(R(L).keys[1].inEase) === "0/75" && R(L).keys[1].inType === KIT.BEZIER && R(L).keys[1].outType === KIT.LINEAR && R(L).keys[0].label === 5, eases(R(L).keys[0].outEase) + " " + R(L).keys[0].inType + "/" + R(L).keys[0].outType);
+  check("KA1 … the keys stay selected, unselected properties are not touched, one undo step", R(L).selectedKeys.join() === "1,2" && vals(SC(L)) === "0/0/100,100/100/100" && p.ae.log.undo.join() === "begin:Sayframe: keys,end", p.ae.log.undo.join());
+  await p.close();
+
+  L = kaLayer({ outPoint: 2.5 });
+  p = await open({ selectedLayers: [L] });
+  t = await kaH(p, "mirror");
+  check("KA2 «Отразить»: after the last key the same keys again, backwards (there and back)", times(R(L)) === "30,60,90" && vals(R(L)) === "0,90,0" && t.keys === 1, times(R(L)) + " " + vals(R(L)));
+  check("KA2 … the new key is the first one turned around; the old keys keep their look", eases(R(L).keys[2].inEase) === "0/75" && R(L).keys[2].inType === KIT.BEZIER && eases(R(L).keys[0].outEase) === "0/75" && eases(R(L).keys[1].inEase) === "0/40", eases(R(L).keys[2].inEase));
+  check("KA2 … the layer grows to take in the new key", close2(fr(L.outPoint), 91) && close2(L.inPoint, 0), fr(L.outPoint));
+  await p.close();
+
+  // «Клон»: selected keys on two layers, copied to the time indicator with the same gaps between them.
+  clock = { time: 4 };
+  L = kaLayer({});
+  L2 = mkLayer(clock, { inPoint: 0, outPoint: 5 });
+  SL(L2).addKey(1.5, 7, { selected: true }).addKey(3, 8);
+  p = await open({ selectedLayers: [L, L2], compTime: 4 });
+  t = await kaH(p, "clone");
+  check("KA3 «Клон»: a copy at the time indicator, the gaps between keys and between layers kept", times(R(L)) === "30,60,120,150" && vals(R(L)) === "0,90,0,90" && times(SL(L2)) === "45,90,135" && vals(SL(L2)) === "7,8,7" && t.keys === 3 && t.layers === 2, times(R(L)) + " | " + times(SL(L2)) + " " + vals(SL(L2)));
+  check("KA3 … with the same look (not turned around), and the layer grows to the last copy", eases(R(L).keys[2].outEase) === "0/75" && R(L).keys[3].outType === KIT.HOLD && R(L).keys[3].label === 5 && close2(fr(L.outPoint), 151) && L2.outPoint === 5, eases(R(L).keys[2].outEase) + " " + fr(L.outPoint));
+  await p.close();
+
+  // «По первому» / «По последнему» with nothing selected on the timeline: all keys of each selected layer.
+  clock = { time: 0.5 };
+  L = mkLayer(clock, { inPoint: 0, outPoint: 5 }); R(L).addKey(1, 0).addKey(2, 90); MK(L).addKey(1.2, { comment: "in" });
+  L2 = mkLayer(clock, { inPoint: 0, outPoint: 5 }); SL(L2).addKey(1.5, 1).addKey(3, 2);
+  p = await open({ selectedLayers: [L, L2], compTime: 0.5 });
+  t = await kaH(p, "first");
+  check("KA4 «По первому»: each layer's first key to the time indicator, the rest follow (markers too)", times(R(L)) === "15,45" && times(MK(L)) === "21" && times(SL(L2)) === "15,60" && t.layers === 2 && t.selected === false && vals(R(L)) === "0,90", times(R(L)) + " " + times(MK(L)) + " " + times(SL(L2)) + " " + JSON.stringify(t));
+  p.ae.comp.time = 4;
+  t = await kaH(p, "last");
+  check("KA4 «По последнему»: each layer's last key to the time indicator", times(R(L)) === "90,120" && times(SL(L2)) === "75,120" && t.layers === 2, times(R(L)) + " " + times(SL(L2)));
+  t = await kaH(p, "last");
+  check("KA4 pressed again: already in place, nothing moves", times(R(L)) === "90,120" && t.keys === 0 && t.ok, JSON.stringify(t));
+  p.ae.comp.time = 6;
+  await kaH(p, "last");
+  check("KA4 a key moved past the layer's end stretches the layer", close2(fr(L.outPoint), 181) && times(R(L)) === "150,180", fr(L.outPoint) + " " + times(R(L)));
+  await p.close();
+
+  // what the host refuses
+  clock = { time: 0 };
+  L = mkLayer(clock, { inPoint: 0, outPoint: 5 });
+  p = await open({ selectedLayers: [] });
+  t = await kaH(p, "mirror");
+  check("KA5 no layer selected -> NO_LAYERS_SELECTED", t.ok === false && /NO_LAYERS_SELECTED/.test(JSON.stringify(t)), JSON.stringify(t));
+  p.ae.comp.selectedLayers = [L];
+  t = await kaH(p, "clone");
+  check("KA5 a layer without keys -> KA_NO_KEYS", t.ok === false && /KA_NO_KEYS/.test(JSON.stringify(t)), JSON.stringify(t));
+  R(L).addKey(1, 5, { selected: true }).addKey(2, 6);
+  t = await kaH(p, "reverse");
+  check("KA5 one selected key cannot be reversed or mirrored -> KA_NEED_TWO, nothing changes", t.ok === false && /KA_NEED_TWO/.test(JSON.stringify(t)) && vals(R(L)) === "5,6", JSON.stringify(t));
+  t = await kaH(p, "sideways");
+  check("KA5 an unknown action is refused", t.ok === false && /BAD_KEY_ACTION/.test(JSON.stringify(t)), JSON.stringify(t));
+  await p.close();
+
+  // the panel: five buttons under «Расставить», only for «Ключи»
+  clock = { time: 0 };
+  L = kaLayer({});
+  p = await open({ selectedLayers: [L] });
+  await motionTab(p);
+  check("KA6 «Слои»: no key actions, the fourth order button «К указателю» is there", !(await vis(p, "#staggerActs")) && (await vis(p, '#staggerOrder button[data-v="align"]')));
+  await pickSeg(p, "staggerOrder", "align"); await pickSeg(p, "staggerWhat", "keys");
+  check("KA6 «Ключи»: five action buttons, «К указателю» hidden (its job is «По первому»), the order falls back to top-down", (await vis(p, "#staggerActs")) && (await p.page.locator("#staggerActs button").evaluateAll((l) => l.map((b) => b.getAttribute("aria-label")).join())) === "Отразить,Развернуть,По первому,По последнему,Клон" && !(await vis(p, '#staggerOrder button[data-v="align"]')) && (await val(p, "staggerOrder")) === "asc" && (await p.page.locator("#staggerBtn").innerText()) === "Расставить");
+  check("KA6 the three order buttons sit in one row, the five actions in one row (or 3 + 2 in a narrow block) and big enough, icons drawn, the playhead pink", await p.page.evaluate(() => { const rows = (s) => new Set(Array.prototype.filter.call(document.querySelectorAll(s), (b) => b.offsetParent).map((b) => Math.round(b.getBoundingClientRect().top))).size; const acts = document.getElementById("staggerActs"); return rows("#staggerOrder button") === 1 && rows("#staggerActs button") === (acts.classList.contains("narrow") ? 2 : 1) && (acts.clientWidth < 224) === acts.classList.contains("narrow") && Array.prototype.every.call(acts.querySelectorAll("button"), (b) => b.getBoundingClientRect().width >= 40) && document.querySelectorAll("#staggerActs button svg").length === 5 && document.querySelectorAll("#staggerActs .st-playhead").length === 4 && getComputedStyle(document.querySelector("#staggerActs .st-playhead")).stroke === "rgb(244, 114, 182)"; }));
+  check("KA6 every action button has a tooltip that says what it does", (await p.page.locator("#staggerActs button").evaluateAll((l) => l.every((b) => b.title.length > 30 && b.title.indexOf(b.getAttribute("aria-label")) === 0))));
+  await p.page.click('#staggerActs button[data-a="mirror"]'); await p.idle();
+  check("KA6 a click runs the action: «Отразил: 1 ключ.», undo hint", times(R(L)) === "30,60,90" && /^Отразил: 1 ключ\.\nОтменить/.test(await p.status()) && (await p.statusKind()) === "done", await p.status());
+  p.ae.comp.selectedLayers = [];
+  await p.page.click('#staggerActs button[data-a="clone"]'); await p.idle();
+  check("KA6 nothing selected -> a hint, not an error", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && (await p.statusKind()) === "");
+  p.ae.comp.selectedLayers = [mkLayer(clock, {})];
+  await p.page.click('#staggerActs button[data-a="first"]'); await p.idle();
+  check("KA6 a layer without keys -> a plain hint", /^У выделенных слоёв нет ключей/.test(await p.status()) && (await p.statusKind()) === "", await p.status());
+  await pickSeg(p, "staggerWhat", "layer");
+  check("KA6 back to «Слои»: the actions hide, «К указателю» returns", !(await vis(p, "#staggerActs")) && (await vis(p, '#staggerOrder button[data-v="align"]')));
+  await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ staggerWhat: "keys", staggerOrder: "align" })));
+  await p.restart(); await motionTab(p);
+  check("KA6 a saved «Ключи» + «К указателю» opens as «Ключи», top-down", (await val(p, "staggerWhat")) === "keys" && (await val(p, "staggerOrder")) === "asc" && (await vis(p, "#staggerActs")));
+  check("KA6 no page errors", p.errors.length === 0, p.errors.join(" | "));
+  await p.close();
+  for (const design of ["studio", "ae"]) {
+    p = await open({ selectedLayers: [L], settings: { design } });
+    await motionTab(p); await pickSeg(p, "staggerWhat", "keys"); await p.page.waitForTimeout(150);
+    t = await p.page.evaluate(() => { const c = document.querySelector(".stagger-card").getBoundingClientRect(); return Array.prototype.every.call(document.querySelectorAll("#staggerActs button"), (b) => { const r = b.getBoundingClientRect(); return r.width >= 40 && r.height >= 24 && r.left >= c.left && r.right <= c.right + 0.5 && r.bottom <= c.bottom + 0.5; }) || JSON.stringify([c, document.querySelector("#staggerActs").getBoundingClientRect(), getComputedStyle(document.querySelector(".stagger-card")).overflow, document.querySelector(".stagger-card").scrollHeight, document.querySelector(".stagger-card").clientHeight]); });
+    await p.page.locator(".stagger-card").screenshot({ path: path.join(SHOTS, "ka-" + design + ".png") });
+    check("KA7 design «" + design + "»: the five actions are visible and inside the block", (await vis(p, "#staggerActs")) && t === true && p.errors.length === 0, String(t) + p.errors.join(" | "));
+    await p.close();
+  }
 
   // ---------------------------------------------------------------- «Студия»: tools without the grid
   console.log("\n=== studio: tools in a column ===");

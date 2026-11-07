@@ -2050,6 +2050,19 @@ html[data-design="studio"] .motion-tools .tool-card[data-icons] .paste-do:hover:
 .st-orders button[aria-pressed="true"] { background: rgba(var(--accent-rgb), 0.28); border-color: rgba(var(--accent-rgb), 0.75); color: var(--accent-hi, var(--accent)); }
 .st-modes button:disabled, .st-orders button:disabled { opacity: 0.45; cursor: default; }
 .st-order-name { text-align: center; margin-top: -2px; }
+.st-orders.no-align { grid-template-columns: repeat(3, 1fr); }
+/* «Ключи»: пять действий под «Расставить», значки в стиле кнопок порядка */
+.st-acts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.st-acts[hidden] { display: none; }
+.st-acts.narrow { grid-template-columns: repeat(3, 1fr); }
+.st-acts button { height: 38px; min-width: 0; padding: 6px 4px; border: 1px solid var(--line); border-radius: 9px; background: rgba(0, 0, 0, 0.22); color: var(--muted); cursor: pointer; }
+.st-acts button svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+.st-acts button .st-key-line { stroke: currentColor; stroke-width: 1.2; opacity: 0.55; fill: none; }
+.st-acts button .st-playhead { stroke: #f472b6; stroke-width: 1.6; fill: none; }
+.st-acts button .st-playhead-cap { fill: #f472b6; }
+.st-acts button .st-arc { stroke: currentColor; stroke-width: 1.4; fill: none; stroke-linecap: round; }
+.st-acts button:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.18); border-color: rgba(var(--accent-rgb), 0.7); color: var(--text); }
+.st-acts button:disabled { opacity: 0.45; cursor: default; }
 .st-cap[hidden] { display: none; }
 .stagger-card .shift-go { width: 100%; }
 

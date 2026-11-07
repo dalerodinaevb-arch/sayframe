@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.77.1";
+    var VERSION = "1.78.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -1247,6 +1247,8 @@
         if (m === "CO_LAYER_GONE") { return "Слоя, с которого открыли фото, больше нет в открытой композиции. Откройте ту композицию и нажмите Cut out ещё раз."; }
         if (m === "CO_NOT_SAVED") { return "Не удалось сохранить картинку без фона на диск. Проверьте, что в папке проекта можно записывать файлы."; }
         if (m === "STAGGER_NEEDS_TWO") { return "Для лесенки выделите хотя бы два слоя."; }
+        if (m === "KA_NO_KEYS") { return "У выделенных слоёв нет ключей. Выделите ключи на таймлайне (или слои с анимацией) и нажмите ещё раз."; }
+        if (m === "KA_NEED_TWO") { return "Нужно хотя бы два ключа на одном свойстве: выделите их и нажмите ещё раз."; }
         if (m === "STAGGER_NO_KEYS") { return "Для лесенки нужно хотя бы два слоя с ключами. Чтобы сдвинуть слои целиком, выберите «Слои»."; }
         if (m === "DISTRIBUTE_NEEDS_THREE") { return "Чтобы распределить слои, выделите три или больше: крайние останутся на месте, остальные встанут между ними через равные промежутки."; }
         if (m === "ALIGN_NEEDS_TWO") { return "Чтобы выровнять слои друг по другу, выделите хотя бы два. Один слой выравнивается по композиции."; }
@@ -1580,7 +1582,7 @@
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
         staggerOptsToggle: el("staggerOptsToggle"), staggerPrevText: el("staggerPrevText"),
         staggerWhat: el("staggerWhat"), staggerStep: el("staggerStep"), staggerLess: el("staggerLess"), staggerMore: el("staggerMore"),
-        staggerOrder: el("staggerOrder"), staggerOrderName: el("staggerOrderName"), staggerBtn: el("staggerBtn"),
+        staggerOrder: el("staggerOrder"), staggerOrderName: el("staggerOrderName"), staggerBtn: el("staggerBtn"), staggerActs: el("staggerActs"),
         frames: el("frames"), settingsSaved: el("settingsSaved"),
         modal: el("modal"), modalTitle: el("modalTitle"), modalText: el("modalText"), modalCode: el("modalCode"),
         modalButtons: el("modalButtons"),
@@ -12292,7 +12294,7 @@
 
     function toolFailed(e) {
         var m = e && e.message ? e.message : String(e);
-        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT" || m === "RB_NO_PATH" || m === "NO_TEXT_LAYER" || m === "GL_NO_SHAPE" || m === "OR_NO_CAROUSEL" || m === "OR_NO_PHOTOS";
+        var hint = m === "NO_ACTIVE_COMP" || m === "NO_KEYS_SELECTED" || m === "NO_LAYERS_SELECTED" || m === "DC_NO_PRECOMP" || m === "CO_NOT_PHOTO" || m === "CO_NOT_STILL" || m === "BR_NO_TEXT" || m === "ALIGN_NEEDS_TWO" || m === "DISTRIBUTE_NEEDS_THREE" || m === "STAGGER_NEEDS_TWO" || m === "STAGGER_NO_KEYS" || m === "KA_NO_KEYS" || m === "KA_NEED_TWO" || /^SM_/.test(m) || m === "PF_NEED_SHAPES" || m === "GRID_TOO_TIGHT" || m === "RB_NO_PATH" || m === "NO_TEXT_LAYER" || m === "GL_NO_SHAPE" || m === "OR_NO_CAROUSEL" || m === "OR_NO_PHOTOS";
         setBusy(false);
         setStatus(humanError(e), hint ? "" : "error");
     }
@@ -12401,11 +12403,29 @@
         return "<svg viewBox=\"0 0 40 24\" aria-hidden=\"true\">" + svg + "</svg>";
     }
 
+    // Значки пяти действий «Ключей»: ромбики, розовый указатель времени с «шапкой», как у кнопок порядка.
+    function keyActIcon(mode) {
+        function k(x, y, o) { return "<path d=\"M" + x + " " + (y - 3) + "l3 3-3 3-3-3z\"" + (o ? " opacity=\"" + o + "\"" : "") + "/>"; }
+        function ph(x) { return "<path class=\"st-playhead\" d=\"M" + x + " 4V23\"/><path class=\"st-playhead-cap\" d=\"M" + (x - 2.6) + " 0.5h5.2v2.6l-2.6 2.2-2.6-2.2z\"/>"; }
+        var svg = {
+            mirror: k(8, 9) + k(14, 15) + ph(20) + k(26, 15, 0.6) + k(32, 9, 0.6),
+            reverse: k(9, 18) + k(31, 18) + "<path class=\"st-arc\" d=\"M12 10C16 4 24 4 28 10M12 10l-.4-3.3M12 10l3.1-1.2M28 10l.4-3.3M28 10l-3.1-1.2\"/>",
+            first: ph(8) + k(8, 9) + k(8, 17) + k(19, 9, 0.6) + k(26, 17, 0.6),
+            last: ph(32) + k(32, 9) + k(32, 17) + k(21, 9, 0.6) + k(14, 17, 0.6),
+            clone: k(6, 9) + k(12, 15) + ph(22) + k(22, 9, 0.6) + k(28, 15, 0.6)
+        }[mode];
+        return "<svg viewBox=\"0 0 40 24\" aria-hidden=\"true\">" + svg + "</svg>";
+    }
+
     function drawStaggerPreview() {
         var keys = motion.staggerWhat === "keys", order = motion.staggerOrder, n = motion.staggerStep;
         Array.prototype.forEach.call(ui.staggerOrder.querySelectorAll("button[data-v]"), function (b) {
             b.innerHTML = stairIcon(b.getAttribute("data-v"), keys);
+            // У ключей «К указателю» нет: это делает действие «По первому» внизу.
+            if (b.getAttribute("data-v") === "align") { b.hidden = keys && !IS_PR; }
         });
+        ui.staggerOrder.classList.toggle("no-align", keys && !IS_PR);
+        if (ui.staggerActs) { ui.staggerActs.hidden = !keys || IS_PR; }
         var align = order === "align";
         var stepRow = ui.staggerBtn.closest(".tool-card").querySelector(".shift-row-step");
         if (stepRow) { stepRow.hidden = align; }
@@ -12418,6 +12438,7 @@
     }
 
     function drawShift() {
+        if (motion.staggerWhat === "keys" && motion.staggerOrder === "align" && !IS_PR) { motion.staggerOrder = "asc"; }
         pressGroupV(ui.staggerWhat, motion.staggerWhat);
         pressGroupV(ui.staggerOrder, motion.staggerOrder);
         ui.staggerStep.value = String(motion.staggerStep);
@@ -12466,6 +12487,25 @@
         }).catch(toolFailed);
     }
 
+    var KEY_ACT_DONE = { mirror: "Отразил", reverse: "Развернул", first: "По первому", last: "По последнему", clone: "Клон" };
+
+    function onKeyAct(mode) {
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Меняю ключи…", "busy");
+        host("keyAct", [mode]).then(function (res) {
+            var parts = [], scope = res.selected ? "" : " (ключи не выделены — взял все ключи слоя)";
+            setBusy(false);
+            if (res.keys) {
+                if (mode === "first" || mode === "last") { parts.push(KEY_ACT_DONE[mode] + ": " + plural(res.layers, "слой", "слоя", "слоёв") + " — " + (mode === "first" ? "первые" : "последние") + " ключи на указателе времени" + scope + "."); }
+                else { parts.push(KEY_ACT_DONE[mode] + ": " + plural(res.keys, "ключ", "ключа", "ключей") + scope + "."); }
+            } else if (mode === "first" || mode === "last") { parts.push("Уже на месте: ключи и так стоят на указателе времени."); }
+            if (res.few) { parts.push("Пропущено: " + plural(res.few, "свойство", "свойства", "свойств") + " с одним ключом."); }
+            if (res.failed) { parts.push("Не получилось: " + plural(res.failed, "ключ", "ключа", "ключей") + " (слой заблокирован?)."); }
+            setStatus(parts.join(" ") + (res.keys ? "\nОтменить: Cmd/Ctrl+Z." : ""), res.keys ? "done" : res.failed ? "error" : "");
+        }).catch(toolFailed);
+    }
+
     function enableShiftTool() {
         var infos = ui.motionTools.querySelectorAll(".tool-info");
         var i;
@@ -12476,6 +12516,8 @@
                     motion[key] = allowed.indexOf(v) >= 0 ? v : MOTION_DEFAULTS[key];
                     storeMotion();
                     drawShift();
+                    // «Ключи» добавляет ряд кнопок — блоку в сетке нужно больше клеток.
+                    if (key === "staggerWhat") { relayoutTools(); }
                 });
             });
         }
@@ -12493,6 +12535,22 @@
             input.addEventListener("focus", function () { input.select(); });
         });
         ui.staggerBtn.addEventListener("click", onStagger);
+        if (ui.staggerActs) {
+            Array.prototype.forEach.call(ui.staggerActs.querySelectorAll("button[data-a]"), function (b) {
+                b.innerHTML = keyActIcon(b.getAttribute("data-a"));
+                b.addEventListener("click", function () { onKeyAct(b.getAttribute("data-a")); });
+            });
+            // В узком блоке пять кнопок не помещаются с понятными иконками — по три в ряд.
+            if (typeof window.ResizeObserver === "function") {
+                new window.ResizeObserver(function () {
+                    var w = ui.staggerActs.clientWidth, narrow = w > 0 && w < 224;
+                    if (w > 0 && narrow !== ui.staggerActs.classList.contains("narrow")) {
+                        ui.staggerActs.classList.toggle("narrow", narrow);
+                        relayoutTools();
+                    }
+                }).observe(ui.staggerActs);
+            }
+        }
         // «i» рядом со списком: объяснение появляется в строке состояния (и во всплывающей подсказке).
         for (i = 0; i < infos.length; i++) {
             infos[i].addEventListener("click", function () {
