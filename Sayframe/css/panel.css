@@ -2653,3 +2653,5 @@ html[data-design="ae"] .gr-pop, html[data-design="ae"] .gr-pill, html[data-desig
 .tb-mst { display: flex; align-items: center; justify-content: center; height: 46px; border-radius: 7px; overflow: hidden; background: linear-gradient(120deg, #c43ad6, #7b2ff2); }
 .tb-mst .tb-text { font-size: 10px; line-height: 1.55; }
 html[data-design="ae"] .tb-tile, html[data-design="ae"] .tb-mst { border-radius: 4px; }
+
+.ac-autoplay[hidden] { display: none !important; }

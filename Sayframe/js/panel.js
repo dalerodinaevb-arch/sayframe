@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.77.0";
+    var VERSION = "1.77.1";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -5224,6 +5224,8 @@
         });
         ui.acFavOnly.setAttribute("aria-pressed", acState.favOnly ? "true" : "false");
         if (el("acEdit")) { el("acEdit").setAttribute("aria-pressed", editing ? "true" : "false"); }
+        // «Авто / Наведение» нужен только там, где есть превью-анимации: в «Звуках» и «Макетах» его нет.
+        el("acPlay").hidden = !searching && (sec === "sfx" || orbitOn);
         Array.prototype.forEach.call(el("acPlay").querySelectorAll("button[data-value]"), function (b) {
             b.setAttribute("aria-pressed", b.getAttribute("data-value") === (settings.previewPlay === "hover" ? "hover" : "always") ? "true" : "false");
         });

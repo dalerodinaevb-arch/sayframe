@@ -3101,6 +3101,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.mouse.move(1, 1); await p.page.waitForTimeout(400);
     const a1 = await frame0(); await p.page.waitForTimeout(400); const a2 = await frame0();
     check("AG2 back to «Авто»: previews play on their own again", a1 !== a2 && p.errors.length === 0, p.errors.join(" | "));
+    const playVis = () => p.page.isVisible("#acPlay");
+    const secs = await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#acTabs button[data-sec]"), (b) => b.getAttribute("data-sec")));
+    const seen = {}, sec0 = await p.page.evaluate(() => { const b = document.querySelector('#acTabs button[aria-selected="true"]'); return b && b.getAttribute("data-sec"); });
+    for (const sc of secs) { await p.page.click('#acTabs button[data-sec="' + sc + '"]'); seen[sc] = await playVis(); }
+    check("AG3 «Авто / Наведение» shows where previews play, not in «Звуки» and «Макеты»", seen.sfx === false && seen.orbit === false && seen.trans === true && seen.anim === true, JSON.stringify(seen));
+    await p.page.click('#acTabs button[data-sec="' + sec0 + '"]');
   }
 
   await p.page.evaluate(() => { const c = document.getElementById("acColor"); c.value = "#ff0000"; c.dispatchEvent(new Event("input", { bubbles: true })); });
