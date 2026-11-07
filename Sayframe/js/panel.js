@@ -1479,23 +1479,30 @@
             return toHex(c(b.r), c(b.g), c(b.b));
         };
         acc = skin.hi || { r: 45, g: 140, b: 235 };
-        root.setProperty("--ae-bg", toHex(b.r, b.g, b.b));
-        root.setProperty("--ae-card", tone(5));
-        root.setProperty("--ae-top", tone(-5));
-        root.setProperty("--ae-deep", tone(-15));
-        root.setProperty("--ae-in", tone(-9));
-        root.setProperty("--ae-in2", tone(-4));
+        // «Чёткий»: фон чуть глубже, чем у After Effects, блоки и кнопки заметно светлее — всё отделено.
+        // Акцент After Effects, но сочнее (дальше от серого).
+        acc = (function (a) {
+            var m = (a.r + a.g + a.b) / 3;
+            function c(v) { return Math.round(Math.max(0, Math.min(255, m + (v - m) * 1.2))); }
+            return { r: c(a.r), g: c(a.g), b: c(a.b) };
+        })(acc);
+        root.setProperty("--ae-bg", tone(-12));
+        root.setProperty("--ae-card", tone(9));
+        root.setProperty("--ae-top", tone(-13));
+        root.setProperty("--ae-deep", tone(-22));
+        root.setProperty("--ae-in", tone(-15));
+        root.setProperty("--ae-in2", tone(-9));
         root.setProperty("--ae-glass", tone(7));
         root.setProperty("--ae-glass2", tone(14));
-        root.setProperty("--ae-line", tone(23));
-        root.setProperty("--ae-btn", tone(21));
-        root.setProperty("--ae-btn-hi", tone(31));
-        root.setProperty("--ae-edge", tone(36));
-        root.setProperty("--ae-text", light ? "#1e1e1e" : "#d6d6d6");
-        root.setProperty("--ae-muted", light ? "#4a4a4a" : "#a3a3a3");
-        root.setProperty("--ae-faint", light ? "#6e6e6e" : "#767676");
+        root.setProperty("--ae-line", tone(31));
+        root.setProperty("--ae-btn", tone(27));
+        root.setProperty("--ae-btn-hi", tone(41));
+        root.setProperty("--ae-edge", tone(59));
+        root.setProperty("--ae-text", light ? "#111111" : "#f2f2f2");
+        root.setProperty("--ae-muted", light ? "#3a3a3a" : "#bdbdbd");
+        root.setProperty("--ae-faint", light ? "#5e5e5e" : "#8a8a8a");
         root.setProperty("--ae-acc", toHex(acc.r, acc.g, acc.b));
-        root.setProperty("--ae-acc-hi", toHex(acc.r + (255 - acc.r) * 0.25, acc.g + (255 - acc.g) * 0.25, acc.b + (255 - acc.b) * 0.25));
+        root.setProperty("--ae-acc-hi", toHex(acc.r + (255 - acc.r) * 0.3, acc.g + (255 - acc.g) * 0.3, acc.b + (255 - acc.b) * 0.3));
         root.setProperty("--ae-acc-rgb", acc.r + ", " + acc.g + ", " + acc.b);
     }
 

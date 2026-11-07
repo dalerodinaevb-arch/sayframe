@@ -3580,7 +3580,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme");
   check("DS1 settings offer «Стекло», «After Effects» and «Студия», glass chosen", (await p.page.locator("#designPick button b").allInnerTexts()).join() === "Стекло,After Effects,Студия" && (await p.page.getAttribute('#designPick [data-value="glass"]', "aria-pressed")) === "true");
   await p.page.click('#designPick [data-value="ae"]');
-  check("DS2 picking «After Effects» shows at once: grey, no glow", JSON.stringify(await t()) === JSON.stringify(["ae", "rgb(35, 35, 35)", "none"]), JSON.stringify(await t()));
+  check("DS2 picking «After Effects» shows at once: deep grey («Чёткий»), no glow", JSON.stringify(await t()) === JSON.stringify(["ae", "rgb(23, 23, 23)", "none"]), JSON.stringify(await t()));
   await p.page.click("#settingsClose");
   check("DS2 closing keeps «After Effects»", (await t())[0] === "ae");
   await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme"); await p.page.click('#designPick [data-value="ae"]'); await p.page.click("#settingsClose");
@@ -3594,9 +3594,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   // «After Effects» takes its colours from After Effects itself: the panel background (the Brightness slider) and the highlight colour.
   p = await open({ width: 380, settings: { design: "ae" }, skin: { bg: [50, 50, 50], hi: [230, 120, 20] } });
   t = () => p.page.evaluate(() => [getComputedStyle(document.body).backgroundColor, getComputedStyle(document.querySelector(".card")).backgroundColor, getComputedStyle(document.querySelector("#runBtn")).backgroundColor, getComputedStyle(document.body).color]);
-  check("DS7 «After Effects» uses After Effects' own panel colour and highlight colour", JSON.stringify(await t()) === JSON.stringify(["rgb(50, 50, 50)", "rgb(55, 55, 55)", "rgb(230, 120, 20)", "rgb(214, 214, 214)"]), JSON.stringify(await t()));
+  check("DS7 «After Effects» builds on After Effects' own panel colour (a little deeper, blocks lighter) and its highlight colour (juicier)", JSON.stringify(await t()) === JSON.stringify(["rgb(38, 38, 38)", "rgb(59, 59, 59)", "rgb(251, 119, 0)", "rgb(242, 242, 242)"]), JSON.stringify(await t()));
   await p.page.evaluate(() => { window.__skin = { bg: [184, 184, 184], hi: [45, 140, 235] }; window.__cepListeners["com.adobe.csxs.events.ThemeColorChanged"]({}); });
-  check("DS7 After Effects made lighter: the panel follows at once, with dark text", JSON.stringify(await t()) === JSON.stringify(["rgb(184, 184, 184)", "rgb(179, 179, 179)", "rgb(45, 140, 235)", "rgb(30, 30, 30)"]), JSON.stringify(await t()));
+  check("DS7 After Effects made lighter: the panel follows at once, with dark text", JSON.stringify(await t()) === JSON.stringify(["rgb(196, 196, 196)", "rgb(175, 175, 175)", "rgb(26, 140, 254)", "rgb(17, 17, 17)"]), JSON.stringify(await t()));
   await p.page.click("#settingsBtn"); await p.page.click("#setTabTheme"); await p.page.click('#designPick [data-value="glass"]');
   check("DS7 the other designs keep their own colours", (await p.page.evaluate(() => getComputedStyle(document.body).backgroundColor)) === "rgb(11, 12, 18)" && p.errors.length === 0, p.errors.join(" | "));
   await p.close();

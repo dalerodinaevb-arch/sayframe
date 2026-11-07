@@ -1862,10 +1862,11 @@ html[data-design="ae"] .ac-autoplay, html[data-design="ae"] .ac-autoplay button,
    прямые углы, синий акцент. Включается в настройках (data-design="ae" ставит panel.js). */
 html[data-design="ae"] {
   /* Цвета берутся из After Effects (applyHostSkin в panel.js); здесь — как у After Effects по умолчанию. */
-  --ae-bg: #232323; --ae-card: #282828; --ae-top: #1e1e1e; --ae-deep: #141414; --ae-in: #1a1a1a; --ae-in2: #1f1f1f;
-  --ae-glass: #2a2a2a; --ae-glass2: #313131; --ae-line: #3a3a3a; --ae-btn: #383838; --ae-btn-hi: #424242; --ae-edge: #474747;
-  --ae-text: #d6d6d6; --ae-muted: #a3a3a3; --ae-faint: #767676;
-  --ae-acc: #2d8ceb; --ae-acc-hi: #5aa8f5; --ae-acc-rgb: 45, 140, 235;
+  /* «Чёткий»: фон глубже, блоки и кнопки светлее, белый текст, сочный синий. */
+  --ae-bg: #171717; --ae-card: #2c2c2c; --ae-top: #161616; --ae-deep: #0d0d0d; --ae-in: #141414; --ae-in2: #1a1a1a;
+  --ae-glass: #2a2a2a; --ae-glass2: #313131; --ae-line: #424242; --ae-btn: #3e3e3e; --ae-btn-hi: #4c4c4c; --ae-edge: #5e5e5e;
+  --ae-text: #f2f2f2; --ae-muted: #bdbdbd; --ae-faint: #8a8a8a;
+  --ae-acc: #1a8cfe; --ae-acc-hi: #5fadfe; --ae-acc-rgb: 26, 140, 254;
   --bg: var(--ae-bg) !important; --text: var(--ae-text) !important; --muted: var(--ae-muted) !important; --faint: var(--ae-faint) !important;
   --line: var(--ae-line) !important; --glass: var(--ae-glass) !important; --glass-strong: var(--ae-glass2) !important;
   --accent: var(--ae-acc) !important; --accent-hi: var(--ae-acc-hi) !important; --accent-rgb: var(--ae-acc-rgb) !important; --on-accent: #fff !important;
@@ -1902,7 +1903,13 @@ html[data-design="ae"] .chip[aria-pressed="true"], html[data-design="ae"] .chip.
 html[data-design="ae"] textarea, html[data-design="ae"] .field, html[data-design="ae"] select { border-radius: 3px !important; background: var(--ae-in) !important; border: 1px solid var(--ae-line) !important; color: var(--ae-text) !important; box-shadow: none !important; font-size: 12px !important; }
 html[data-design="ae"] textarea:focus, html[data-design="ae"] .field:focus, html[data-design="ae"] select:focus { border-color: var(--ae-acc) !important; outline: none; }
 /* иконки — серые и тоньше, как в AE; синие только у выбранного */
-html[data-design="ae"] .card svg, html[data-design="ae"] .paste-do svg, html[data-design="ae"] .tool svg { color: var(--ae-muted) !important; stroke-width: 1.5 !important; }
+html[data-design="ae"] .card svg, html[data-design="ae"] .paste-do svg, html[data-design="ae"] .tool svg { color: var(--ae-text) !important; stroke-width: 2.2 !important; }
+html[data-design="ae"] .anchor-cell svg { width: 17px !important; height: 17px !important; stroke-width: 2.6 !important; }
+html[data-design="ae"] .icon-btn svg { stroke-width: 2.1 !important; }
+html[data-design="ae"] .align-btn svg { stroke-width: 2 !important; }
+html[data-design="ae"] .card { border-color: var(--ae-line) !important; }
+html[data-design="ae"] .tool-head b, html[data-design="ae"] .quick-title { font-weight: 700 !important; color: var(--ae-text) !important; }
+html[data-design="ae"] .tab[aria-selected="true"] { font-weight: 600 !important; }
 /* «горячие» числа, как в AE: синие */
 html[data-design="ae"] .ease-num, html[data-design="ae"] .shift-num, html[data-design="ae"] .shift-count, html[data-design="ae"] .ease-nums b, html[data-design="ae"] #panelWidthVal { color: var(--ae-hot) !important; }
 /* ползунки */
