@@ -323,7 +323,7 @@ var sayframeHost = (function () {
     }
 
     function exFindEpr() {
-        var dirs = exEprDirs(), best = null, any = null, seen = 0, i;
+        var dirs = exEprDirs(), best = null, any = null, seen = 0, i, j, h264;
         function walk(d, depth) {
             var list, n, f, t, nm;
             if (best || depth > 4 || seen > 600 || !d.exists) { return; }
@@ -340,6 +340,14 @@ var sayframeHost = (function () {
                 else if (!any) { any = { path: f.fsName, text: t }; }
             }
         }
+        // H.264 presets live in a folder named after the exporter (4E49434B = 1313424203): look there first,
+        // so the hundreds of other presets cannot use up the search before it reaches them.
+        for (i = 0; i < dirs.length && !best; i++) {
+            if (!dirs[i].exists) { continue; }
+            h264 = dirs[i].getFiles(function (f) { return f instanceof Folder && /^4E49434B/i.test(decodeURI(f.name)); }) || [];
+            for (j = 0; j < h264.length && !best; j++) { walk(h264[j], 0); }
+        }
+        seen = 0;
         for (i = 0; i < dirs.length && !best; i++) { walk(dirs[i], 0); }
         return best || any;
     }
