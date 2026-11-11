@@ -6314,10 +6314,14 @@ var sayframeHost = (function () {
             list.push(layers[i]);
         }
         // "align": every layer (or its first key) to the time indicator, no staircase.
-        if (order === "align") {
+        // "alignEnd": the end of every layer (its out point) to the time indicator.
+        if (order === "align" || order === "alignEnd") {
             if (!list.length) { throw new Error("STAGGER_NO_KEYS"); }
-            for (i = 0; i < list.length; i++) { shiftOne(list[i], what, comp.time - alignPoint(list[i], what), frame, out); }
+            for (i = 0; i < list.length; i++) {
+                shiftOne(list[i], what, comp.time - (order === "alignEnd" ? list[i].outPoint : alignPoint(list[i], what)), frame, out);
+            }
             out.aligned = true;
+            if (order === "alignEnd") { out.toEnd = true; }
             return out;
         }
         if (list.length < 2) { throw new Error(layers.length < 2 ? "STAGGER_NEEDS_TWO" : "STAGGER_NO_KEYS"); }
@@ -8478,8 +8482,9 @@ var sayframeHost = (function () {
                 var res;
                 frames = Math.round(Number(frames));
                 if (what !== "in" && what !== "out" && what !== "layer" && what !== "keys") { throw new Error("BAD_SHIFT_TARGET"); }
-                if (order !== "asc" && order !== "desc" && order !== "selection" && order !== "random" && order !== "align") { throw new Error("BAD_STAGGER_ORDER"); }
-                if (order !== "align" && (isNaN(frames) || frames === 0 || Math.abs(frames) > 100000)) { throw new Error("BAD_SHIFT_FRAMES"); }
+                if (order !== "asc" && order !== "desc" && order !== "selection" && order !== "random" && order !== "align" && order !== "alignEnd") { throw new Error("BAD_STAGGER_ORDER"); }
+                if (order === "alignEnd" && what !== "layer") { throw new Error("BAD_STAGGER_ORDER"); }
+                if (order !== "align" && order !== "alignEnd" && (isNaN(frames) || frames === 0 || Math.abs(frames) > 100000)) { throw new Error("BAD_SHIFT_FRAMES"); }
                 if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }
                 app.beginUndoGroup("Sayframe: stagger");
                 try {

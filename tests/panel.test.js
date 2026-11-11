@@ -4642,7 +4642,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     return { l: Math.min.apply(null, pts.map((q) => q[0])), r: Math.max.apply(null, pts.map((q) => q[0])), t: Math.min.apply(null, pts.map((q) => q[1])), b: Math.max.apply(null, pts.map((q) => q[1])) };
   };
   const close2 = (a, b) => Math.abs(a - b) < 1e-6;
-  let L3, kid, bx;
+  let L3, L4, L5, kid, bx;
 
   p = await open({});
   await motionTab(p);
@@ -4877,23 +4877,24 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await motionTab(p);
   const orderIds = (p) => p.page.locator("#staggerOrder button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join());
   check("T1 one block «Лесенка»; the old «Сдвиг» block is gone", (await p.page.locator('#motionTools [data-tool="shift"], #shiftWhat, #timeAlign').count()) === 0 && (await p.page.locator('#motionTools [data-tool="stagger"] .tool-head b').innerText()) === "Лесенка" && (await vis(p, "#staggerWhat")) && (await p.page.locator(".stagger-card select").count()) === 0);
-  check("T1 the choices are buttons: what to move, and four orders (the last one: to the time indicator)", (await p.page.locator("#staggerWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "layer,keys" && (await orderIds(p)) === "asc,random,desc,align" && (await p.page.locator("#staggerWhat button span").allInnerTexts()).join() === "Слои,Ключи" && (await p.page.getAttribute('#staggerOrder button[data-v="align"]', "aria-label")) === "К указателю времени");
-  check("T1 the four order buttons sit in one row", await p.page.evaluate(() => new Set(Array.prototype.map.call(document.querySelectorAll("#staggerOrder button"), (b) => Math.round(b.getBoundingClientRect().top))).size === 1));
+  check("T1 the choices are buttons: what to move, and three orders (the 4th, «К указателю», stays only for Premiere)", (await p.page.locator("#staggerWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "layer,keys" && (await orderIds(p)) === "asc,random,desc,align" && !(await vis(p, '#staggerOrder button[data-v="align"]')) && (await p.page.locator("#staggerWhat button span").allInnerTexts()).join() === "Слои,Ключи" && (await p.page.getAttribute('#staggerOrder button[data-v="align"]', "aria-label")) === "К указателю времени");
+  check("T1 the three order buttons sit in one row", await p.page.evaluate(() => new Set(Array.prototype.map.call(document.querySelectorAll("#staggerOrder button:not([hidden])"), (b) => Math.round(b.getBoundingClientRect().top))).size === 1));
   check("T1 defaults: layers, one frame, top to bottom", [await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "layer,1,asc" && (await p.page.locator("#staggerPrevText").innerText()) === "Каждый следующий слой — на 1 кадр позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 12 && (await p.page.locator('#staggerOrder button[data-v="align"] svg .st-playhead').count()) === 1 && (await p.page.locator("#staggerBtn").innerText()) === "Расставить");
   check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".stagger-card button:not(.tool-grip):not(.win-open), .stagger-card input"), (el) => { if (el.closest("[hidden]")) return true; const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
   await pickSeg(p, "staggerOrder", "desc"); await pickSeg(p, "staggerWhat", "keys"); await p.page.click("#staggerMore"); await p.page.click("#staggerMore");
   check("T1 «Ключи»: the order icons turn into keyframes, the text says so; + and - change the step", (await p.page.locator("#staggerPrevText").innerText()) === "Ключи каждого следующего слоя — на 3 кадра позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 0 && (await p.page.locator("#staggerOrder button svg path").count()) === 37 && (await p.page.locator("#staggerOrderName").innerText()) === "Снизу вверх" && (await p.page.inputValue("#staggerStep")) === "3", await p.page.locator("#staggerPrevText").innerText());
   check("T1 «Ключи»: no «К указателю времени» order (the «По первому» action does it)", !(await vis(p, '#staggerOrder button[data-v="align"]')) && (await vis(p, '#staggerActs button[data-a="first"]')));
-  await pickSeg(p, "staggerWhat", "layer"); await pickSeg(p, "staggerOrder", "align");
-  check("T1 … and with layers", (await p.page.locator("#staggerPrevText").innerText()) === "Все выделенные слои начнутся там, где стоит указатель времени." && !(await vis(p, "#staggerStep")) && (await vis(p, "#staggerBtn")));
+  await pickSeg(p, "staggerWhat", "layer");
+  check("T1 «Слои»: under «Расставить» two buttons, «Начало» and «Конец» к указателю, centred, as big as the «Ключи» ones, pink playhead", (await vis(p, "#staggerLayerActs")) && !(await vis(p, "#staggerActs")) && (await p.page.locator("#staggerLayerActs button").evaluateAll((l) => l.map((b) => b.getAttribute("aria-label")).join())) === "Начало к указателю,Конец к указателю" &&
+    (await p.page.evaluate(() => { const g = document.getElementById("staggerLayerActs").getBoundingClientRect(), b = document.querySelectorAll("#staggerLayerActs button"), r0 = b[0].getBoundingClientRect(), r1 = b[1].getBoundingClientRect(); return Math.abs((r0.left - g.left) - (g.right - r1.right)) < 2 && r0.top === r1.top && r0.width >= 40 && r0.height >= 30 && document.querySelectorAll("#staggerLayerActs .st-playhead").length === 2 && document.querySelectorAll("#staggerLayerActs svg rect").length === 6; })));
   await pickSeg(p, "staggerOrder", "random");
   check("T1 another order brings the step back", (await vis(p, ".stagger-card .shift-row-step")) && (await p.page.locator("#staggerBtn").innerText()) === "Расставить");
   await p.page.click("#staggerLess"); await p.page.click("#staggerLess"); await p.page.click("#staggerLess"); await pickSeg(p, "staggerOrder", "asc");
   check("T1 the step does not go below one frame", (await p.page.inputValue("#staggerStep")) === "1");
   await press(p, "staggerBtn");
   check("T1 nothing selected -> a hint, not an error", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && (await p.statusKind()) === "" && p.ae.log.undo.length === 0);
-  await pickSeg(p, "staggerOrder", "align"); await press(p, "staggerBtn");
-  check("T1 the same for «Выровнять»", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && p.ae.log.undo.length === 0);
+  await p.page.click('#staggerLayerActs [data-a="start"]'); await p.idle();
+  check("T1 the same for «Начало к указателю»", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && p.ae.log.undo.length === 0);
   await pickSeg(p, "staggerWhat", "keys"); await pickSeg(p, "staggerOrder", "random");
   await setStep(p, "staggerStep", "5");
   await setStep(p, "staggerStep", "abc"); t = await p.page.inputValue("#staggerStep");
@@ -4904,7 +4905,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T1 every choice survives a restart", [await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "keys,5,random");
   await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ staggerOrder: "align" })));
   await p.restart(); await motionTab(p);
-  check("T1 «К указателю времени» is remembered too, the step row stays hidden", (await val(p, "staggerOrder")) === "align" && !(await vis(p, ".stagger-card .shift-row-step")) && (await p.page.locator("#staggerBtn").innerText()) === "Выровнять");
+  check("T1 an old saved «К указателю времени» opens as top-down (that order is gone; «Начало» does it now)", (await val(p, "staggerOrder")) === "asc" && (await vis(p, ".stagger-card .shift-row-step")) && (await p.page.locator("#staggerBtn").innerText()) === "Расставить" && (await vis(p, "#staggerLayerActs")));
   await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ shiftWhat: "x", shiftStep: -4, timeAlign: 5, staggerWhat: null, staggerStep: 100000, staggerOrder: "up" })));
   await p.restart(); await motionTab(p);
   check("T1 broken saved values (and the old «Сдвиг» settings) fall back safely", [await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "layer,999,asc" && p.errors.length === 0);
@@ -4976,10 +4977,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   L = actor({});
   L2 = actor({ name: "late", inPoint: 2, outPoint: 6 }); R(L2).keys.forEach((k) => { k.time += 1; }); SC(L2).keys.forEach((k) => { k.time += 1; }); SL(L2).keys = []; MK(L2).keys = [];
   p = await open({ selectedLayers: [L, L2], compTime: 3 * F + 1 });   // frame 33
-  await motionTab(p); await pickSeg(p, "staggerOrder", "align"); await press(p, "staggerBtn");
+  await motionTab(p); await p.page.click('#staggerLayerActs [data-a="start"]'); await p.idle();
   check("T5 layers: both selected layers now start at the time indicator (frame 33), everything on them moves along", close2(fr(L.inPoint), 33) && close2(fr(L2.inPoint), 33) && times(R(L)) === "33,48,138,152" && times(R(L2)) === "33,48,138,152" && close2(fr(L2.outPoint), 153), times(R(L)) + " | " + times(R(L2)) + " " + fr(L.inPoint) + " " + fr(L2.inPoint));
-  check("T5 result reported, one undo step", (await p.status()) === "К указателю времени: 2 слоя.\nОтменить: Cmd/Ctrl+Z." && (await p.statusKind()) === "done" && p.ae.log.undo.join() === "begin:Sayframe: stagger,end", await p.status());
-  await press(p, "staggerBtn");
+  check("T5 result reported, one undo step", (await p.status()) === "Начало к указателю: 2 слоя.\nОтменить: Cmd/Ctrl+Z." && (await p.statusKind()) === "done" && p.ae.log.undo.join() === "begin:Sayframe: stagger,end", await p.status());
+  await p.page.click('#staggerLayerActs [data-a="start"]'); await p.idle();
   check("T5 pressing again: already there, said plainly", (await p.status()) === "Уже на месте: 2 слоя." && (await p.statusKind()) === "" && times(R(L)) === "33,48,138,152", await p.status());
   p.ae.comp.time = 40 * F;
   R(L2).keys.forEach((k) => { k.time += 10 * F; }); SC(L2).keys.forEach((k) => { k.time += 10 * F; });   // L2's animation now starts at frame 43, inside the layer
@@ -4992,8 +4993,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p.ae.comp.selectedLayers = [L3];
   await p.page.click('#staggerActs button[data-a="first"]'); await p.idle();
   check("T5 keys on a layer without keys -> a hint, nothing changes", (await p.statusKind()) === "" && L3.inPoint === 0, await p.status());
-  await pickSeg(p, "staggerWhat", "layer"); await pickSeg(p, "staggerOrder", "align"); await press(p, "staggerBtn");
-  check("T5 one layer is enough (no «two layers» rule here)", close2(fr(L3.inPoint), 40) && /^К указателю времени: 1 слой\./.test(await p.status()), fr(L3.inPoint) + " " + await p.status());
+  await pickSeg(p, "staggerWhat", "layer"); await p.page.click('#staggerLayerActs [data-a="start"]'); await p.idle();
+  check("T5 one layer is enough (no «two layers» rule here)", close2(fr(L3.inPoint), 40) && /^Начало к указателю: 1 слой\./.test(await p.status()), fr(L3.inPoint) + " " + await p.status());
+  L4 = mkLayer(clock, { name: "end", inPoint: 0, outPoint: 4 }); L5 = mkLayer(clock, { name: "end2", inPoint: 1, outPoint: 2 });
+  p.ae.comp.selectedLayers = [L4, L5]; p.ae.comp.time = 90 * F;
+  await p.page.click('#staggerLayerActs [data-a="end"]'); await p.idle();
+  check("T5 «Конец к указателю»: every selected layer now ends at the time indicator (frame 90), its length kept", close2(fr(L4.outPoint), 90) && close2(fr(L4.inPoint), 90 - 4 * 30) && close2(fr(L5.outPoint), 90) && close2(fr(L5.inPoint), 60) && (await p.status()) === "Конец к указателю: 2 слоя.\nОтменить: Cmd/Ctrl+Z." && p.ae.log.undo.slice(-2).join() === "begin:Sayframe: stagger,end", [fr(L4.inPoint), fr(L4.outPoint), fr(L5.inPoint), fr(L5.outPoint)].join() + " " + await p.status());
   check("T5 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
@@ -5126,8 +5131,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   L = kaLayer({});
   p = await open({ selectedLayers: [L] });
   await motionTab(p);
-  check("KA6 «Слои»: no key actions, the fourth order button «К указателю» is there", !(await vis(p, "#staggerActs")) && (await vis(p, '#staggerOrder button[data-v="align"]')));
-  await pickSeg(p, "staggerOrder", "align"); await pickSeg(p, "staggerWhat", "keys");
+  check("KA6 «Слои»: no key actions, no fourth order button, «Начало/Конец» instead", !(await vis(p, "#staggerActs")) && !(await vis(p, '#staggerOrder button[data-v="align"]')) && (await vis(p, "#staggerLayerActs")));
+  await pickSeg(p, "staggerWhat", "keys");
   check("KA6 «Ключи»: five action buttons, «К указателю» hidden (its job is «По первому»), the order falls back to top-down", (await vis(p, "#staggerActs")) && (await p.page.locator("#staggerActs button").evaluateAll((l) => l.map((b) => b.getAttribute("aria-label")).join())) === "Отразить,Развернуть,По первому,По последнему,Клон" && !(await vis(p, '#staggerOrder button[data-v="align"]')) && (await val(p, "staggerOrder")) === "asc" && (await p.page.locator("#staggerBtn").innerText()) === "Расставить");
   check("KA6 the three order buttons sit in one row, the five actions in one row (or 3 + 2 in a narrow block) and big enough, icons drawn, the playhead pink", await p.page.evaluate(() => { const rows = (s) => new Set(Array.prototype.filter.call(document.querySelectorAll(s), (b) => b.offsetParent).map((b) => Math.round(b.getBoundingClientRect().top))).size; const acts = document.getElementById("staggerActs"); return rows("#staggerOrder button") === 1 && rows("#staggerActs button") === (acts.classList.contains("narrow") ? 2 : 1) && (acts.clientWidth < 224) === acts.classList.contains("narrow") && Array.prototype.every.call(acts.querySelectorAll("button"), (b) => b.getBoundingClientRect().width >= 40) && document.querySelectorAll("#staggerActs button svg").length === 5 && document.querySelectorAll("#staggerActs .st-playhead").length === 4 && getComputedStyle(document.querySelector("#staggerActs .st-playhead")).stroke === "rgb(244, 114, 182)"; }));
   check("KA6 every action button has a tooltip that says what it does", (await p.page.locator("#staggerActs button").evaluateAll((l) => l.every((b) => b.title.length > 30 && b.title.indexOf(b.getAttribute("aria-label")) === 0))));
@@ -5140,7 +5145,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click('#staggerActs button[data-a="first"]'); await p.idle();
   check("KA6 a layer without keys -> a plain hint", /^У выделенных слоёв нет ключей/.test(await p.status()) && (await p.statusKind()) === "", await p.status());
   await pickSeg(p, "staggerWhat", "layer");
-  check("KA6 back to «Слои»: the actions hide, «К указателю» returns", !(await vis(p, "#staggerActs")) && (await vis(p, '#staggerOrder button[data-v="align"]')));
+  check("KA6 back to «Слои»: the key actions hide, «Начало/Конец» return", !(await vis(p, "#staggerActs")) && (await vis(p, "#staggerLayerActs")) && !(await vis(p, '#staggerOrder button[data-v="align"]')));
   await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ staggerWhat: "keys", staggerOrder: "align" })));
   await p.restart(); await motionTab(p);
   check("KA6 a saved «Ключи» + «К указателю» opens as «Ключи», top-down", (await val(p, "staggerWhat")) === "keys" && (await val(p, "staggerOrder")) === "asc" && (await vis(p, "#staggerActs")));

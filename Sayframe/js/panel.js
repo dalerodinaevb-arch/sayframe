@@ -1586,7 +1586,7 @@
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
         staggerOptsToggle: el("staggerOptsToggle"), staggerPrevText: el("staggerPrevText"),
         staggerWhat: el("staggerWhat"), staggerStep: el("staggerStep"), staggerLess: el("staggerLess"), staggerMore: el("staggerMore"),
-        staggerOrder: el("staggerOrder"), staggerOrderName: el("staggerOrderName"), staggerBtn: el("staggerBtn"), staggerActs: el("staggerActs"),
+        staggerOrder: el("staggerOrder"), staggerOrderName: el("staggerOrderName"), staggerBtn: el("staggerBtn"), staggerActs: el("staggerActs"), staggerLayerActs: el("staggerLayerActs"),
         frames: el("frames"), settingsSaved: el("settingsSaved"),
         modal: el("modal"), modalTitle: el("modalTitle"), modalText: el("modalText"), modalCode: el("modalCode"),
         modalButtons: el("modalButtons"),
@@ -12410,13 +12410,17 @@
     // Значки пяти действий «Ключей»: ромбики, розовый указатель времени с «шапкой», как у кнопок порядка.
     function keyActIcon(mode) {
         function k(x, y, o) { return "<path d=\"M" + x + " " + (y - 3) + "l3 3-3 3-3-3z\"" + (o ? " opacity=\"" + o + "\"" : "") + "/>"; }
+        function bar(x, y, w) { return "<rect x=\"" + x + "\" y=\"" + (y - 2) + "\" width=\"" + w + "\" height=\"4\" rx=\"1.6\"/>"; }
         function ph(x) { return "<path class=\"st-playhead\" d=\"M" + x + " 4V23\"/><path class=\"st-playhead-cap\" d=\"M" + (x - 2.6) + " 0.5h5.2v2.6l-2.6 2.2-2.6-2.2z\"/>"; }
         var svg = {
             mirror: k(8, 9) + k(14, 15) + ph(20) + k(26, 15, 0.6) + k(32, 9, 0.6),
             reverse: k(9, 18) + k(31, 18) + "<path class=\"st-arc\" d=\"M12 10C16 4 24 4 28 10M12 10l-.4-3.3M12 10l3.1-1.2M28 10l.4-3.3M28 10l-3.1-1.2\"/>",
             first: ph(8) + k(8, 9) + k(8, 17) + k(19, 9, 0.6) + k(26, 17, 0.6),
             last: ph(32) + k(32, 9) + k(32, 17) + k(21, 9, 0.6) + k(14, 17, 0.6),
-            clone: k(6, 9) + k(12, 15) + ph(22) + k(22, 9, 0.6) + k(28, 15, 0.6)
+            clone: k(6, 9) + k(12, 15) + ph(22) + k(22, 9, 0.6) + k(28, 15, 0.6),
+            // «Слои»: полоски слоёв начинаются (или заканчиваются) на указателе.
+            start: ph(8) + bar(9, 8, 18) + bar(9, 14, 24) + bar(9, 20, 13),
+            end: ph(32) + bar(13, 8, 18) + bar(7, 14, 24) + bar(18, 20, 13)
         }[mode];
         return "<svg viewBox=\"0 0 40 24\" aria-hidden=\"true\">" + svg + "</svg>";
     }
@@ -12426,10 +12430,12 @@
         Array.prototype.forEach.call(ui.staggerOrder.querySelectorAll("button[data-v]"), function (b) {
             b.innerHTML = stairIcon(b.getAttribute("data-v"), keys);
             // У ключей «К указателю» нет: это делает действие «По первому» внизу.
-            if (b.getAttribute("data-v") === "align") { b.hidden = keys && !IS_PR; }
+            // В «Слоях» вместо него две кнопки внизу: «Начало» и «Конец» к указателю (в Premiere — как было).
+            if (b.getAttribute("data-v") === "align") { b.hidden = !IS_PR; }
         });
-        ui.staggerOrder.classList.toggle("no-align", keys && !IS_PR);
+        ui.staggerOrder.classList.toggle("no-align", !IS_PR);
         if (ui.staggerActs) { ui.staggerActs.hidden = !keys || IS_PR; }
+        if (ui.staggerLayerActs) { ui.staggerLayerActs.hidden = keys || IS_PR; }
         var align = order === "align";
         var stepRow = ui.staggerBtn.closest(".tool-card").querySelector(".shift-row-step");
         if (stepRow) { stepRow.hidden = align; }
@@ -12442,7 +12448,7 @@
     }
 
     function drawShift() {
-        if (motion.staggerWhat === "keys" && motion.staggerOrder === "align" && !IS_PR) { motion.staggerOrder = "asc"; }
+        if (motion.staggerOrder === "align" && !IS_PR) { motion.staggerOrder = "asc"; }
         pressGroupV(ui.staggerWhat, motion.staggerWhat);
         pressGroupV(ui.staggerOrder, motion.staggerOrder);
         ui.staggerStep.value = String(motion.staggerStep);
@@ -12488,6 +12494,17 @@
                 return;
             }
             showShiftResult(res, what, prWords("Лесенка: " + plural(res.steps, "слой", "слоя", "слоёв") + ", шаг " + plural(frames, "кадр", "кадра", "кадров") + "."));
+        }).catch(toolFailed);
+    }
+
+    // «Слои»: начало или конец всех выделенных слоёв — на указатель времени.
+    function onLayerAlign(end) {
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Двигаю слои…", "busy");
+        host("stagger", ["layer", 1, end ? "alignEnd" : "align"]).then(function (res) {
+            setBusy(false);
+            showShiftResult(res, "layer", (end ? "Конец к указателю: " : "Начало к указателю: ") + plural(res.moved, "слой", "слоя", "слоёв") + ".");
         }).catch(toolFailed);
     }
 
@@ -12539,6 +12556,12 @@
             input.addEventListener("focus", function () { input.select(); });
         });
         ui.staggerBtn.addEventListener("click", onStagger);
+        if (ui.staggerLayerActs) {
+            Array.prototype.forEach.call(ui.staggerLayerActs.querySelectorAll("button[data-a]"), function (b) {
+                b.innerHTML = keyActIcon(b.getAttribute("data-a"));
+                b.addEventListener("click", function () { onLayerAlign(b.getAttribute("data-a") === "end"); });
+            });
+        }
         if (ui.staggerActs) {
             Array.prototype.forEach.call(ui.staggerActs.querySelectorAll("button[data-a]"), function (b) {
                 b.innerHTML = keyActIcon(b.getAttribute("data-a"));
