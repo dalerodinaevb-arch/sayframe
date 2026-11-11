@@ -4642,7 +4642,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     return { l: Math.min.apply(null, pts.map((q) => q[0])), r: Math.max.apply(null, pts.map((q) => q[0])), t: Math.min.apply(null, pts.map((q) => q[1])), b: Math.max.apply(null, pts.map((q) => q[1])) };
   };
   const close2 = (a, b) => Math.abs(a - b) < 1e-6;
-  let L3, kid, bx;
+  let L3, L4, L5, kid, bx;
 
   p = await open({});
   await motionTab(p);
@@ -4877,23 +4877,24 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await motionTab(p);
   const orderIds = (p) => p.page.locator("#staggerOrder button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join());
   check("T1 one block «Лесенка»; the old «Сдвиг» block is gone", (await p.page.locator('#motionTools [data-tool="shift"], #shiftWhat, #timeAlign').count()) === 0 && (await p.page.locator('#motionTools [data-tool="stagger"] .tool-head b').innerText()) === "Лесенка" && (await vis(p, "#staggerWhat")) && (await p.page.locator(".stagger-card select").count()) === 0);
-  check("T1 the choices are buttons: what to move, and four orders (the last one: to the time indicator)", (await p.page.locator("#staggerWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "layer,keys" && (await orderIds(p)) === "asc,random,desc,align" && (await p.page.locator("#staggerWhat button span").allInnerTexts()).join() === "Слои,Ключи" && (await p.page.getAttribute('#staggerOrder button[data-v="align"]', "aria-label")) === "К указателю времени");
-  check("T1 the four order buttons sit in one row", await p.page.evaluate(() => new Set(Array.prototype.map.call(document.querySelectorAll("#staggerOrder button"), (b) => Math.round(b.getBoundingClientRect().top))).size === 1));
+  check("T1 the choices are buttons: what to move, and three orders (the 4th, «К указателю», stays only for Premiere)", (await p.page.locator("#staggerWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "layer,keys" && (await orderIds(p)) === "asc,random,desc,align" && !(await vis(p, '#staggerOrder button[data-v="align"]')) && (await p.page.locator("#staggerWhat button span").allInnerTexts()).join() === "Слои,Ключи" && (await p.page.getAttribute('#staggerOrder button[data-v="align"]', "aria-label")) === "К указателю времени");
+  check("T1 the three order buttons sit in one row", await p.page.evaluate(() => new Set(Array.prototype.map.call(document.querySelectorAll("#staggerOrder button:not([hidden])"), (b) => Math.round(b.getBoundingClientRect().top))).size === 1));
   check("T1 defaults: layers, one frame, top to bottom", [await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "layer,1,asc" && (await p.page.locator("#staggerPrevText").innerText()) === "Каждый следующий слой — на 1 кадр позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 12 && (await p.page.locator('#staggerOrder button[data-v="align"] svg .st-playhead').count()) === 1 && (await p.page.locator("#staggerBtn").innerText()) === "Расставить");
-  check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".stagger-card button:not(.tool-grip), .stagger-card input"), (el) => { if (el.closest("[hidden]")) return true; const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
+  check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".stagger-card button:not(.tool-grip):not(.win-open), .stagger-card input"), (el) => { if (el.closest("[hidden]")) return true; const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
   await pickSeg(p, "staggerOrder", "desc"); await pickSeg(p, "staggerWhat", "keys"); await p.page.click("#staggerMore"); await p.page.click("#staggerMore");
   check("T1 «Ключи»: the order icons turn into keyframes, the text says so; + and - change the step", (await p.page.locator("#staggerPrevText").innerText()) === "Ключи каждого следующего слоя — на 3 кадра позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 0 && (await p.page.locator("#staggerOrder button svg path").count()) === 37 && (await p.page.locator("#staggerOrderName").innerText()) === "Снизу вверх" && (await p.page.inputValue("#staggerStep")) === "3", await p.page.locator("#staggerPrevText").innerText());
   check("T1 «Ключи»: no «К указателю времени» order (the «По первому» action does it)", !(await vis(p, '#staggerOrder button[data-v="align"]')) && (await vis(p, '#staggerActs button[data-a="first"]')));
-  await pickSeg(p, "staggerWhat", "layer"); await pickSeg(p, "staggerOrder", "align");
-  check("T1 … and with layers", (await p.page.locator("#staggerPrevText").innerText()) === "Все выделенные слои начнутся там, где стоит указатель времени." && !(await vis(p, "#staggerStep")) && (await vis(p, "#staggerBtn")));
+  await pickSeg(p, "staggerWhat", "layer");
+  check("T1 «Слои»: under «Расставить» two buttons, «Начало» and «Конец» к указателю, centred, as big as the «Ключи» ones, pink playhead", (await vis(p, "#staggerLayerActs")) && !(await vis(p, "#staggerActs")) && (await p.page.locator("#staggerLayerActs button").evaluateAll((l) => l.map((b) => b.getAttribute("aria-label")).join())) === "Начало к указателю,Конец к указателю" &&
+    (await p.page.evaluate(() => { const g = document.getElementById("staggerLayerActs").getBoundingClientRect(), b = document.querySelectorAll("#staggerLayerActs button"), r0 = b[0].getBoundingClientRect(), r1 = b[1].getBoundingClientRect(); return Math.abs((r0.left - g.left) - (g.right - r1.right)) < 2 && r0.top === r1.top && r0.width >= 40 && r0.height >= 30 && document.querySelectorAll("#staggerLayerActs .st-playhead").length === 2 && document.querySelectorAll("#staggerLayerActs svg rect").length === 6; })));
   await pickSeg(p, "staggerOrder", "random");
   check("T1 another order brings the step back", (await vis(p, ".stagger-card .shift-row-step")) && (await p.page.locator("#staggerBtn").innerText()) === "Расставить");
   await p.page.click("#staggerLess"); await p.page.click("#staggerLess"); await p.page.click("#staggerLess"); await pickSeg(p, "staggerOrder", "asc");
   check("T1 the step does not go below one frame", (await p.page.inputValue("#staggerStep")) === "1");
   await press(p, "staggerBtn");
   check("T1 nothing selected -> a hint, not an error", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && (await p.statusKind()) === "" && p.ae.log.undo.length === 0);
-  await pickSeg(p, "staggerOrder", "align"); await press(p, "staggerBtn");
-  check("T1 the same for «Выровнять»", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && p.ae.log.undo.length === 0);
+  await p.page.click('#staggerLayerActs [data-a="start"]'); await p.idle();
+  check("T1 the same for «Начало к указателю»", (await p.status()) === "Выделите слой в композиции и нажмите ещё раз." && p.ae.log.undo.length === 0);
   await pickSeg(p, "staggerWhat", "keys"); await pickSeg(p, "staggerOrder", "random");
   await setStep(p, "staggerStep", "5");
   await setStep(p, "staggerStep", "abc"); t = await p.page.inputValue("#staggerStep");
@@ -4904,7 +4905,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T1 every choice survives a restart", [await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "keys,5,random");
   await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ staggerOrder: "align" })));
   await p.restart(); await motionTab(p);
-  check("T1 «К указателю времени» is remembered too, the step row stays hidden", (await val(p, "staggerOrder")) === "align" && !(await vis(p, ".stagger-card .shift-row-step")) && (await p.page.locator("#staggerBtn").innerText()) === "Выровнять");
+  check("T1 an old saved «К указателю времени» opens as top-down (that order is gone; «Начало» does it now)", (await val(p, "staggerOrder")) === "asc" && (await vis(p, ".stagger-card .shift-row-step")) && (await p.page.locator("#staggerBtn").innerText()) === "Расставить" && (await vis(p, "#staggerLayerActs")));
   await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ shiftWhat: "x", shiftStep: -4, timeAlign: 5, staggerWhat: null, staggerStep: 100000, staggerOrder: "up" })));
   await p.restart(); await motionTab(p);
   check("T1 broken saved values (and the old «Сдвиг» settings) fall back safely", [await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "layer,999,asc" && p.errors.length === 0);
@@ -4976,10 +4977,10 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   L = actor({});
   L2 = actor({ name: "late", inPoint: 2, outPoint: 6 }); R(L2).keys.forEach((k) => { k.time += 1; }); SC(L2).keys.forEach((k) => { k.time += 1; }); SL(L2).keys = []; MK(L2).keys = [];
   p = await open({ selectedLayers: [L, L2], compTime: 3 * F + 1 });   // frame 33
-  await motionTab(p); await pickSeg(p, "staggerOrder", "align"); await press(p, "staggerBtn");
+  await motionTab(p); await p.page.click('#staggerLayerActs [data-a="start"]'); await p.idle();
   check("T5 layers: both selected layers now start at the time indicator (frame 33), everything on them moves along", close2(fr(L.inPoint), 33) && close2(fr(L2.inPoint), 33) && times(R(L)) === "33,48,138,152" && times(R(L2)) === "33,48,138,152" && close2(fr(L2.outPoint), 153), times(R(L)) + " | " + times(R(L2)) + " " + fr(L.inPoint) + " " + fr(L2.inPoint));
-  check("T5 result reported, one undo step", (await p.status()) === "К указателю времени: 2 слоя.\nОтменить: Cmd/Ctrl+Z." && (await p.statusKind()) === "done" && p.ae.log.undo.join() === "begin:Sayframe: stagger,end", await p.status());
-  await press(p, "staggerBtn");
+  check("T5 result reported, one undo step", (await p.status()) === "Начало к указателю: 2 слоя.\nОтменить: Cmd/Ctrl+Z." && (await p.statusKind()) === "done" && p.ae.log.undo.join() === "begin:Sayframe: stagger,end", await p.status());
+  await p.page.click('#staggerLayerActs [data-a="start"]'); await p.idle();
   check("T5 pressing again: already there, said plainly", (await p.status()) === "Уже на месте: 2 слоя." && (await p.statusKind()) === "" && times(R(L)) === "33,48,138,152", await p.status());
   p.ae.comp.time = 40 * F;
   R(L2).keys.forEach((k) => { k.time += 10 * F; }); SC(L2).keys.forEach((k) => { k.time += 10 * F; });   // L2's animation now starts at frame 43, inside the layer
@@ -4992,8 +4993,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   p.ae.comp.selectedLayers = [L3];
   await p.page.click('#staggerActs button[data-a="first"]'); await p.idle();
   check("T5 keys on a layer without keys -> a hint, nothing changes", (await p.statusKind()) === "" && L3.inPoint === 0, await p.status());
-  await pickSeg(p, "staggerWhat", "layer"); await pickSeg(p, "staggerOrder", "align"); await press(p, "staggerBtn");
-  check("T5 one layer is enough (no «two layers» rule here)", close2(fr(L3.inPoint), 40) && /^К указателю времени: 1 слой\./.test(await p.status()), fr(L3.inPoint) + " " + await p.status());
+  await pickSeg(p, "staggerWhat", "layer"); await p.page.click('#staggerLayerActs [data-a="start"]'); await p.idle();
+  check("T5 one layer is enough (no «two layers» rule here)", close2(fr(L3.inPoint), 40) && /^Начало к указателю: 1 слой\./.test(await p.status()), fr(L3.inPoint) + " " + await p.status());
+  L4 = mkLayer(clock, { name: "end", inPoint: 0, outPoint: 4 }); L5 = mkLayer(clock, { name: "end2", inPoint: 1, outPoint: 2 });
+  p.ae.comp.selectedLayers = [L4, L5]; p.ae.comp.time = 90 * F;
+  await p.page.click('#staggerLayerActs [data-a="end"]'); await p.idle();
+  check("T5 «Конец к указателю»: every selected layer now ends at the time indicator (frame 90), its length kept", close2(fr(L4.outPoint), 90) && close2(fr(L4.inPoint), 90 - 4 * 30) && close2(fr(L5.outPoint), 90) && close2(fr(L5.inPoint), 60) && (await p.status()) === "Конец к указателю: 2 слоя.\nОтменить: Cmd/Ctrl+Z." && p.ae.log.undo.slice(-2).join() === "begin:Sayframe: stagger,end", [fr(L4.inPoint), fr(L4.outPoint), fr(L5.inPoint), fr(L5.outPoint)].join() + " " + await p.status());
   check("T5 no page errors", p.errors.length === 0, p.errors.join(" | "));
   await p.close();
 
@@ -5126,8 +5131,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   L = kaLayer({});
   p = await open({ selectedLayers: [L] });
   await motionTab(p);
-  check("KA6 «Слои»: no key actions, the fourth order button «К указателю» is there", !(await vis(p, "#staggerActs")) && (await vis(p, '#staggerOrder button[data-v="align"]')));
-  await pickSeg(p, "staggerOrder", "align"); await pickSeg(p, "staggerWhat", "keys");
+  check("KA6 «Слои»: no key actions, no fourth order button, «Начало/Конец» instead", !(await vis(p, "#staggerActs")) && !(await vis(p, '#staggerOrder button[data-v="align"]')) && (await vis(p, "#staggerLayerActs")));
+  await pickSeg(p, "staggerWhat", "keys");
   check("KA6 «Ключи»: five action buttons, «К указателю» hidden (its job is «По первому»), the order falls back to top-down", (await vis(p, "#staggerActs")) && (await p.page.locator("#staggerActs button").evaluateAll((l) => l.map((b) => b.getAttribute("aria-label")).join())) === "Отразить,Развернуть,По первому,По последнему,Клон" && !(await vis(p, '#staggerOrder button[data-v="align"]')) && (await val(p, "staggerOrder")) === "asc" && (await p.page.locator("#staggerBtn").innerText()) === "Расставить");
   check("KA6 the three order buttons sit in one row, the five actions in one row (or 3 + 2 in a narrow block) and big enough, icons drawn, the playhead pink", await p.page.evaluate(() => { const rows = (s) => new Set(Array.prototype.filter.call(document.querySelectorAll(s), (b) => b.offsetParent).map((b) => Math.round(b.getBoundingClientRect().top))).size; const acts = document.getElementById("staggerActs"); return rows("#staggerOrder button") === 1 && rows("#staggerActs button") === (acts.classList.contains("narrow") ? 2 : 1) && (acts.clientWidth < 224) === acts.classList.contains("narrow") && Array.prototype.every.call(acts.querySelectorAll("button"), (b) => b.getBoundingClientRect().width >= 40) && document.querySelectorAll("#staggerActs button svg").length === 5 && document.querySelectorAll("#staggerActs .st-playhead").length === 4 && getComputedStyle(document.querySelector("#staggerActs .st-playhead")).stroke === "rgb(244, 114, 182)"; }));
   check("KA6 every action button has a tooltip that says what it does", (await p.page.locator("#staggerActs button").evaluateAll((l) => l.every((b) => b.title.length > 30 && b.title.indexOf(b.getAttribute("aria-label")) === 0))));
@@ -5140,7 +5145,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.click('#staggerActs button[data-a="first"]'); await p.idle();
   check("KA6 a layer without keys -> a plain hint", /^У выделенных слоёв нет ключей/.test(await p.status()) && (await p.statusKind()) === "", await p.status());
   await pickSeg(p, "staggerWhat", "layer");
-  check("KA6 back to «Слои»: the actions hide, «К указателю» returns", !(await vis(p, "#staggerActs")) && (await vis(p, '#staggerOrder button[data-v="align"]')));
+  check("KA6 back to «Слои»: the key actions hide, «Начало/Конец» return", !(await vis(p, "#staggerActs")) && (await vis(p, "#staggerLayerActs")) && !(await vis(p, '#staggerOrder button[data-v="align"]')));
   await p.page.evaluate(() => localStorage.setItem("sayframe.motion.v1", JSON.stringify({ staggerWhat: "keys", staggerOrder: "align" })));
   await p.restart(); await motionTab(p);
   check("KA6 a saved «Ключи» + «К указателю» opens as «Ключи», top-down", (await val(p, "staggerWhat")) === "keys" && (await val(p, "staggerOrder")) === "asc" && (await vis(p, "#staggerActs")));
@@ -6335,7 +6340,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() === "≈ 4,1 МБ,≈ 12 МБ,≈ 30 МБ," && (await pressed(p, "#exSpan button")) === "all" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 12 МБ" && (await overflow(p)) <= 0,
       (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() + " | " + await p.page.locator("#exGo").innerText());
     t = await tileBox(p, "normal");
-    check("EX1 a horizontal comp -> horizontal tiles; no size question, no quality row (the tile is the quality)", t.width > t.height * 1.3 && !(await vis(p, "#exFitRow")) && !(await vis(p, "#exQualRow")), JSON.stringify(t));
+    check("EX1 small tiles, all four in one row (no more than 64 px tall); no size question, no quality row (the tile is the quality)", t.height <= 64 && Math.abs((await tileBox(p, "custom")).y - t.y) < 2 && !(await vis(p, "#exFitRow")) && !(await vis(p, "#exQualRow")), JSON.stringify(t));
     check("EX1 unsaved project -> Desktop › «Sayframe Экспорт»; no Media Encoder switch when there is no Media Encoder", (await p.page.getAttribute("#exFolder", "title")) === exDir && !(await vis(p, "#exAmeRow")), await p.page.getAttribute("#exFolder", "title"));
     await p.page.screenshot({ path: path.join(SHOTS, "90-export-sheet.png") });
     await exRun(p);
@@ -6354,6 +6359,27 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     t = p.ae.log.undo.filter((x) => /export|^end$|^render$/.test(x)).join(" ");
     check("EX3b the export's undo group closes before the render (no «Undo group mismatch» warning in After Effects)", /^(begin:Sayframe: export end render ?)+$/.test(t + " "), t);
     await p.close();
+
+    // «Изменить»: the usual Save window — folder and the video's name at once, as in After Effects.
+    {
+      const pickDir = path.join(os.tmpdir(), "sf-ex-name-" + Date.now());
+      fs.mkdirSync(pickDir, { recursive: true });
+      p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {}, saveAs: path.join(pickDir, "Мой ролик.mp4") });
+      await exOpen(p);
+      await p.page.click("#exBrowse"); await p.page.waitForFunction(() => /Мой ролик/.test(document.getElementById("exFolder").textContent));
+      check("EX14 «Изменить» opens a Save window with the comp's name; the folder line shows …/folder/Мой ролик.mp4", p.ae.log.saveDlg.length === 1 && /\/Main\.mp4$/.test(p.ae.log.saveDlg[0].path) && /Мой ролик\.mp4$/.test(await p.page.locator("#exFolder").innerText()) && (await p.page.getAttribute("#exFolder", "title")) === path.join(pickDir, "Мой ролик.mp4"), JSON.stringify(p.ae.log.saveDlg) + " " + await p.page.locator("#exFolder").innerText());
+      await exRun(p);
+      check("EX14 one video -> the file is exactly «Мой ролик.mp4» in that folder", mp4s(pickDir).join() === "Мой ролик.mp4" && (await p.page.locator("#exResults .ex-row.done").count()) === 1, mp4s(pickDir).join());
+      await p.page.click("#exResults .ex-again .ghost");
+      await p.page.click('#exTargets [data-t="max"]'); await exRun(p);
+      check("EX14 two qualities -> the name plus the quality: «Мой ролик — Среднее.mp4», «Мой ролик — Высокое.mp4»", mp4s(pickDir).join() === "Мой ролик — Высокое.mp4,Мой ролик — Среднее.mp4,Мой ролик.mp4", mp4s(pickDir).join());
+      p.ae.log.dcMain.name = "Other";
+      await p.page.click("#exResults .ex-again .ghost"); await p.page.click("#exClose"); await exOpen(p);
+      await p.page.waitForFunction(() => !/Мой ролик/.test(document.getElementById("exFolder").textContent), null, { timeout: 4000 }).catch(() => {});
+      check("EX14 another comp -> its own name again (the folder stays)", !/Мой ролик/.test(await p.page.locator("#exFolder").innerText()) && (await p.page.getAttribute("#exFolder", "title")) === pickDir, await p.page.locator("#exFolder").innerText());
+      check("EX14 no page errors", p.errors.length === 0, p.errors.join(" | "));
+      await p.close();
+    }
 
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
     p.ae.log.dcMain.workAreaStart = 2; p.ae.log.dcMain.workAreaDuration = 3;
@@ -6384,7 +6410,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p.ae.log.dcMain.width = 1080; p.ae.log.dcMain.height = 1920;
     await exOpen(p);
     t = await tileBox(p, "normal");
-    check("EX9 a vertical comp -> vertical tiles, in one row", t.height > t.width * 1.3 && Math.abs((await tileBox(p, "custom")).y - t.y) < 2, JSON.stringify(t));
+    check("EX9 a vertical comp -> the same small tiles in one row", t.height <= 64 && Math.abs((await tileBox(p, "custom")).y - t.y) < 2, JSON.stringify(t));
     m = await p.page.evaluate(() => { const b = document.querySelector('#exTargets [data-t="normal"]'), r = b.querySelector(".ex-rate").getBoundingClientRect(), bb = b.getBoundingClientRect(); return [r.right <= bb.right - 4, b.querySelector(".ex-mb").getBoundingClientRect().right <= bb.right, b.querySelector(".ex-rate em").textContent]; });
     check("EX9 narrow vertical tile: − 15 + fits inside", m[0] && m[1] && m[2] === "15", JSON.stringify(m));
     await p.page.screenshot({ path: path.join(SHOTS, "92-export-vertical.png") });
@@ -6393,27 +6419,28 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p.ae.log.dcMain.width = 1080; p.ae.log.dcMain.height = 1080;
     await exOpen(p);
     t = await tileBox(p, "normal");
-    check("EX9 a square comp -> square tiles", Math.abs(t.width - t.height) < 3, JSON.stringify(t));
+    check("EX9 a square comp -> the same small tiles", t.height <= 64, JSON.stringify(t));
     await p.close();
 
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
     await exOpen(p);
-    const rateOf = (id) => p.page.locator('#exTargets [data-t="' + id + '"] .ex-rate em').evaluate((e) => e.textContent + getComputedStyle(e, "::after").content.replace(/"/g, ""));
-    check("EX10 every tile shows its bitrate; − and + only on the picked one", (await rateOf("light")) === "5 Мбит/с" && (await rateOf("normal")) === "15 Мбит/с" && (await rateOf("max")) === "40 Мбит/с" &&
+    const rateOf = (id) => p.page.locator('#exTargets [data-t="' + id + '"] .ex-rate em').evaluate((e) => e.textContent);
+    const unitOf = (id) => p.page.locator('#exTargets [data-t="' + id + '"] .ex-rate em').evaluate((e) => getComputedStyle(e, "::after").content.replace(/"/g, ""));
+    check("EX10 every tile shows its bitrate (with «Мбит/с» when not picked; the small picked tile shows − 15 +); − and + only on the picked one", (await unitOf("light")) === " Мбит/с" && (await unitOf("normal")) === "" && (await rateOf("light")) === "5" && (await rateOf("normal")) === "15" && (await rateOf("max")) === "40" &&
       (await vis(p, '#exTargets [data-t="normal"] .ex-rate [data-d="1"]')) && !(await vis(p, '#exTargets [data-t="light"] .ex-rate [data-d="1"]')) && (await overflow(p)) <= 0);
     await p.page.click('#exTargets [data-t="normal"] .ex-rate [data-d="1"]');
-    check("EX10 + on «Среднее» -> 18 Мбит/с, MB and the button follow, the tile stays picked", (await rateOf("normal")) === "18 Мбит/с" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
+    check("EX10 + on «Среднее» -> 18 Мбит/с, MB and the button follow, the tile stays picked", (await rateOf("normal")) === "18" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
       (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 14 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 14 МБ");
     await p.page.click('#exTargets [data-t="light"]'); await p.page.click('#exTargets [data-t="normal"]');
-    check("EX10 − on a tile that is not picked just picks it (and the other one taken away)", (await pressed(p, "#exTargets .ex-t")) === "light" && (await rateOf("light")) === "5 Мбит/с");
+    check("EX10 − on a tile that is not picked just picks it (and the other one taken away)", (await pressed(p, "#exTargets .ex-t")) === "light" && (await rateOf("light")) === "5");
     for (let i = 0; i < 6; i++) await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="-1"]');
-    check("EX10 − stops at 1 Мбит/с", (await rateOf("light")) === "1 Мбит/с" && (await p.page.locator('#exTargets [data-t="light"] .ex-rate [data-d="-1"]').getAttribute("class")) === "off");
+    check("EX10 − stops at 1 Мбит/с", (await rateOf("light")) === "1" && (await p.page.locator('#exTargets [data-t="light"] .ex-rate [data-d="-1"]').getAttribute("class")) === "off");
     await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="1"]'); await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="1"]');
     await exRun(p);
     check("EX10 the bitrate goes to After Effects: 3 Мбит/с -> the nearest H.264 template (5 Mbps)", p.ae.log.rq.rendered.length === 1 && /5 Mbps$/.test(p.ae.log.rq.rendered[0].tpl), JSON.stringify(p.ae.log.rq.rendered));
     await p.page.click("#exResults .ex-again .ghost");
     await p.page.keyboard.press("Escape"); await exOpen(p);
-    check("EX10 the bitrates are remembered", (await rateOf("light")) === "3 Мбит/с" && (await rateOf("normal")) === "18 Мбит/с");
+    check("EX10 the bitrates are remembered", (await rateOf("light")) === "3" && (await rateOf("normal")) === "18");
     await p.close();
 
     // Several tiles at once: one video per tile. «Всю композицию» really renders the whole comp even when AE's default says work area.
@@ -6524,8 +6551,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const man = (q) => fs.readFileSync(path.join(q.extDir, "CSXS", "manifest.xml"), "utf8");
     const wins = (text) => (text.match(/<Extension Id="com\.sayframe\.ae\.win\.([^"]+)" Version="[^"]*"\/>/g) || []).map((x) => /win\.([^"]+)"/.exec(x)[1]).join();
     const shipped = fs.readFileSync(path.join(EXT, "CSXS", "manifest.xml"), "utf8");
-    check("WN1 the shipped manifest has the main panel and 10 windows: 4 sections, 5 blocks and the export", wins(shipped) === "anim,tools,shape,projects,ease,align,anchor,stagger,easecopy,export" &&
-      (shipped.match(/<Menu>[^<]+<\/Menu>/g) || []).join().indexOf("<Menu>Sayframe</Menu>,<Menu>Sayframe — Анимация</Menu>") === 0 && (shipped.match(/<DispatchInfo>/g) || []).length === 11, wins(shipped));
+    check("WN1 the shipped manifest has the main panel and all 19 windows, but only «Sayframe» is in Window › Extensions (the windows open by ↗)",
+      wins(shipped) === "anim,tools,shape,projects,ease,align,anchor,stagger,easecopy,paste,organize,decompose,cache,nullp,unused,cutout,pathfinder,split,export" &&
+      (shipped.match(/<Menu>[^<]+<\/Menu>/g) || []).join() === "<Menu>Sayframe</Menu>" && (shipped.match(/<DispatchInfo>/g) || []).length === 20, wins(shipped));
     p = await open({ ownExt: true });
     await p.page.waitForTimeout(600);
     check("WN1 with the standard choice the panel leaves its manifest as it is", man(p) === shipped);
@@ -6551,24 +6579,26 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("WN4 Esc keeps it open", await vis(p, "#exportBar"));
     await p.close();
 
-    p = await open({ ownExt: true, settings: { design: "ae", designSet: 2 } });
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabWin");
-    t = await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#winPicker input"), (i) => (i.checked ? "+" : "-") + i.getAttribute("data-win")).join());
-    check("WN5 Settings › «Окна»: a switch per section and block, the standard ones on", t === "+anim,+tools,+shape,+projects,+ease,+align,+anchor,+stagger,+easecopy,-paste,-organize,-decompose,-cache,-nullp,-unused,-cutout,-pathfinder,-split,+export", t);
-    await p.page.click('#winPicker label:has(input[data-win="stagger"])'); await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
-    check("WN5 switching rewrites the manifest: Лесенка out, Кэш in; the note asks to restart After Effects", wins(man(p)) === "anim,tools,shape,projects,ease,align,anchor,easecopy,cache,export" && /Перезапустите After Effects/.test(await p.page.locator("#winNote").innerText()) &&
-      /<Menu>Sayframe — Кэш<\/Menu>/.test(man(p)) && !/Лесенка/.test(man(p)), wins(man(p)));
-    await p.page.click('#winPicker label:has(input[data-win="stagger"])'); await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
-    check("WN5 back as it was -> the same manifest as shipped, nothing to restart", man(p) === shipped && /такое же/.test(await p.page.locator("#winNote").innerText()));
+    p = await open({ ownExt: true, settings: { design: "ae", designSet: 2, windows: "ease,align" } });
+    await p.page.click("#settingsBtn");
+    check("WN5 no «Окна» page in Settings any more (nothing to choose: every window is there, none in the menu)", !(await vis(p, "#setTabWin")));
+    await p.page.waitForTimeout(400);
+    check("WN5 an old choice of windows is put right: the manifest is the shipped one again", man(p) === shipped);
     await p.page.click("#settingsClose");
     await p.page.click("#tabMotion"); await p.page.hover('section[data-tool="ease"]'); await p.page.click('section[data-tool="ease"] .win-open');
     check("WN6 ↗ on a block opens its window when After Effects has it", (await p.page.evaluate(() => window.__openedExt.join())) === "com.sayframe.ae.win.ease");
     await p.page.hover('section[data-tool="cache"]'); await p.page.click('section[data-tool="cache"] .win-open'); await p.page.waitForTimeout(400);
-    check("WN6 ↗ on a block without a window yet adds it to the menu and says to restart", wins(man(p)).indexOf("cache") >= 0 && (await p.page.evaluate(() => window.__openedExt.length)) === 1 &&
-      (await p.status()) === "Окно «Кэш» появится после перезапуска After Effects: Window › Extensions › Sayframe — Кэш.", await p.status());
+    check("WN6 ↗ on «Кэш» opens its window too (every block has one now)", (await p.page.evaluate(() => window.__openedExt.join())) === "com.sayframe.ae.win.ease,com.sayframe.ae.win.cache" &&
+      (await p.status()) === "Открываю окно «Кэш».", await p.status());
     await p.page.click("#exportBtn");
     check("WN6 the export sheet has ↗ too", await vis(p, '#exHead .win-open[data-win="export"]'));
     await p.close();
+    for (const d of ["studio", "glass"]) {
+      p = await open({ ownExt: true, settings: { design: d, designSet: 2 } });
+      await p.page.click("#tabMotion"); await p.page.hover('section[data-tool="ease"]');
+      check("WN9 no ↗ in the «" + d + "» look (only in «After Effects»)", (await p.page.locator(".win-open:visible").count()) === 0);
+      await p.close();
+    }
 
     p = await open({ ownExt: true, settings: { design: "ae", designSet: 2 }, hostExts: ["com.sayframe.ae.panel"] });
     await p.page.click("#tabMotion"); await p.page.hover('section[data-tool="ease"]'); await p.page.click('section[data-tool="ease"] .win-open'); await p.page.waitForTimeout(300);
@@ -6580,10 +6610,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("WN8 after the restart ↗ opens it and says where it is", (await p.page.evaluate(() => window.__openedExt.join())) === "com.sayframe.ae.win.ease" && /^Открываю окно «Плавность»/.test(await p.status()), await p.status());
     await p.close();
 
-    p = await open({ ownExt: true, signedExt: true, settings: { design: "ae", designSet: 2 } });
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabWin");
-    await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
-    check("WN7 a signed copy cannot change its manifest: it says so and the switches lock", man(p) === shipped && /подписанного пакета/.test(await p.page.locator("#winNote").innerText()) && (await p.page.locator('#winPicker input[data-win="ease"]').isDisabled()));
+    p = await open({ ownExt: true, signedExt: true, settings: { design: "ae", designSet: 2, windows: "ease" } });
+    await p.page.waitForTimeout(400);
+    check("WN7 a signed copy leaves its manifest alone", man(p) === shipped);
     await p.close();
   }
 
@@ -6882,6 +6911,24 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("MK12 «Другой вариант» on a precomp grid: tile comps of a new size are filled by their shape, numbers centred", changed > 0 && !bad.length, changed + " " + bad.join(" | "));
     check("MK12 a photo put inside stays in the middle of its tile comp", Math.abs(pp[0] - phc.width / 2) < 0.5 && Math.abs(pp[1] - phc.height / 2) < 0.5, pp + " in " + phc.width + "x" + phc.height);
     check("MK12 no errors", p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
+  }
+  // A change in the block: keys the block made itself (the tiles' «Появление») are made anew, not carried over.
+  {
+    const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const kn = (l, n) => acAt(l, "ADBE Transform Group", n).numKeys;
+    let p = await open({ mkPoll: true, orbit: { layers: [{ name: "BG", selected: false }] } });
+    await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]');
+    await p.page.click("#gridInBtn"); await p.page.click('#gridPopList [data-v="explode"]');
+    await p.page.click("#gridBtn"); await p.idle();
+    const k0 = kn(L(p, "Плитка 1"), "ADBE Position");
+    await p.page.waitForTimeout(1400); await p.idle();
+    await p.page.click("#gridInBtn"); await p.page.click('#gridTabs [data-v="simple"]'); await p.page.click('#gridPopList [data-v="none"]');
+    await p.page.waitForTimeout(1500); await p.idle();
+    const t = L(p, "Плитка 1");
+    check("MK13 «Появление: Нет» on a grid made with «Взрыв»: the old tiles' keys do not come back", k0 > 2 && kn(t, "ADBE Position") === 0 && kn(t, "ADBE Opacity") === 0 && /изменена/.test(await p.status()),
+      k0 + " -> " + kn(t, "ADBE Position") + "/" + kn(t, "ADBE Opacity") + " " + await p.status());
+    check("MK13 no errors", p.errors.length === 0, p.errors.join(" | "));
     await p.close();
   }
   // «Текст по ленте»: a random line by number, the line's direction, the text running forward or back.

@@ -3168,10 +3168,16 @@ var sayframeHost = (function () {
         for (i = 0; i < MK_TR.length; i++) {
             try { P = acTransform(L, MK_TR[i]); } catch (e) { P = null; }
             if (!P) { continue; }
-            try { if (P.numKeys > 0) { continue; } out.push(MK_TR[i] + "=" + mkVal(P.value)); } catch (e2) {}
+            // Keys the block made itself (an appear animation) are written as their times: "@0.5/0.8".
+            try { out.push(MK_TR[i] + "=" + (P.numKeys > 0 ? mkKeySig(P) : mkVal(P.value))); } catch (e2) {}
         }
         try { out.push("st=" + mkVal(L.startTime)); } catch (e3) {}
         return out.join(";");
+    }
+    function mkKeySig(P) {
+        var t = [], j;
+        for (j = 1; j <= P.numKeys; j++) { t.push(Math.round(P.keyTime(j) * 1000) / 1000); }
+        return "@" + t.join("/");
     }
     function mkTrParse(s) {
         var out = {}, a = String(s || "").split(";"), i, k;
@@ -3185,6 +3191,8 @@ var sayframeHost = (function () {
             try { P = acTransform(L, MK_TR[i]); } catch (e) { P = null; }
             if (!P) { continue; }
             try {
+                // The block's own keys, untouched by the user: the new build makes its own.
+                if (P.numKeys > 0 && made[MK_TR[i]] === mkKeySig(P)) { continue; }
                 if (P.numKeys > 0) {
                     keys = [];
                     for (j = 1; j <= P.numKeys; j++) {
@@ -6306,10 +6314,14 @@ var sayframeHost = (function () {
             list.push(layers[i]);
         }
         // "align": every layer (or its first key) to the time indicator, no staircase.
-        if (order === "align") {
+        // "alignEnd": the end of every layer (its out point) to the time indicator.
+        if (order === "align" || order === "alignEnd") {
             if (!list.length) { throw new Error("STAGGER_NO_KEYS"); }
-            for (i = 0; i < list.length; i++) { shiftOne(list[i], what, comp.time - alignPoint(list[i], what), frame, out); }
+            for (i = 0; i < list.length; i++) {
+                shiftOne(list[i], what, comp.time - (order === "alignEnd" ? list[i].outPoint : alignPoint(list[i], what)), frame, out);
+            }
             out.aligned = true;
+            if (order === "alignEnd") { out.toEnd = true; }
             return out;
         }
         if (list.length < 2) { throw new Error(layers.length < 2 ? "STAGGER_NEEDS_TWO" : "STAGGER_NO_KEYS"); }
@@ -7331,7 +7343,9 @@ var sayframeHost = (function () {
                 dir = new Folder(String(o.folder));
                 if (!dir.exists) { try { dir.create(); } catch (e0) {} }
                 if (!dir.exists) { throw new Error("EXPORT_NO_FOLDER"); }
-                base = exSafe(String(comp.name) + (o.label ? " \u2014 " + o.label : ""));
+                // o.name: the name chosen in the Save window; without it, the comp's name.
+                base = exSafe((o.name ? exSafe(o.name) : String(comp.name)) + (o.label ? " \u2014 " + o.label : ""));
+                if (!base) { base = "Video"; }
                 // Rendering inside an open undo group makes After Effects warn "Undo group mismatch":
                 // the group covers only the setup and is closed before render() (closeGroup).
                 app.beginUndoGroup("Sayframe: export");
@@ -7428,6 +7442,20 @@ var sayframeHost = (function () {
                 var proj = app.project;
                 var inProject = !!(proj.file && proj.file.parent);
                 return { folder: inProject ? proj.file.parent.fsName : fallbackFolder, project: inProject };
+            });
+        },
+
+        // The "Change" button in Quick export: the usual Save window (folder + name, as in After Effects), starting in the current
+        // folder with the comp's name. Returns the folder and the name without ".mp4"; nothing when cancelled.
+        exportPickFile: function (start, name, prompt) {
+            return reply(function () {
+                var f = new Folder(start), picked, path, cut;
+                if (!f.exists) { f = Folder.desktop; }
+                picked = new File(f.fsName + "/" + (exSafe(name) || "Video") + ".mp4").saveDlg(prompt);
+                if (!picked) { return { folder: null }; }
+                path = String(picked.fsName);
+                cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+                return { folder: path.substring(0, cut), name: exSafe(path.substring(cut + 1).replace(/\.mp4$/i, "")) };
             });
         },
 
@@ -7988,6 +8016,7 @@ var sayframeHost = (function () {
         // Grid: o = { rows, cols, gap, split, gapV, round, rand, seed, fit, w, h, mode, numbers, stagger }; labels - layer names.
         // Photos selected in the Project panel go into the card comps of a carousel, one per card, in order.
         orbitPhotos: function (labels) {
+            labels = labels || {};
             return reply(function () {
             var comp = activeComp(), sel = [], cards = {}, n = 0, i, j, k, L, src, m, it, cc, nl, sc, placed = 0, ctrl = null, base = labels.card || "Card ", pw, ph, num;
             try { sel = app.project.selection || []; } catch (eS) { sel = []; }
@@ -8469,8 +8498,9 @@ var sayframeHost = (function () {
                 var res;
                 frames = Math.round(Number(frames));
                 if (what !== "in" && what !== "out" && what !== "layer" && what !== "keys") { throw new Error("BAD_SHIFT_TARGET"); }
-                if (order !== "asc" && order !== "desc" && order !== "selection" && order !== "random" && order !== "align") { throw new Error("BAD_STAGGER_ORDER"); }
-                if (order !== "align" && (isNaN(frames) || frames === 0 || Math.abs(frames) > 100000)) { throw new Error("BAD_SHIFT_FRAMES"); }
+                if (order !== "asc" && order !== "desc" && order !== "selection" && order !== "random" && order !== "align" && order !== "alignEnd") { throw new Error("BAD_STAGGER_ORDER"); }
+                if (order === "alignEnd" && what !== "layer") { throw new Error("BAD_STAGGER_ORDER"); }
+                if (order !== "align" && order !== "alignEnd" && (isNaN(frames) || frames === 0 || Math.abs(frames) > 100000)) { throw new Error("BAD_SHIFT_FRAMES"); }
                 if (!comp.selectedLayers.length) { throw new Error("NO_LAYERS_SELECTED"); }
                 app.beginUndoGroup("Sayframe: stagger");
                 try {

@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.78.0";
+    var VERSION = "1.78.2";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -757,7 +757,7 @@
     var HOST_JSX = IS_PR ? "/jsx/host_pr.jsx" : "/jsx/host.jsx";
     // Команды host_pr.jsx: остальные в Premiere сразу отвечают NOT_IN_PREMIERE, не трогая программу.
     var PR_FNS = ["info", "syntax", "run", "reference", "brandLogo", "brandIcon", "brandComp", "brandFilesInUse", "brandSaveDialog",
-        "exportInfo", "exportOne", "exportReveal", "acSound", "sndTargets", "sndApplyFiles", "sfApply", "sfState", "trApply",
+        "exportInfo", "exportOne", "exportReveal", "exportPickFile", "acSound", "sndTargets", "sndApplyFiles", "sfApply", "sfState", "trApply",
         "easePR", "ecCopy", "ecPaste", "stagger", "anchor", "align", "distribute", "placeImage", "organizeProject", "removeUnused", "cutoutSource", "cutoutApply"];
 
     // ---- Sayframe для Premiere Pro у тех, кто поставил панель раньше (обновлялся из After Effects):
@@ -849,7 +849,8 @@
         { key: "split", tool: "split", label: "Разделить", w: 300, h: 200 },
         { key: "export", label: "Экспорт", w: 340, h: 640 }
     ];
-    var WIN_DEFAULT = ["anim", "tools", "shape", "projects", "ease", "align", "anchor", "stagger", "easecopy", "export"];
+    // Все окна всегда есть в manifest.xml, но без пункта в меню Window › Extensions: их открывает только ↗.
+    var WIN_DEFAULT = WINDOWS.map(function (w) { return w.key; });
 
     function winByKey(key) {
         var i;
@@ -869,12 +870,8 @@
         return !IS_PR && id.indexOf(WIN_PREFIX) === 0 ? winByKey(id.slice(WIN_PREFIX.length)) : null;
     })();
 
-    function windowList(text) {
-        var out = [];
-        if (text === "default" || typeof text !== "string") { return WIN_DEFAULT.slice(); }
-        text.split(",").forEach(function (k) { if (winByKey(k) && out.indexOf(k) < 0) { out.push(k); } });
-        return WINDOWS.map(function (w) { return w.key; }).filter(function (k) { return out.indexOf(k) >= 0; });
-    }
+    // Список окон больше не выбирают: в manifest.xml всегда все (в меню их нет, так что оно не засоряется).
+    function windowList() { return WIN_DEFAULT.slice(); }
 
     // manifest.xml с нужными окнами: прежние окна убираются, новые встают после большой панели.
     function windowsManifest(text, keys) {
@@ -889,7 +886,7 @@
                 "          <ScriptPath>./jsx/host.jsx</ScriptPath>\n          <CEFCommandLine>\n            <Parameter>--enable-nodejs</Parameter>\n" +
                 "            <Parameter>--mixed-context</Parameter>\n          </CEFCommandLine>\n        </Resources>\n        <Lifecycle>\n" +
                 "          <AutoVisible>true</AutoVisible>\n        </Lifecycle>\n        <UI>\n          <Type>Panel</Type>\n" +
-                "          <Menu>Sayframe — " + w.label + "</Menu>\n          <Geometry>\n" +
+                "          <Geometry>\n" +
                 "            <Size>\n              <Height>" + w.h + "</Height>\n              <Width>" + w.w + "</Width>\n            </Size>\n" +
                 "            <MinSize>\n              <Height>120</Height>\n              <Width>200</Width>\n            </MinSize>\n" +
                 "            <MaxSize>\n              <Height>2400</Height>\n              <Width>1200</Width>\n            </MaxSize>\n" +
@@ -947,7 +944,7 @@
         if (known.indexOf(key) >= 0 && window.__adobe_cep__ && typeof window.__adobe_cep__.requestOpenExtension === "function") {
             try {
                 window.__adobe_cep__.requestOpenExtension(WIN_PREFIX + key, "");
-                setStatus("Открываю окно «" + w.label + "». Если оно не появилось: Window › Extensions › Sayframe \u2014 " + w.label + ".", "done");
+                setStatus("Открываю окно «" + w.label + "».", "done");
                 return;
             } catch (e) {}
         }
@@ -965,7 +962,7 @@
         showWindowPicker();
         syncWindowsManifest().then(function (r) {
             if (r === "signed" || r === "noaccess" || r === "nofile") { setStatus(winLockText(r), "error"); return; }
-            setStatus("Окно «" + w.label + "» появится после перезапуска After Effects: Window › Extensions › Sayframe — " + w.label + ".", "done");
+            setStatus("Окно «" + w.label + "» откроется после перезапуска After Effects: нажмите ↗ ещё раз.", "done");
         });
     }
 
@@ -1589,7 +1586,7 @@
         anchorOptsToggle: el("anchorOptsToggle"), anchorSide: el("anchorSide"), alignOptsToggle: el("alignOptsToggle"), alignSide: el("alignSide"), distLabel: el("distLabel"), distGrid: el("distGrid"),
         staggerOptsToggle: el("staggerOptsToggle"), staggerPrevText: el("staggerPrevText"),
         staggerWhat: el("staggerWhat"), staggerStep: el("staggerStep"), staggerLess: el("staggerLess"), staggerMore: el("staggerMore"),
-        staggerOrder: el("staggerOrder"), staggerOrderName: el("staggerOrderName"), staggerBtn: el("staggerBtn"), staggerActs: el("staggerActs"),
+        staggerOrder: el("staggerOrder"), staggerOrderName: el("staggerOrderName"), staggerBtn: el("staggerBtn"), staggerActs: el("staggerActs"), staggerLayerActs: el("staggerLayerActs"),
         frames: el("frames"), settingsSaved: el("settingsSaved"),
         modal: el("modal"), modalTitle: el("modalTitle"), modalText: el("modalText"), modalCode: el("modalCode"),
         modalButtons: el("modalButtons"),
@@ -8250,6 +8247,10 @@
     var EX_K = 0.6;
     var exState = { levels: ["normal"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {}, k: EX_K, kq: {} };
     var exInfo = null, exPollBusy = false, exPollKey = "", exFolderNow = "", exDefaultNow = "";
+    // Название из окна «Сохранить как» — только для той композиции, для которой его дали.
+    var exName = "", exNameComp = "";
+
+    function exNameNow() { return exName && exInfo && exInfo.comp && exInfo.comp.name === exNameComp ? exName : ""; }
     try {
         (function () {
             var v = JSON.parse(window.localStorage.getItem(EXPORT_KEY) || "{}") || {};
@@ -8342,9 +8343,10 @@
     function showExFolder(path) {
         var parts = String(path || "").split(/[\\\/]/).filter(Boolean);
         exFolderNow = path;
-        ui.exFolder.textContent = path === exDefaultNow && exInfo && exInfo.projectFolder ? "Рядом с проектом / Экспорт" :
-            "📁 " + (parts.length > 2 ? "…/" : "/") + parts.slice(-2).join("/");
-        ui.exFolder.title = path;
+        var nm = exNameNow();
+        ui.exFolder.textContent = (path === exDefaultNow && exInfo && exInfo.projectFolder ? "Рядом с проектом / Экспорт" :
+            "📁 " + (parts.length > 2 ? "…/" : "/") + parts.slice(-2).join("/")) + (nm ? "/" + nm + ".mp4" : "");
+        ui.exFolder.title = path + (nm ? "/" + nm + ".mp4" : "");
     }
 
     function drawExport() {
@@ -8443,10 +8445,13 @@
         if (busy) { return; }
         try {
             if (start === exDefaultNow) { try { await platform.mkdirp(start); } catch (e1) {} }
-            res = await host("snapPickFolder", [start, "Папка для видео"]);
+            // Обычное окно «Сохранить как»: папка и название сразу, как в самом After Effects.
+            res = await host("exportPickFile", [start, exNameNow() || (exInfo && exInfo.comp ? exInfo.comp.name : "Video"), "Сохранить видео"]);
             if (res.folder) {
                 exState.folder = res.folder;
                 storeExport();
+                exName = res.name || "";
+                exNameComp = exName && exInfo && exInfo.comp ? exInfo.comp.name : "";
                 showExFolder(res.folder);
             }
         } catch (e) {
@@ -8463,7 +8468,7 @@
         var row = document.createElement("div"), st = document.createElement("span"), nm = document.createElement("span"), sm = document.createElement("small");
         row.className = "ex-row";
         st.className = "ex-st"; st.textContent = "○";
-        nm.className = "ex-nm"; nm.textContent = exInfo.comp.name + " — " + job.label + ".mp4";
+        nm.className = "ex-nm"; nm.textContent = (exNameNow() || exInfo.comp.name) + (job.label ? " — " + job.label : "") + ".mp4";
         sm.textContent = "ждёт";
         row.appendChild(st); row.appendChild(nm); row.appendChild(sm);
         job.row = row; job.st = st; job.nm = nm; job.sm = sm;
@@ -8471,12 +8476,14 @@
     }
 
     async function runExport() {
-        var jobs, folder, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null, jobDur = exDur();
+        var jobs, folder, name, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null, jobDur = exDur();
         if (busy || !exInfo) { return; }
         folder = exFolderNow || exDefaultNow;
+        name = exNameNow();
         jobs = exState.levels.map(function (id) {
             var s = exSize(id);
-            return { id: id, w: s.w, h: s.h, label: id === "custom" ? s.w + "x" + s.h : EX_LEVELS[id].label, quality: exQualityOf(id), mbps: exRate(id) };
+            // Своё название и одно видео — файл ровно с этим названием; несколько — к названию добавляется качество.
+            return { id: id, w: s.w, h: s.h, label: name && exState.levels.length === 1 ? "" : id === "custom" ? s.w + "x" + s.h : EX_LEVELS[id].label, quality: exQualityOf(id), mbps: exRate(id) };
         });
         setBusy(true);
         ui.exSetup.hidden = true;
@@ -8502,11 +8509,11 @@
         }
         for (i = 0; i < jobs.length; i++) {
             j = jobs[i];
-            now.textContent = "Сохраняю «" + exInfo.comp.name + "» — " + j.label + (jobs.length > 1 ? " (" + (i + 1) + " из " + jobs.length + ")" : "");
+            now.textContent = "Сохраняю «" + (name || exInfo.comp.name) + "»" + (j.label ? " — " + j.label : "") + (jobs.length > 1 ? " (" + (i + 1) + " из " + jobs.length + ")" : "");
             j.st.textContent = "●"; j.sm.textContent = "сохраняю…";
             bar.firstChild.style.width = Math.round(i / jobs.length * 100) + "%";
             try {
-                r = await host("exportOne", [{ w: j.w, h: j.h, label: j.label, fit: exState.fit, quality: j.quality, mbps: j.mbps, span: exState.span,
+                r = await host("exportOne", [{ w: j.w, h: j.h, label: j.label, name: name, fit: exState.fit, quality: j.quality, mbps: j.mbps, span: exState.span,
                     folder: folder, ame: !!(exInfo.ame && exState.ame), bin: "Sayframe Экспорт" }]);
                 done++;
                 last = r.path;
@@ -12413,13 +12420,17 @@
     // Значки пяти действий «Ключей»: ромбики, розовый указатель времени с «шапкой», как у кнопок порядка.
     function keyActIcon(mode) {
         function k(x, y, o) { return "<path d=\"M" + x + " " + (y - 3) + "l3 3-3 3-3-3z\"" + (o ? " opacity=\"" + o + "\"" : "") + "/>"; }
+        function bar(x, y, w) { return "<rect x=\"" + x + "\" y=\"" + (y - 2) + "\" width=\"" + w + "\" height=\"4\" rx=\"1.6\"/>"; }
         function ph(x) { return "<path class=\"st-playhead\" d=\"M" + x + " 4V23\"/><path class=\"st-playhead-cap\" d=\"M" + (x - 2.6) + " 0.5h5.2v2.6l-2.6 2.2-2.6-2.2z\"/>"; }
         var svg = {
             mirror: k(8, 9) + k(14, 15) + ph(20) + k(26, 15, 0.6) + k(32, 9, 0.6),
             reverse: k(9, 18) + k(31, 18) + "<path class=\"st-arc\" d=\"M12 10C16 4 24 4 28 10M12 10l-.4-3.3M12 10l3.1-1.2M28 10l.4-3.3M28 10l-3.1-1.2\"/>",
             first: ph(8) + k(8, 9) + k(8, 17) + k(19, 9, 0.6) + k(26, 17, 0.6),
             last: ph(32) + k(32, 9) + k(32, 17) + k(21, 9, 0.6) + k(14, 17, 0.6),
-            clone: k(6, 9) + k(12, 15) + ph(22) + k(22, 9, 0.6) + k(28, 15, 0.6)
+            clone: k(6, 9) + k(12, 15) + ph(22) + k(22, 9, 0.6) + k(28, 15, 0.6),
+            // «Слои»: полоски слоёв начинаются (или заканчиваются) на указателе.
+            start: ph(8) + bar(9, 8, 18) + bar(9, 14, 24) + bar(9, 20, 13),
+            end: ph(32) + bar(13, 8, 18) + bar(7, 14, 24) + bar(18, 20, 13)
         }[mode];
         return "<svg viewBox=\"0 0 40 24\" aria-hidden=\"true\">" + svg + "</svg>";
     }
@@ -12429,10 +12440,12 @@
         Array.prototype.forEach.call(ui.staggerOrder.querySelectorAll("button[data-v]"), function (b) {
             b.innerHTML = stairIcon(b.getAttribute("data-v"), keys);
             // У ключей «К указателю» нет: это делает действие «По первому» внизу.
-            if (b.getAttribute("data-v") === "align") { b.hidden = keys && !IS_PR; }
+            // В «Слоях» вместо него две кнопки внизу: «Начало» и «Конец» к указателю (в Premiere — как было).
+            if (b.getAttribute("data-v") === "align") { b.hidden = !IS_PR; }
         });
-        ui.staggerOrder.classList.toggle("no-align", keys && !IS_PR);
+        ui.staggerOrder.classList.toggle("no-align", !IS_PR);
         if (ui.staggerActs) { ui.staggerActs.hidden = !keys || IS_PR; }
+        if (ui.staggerLayerActs) { ui.staggerLayerActs.hidden = keys || IS_PR; }
         var align = order === "align";
         var stepRow = ui.staggerBtn.closest(".tool-card").querySelector(".shift-row-step");
         if (stepRow) { stepRow.hidden = align; }
@@ -12445,7 +12458,7 @@
     }
 
     function drawShift() {
-        if (motion.staggerWhat === "keys" && motion.staggerOrder === "align" && !IS_PR) { motion.staggerOrder = "asc"; }
+        if (motion.staggerOrder === "align" && !IS_PR) { motion.staggerOrder = "asc"; }
         pressGroupV(ui.staggerWhat, motion.staggerWhat);
         pressGroupV(ui.staggerOrder, motion.staggerOrder);
         ui.staggerStep.value = String(motion.staggerStep);
@@ -12491,6 +12504,17 @@
                 return;
             }
             showShiftResult(res, what, prWords("Лесенка: " + plural(res.steps, "слой", "слоя", "слоёв") + ", шаг " + plural(frames, "кадр", "кадра", "кадров") + "."));
+        }).catch(toolFailed);
+    }
+
+    // «Слои»: начало или конец всех выделенных слоёв — на указатель времени.
+    function onLayerAlign(end) {
+        if (busy) { return; }
+        setBusy(true);
+        setStatus("Двигаю слои…", "busy");
+        host("stagger", ["layer", 1, end ? "alignEnd" : "align"]).then(function (res) {
+            setBusy(false);
+            showShiftResult(res, "layer", (end ? "Конец к указателю: " : "Начало к указателю: ") + plural(res.moved, "слой", "слоя", "слоёв") + ".");
         }).catch(toolFailed);
     }
 
@@ -12542,6 +12566,12 @@
             input.addEventListener("focus", function () { input.select(); });
         });
         ui.staggerBtn.addEventListener("click", onStagger);
+        if (ui.staggerLayerActs) {
+            Array.prototype.forEach.call(ui.staggerLayerActs.querySelectorAll("button[data-a]"), function (b) {
+                b.innerHTML = keyActIcon(b.getAttribute("data-a"));
+                b.addEventListener("click", function () { onLayerAlign(b.getAttribute("data-a") === "end"); });
+            });
+        }
         if (ui.staggerActs) {
             Array.prototype.forEach.call(ui.staggerActs.querySelectorAll("button[data-a]"), function (b) {
                 b.innerHTML = keyActIcon(b.getAttribute("data-a"));

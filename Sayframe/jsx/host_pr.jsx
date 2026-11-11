@@ -1022,6 +1022,19 @@ var sayframeHost = (function () {
             });
         },
 
+        // The "Change" button in Quick export: the usual Save window (folder + name), starting in the current folder.
+        exportPickFile: function (start, name, prompt) {
+            return reply(function () {
+                var f = new Folder(start), picked, path, cut;
+                if (!f.exists) { f = Folder.desktop; }
+                picked = new File(f.fsName + "/" + (exSafe(name) || "Video") + ".mp4").saveDlg(prompt);
+                if (!picked) { return { folder: null }; }
+                path = String(picked.fsName);
+                cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+                return { folder: path.substring(0, cut), name: exSafe(path.substring(cut + 1).replace(/\.mp4$/i, "")) };
+            });
+        },
+
         // Saves the open sequence as one MP4 (H.264). o = { w, h, label, quality, mbps, span: all|work, folder, ame }.
         // Premiere renders it here (blocks until done); with ame it goes to Media Encoder's queue.
         exportOne: function (o) {
@@ -1034,7 +1047,8 @@ var sayframeHost = (function () {
                 dir = new Folder(String(o.folder));
                 if (!dir.exists) { try { dir.create(); } catch (e0) {} }
                 if (!dir.exists) { throw new Error("EXPORT_NO_FOLDER"); }
-                base = exSafe(String(s.name) + (o.label ? " \u2014 " + o.label : ""));
+                base = exSafe((o.name ? exSafe(o.name) : String(s.name)) + (o.label ? " \u2014 " + o.label : ""));
+                if (!base) { base = "Video"; }
                 rate = Number(o.mbps) > 0 ? Number(o.mbps) : (EX_RATE[o.quality] || 15);
                 same = w === Number(s.frameSizeHorizontal) && h === Number(s.frameSizeVertical);
                 epr = exMakeEpr(rate, w, h, same);
