@@ -7403,6 +7403,21 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
+  // Logos are shown whole and centred on a checkerboard; a white logo gets the dark one. The colour button: a soft pastel ring.
+  {
+    const png = path.join(os.tmpdir(), "sf-logo-tone.png"); fs.writeFileSync(png, REAL_PNG);
+    const sub = { id: "b1", name: "Alif", colors: [], gradients: [], fonts: { head: "", body: "" }, texts: [], logos: [{ id: "l1", name: "цветной", file: png, variant: "main" }, { id: "l2", name: "белый", file: png, variant: "white" }] };
+    p = await open({});
+    await p.page.evaluate((v) => { localStorage.setItem("sayframe.brands.v1", JSON.stringify(v)); localStorage.setItem("sayframe.brandOpen.v1", JSON.stringify(["logos", "colors"])); }, { active: "g1", items: [{ id: "g1", name: "Alif", active: "b1", subs: [sub] }] });
+    await p.restart(); await p.page.click("#tabBrand");
+    t = await p.page.evaluate(() => Array.from(document.querySelectorAll("#brandLogos .brand-logo")).map((x) => { const pic = x.querySelector(".brand-logo-img"), img = pic.querySelector("img"), cs = img && getComputedStyle(img); return [pic.classList.contains("on-dark") ? "dark" : "light", cs && cs.objectFit, /conic/.test(getComputedStyle(pic).backgroundImage), getComputedStyle(x.querySelector("small")).display].join(":"); }).join("|"));
+    check("CL7 logos are whole (contain) on a checkerboard; the white one sits on the dark checkerboard; names under the tiles", t === "light:contain:true:block|dark:contain:true:block", t);
+    t = await p.page.evaluate(() => getComputedStyle(document.getElementById("brandColorPick")).backgroundImage);
+    check("CL7 the colour button has a soft pastel ring, not the bright rainbow", /conic-gradient/.test(t) && !/rgb\(255, 0, 0\)/.test(t) && /rgb\(238, 136, 136\)/.test(t), t);
+    check("CL7 no page errors", p.errors.filter((e) => !/Not allowed to load local resource/.test(e)).length === 0, p.errors.join(" | "));
+    await p.close();
+  }
+
   // The AI and the brand book: names, logo variants, «@» in the request and «AI поймёт так».
   {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sf-mention-"));
