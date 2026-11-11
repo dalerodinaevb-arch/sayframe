@@ -4880,7 +4880,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   check("T1 the choices are buttons: what to move, and four orders (the last one: to the time indicator)", (await p.page.locator("#staggerWhat button").evaluateAll((l) => l.map((b) => b.getAttribute("data-v")).join())) === "layer,keys" && (await orderIds(p)) === "asc,random,desc,align" && (await p.page.locator("#staggerWhat button span").allInnerTexts()).join() === "Слои,Ключи" && (await p.page.getAttribute('#staggerOrder button[data-v="align"]', "aria-label")) === "К указателю времени");
   check("T1 the four order buttons sit in one row", await p.page.evaluate(() => new Set(Array.prototype.map.call(document.querySelectorAll("#staggerOrder button"), (b) => Math.round(b.getBoundingClientRect().top))).size === 1));
   check("T1 defaults: layers, one frame, top to bottom", [await val(p, "staggerWhat"), await p.page.inputValue("#staggerStep"), await val(p, "staggerOrder")].join() === "layer,1,asc" && (await p.page.locator("#staggerPrevText").innerText()) === "Каждый следующий слой — на 1 кадр позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 12 && (await p.page.locator('#staggerOrder button[data-v="align"] svg .st-playhead').count()) === 1 && (await p.page.locator("#staggerBtn").innerText()) === "Расставить");
-  check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".stagger-card button:not(.tool-grip), .stagger-card input"), (el) => { if (el.closest("[hidden]")) return true; const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
+  check("T1 every control is visible and named", (await p.page.evaluate(() => Array.prototype.every.call(document.querySelectorAll(".stagger-card button:not(.tool-grip):not(.win-open), .stagger-card input"), (el) => { if (el.closest("[hidden]")) return true; const r = el.getBoundingClientRect(); return r.width >= 14 && r.height >= 14 && !!(el.title || el.getAttribute("aria-label") || el.labels && el.labels.length); }))));
   await pickSeg(p, "staggerOrder", "desc"); await pickSeg(p, "staggerWhat", "keys"); await p.page.click("#staggerMore"); await p.page.click("#staggerMore");
   check("T1 «Ключи»: the order icons turn into keyframes, the text says so; + and - change the step", (await p.page.locator("#staggerPrevText").innerText()) === "Ключи каждого следующего слоя — на 3 кадра позже предыдущего." && (await p.page.locator("#staggerOrder button svg rect").count()) === 0 && (await p.page.locator("#staggerOrder button svg path").count()) === 37 && (await p.page.locator("#staggerOrderName").innerText()) === "Снизу вверх" && (await p.page.inputValue("#staggerStep")) === "3", await p.page.locator("#staggerPrevText").innerText());
   check("T1 «Ключи»: no «К указателю времени» order (the «По первому» action does it)", !(await vis(p, '#staggerOrder button[data-v="align"]')) && (await vis(p, '#staggerActs button[data-a="first"]')));
@@ -6566,6 +6566,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.click("#exportBtn");
     check("WN6 the export sheet has ↗ too", await vis(p, '#exHead .win-open[data-win="export"]'));
     await p.close();
+    for (const d of ["studio", "glass"]) {
+      p = await open({ ownExt: true, settings: { design: d, designSet: 2 } });
+      await p.page.click("#tabMotion"); await p.page.hover('section[data-tool="ease"]');
+      check("WN9 no ↗ in the «" + d + "» look (only in «After Effects»)", (await p.page.locator(".win-open:visible").count()) === 0);
+      await p.close();
+    }
 
     p = await open({ ownExt: true, settings: { design: "ae", designSet: 2 }, hostExts: ["com.sayframe.ae.panel"] });
     await p.page.click("#tabMotion"); await p.page.hover('section[data-tool="ease"]'); await p.page.click('section[data-tool="ease"] .win-open'); await p.page.waitForTimeout(300);

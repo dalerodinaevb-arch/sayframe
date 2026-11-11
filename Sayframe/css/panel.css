@@ -2676,3 +2676,5 @@ html[data-design="ae"] .tb-tile, html[data-design="ae"] .tb-mst { border-radius:
 
 .ac-autoplay[hidden] { display: none !important; }
 #setTabWin[hidden] { display: none !important; }
+/* ↗ (своё окно) — только в теме «After Effects»; в «Студии» и «Стекле» стрелок нет. */
+html:not([data-design="ae"]) .win-open { display: none !important; }
