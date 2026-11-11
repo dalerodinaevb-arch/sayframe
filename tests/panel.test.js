@@ -6340,7 +6340,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() === "≈ 4,1 МБ,≈ 12 МБ,≈ 30 МБ," && (await pressed(p, "#exSpan button")) === "all" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 12 МБ" && (await overflow(p)) <= 0,
       (await p.page.locator("#exTargets .ex-mb").allInnerTexts()).join() + " | " + await p.page.locator("#exGo").innerText());
     t = await tileBox(p, "normal");
-    check("EX1 a horizontal comp -> horizontal tiles; no size question, no quality row (the tile is the quality)", t.width > t.height * 1.3 && !(await vis(p, "#exFitRow")) && !(await vis(p, "#exQualRow")), JSON.stringify(t));
+    check("EX1 small tiles, all four in one row (no more than 64 px tall); no size question, no quality row (the tile is the quality)", t.height <= 64 && Math.abs((await tileBox(p, "custom")).y - t.y) < 2 && !(await vis(p, "#exFitRow")) && !(await vis(p, "#exQualRow")), JSON.stringify(t));
     check("EX1 unsaved project -> Desktop › «Sayframe Экспорт»; no Media Encoder switch when there is no Media Encoder", (await p.page.getAttribute("#exFolder", "title")) === exDir && !(await vis(p, "#exAmeRow")), await p.page.getAttribute("#exFolder", "title"));
     await p.page.screenshot({ path: path.join(SHOTS, "90-export-sheet.png") });
     await exRun(p);
@@ -6359,6 +6359,27 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     t = p.ae.log.undo.filter((x) => /export|^end$|^render$/.test(x)).join(" ");
     check("EX3b the export's undo group closes before the render (no «Undo group mismatch» warning in After Effects)", /^(begin:Sayframe: export end render ?)+$/.test(t + " "), t);
     await p.close();
+
+    // «Изменить»: the usual Save window — folder and the video's name at once, as in After Effects.
+    {
+      const pickDir = path.join(os.tmpdir(), "sf-ex-name-" + Date.now());
+      fs.mkdirSync(pickDir, { recursive: true });
+      p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {}, saveAs: path.join(pickDir, "Мой ролик.mp4") });
+      await exOpen(p);
+      await p.page.click("#exBrowse"); await p.page.waitForFunction(() => /Мой ролик/.test(document.getElementById("exFolder").textContent));
+      check("EX14 «Изменить» opens a Save window with the comp's name; the folder line shows …/folder/Мой ролик.mp4", p.ae.log.saveDlg.length === 1 && /\/Main\.mp4$/.test(p.ae.log.saveDlg[0].path) && /Мой ролик\.mp4$/.test(await p.page.locator("#exFolder").innerText()) && (await p.page.getAttribute("#exFolder", "title")) === path.join(pickDir, "Мой ролик.mp4"), JSON.stringify(p.ae.log.saveDlg) + " " + await p.page.locator("#exFolder").innerText());
+      await exRun(p);
+      check("EX14 one video -> the file is exactly «Мой ролик.mp4» in that folder", mp4s(pickDir).join() === "Мой ролик.mp4" && (await p.page.locator("#exResults .ex-row.done").count()) === 1, mp4s(pickDir).join());
+      await p.page.click("#exResults .ex-again .ghost");
+      await p.page.click('#exTargets [data-t="max"]'); await exRun(p);
+      check("EX14 two qualities -> the name plus the quality: «Мой ролик — Среднее.mp4», «Мой ролик — Высокое.mp4»", mp4s(pickDir).join() === "Мой ролик — Высокое.mp4,Мой ролик — Среднее.mp4,Мой ролик.mp4", mp4s(pickDir).join());
+      p.ae.log.dcMain.name = "Other";
+      await p.page.click("#exResults .ex-again .ghost"); await p.page.click("#exClose"); await exOpen(p);
+      await p.page.waitForFunction(() => !/Мой ролик/.test(document.getElementById("exFolder").textContent), null, { timeout: 4000 }).catch(() => {});
+      check("EX14 another comp -> its own name again (the folder stays)", !/Мой ролик/.test(await p.page.locator("#exFolder").innerText()) && (await p.page.getAttribute("#exFolder", "title")) === pickDir, await p.page.locator("#exFolder").innerText());
+      check("EX14 no page errors", p.errors.length === 0, p.errors.join(" | "));
+      await p.close();
+    }
 
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
     p.ae.log.dcMain.workAreaStart = 2; p.ae.log.dcMain.workAreaDuration = 3;
@@ -6389,7 +6410,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p.ae.log.dcMain.width = 1080; p.ae.log.dcMain.height = 1920;
     await exOpen(p);
     t = await tileBox(p, "normal");
-    check("EX9 a vertical comp -> vertical tiles, in one row", t.height > t.width * 1.3 && Math.abs((await tileBox(p, "custom")).y - t.y) < 2, JSON.stringify(t));
+    check("EX9 a vertical comp -> the same small tiles in one row", t.height <= 64 && Math.abs((await tileBox(p, "custom")).y - t.y) < 2, JSON.stringify(t));
     m = await p.page.evaluate(() => { const b = document.querySelector('#exTargets [data-t="normal"]'), r = b.querySelector(".ex-rate").getBoundingClientRect(), bb = b.getBoundingClientRect(); return [r.right <= bb.right - 4, b.querySelector(".ex-mb").getBoundingClientRect().right <= bb.right, b.querySelector(".ex-rate em").textContent]; });
     check("EX9 narrow vertical tile: − 15 + fits inside", m[0] && m[1] && m[2] === "15", JSON.stringify(m));
     await p.page.screenshot({ path: path.join(SHOTS, "92-export-vertical.png") });
@@ -6398,27 +6419,28 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p.ae.log.dcMain.width = 1080; p.ae.log.dcMain.height = 1080;
     await exOpen(p);
     t = await tileBox(p, "normal");
-    check("EX9 a square comp -> square tiles", Math.abs(t.width - t.height) < 3, JSON.stringify(t));
+    check("EX9 a square comp -> the same small tiles", t.height <= 64, JSON.stringify(t));
     await p.close();
 
     p = await open({ orbit: { layers: [{ name: "BG", selected: false }] }, rq: {} });
     await exOpen(p);
-    const rateOf = (id) => p.page.locator('#exTargets [data-t="' + id + '"] .ex-rate em').evaluate((e) => e.textContent + getComputedStyle(e, "::after").content.replace(/"/g, ""));
-    check("EX10 every tile shows its bitrate; − and + only on the picked one", (await rateOf("light")) === "5 Мбит/с" && (await rateOf("normal")) === "15 Мбит/с" && (await rateOf("max")) === "40 Мбит/с" &&
+    const rateOf = (id) => p.page.locator('#exTargets [data-t="' + id + '"] .ex-rate em').evaluate((e) => e.textContent);
+    const unitOf = (id) => p.page.locator('#exTargets [data-t="' + id + '"] .ex-rate em').evaluate((e) => getComputedStyle(e, "::after").content.replace(/"/g, ""));
+    check("EX10 every tile shows its bitrate (with «Мбит/с» when not picked; the small picked tile shows − 15 +); − and + only on the picked one", (await unitOf("light")) === " Мбит/с" && (await unitOf("normal")) === "" && (await rateOf("light")) === "5" && (await rateOf("normal")) === "15" && (await rateOf("max")) === "40" &&
       (await vis(p, '#exTargets [data-t="normal"] .ex-rate [data-d="1"]')) && !(await vis(p, '#exTargets [data-t="light"] .ex-rate [data-d="1"]')) && (await overflow(p)) <= 0);
     await p.page.click('#exTargets [data-t="normal"] .ex-rate [data-d="1"]');
-    check("EX10 + on «Среднее» -> 18 Мбит/с, MB and the button follow, the tile stays picked", (await rateOf("normal")) === "18 Мбит/с" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
+    check("EX10 + on «Среднее» -> 18 Мбит/с, MB and the button follow, the tile stays picked", (await rateOf("normal")) === "18" && (await pressed(p, "#exTargets .ex-t")) === "normal" &&
       (await p.page.locator('#exTargets [data-t="normal"] .ex-mb').innerText()) === "≈ 14 МБ" && (await p.page.locator("#exGo").innerText()).trim() === "Сохранить видео · ≈ 14 МБ");
     await p.page.click('#exTargets [data-t="light"]'); await p.page.click('#exTargets [data-t="normal"]');
-    check("EX10 − on a tile that is not picked just picks it (and the other one taken away)", (await pressed(p, "#exTargets .ex-t")) === "light" && (await rateOf("light")) === "5 Мбит/с");
+    check("EX10 − on a tile that is not picked just picks it (and the other one taken away)", (await pressed(p, "#exTargets .ex-t")) === "light" && (await rateOf("light")) === "5");
     for (let i = 0; i < 6; i++) await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="-1"]');
-    check("EX10 − stops at 1 Мбит/с", (await rateOf("light")) === "1 Мбит/с" && (await p.page.locator('#exTargets [data-t="light"] .ex-rate [data-d="-1"]').getAttribute("class")) === "off");
+    check("EX10 − stops at 1 Мбит/с", (await rateOf("light")) === "1" && (await p.page.locator('#exTargets [data-t="light"] .ex-rate [data-d="-1"]').getAttribute("class")) === "off");
     await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="1"]'); await p.page.click('#exTargets [data-t="light"] .ex-rate [data-d="1"]');
     await exRun(p);
     check("EX10 the bitrate goes to After Effects: 3 Мбит/с -> the nearest H.264 template (5 Mbps)", p.ae.log.rq.rendered.length === 1 && /5 Mbps$/.test(p.ae.log.rq.rendered[0].tpl), JSON.stringify(p.ae.log.rq.rendered));
     await p.page.click("#exResults .ex-again .ghost");
     await p.page.keyboard.press("Escape"); await exOpen(p);
-    check("EX10 the bitrates are remembered", (await rateOf("light")) === "3 Мбит/с" && (await rateOf("normal")) === "18 Мбит/с");
+    check("EX10 the bitrates are remembered", (await rateOf("light")) === "3" && (await rateOf("normal")) === "18");
     await p.close();
 
     // Several tiles at once: one video per tile. «Всю композицию» really renders the whole comp even when AE's default says work area.

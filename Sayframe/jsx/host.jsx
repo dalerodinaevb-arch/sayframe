@@ -7343,7 +7343,9 @@ var sayframeHost = (function () {
                 dir = new Folder(String(o.folder));
                 if (!dir.exists) { try { dir.create(); } catch (e0) {} }
                 if (!dir.exists) { throw new Error("EXPORT_NO_FOLDER"); }
-                base = exSafe(String(comp.name) + (o.label ? " \u2014 " + o.label : ""));
+                // o.name: the name chosen in the Save window; without it, the comp's name.
+                base = exSafe((o.name ? exSafe(o.name) : String(comp.name)) + (o.label ? " \u2014 " + o.label : ""));
+                if (!base) { base = "Video"; }
                 // Rendering inside an open undo group makes After Effects warn "Undo group mismatch":
                 // the group covers only the setup and is closed before render() (closeGroup).
                 app.beginUndoGroup("Sayframe: export");
@@ -7440,6 +7442,20 @@ var sayframeHost = (function () {
                 var proj = app.project;
                 var inProject = !!(proj.file && proj.file.parent);
                 return { folder: inProject ? proj.file.parent.fsName : fallbackFolder, project: inProject };
+            });
+        },
+
+        // «Изменить» in Quick export: the usual Save window (folder + name, as in After Effects), starting in the current
+        // folder with the comp's name. Returns the folder and the name without ".mp4"; nothing when cancelled.
+        exportPickFile: function (start, name, prompt) {
+            return reply(function () {
+                var f = new Folder(start), picked, path, cut;
+                if (!f.exists) { f = Folder.desktop; }
+                picked = new File(f.fsName + "/" + (exSafe(name) || "Video") + ".mp4").saveDlg(prompt);
+                if (!picked) { return { folder: null }; }
+                path = String(picked.fsName);
+                cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+                return { folder: path.substring(0, cut), name: exSafe(path.substring(cut + 1).replace(/\.mp4$/i, "")) };
             });
         },
 

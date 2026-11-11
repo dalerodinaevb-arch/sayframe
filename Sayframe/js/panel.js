@@ -757,7 +757,7 @@
     var HOST_JSX = IS_PR ? "/jsx/host_pr.jsx" : "/jsx/host.jsx";
     // Команды host_pr.jsx: остальные в Premiere сразу отвечают NOT_IN_PREMIERE, не трогая программу.
     var PR_FNS = ["info", "syntax", "run", "reference", "brandLogo", "brandIcon", "brandComp", "brandFilesInUse", "brandSaveDialog",
-        "exportInfo", "exportOne", "exportReveal", "acSound", "sndTargets", "sndApplyFiles", "sfApply", "sfState", "trApply",
+        "exportInfo", "exportOne", "exportReveal", "exportPickFile", "acSound", "sndTargets", "sndApplyFiles", "sfApply", "sfState", "trApply",
         "easePR", "ecCopy", "ecPaste", "stagger", "anchor", "align", "distribute", "placeImage", "organizeProject", "removeUnused", "cutoutSource", "cutoutApply"];
 
     // ---- Sayframe для Premiere Pro у тех, кто поставил панель раньше (обновлялся из After Effects):
@@ -8247,6 +8247,10 @@
     var EX_K = 0.6;
     var exState = { levels: ["normal"], quality: "normal", span: "all", fit: "blur", folder: "", ame: true, cw: 1080, ch: 1080, rates: {}, k: EX_K, kq: {} };
     var exInfo = null, exPollBusy = false, exPollKey = "", exFolderNow = "", exDefaultNow = "";
+    // Название из окна «Сохранить как» — только для той композиции, для которой его дали.
+    var exName = "", exNameComp = "";
+
+    function exNameNow() { return exName && exInfo && exInfo.comp && exInfo.comp.name === exNameComp ? exName : ""; }
     try {
         (function () {
             var v = JSON.parse(window.localStorage.getItem(EXPORT_KEY) || "{}") || {};
@@ -8339,9 +8343,10 @@
     function showExFolder(path) {
         var parts = String(path || "").split(/[\\\/]/).filter(Boolean);
         exFolderNow = path;
-        ui.exFolder.textContent = path === exDefaultNow && exInfo && exInfo.projectFolder ? "Рядом с проектом / Экспорт" :
-            "📁 " + (parts.length > 2 ? "…/" : "/") + parts.slice(-2).join("/");
-        ui.exFolder.title = path;
+        var nm = exNameNow();
+        ui.exFolder.textContent = (path === exDefaultNow && exInfo && exInfo.projectFolder ? "Рядом с проектом / Экспорт" :
+            "📁 " + (parts.length > 2 ? "…/" : "/") + parts.slice(-2).join("/")) + (nm ? "/" + nm + ".mp4" : "");
+        ui.exFolder.title = path + (nm ? "/" + nm + ".mp4" : "");
     }
 
     function drawExport() {
@@ -8440,10 +8445,13 @@
         if (busy) { return; }
         try {
             if (start === exDefaultNow) { try { await platform.mkdirp(start); } catch (e1) {} }
-            res = await host("snapPickFolder", [start, "Папка для видео"]);
+            // Обычное окно «Сохранить как»: папка и название сразу, как в самом After Effects.
+            res = await host("exportPickFile", [start, exNameNow() || (exInfo && exInfo.comp ? exInfo.comp.name : "Video"), "Сохранить видео"]);
             if (res.folder) {
                 exState.folder = res.folder;
                 storeExport();
+                exName = res.name || "";
+                exNameComp = exName && exInfo && exInfo.comp ? exInfo.comp.name : "";
                 showExFolder(res.folder);
             }
         } catch (e) {
@@ -8460,7 +8468,7 @@
         var row = document.createElement("div"), st = document.createElement("span"), nm = document.createElement("span"), sm = document.createElement("small");
         row.className = "ex-row";
         st.className = "ex-st"; st.textContent = "○";
-        nm.className = "ex-nm"; nm.textContent = exInfo.comp.name + " — " + job.label + ".mp4";
+        nm.className = "ex-nm"; nm.textContent = (exNameNow() || exInfo.comp.name) + (job.label ? " — " + job.label : "") + ".mp4";
         sm.textContent = "ждёт";
         row.appendChild(st); row.appendChild(nm); row.appendChild(sm);
         job.row = row; job.st = st; job.nm = nm; job.sm = sm;
@@ -8468,12 +8476,14 @@
     }
 
     async function runExport() {
-        var jobs, folder, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null, jobDur = exDur();
+        var jobs, folder, name, now, bar, i, j, r, done = 0, failed = 0, ame = false, again, back, last = null, jobDur = exDur();
         if (busy || !exInfo) { return; }
         folder = exFolderNow || exDefaultNow;
+        name = exNameNow();
         jobs = exState.levels.map(function (id) {
             var s = exSize(id);
-            return { id: id, w: s.w, h: s.h, label: id === "custom" ? s.w + "x" + s.h : EX_LEVELS[id].label, quality: exQualityOf(id), mbps: exRate(id) };
+            // Своё название и одно видео — файл ровно с этим названием; несколько — к названию добавляется качество.
+            return { id: id, w: s.w, h: s.h, label: name && exState.levels.length === 1 ? "" : id === "custom" ? s.w + "x" + s.h : EX_LEVELS[id].label, quality: exQualityOf(id), mbps: exRate(id) };
         });
         setBusy(true);
         ui.exSetup.hidden = true;
@@ -8499,11 +8509,11 @@
         }
         for (i = 0; i < jobs.length; i++) {
             j = jobs[i];
-            now.textContent = "Сохраняю «" + exInfo.comp.name + "» — " + j.label + (jobs.length > 1 ? " (" + (i + 1) + " из " + jobs.length + ")" : "");
+            now.textContent = "Сохраняю «" + (name || exInfo.comp.name) + "»" + (j.label ? " — " + j.label : "") + (jobs.length > 1 ? " (" + (i + 1) + " из " + jobs.length + ")" : "");
             j.st.textContent = "●"; j.sm.textContent = "сохраняю…";
             bar.firstChild.style.width = Math.round(i / jobs.length * 100) + "%";
             try {
-                r = await host("exportOne", [{ w: j.w, h: j.h, label: j.label, fit: exState.fit, quality: j.quality, mbps: j.mbps, span: exState.span,
+                r = await host("exportOne", [{ w: j.w, h: j.h, label: j.label, name: name, fit: exState.fit, quality: j.quality, mbps: j.mbps, span: exState.span,
                     folder: folder, ame: !!(exInfo.ame && exState.ame), bin: "Sayframe Экспорт" }]);
                 done++;
                 last = r.path;

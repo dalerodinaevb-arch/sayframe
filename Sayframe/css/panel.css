@@ -2499,32 +2499,34 @@ html[data-design="ae"] .rb-stage { border-radius: 4px; }
 .ex-comp { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 9px; background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .08); }
 .ex-comp span { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ex-comp small { flex: none; font-size: 10.5px; color: var(--muted); }
-.ex-targets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; align-items: start; }
-.ex-targets.ex-v { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.ex-targets .ex-t.kr-b { aspect-ratio: var(--ar, 1.78); justify-content: flex-end; min-height: 0; height: auto; overflow: hidden; }
-.ex-targets.ex-h .ex-t.kr-b { min-height: 92px; }
+/* Четыре маленькие плитки в один ряд (Далер: «чтобы много места не занимало»). */
+.ex-targets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; align-items: start; }
+.ex-targets .ex-t.kr-b { justify-content: flex-end; min-height: 0; height: 60px; overflow: hidden; }
+.ex-t .ex-mb { display: none; }
+.ex-t[data-t="custom"][aria-pressed="true"] .ex-mb { display: block; font-size: 11px; }
+.ex-t[data-t="custom"][aria-pressed="true"] small { display: none; }
 .ex-t .ex-mb { font-size: 16px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
-.ex-t .ex-bars { position: absolute; left: 9px; top: 9px; display: flex; gap: 2px; }
-.ex-t .ex-bars b { width: 4px; height: 11px; border-radius: 2px; background: color-mix(in srgb, currentColor 22%, transparent); }
+.ex-t .ex-bars { position: absolute; left: 7px; top: 7px; display: flex; gap: 2px; }
+.ex-t .ex-bars b { width: 3px; height: 8px; border-radius: 2px; background: color-mix(in srgb, currentColor 22%, transparent); }
 .ex-t[data-t="light"] .ex-bars b:nth-child(-n+1), .ex-t[data-t="normal"] .ex-bars b:nth-child(-n+2), .ex-t[data-t="max"] .ex-bars b { background: var(--accent-hi, var(--accent)); }
-.ex-t[data-t="custom"] svg { position: absolute; left: 8px; top: 8px; }
+.ex-t[data-t="custom"] svg { position: absolute; left: 6px; top: 5px; width: 13px; height: 13px; }
 .ex-qualrow { display: contents; }
 .ex-qualrow[hidden] { display: none; }
-.ex-t.kr-b { align-items: flex-start; text-align: left; padding: 8px 9px 7px; gap: 2px; position: relative; }
+.ex-t.kr-b { align-items: flex-start; text-align: left; padding: 6px 7px; gap: 1px; position: relative; }
 .ex-t svg { width: 16px; height: 16px; margin-bottom: 4px; stroke-width: 1.7; }
-.ex-t span { font-size: 12px; font-weight: 600; }
-.ex-t small { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.ex-t[aria-pressed="true"]::after { content: ""; position: absolute; right: 9px; top: 10px; width: 8px; height: 4px; border: solid currentColor; border-width: 0 0 1.6px 1.6px; transform: rotate(-45deg); }
+.ex-t span { font-size: 11px; font-weight: 600; }
+.ex-t small { font-size: 9.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ex-t[aria-pressed="true"]::after { content: ""; position: absolute; right: 7px; top: 8px; width: 8px; height: 4px; border: solid currentColor; border-width: 0 0 1.6px 1.6px; transform: rotate(-45deg); }
 .ex-t[data-t="custom"]:not([aria-pressed="true"]) { border-style: dashed; color: var(--muted); }
 .ex-t small.ex-rate { display: inline-flex; align-items: center; font-variant-numeric: tabular-nums; overflow: visible; }
 .ex-rate em { font-style: normal; }
 .ex-rate em::after { content: " Мбит/с"; }
-.ex-targets.ex-v .ex-t[aria-pressed="true"] small.ex-rate { align-self: stretch; justify-content: space-between; }
-.ex-targets.ex-v .ex-t[aria-pressed="true"] .ex-rate em::after { content: ""; }
+.ex-t[aria-pressed="true"] small.ex-rate { align-self: stretch; justify-content: space-between; }
+.ex-t[aria-pressed="true"] .ex-rate em::after { content: ""; }
 .ex-rate i { display: none; font-style: normal; }
-.ex-t[aria-pressed="true"] small.ex-rate { margin-top: 2px; border-radius: 6px; color: inherit; background: color-mix(in srgb, currentColor 10%, transparent); }
+.ex-t[aria-pressed="true"] small.ex-rate { margin-top: 0; border-radius: 6px; color: inherit; background: color-mix(in srgb, currentColor 10%, transparent); }
 .ex-t[aria-pressed="true"] .ex-rate em { font-size: 10.5px; font-weight: 600; padding: 0 2px; }
-.ex-t[aria-pressed="true"] .ex-rate i { display: grid; place-items: center; width: 22px; height: 20px; font-size: 14px; line-height: 1; border-radius: 6px; cursor: pointer; }
+.ex-t[aria-pressed="true"] .ex-rate i { display: grid; place-items: center; width: 16px; height: 16px; font-size: 12px; line-height: 1; border-radius: 6px; cursor: pointer; }
 .ex-t[aria-pressed="true"] .ex-rate i:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
 .ex-rate i.off { opacity: .3; cursor: default; }
 .ex-custom { display: flex; align-items: center; gap: 8px; }
@@ -2556,7 +2558,7 @@ html[data-design="ae"] .rb-stage { border-radius: 4px; }
 html[data-design="ae"] .ex-comp, html[data-design="ae"] .ex-folder, html[data-design="ae"] .ex-fit, html[data-design="ae"] .ex-custom input { border-radius: 4px; }
 .ex-setup .kr-seg.tb-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ex-results.finished .ex-bar-track { display: none; }
-@media (min-width: 600px) { .ex-targets { grid-template-columns: repeat(4, minmax(0, 1fr)); } .ex-targets.ex-v { grid-template-columns: repeat(4, minmax(0, 150px)); } }
+@media (min-width: 600px) { .ex-targets { grid-template-columns: repeat(4, minmax(0, 150px)); } }
 
 /* Кнопка ↗ «Открыть отдельным окном»: в углу блока, видна под курсором. */
 .win-open { position: absolute; top: 2px; right: 53px; z-index: 2; width: 22px; height: 20px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px;
