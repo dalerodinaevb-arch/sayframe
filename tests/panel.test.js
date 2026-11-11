@@ -6884,6 +6884,24 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("MK12 no errors", p.errors.length === 0, p.errors.join(" | "));
     await p.close();
   }
+  // A change in the block: keys the block made itself (the tiles' «Появление») are made anew, not carried over.
+  {
+    const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);
+    const kn = (l, n) => acAt(l, "ADBE Transform Group", n).numKeys;
+    let p = await open({ mkPoll: true, orbit: { layers: [{ name: "BG", selected: false }] } });
+    await p.page.click("#tabTools"); await p.page.click('#acTabs button[data-sec="orbit"]');
+    await p.page.click("#gridInBtn"); await p.page.click('#gridPopList [data-v="explode"]');
+    await p.page.click("#gridBtn"); await p.idle();
+    const k0 = kn(L(p, "Плитка 1"), "ADBE Position");
+    await p.page.waitForTimeout(1400); await p.idle();
+    await p.page.click("#gridInBtn"); await p.page.click('#gridTabs [data-v="simple"]'); await p.page.click('#gridPopList [data-v="none"]');
+    await p.page.waitForTimeout(1500); await p.idle();
+    const t = L(p, "Плитка 1");
+    check("MK13 «Появление: Нет» on a grid made with «Взрыв»: the old tiles' keys do not come back", k0 > 2 && kn(t, "ADBE Position") === 0 && kn(t, "ADBE Opacity") === 0 && /изменена/.test(await p.status()),
+      k0 + " -> " + kn(t, "ADBE Position") + "/" + kn(t, "ADBE Opacity") + " " + await p.status());
+    check("MK13 no errors", p.errors.length === 0, p.errors.join(" | "));
+    await p.close();
+  }
   // «Текст по ленте»: a random line by number, the line's direction, the text running forward or back.
   {
     const L = (p, n) => p.ae.log.dcMain.list.find((l) => l.name === n);

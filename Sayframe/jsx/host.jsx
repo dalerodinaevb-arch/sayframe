@@ -3168,10 +3168,16 @@ var sayframeHost = (function () {
         for (i = 0; i < MK_TR.length; i++) {
             try { P = acTransform(L, MK_TR[i]); } catch (e) { P = null; }
             if (!P) { continue; }
-            try { if (P.numKeys > 0) { continue; } out.push(MK_TR[i] + "=" + mkVal(P.value)); } catch (e2) {}
+            // Keys the block made itself (an appear animation) are written as their times: "@0.5/0.8".
+            try { out.push(MK_TR[i] + "=" + (P.numKeys > 0 ? mkKeySig(P) : mkVal(P.value))); } catch (e2) {}
         }
         try { out.push("st=" + mkVal(L.startTime)); } catch (e3) {}
         return out.join(";");
+    }
+    function mkKeySig(P) {
+        var t = [], j;
+        for (j = 1; j <= P.numKeys; j++) { t.push(Math.round(P.keyTime(j) * 1000) / 1000); }
+        return "@" + t.join("/");
     }
     function mkTrParse(s) {
         var out = {}, a = String(s || "").split(";"), i, k;
@@ -3185,6 +3191,8 @@ var sayframeHost = (function () {
             try { P = acTransform(L, MK_TR[i]); } catch (e) { P = null; }
             if (!P) { continue; }
             try {
+                // The block's own keys, untouched by the user: the new build makes its own.
+                if (P.numKeys > 0 && made[MK_TR[i]] === mkKeySig(P)) { continue; }
                 if (P.numKeys > 0) {
                     keys = [];
                     for (j = 1; j <= P.numKeys; j++) {
@@ -7988,6 +7996,7 @@ var sayframeHost = (function () {
         // Grid: o = { rows, cols, gap, split, gapV, round, rand, seed, fit, w, h, mode, numbers, stagger }; labels - layer names.
         // Photos selected in the Project panel go into the card comps of a carousel, one per card, in order.
         orbitPhotos: function (labels) {
+            labels = labels || {};
             return reply(function () {
             var comp = activeComp(), sel = [], cards = {}, n = 0, i, j, k, L, src, m, it, cc, nl, sc, placed = 0, ctrl = null, base = labels.card || "Card ", pw, ph, num;
             try { sel = app.project.selection || []; } catch (eS) { sel = []; }
