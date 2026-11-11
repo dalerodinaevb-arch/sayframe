@@ -1570,9 +1570,10 @@ html[data-design="ae"] .ac-autoplay, html[data-design="ae"] .ac-autoplay button,
 .sec-color { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
 .sec-color + .sec-color { border-top: 1px solid var(--line); }
 .sec-name { font: 700 12px/1.2 var(--round); color: var(--text); }
-.color-pick { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red); cursor: pointer; overflow: hidden; }
-.color-pick::-webkit-color-swatch-wrapper { padding: 3px; }
-.color-pick::-webkit-color-swatch { border: 0; border-radius: 50%; }
+/* Кнопка «любой цвет»: выбранный цвет в мягком пастельном кольце — видно, что тут меняют цвет, но глаза не режет. */
+.color-pick { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: conic-gradient(#e88, #ec8, #8d9, #8ce, #a9e, #e8c, #e88); cursor: pointer; overflow: hidden; }
+.color-pick::-webkit-color-swatch-wrapper { padding: 2px; }
+.color-pick::-webkit-color-swatch { border: 2px solid #17181c; border-radius: 50%; }
 
 /* Узкие блоки-кнопки («Картинка», «Порядок», «Копия», «Декомпоз»): только квадратные иконки, как снимок,
    поиск и настройки в шапке. Все иконки одного размера — 42 px, в столбике и в ряду; название — в подсказке. */
@@ -1722,9 +1723,11 @@ html[data-design="ae"] .ac-autoplay, html[data-design="ae"] .ac-autoplay button,
 .brand-subb[aria-selected="true"] { color: #7be3a8; border-color: #18a957; background: rgba(24,169,87,0.16); }
 .brand-subb-add { width: 28px; padding: 0; }
 #brandBody .brand-logos { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
-#brandBody .brand-logo-img { height: 56px; padding: 0; overflow: hidden; background: rgba(255,255,255,0.03); }
-#brandBody .brand-logo-img img { width: 100%; height: 100%; max-height: none; object-fit: cover; }
-#brandBody .brand-logo > small { display: none; }
+/* Логотип целиком и по центру, на клетке (видно прозрачность): светлой, а под белый логотип — тёмной. */
+#brandBody .brand-logo-img { height: 56px; padding: 0; overflow: hidden; background: repeating-conic-gradient(#f4f4f6 0% 25%, #e4e4e8 0% 50%) 50% / 14px 14px; }
+#brandBody .brand-logo-img.on-dark { background: repeating-conic-gradient(#2c2d33 0% 25%, #222328 0% 50%) 50% / 14px 14px; }
+#brandBody .brand-logo-img img { width: 100%; height: 100%; max-height: none; object-fit: contain; padding: 8px 10px; box-sizing: border-box; }
+#brandBody .brand-logo > small { display: block; text-align: center; }
 #brandBody .brand-logo select { position: absolute; left: 4px; right: 4px; bottom: 4px; width: auto; height: 22px; opacity: 0; transition: opacity .15s; }
 #brandBody .brand-logo:hover select, #brandBody .brand-logo select:focus { opacity: 1; }
 .brand-cap { min-height: 14px; text-align: center; color: var(--muted); font: 600 11px/1.2 var(--round); }

@@ -10750,6 +10750,27 @@
         input.select();
     }
 
+    // Фон плитки под логотип: светлая клетка, а под белый (светлый) логотип — тёмная, чтобы любой было видно.
+    // Сначала смотрим на пиксели; если картинку нельзя прочитать — по варианту логотипа («Белый…»).
+    function logoTone(img, pic, variant) {
+        var guess = /white/.test(variant || "");
+        pic.classList.toggle("on-dark", guess);
+        img.addEventListener("load", function () {
+            var c, x, d, i, a, sum = 0, n = 0;
+            try {
+                c = document.createElement("canvas"); c.width = 48; c.height = 48;
+                x = c.getContext("2d");
+                x.drawImage(img, 0, 0, 48, 48);
+                d = x.getImageData(0, 0, 48, 48).data;
+                for (i = 0; i < d.length; i += 4) {
+                    a = d[i + 3] / 255;
+                    if (a > 0.3) { sum += (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255; n++; }
+                }
+                if (n > 20) { pic.classList.toggle("on-dark", sum / n > 0.62); }
+            } catch (e) { pic.classList.toggle("on-dark", guess); }
+        });
+    }
+
     function renderBrandLogos(b) {
         var box = ui.brandLogos;
         box.innerHTML = "";
@@ -10766,6 +10787,7 @@
             if (LOGO_PREVIEW.test(l.file)) {
                 img = mkEl("img");
                 img.alt = "";
+                logoTone(img, pic, l.variant);
                 img.src = fileUrl(l.file);
                 pic.appendChild(img);
             } else {
@@ -10781,7 +10803,7 @@
             });
             sel.value = logoVariant(l.variant)[0];
             sel.setAttribute("aria-label", "Вариант логотипа «" + l.name + "»");
-            sel.addEventListener("change", function () { l.variant = sel.value; storeBrands(); });
+            sel.addEventListener("change", function () { l.variant = sel.value; storeBrands(); if (img && !img.naturalWidth) { pic.classList.toggle("on-dark", /white/.test(l.variant)); } });
             nm = mkEl("small", "", l.name);
             nm.title = l.name + " — двойной щелчок, чтобы переименовать";
             nm.addEventListener("dblclick", function () { brandRenameInline(nm, l.name, 80, function (v) { l.name = v; }); });
@@ -10808,6 +10830,7 @@
             if (LOGO_PREVIEW.test(l.file)) {
                 img = mkEl("img");
                 img.alt = "";
+                logoTone(img, pic, "");
                 img.src = fileUrl(l.file);
                 pic.appendChild(img);
             } else {
