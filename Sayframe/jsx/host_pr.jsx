@@ -1022,7 +1022,7 @@ var sayframeHost = (function () {
             });
         },
 
-        // «Изменить» in Quick export: the usual Save window (folder + name), starting in the current folder.
+        // The "Change" button in Quick export: the usual Save window (folder + name), starting in the current folder.
         exportPickFile: function (start, name, prompt) {
             return reply(function () {
                 var f = new Folder(start), picked, path, cut;

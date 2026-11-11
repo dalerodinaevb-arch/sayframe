@@ -7445,7 +7445,7 @@ var sayframeHost = (function () {
             });
         },
 
-        // «Изменить» in Quick export: the usual Save window (folder + name, as in After Effects), starting in the current
+        // The "Change" button in Quick export: the usual Save window (folder + name, as in After Effects), starting in the current
         // folder with the comp's name. Returns the folder and the name without ".mp4"; nothing when cancelled.
         exportPickFile: function (start, name, prompt) {
             return reply(function () {
