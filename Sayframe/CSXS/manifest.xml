@@ -11,6 +11,15 @@
     <Extension Id="com.sayframe.ae.win.anchor" Version="1.0.0"/>
     <Extension Id="com.sayframe.ae.win.stagger" Version="1.0.0"/>
     <Extension Id="com.sayframe.ae.win.easecopy" Version="1.0.0"/>
+    <Extension Id="com.sayframe.ae.win.paste" Version="1.0.0"/>
+    <Extension Id="com.sayframe.ae.win.organize" Version="1.0.0"/>
+    <Extension Id="com.sayframe.ae.win.decompose" Version="1.0.0"/>
+    <Extension Id="com.sayframe.ae.win.cache" Version="1.0.0"/>
+    <Extension Id="com.sayframe.ae.win.nullp" Version="1.0.0"/>
+    <Extension Id="com.sayframe.ae.win.unused" Version="1.0.0"/>
+    <Extension Id="com.sayframe.ae.win.cutout" Version="1.0.0"/>
+    <Extension Id="com.sayframe.ae.win.pathfinder" Version="1.0.0"/>
+    <Extension Id="com.sayframe.ae.win.split" Version="1.0.0"/>
     <Extension Id="com.sayframe.ae.win.export" Version="1.0.0"/>
   </ExtensionList>
   <ExecutionEnvironment>
@@ -73,7 +82,6 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>Sayframe — Анимация</Menu>
           <Geometry>
             <Size>
               <Height>720</Height>
@@ -106,7 +114,6 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>Sayframe — Инструменты</Menu>
           <Geometry>
             <Size>
               <Height>720</Height>
@@ -139,7 +146,6 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>Sayframe — Шейп</Menu>
           <Geometry>
             <Size>
               <Height>560</Height>
@@ -172,7 +178,6 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>Sayframe — Проекты</Menu>
           <Geometry>
             <Size>
               <Height>640</Height>
@@ -205,7 +210,6 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>Sayframe — Плавность</Menu>
           <Geometry>
             <Size>
               <Height>330</Height>
@@ -238,7 +242,6 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>Sayframe — Выровнять</Menu>
           <Geometry>
             <Size>
               <Height>300</Height>
@@ -271,7 +274,6 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>Sayframe — Якорь</Menu>
           <Geometry>
             <Size>
               <Height>300</Height>
@@ -304,7 +306,6 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>Sayframe — Лесенка</Menu>
           <Geometry>
             <Size>
               <Height>340</Height>
@@ -337,10 +338,297 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>Sayframe — Копия</Menu>
           <Geometry>
             <Size>
               <Height>330</Height>
+              <Width>300</Width>
+            </Size>
+            <MinSize>
+              <Height>120</Height>
+              <Width>200</Width>
+            </MinSize>
+            <MaxSize>
+              <Height>2400</Height>
+              <Width>1200</Width>
+            </MaxSize>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+    <Extension Id="com.sayframe.ae.win.paste">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/host.jsx</ScriptPath>
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+            <Parameter>--mixed-context</Parameter>
+          </CEFCommandLine>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Geometry>
+            <Size>
+              <Height>180</Height>
+              <Width>300</Width>
+            </Size>
+            <MinSize>
+              <Height>120</Height>
+              <Width>200</Width>
+            </MinSize>
+            <MaxSize>
+              <Height>2400</Height>
+              <Width>1200</Width>
+            </MaxSize>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+    <Extension Id="com.sayframe.ae.win.organize">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/host.jsx</ScriptPath>
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+            <Parameter>--mixed-context</Parameter>
+          </CEFCommandLine>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Geometry>
+            <Size>
+              <Height>200</Height>
+              <Width>300</Width>
+            </Size>
+            <MinSize>
+              <Height>120</Height>
+              <Width>200</Width>
+            </MinSize>
+            <MaxSize>
+              <Height>2400</Height>
+              <Width>1200</Width>
+            </MaxSize>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+    <Extension Id="com.sayframe.ae.win.decompose">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/host.jsx</ScriptPath>
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+            <Parameter>--mixed-context</Parameter>
+          </CEFCommandLine>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Geometry>
+            <Size>
+              <Height>200</Height>
+              <Width>300</Width>
+            </Size>
+            <MinSize>
+              <Height>120</Height>
+              <Width>200</Width>
+            </MinSize>
+            <MaxSize>
+              <Height>2400</Height>
+              <Width>1200</Width>
+            </MaxSize>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+    <Extension Id="com.sayframe.ae.win.cache">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/host.jsx</ScriptPath>
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+            <Parameter>--mixed-context</Parameter>
+          </CEFCommandLine>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Geometry>
+            <Size>
+              <Height>200</Height>
+              <Width>300</Width>
+            </Size>
+            <MinSize>
+              <Height>120</Height>
+              <Width>200</Width>
+            </MinSize>
+            <MaxSize>
+              <Height>2400</Height>
+              <Width>1200</Width>
+            </MaxSize>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+    <Extension Id="com.sayframe.ae.win.nullp">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/host.jsx</ScriptPath>
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+            <Parameter>--mixed-context</Parameter>
+          </CEFCommandLine>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Geometry>
+            <Size>
+              <Height>200</Height>
+              <Width>300</Width>
+            </Size>
+            <MinSize>
+              <Height>120</Height>
+              <Width>200</Width>
+            </MinSize>
+            <MaxSize>
+              <Height>2400</Height>
+              <Width>1200</Width>
+            </MaxSize>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+    <Extension Id="com.sayframe.ae.win.unused">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/host.jsx</ScriptPath>
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+            <Parameter>--mixed-context</Parameter>
+          </CEFCommandLine>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Geometry>
+            <Size>
+              <Height>200</Height>
+              <Width>300</Width>
+            </Size>
+            <MinSize>
+              <Height>120</Height>
+              <Width>200</Width>
+            </MinSize>
+            <MaxSize>
+              <Height>2400</Height>
+              <Width>1200</Width>
+            </MaxSize>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+    <Extension Id="com.sayframe.ae.win.cutout">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/host.jsx</ScriptPath>
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+            <Parameter>--mixed-context</Parameter>
+          </CEFCommandLine>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Geometry>
+            <Size>
+              <Height>200</Height>
+              <Width>300</Width>
+            </Size>
+            <MinSize>
+              <Height>120</Height>
+              <Width>200</Width>
+            </MinSize>
+            <MaxSize>
+              <Height>2400</Height>
+              <Width>1200</Width>
+            </MaxSize>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+    <Extension Id="com.sayframe.ae.win.pathfinder">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/host.jsx</ScriptPath>
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+            <Parameter>--mixed-context</Parameter>
+          </CEFCommandLine>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Geometry>
+            <Size>
+              <Height>260</Height>
+              <Width>300</Width>
+            </Size>
+            <MinSize>
+              <Height>120</Height>
+              <Width>200</Width>
+            </MinSize>
+            <MaxSize>
+              <Height>2400</Height>
+              <Width>1200</Width>
+            </MaxSize>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+    <Extension Id="com.sayframe.ae.win.split">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/host.jsx</ScriptPath>
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+            <Parameter>--mixed-context</Parameter>
+          </CEFCommandLine>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Geometry>
+            <Size>
+              <Height>200</Height>
               <Width>300</Width>
             </Size>
             <MinSize>
@@ -370,7 +658,6 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>Sayframe — Экспорт</Menu>
           <Geometry>
             <Size>
               <Height>640</Height>

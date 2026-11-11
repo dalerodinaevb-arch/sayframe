@@ -2675,3 +2675,4 @@ html[data-design="ae"] .gr-pop, html[data-design="ae"] .gr-pill, html[data-desig
 html[data-design="ae"] .tb-tile, html[data-design="ae"] .tb-mst { border-radius: 4px; }
 
 .ac-autoplay[hidden] { display: none !important; }
+#setTabWin[hidden] { display: none !important; }

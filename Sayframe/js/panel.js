@@ -849,7 +849,8 @@
         { key: "split", tool: "split", label: "Разделить", w: 300, h: 200 },
         { key: "export", label: "Экспорт", w: 340, h: 640 }
     ];
-    var WIN_DEFAULT = ["anim", "tools", "shape", "projects", "ease", "align", "anchor", "stagger", "easecopy", "export"];
+    // Все окна всегда есть в manifest.xml, но без пункта в меню Window › Extensions: их открывает только ↗.
+    var WIN_DEFAULT = WINDOWS.map(function (w) { return w.key; });
 
     function winByKey(key) {
         var i;
@@ -869,12 +870,8 @@
         return !IS_PR && id.indexOf(WIN_PREFIX) === 0 ? winByKey(id.slice(WIN_PREFIX.length)) : null;
     })();
 
-    function windowList(text) {
-        var out = [];
-        if (text === "default" || typeof text !== "string") { return WIN_DEFAULT.slice(); }
-        text.split(",").forEach(function (k) { if (winByKey(k) && out.indexOf(k) < 0) { out.push(k); } });
-        return WINDOWS.map(function (w) { return w.key; }).filter(function (k) { return out.indexOf(k) >= 0; });
-    }
+    // Список окон больше не выбирают: в manifest.xml всегда все (в меню их нет, так что оно не засоряется).
+    function windowList() { return WIN_DEFAULT.slice(); }
 
     // manifest.xml с нужными окнами: прежние окна убираются, новые встают после большой панели.
     function windowsManifest(text, keys) {
@@ -889,7 +886,7 @@
                 "          <ScriptPath>./jsx/host.jsx</ScriptPath>\n          <CEFCommandLine>\n            <Parameter>--enable-nodejs</Parameter>\n" +
                 "            <Parameter>--mixed-context</Parameter>\n          </CEFCommandLine>\n        </Resources>\n        <Lifecycle>\n" +
                 "          <AutoVisible>true</AutoVisible>\n        </Lifecycle>\n        <UI>\n          <Type>Panel</Type>\n" +
-                "          <Menu>Sayframe — " + w.label + "</Menu>\n          <Geometry>\n" +
+                "          <Geometry>\n" +
                 "            <Size>\n              <Height>" + w.h + "</Height>\n              <Width>" + w.w + "</Width>\n            </Size>\n" +
                 "            <MinSize>\n              <Height>120</Height>\n              <Width>200</Width>\n            </MinSize>\n" +
                 "            <MaxSize>\n              <Height>2400</Height>\n              <Width>1200</Width>\n            </MaxSize>\n" +
@@ -947,7 +944,7 @@
         if (known.indexOf(key) >= 0 && window.__adobe_cep__ && typeof window.__adobe_cep__.requestOpenExtension === "function") {
             try {
                 window.__adobe_cep__.requestOpenExtension(WIN_PREFIX + key, "");
-                setStatus("Открываю окно «" + w.label + "». Если оно не появилось: Window › Extensions › Sayframe \u2014 " + w.label + ".", "done");
+                setStatus("Открываю окно «" + w.label + "».", "done");
                 return;
             } catch (e) {}
         }
@@ -965,7 +962,7 @@
         showWindowPicker();
         syncWindowsManifest().then(function (r) {
             if (r === "signed" || r === "noaccess" || r === "nofile") { setStatus(winLockText(r), "error"); return; }
-            setStatus("Окно «" + w.label + "» появится после перезапуска After Effects: Window › Extensions › Sayframe — " + w.label + ".", "done");
+            setStatus("Окно «" + w.label + "» откроется после перезапуска After Effects: нажмите ↗ ещё раз.", "done");
         });
     }
 

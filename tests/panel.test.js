@@ -6524,8 +6524,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     const man = (q) => fs.readFileSync(path.join(q.extDir, "CSXS", "manifest.xml"), "utf8");
     const wins = (text) => (text.match(/<Extension Id="com\.sayframe\.ae\.win\.([^"]+)" Version="[^"]*"\/>/g) || []).map((x) => /win\.([^"]+)"/.exec(x)[1]).join();
     const shipped = fs.readFileSync(path.join(EXT, "CSXS", "manifest.xml"), "utf8");
-    check("WN1 the shipped manifest has the main panel and 10 windows: 4 sections, 5 blocks and the export", wins(shipped) === "anim,tools,shape,projects,ease,align,anchor,stagger,easecopy,export" &&
-      (shipped.match(/<Menu>[^<]+<\/Menu>/g) || []).join().indexOf("<Menu>Sayframe</Menu>,<Menu>Sayframe — Анимация</Menu>") === 0 && (shipped.match(/<DispatchInfo>/g) || []).length === 11, wins(shipped));
+    check("WN1 the shipped manifest has the main panel and all 19 windows, but only «Sayframe» is in Window › Extensions (the windows open by ↗)",
+      wins(shipped) === "anim,tools,shape,projects,ease,align,anchor,stagger,easecopy,paste,organize,decompose,cache,nullp,unused,cutout,pathfinder,split,export" &&
+      (shipped.match(/<Menu>[^<]+<\/Menu>/g) || []).join() === "<Menu>Sayframe</Menu>" && (shipped.match(/<DispatchInfo>/g) || []).length === 20, wins(shipped));
     p = await open({ ownExt: true });
     await p.page.waitForTimeout(600);
     check("WN1 with the standard choice the panel leaves its manifest as it is", man(p) === shipped);
@@ -6551,21 +6552,17 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("WN4 Esc keeps it open", await vis(p, "#exportBar"));
     await p.close();
 
-    p = await open({ ownExt: true, settings: { design: "ae", designSet: 2 } });
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabWin");
-    t = await p.page.evaluate(() => Array.prototype.map.call(document.querySelectorAll("#winPicker input"), (i) => (i.checked ? "+" : "-") + i.getAttribute("data-win")).join());
-    check("WN5 Settings › «Окна»: a switch per section and block, the standard ones on", t === "+anim,+tools,+shape,+projects,+ease,+align,+anchor,+stagger,+easecopy,-paste,-organize,-decompose,-cache,-nullp,-unused,-cutout,-pathfinder,-split,+export", t);
-    await p.page.click('#winPicker label:has(input[data-win="stagger"])'); await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
-    check("WN5 switching rewrites the manifest: Лесенка out, Кэш in; the note asks to restart After Effects", wins(man(p)) === "anim,tools,shape,projects,ease,align,anchor,easecopy,cache,export" && /Перезапустите After Effects/.test(await p.page.locator("#winNote").innerText()) &&
-      /<Menu>Sayframe — Кэш<\/Menu>/.test(man(p)) && !/Лесенка/.test(man(p)), wins(man(p)));
-    await p.page.click('#winPicker label:has(input[data-win="stagger"])'); await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
-    check("WN5 back as it was -> the same manifest as shipped, nothing to restart", man(p) === shipped && /такое же/.test(await p.page.locator("#winNote").innerText()));
+    p = await open({ ownExt: true, settings: { design: "ae", designSet: 2, windows: "ease,align" } });
+    await p.page.click("#settingsBtn");
+    check("WN5 no «Окна» page in Settings any more (nothing to choose: every window is there, none in the menu)", !(await vis(p, "#setTabWin")));
+    await p.page.waitForTimeout(400);
+    check("WN5 an old choice of windows is put right: the manifest is the shipped one again", man(p) === shipped);
     await p.page.click("#settingsClose");
     await p.page.click("#tabMotion"); await p.page.hover('section[data-tool="ease"]'); await p.page.click('section[data-tool="ease"] .win-open');
     check("WN6 ↗ on a block opens its window when After Effects has it", (await p.page.evaluate(() => window.__openedExt.join())) === "com.sayframe.ae.win.ease");
     await p.page.hover('section[data-tool="cache"]'); await p.page.click('section[data-tool="cache"] .win-open'); await p.page.waitForTimeout(400);
-    check("WN6 ↗ on a block without a window yet adds it to the menu and says to restart", wins(man(p)).indexOf("cache") >= 0 && (await p.page.evaluate(() => window.__openedExt.length)) === 1 &&
-      (await p.status()) === "Окно «Кэш» появится после перезапуска After Effects: Window › Extensions › Sayframe — Кэш.", await p.status());
+    check("WN6 ↗ on «Кэш» opens its window too (every block has one now)", (await p.page.evaluate(() => window.__openedExt.join())) === "com.sayframe.ae.win.ease,com.sayframe.ae.win.cache" &&
+      (await p.status()) === "Открываю окно «Кэш».", await p.status());
     await p.page.click("#exportBtn");
     check("WN6 the export sheet has ↗ too", await vis(p, '#exHead .win-open[data-win="export"]'));
     await p.close();
@@ -6580,10 +6577,9 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("WN8 after the restart ↗ opens it and says where it is", (await p.page.evaluate(() => window.__openedExt.join())) === "com.sayframe.ae.win.ease" && /^Открываю окно «Плавность»/.test(await p.status()), await p.status());
     await p.close();
 
-    p = await open({ ownExt: true, signedExt: true, settings: { design: "ae", designSet: 2 } });
-    await p.page.click("#settingsBtn"); await p.page.click("#setTabWin");
-    await p.page.click('#winPicker label:has(input[data-win="cache"])'); await p.page.waitForTimeout(400);
-    check("WN7 a signed copy cannot change its manifest: it says so and the switches lock", man(p) === shipped && /подписанного пакета/.test(await p.page.locator("#winNote").innerText()) && (await p.page.locator('#winPicker input[data-win="ease"]').isDisabled()));
+    p = await open({ ownExt: true, signedExt: true, settings: { design: "ae", designSet: 2, windows: "ease" } });
+    await p.page.waitForTimeout(400);
+    check("WN7 a signed copy leaves its manifest alone", man(p) === shipped);
     await p.close();
   }
 
