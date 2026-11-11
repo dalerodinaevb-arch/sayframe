@@ -126,6 +126,7 @@
       <button id="tabMotion" data-info="Инструменты|Быстрые инструменты на каждый день: плавность, якорь, выравнивание, сдвиг во времени, картинка из буфера, порядок в проекте, копия плавности. Блоки двигаются (двойной щелчок), закрепляются булавкой и растягиваются за края." class="tab" aria-label="Инструменты" role="tab" data-tab="motion" aria-selected="false" aria-controls="viewMotion" title="Двойной щелчок — поменять вкладки местами"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span class="tab-label">Инструменты</span></button>
       <button id="tabShape" data-info="Шейп|Здесь будут инструменты для шейп-слоёв: создать фигуру, заливка и обводка, Trim Paths, модификаторы." class="tab" aria-label="Шейп" role="tab" data-tab="shape" aria-selected="false" aria-controls="viewShape" title="Двойной щелчок — поменять вкладки местами"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="9" r="5"/><rect x="11" y="11" width="9" height="9" rx="1.5"/></svg><span class="tab-label">Шейп</span></button>
       <button id="tabBrand" data-info="Проекты|Брендбуки клиентов и компаний: логотипы, цвета, шрифты, тексты и форматы. Щелчок вставляет логотип, красит слой цветом бренда, ставит шрифт или создаёт композицию нужного размера. AI тоже знает бренд выбранного проекта." class="tab" aria-label="Проекты" role="tab" data-tab="brand" aria-selected="false" aria-controls="viewBrand" title="Двойной щелчок — поменять вкладки местами"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 8.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg><span class="tab-label">Проекты</span></button>
+      <button id="tabLut" data-info="LUT|Ваши LUT (.cube) с компьютера. Каждый LUT — свой экран: на нём кадр под указателем времени, но уже с этим LUT. Выберите экран и нажмите «Применить» — Lumetri с этим LUT встанет на выделенные клипы. Булавка закрепляет LUT наверху, «Поделиться» собирает LUT в один файл." class="tab" aria-label="LUT" role="tab" data-tab="lut" aria-selected="false" aria-controls="viewLut" title="Двойной щелчок — поменять вкладки местами"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9.5" cy="9.5" r="5"/><circle cx="14.5" cy="9.5" r="5"/><circle cx="12" cy="14.5" r="5"/></svg><span class="tab-label">LUT</span></button>
     </nav>
 
     <section id="arrangeBar" class="arrange-bar" hidden aria-live="polite">
@@ -1145,6 +1146,31 @@
     </section>
     </div>
     <div id="statusSlotShape" class="status-slot"></div>
+    </div>
+
+    <!-- «LUT» (пока только в Premiere): свои LUT с компьютера, каждый — экран с кадром из таймлайна. -->
+    <div id="viewLut" class="view" role="tabpanel" aria-labelledby="tabLut" hidden>
+      <div class="lut-top">
+        <button id="lutAdd" class="ghost lut-btn" title="Выбрать файлы .cube на компьютере — можно сразу несколько. Они копируются в папку Sayframe LUT."><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Добавить</button>
+        <button id="lutImport" class="ghost lut-btn" title="Открыть файл .sflut, который прислал коллега (или просто .cube). Повторы не дублируются."><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Импорт</button>
+        <button id="lutShare" class="ghost lut-btn" title="Отметить LUT и сохранить их в один файл .sflut, чтобы отправить коллеге"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5M5 14v6h14v-6"/></svg>Поделиться</button>
+      </div>
+      <div class="lut-frame-row">
+        <span id="lutFrameNote" class="lut-note"></span>
+        <button id="lutRefresh" class="icon-btn" aria-label="Обновить кадр" title="Взять кадр под указателем времени ещё раз"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button>
+      </div>
+      <div id="lutGrid" class="lut-grid" aria-label="Ваши LUT"></div>
+      <div id="lutBar" class="lut-bar">
+        <label class="lut-k">Сила <input id="lutStrength" type="range" min="0" max="100" step="5" value="100" aria-label="Сила LUT"><b id="lutStrengthVal">100%</b></label>
+        <button id="lutApply" class="primary lut-apply" disabled>Применить</button>
+      </div>
+      <div id="lutShareBar" class="lut-bar lut-share-bar" hidden>
+        <span id="lutShareNote" class="lut-note">Отметьте LUT, которыми поделиться</span>
+        <button id="lutShareCancel" class="ghost">Отмена</button>
+        <button id="lutShareSave" class="primary lut-apply" disabled>Сохранить файл</button>
+      </div>
+      <p id="lutSelNote" class="lut-note"></p>
+      <div id="statusSlotLut" class="status-slot"></div>
     </div>
 
     <!-- «Проекты»: брендбуки. У каждого проекта (клиента, компании) свои логотипы, цвета, шрифты, тексты и форматы. -->

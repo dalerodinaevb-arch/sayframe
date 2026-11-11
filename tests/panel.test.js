@@ -837,10 +837,13 @@ function makePR(opts, tmpDir) {
   const qe = { project: {
     newSequence(name, preset) { log.qe.push("newSequence " + name + " " + path.basename(preset)); const s = Seq(name, 1920, 1080, 25); seqs.push(s); log.newSeqs.push(name); return true; },
     getVideoTransitionByName(n) { return !opts.noTransitions && /^[A-Z]/.test(n) ? { name: n } : null; },
-    getVideoEffectByName(n) { return !opts.noBlurFx && n === "Gaussian Blur" ? { name: n } : null; },
+    getVideoEffectByName(n) { return (!opts.noBlurFx && n === "Gaussian Blur") || (!opts.noLumetri && n === "Lumetri Color") ? { name: n } : null; },
     getActiveSequence() {
       const sq = project.activeSequence;
       return {
+        CTI: { timecode: sq ? "00:00:0" + Math.floor(sq._ph) + ":00" : "" },
+        // The frame under the playhead: a PNG, warm on the left and blue on the right (Premiere adds ".png").
+        exportFramePNG(tc, base) { log.frames = (log.frames || []).concat([tc]); if (!opts.noFrame) fs.writeFileSync(base + ".png", opts.framePng || pngEncode(64, 36, (x) => x < 32 ? [200, 120, 60] : [40, 80, 200])); return true; },
         addTracks(nv, vi, na) {
           log.qe.push("addTracks " + nv + "," + (na || 0));
           if (!sq) return;
@@ -854,7 +857,14 @@ function makePR(opts, tmpDir) {
             items.push({ type: "Empty", name: "" });
             items.push({ type: "Clip", name: c.name, start: { ticks: c.start.ticks },
               addTransition(tr, atStart, dur, off, align, single, toVideo) { log.transitions = (log.transitions || []).concat([{ name: tr.name, clip: c.name, atStart, dur, align }]); return true; },
-              addVideoEffect(fx) { c.components.push(Comp("Gaussian Blur", "AE.ADBE Gaussian Blur 2", [Param("Blurriness", 0), Param("Blur Dimensions", 1)])); log.effects = (log.effects || []).concat([c.name + ":" + fx.name]); return true; } });
+              addVideoEffect(fx) {
+                if (fx.name === "Lumetri Color") {
+                  // Lumetri: property 4 holds the Input LUT file, property 6 switches it on (opts.lutRefuses: Premiere refuses the path).
+                  const ps = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => Param(i === 4 ? "" : i === 6 ? "" : "P" + i, i === 4 ? "" : 0));
+                  if (opts.lutRefuses) ps[4].setValue = () => { throw new Error("bad"); };
+                  c.components.push(Comp("Lumetri Color", "AE.ADBE Lumetri", ps));
+                } else c.components.push(Comp("Gaussian Blur", "AE.ADBE Gaussian Blur 2", [Param("Blurriness", 0), Param("Blur Dimensions", 1)]));
+                log.effects = (log.effects || []).concat([c.name + ":" + fx.name]); return true; } });
           });
           return { numItems: items.length, getItemAt: (j) => items[j] };
         }
@@ -1177,12 +1187,12 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     p = await open({ ppro: true, width: 420 });
     await p.page.waitForTimeout(300);
     const tabs = await p.page.locator("#tabs .tab").evaluateAll((l) => l.map((b) => b.getAttribute("data-tab")));
-    check("PR1 opens in Premiere without errors: tabs AI, Монтаж, Инструменты and Проекты, «Premiere» badge, no snapshot or effect search",
-      p.errors.length === 0 && tabs.sort().join() === "brand,claude,motion,tools" && (await p.page.locator(".app-badge").innerText()) === "Premiere" &&
+    check("PR1 opens in Premiere without errors: tabs AI, Монтаж, Инструменты, Проекты and LUT, «Premiere» badge, no snapshot or effect search",
+      p.errors.length === 0 && tabs.sort().join() === "brand,claude,lut,motion,tools" && (await p.page.locator(".app-badge").innerText()) === "Premiere" &&
       !(await vis(p, "#snapBtn")) && !(await vis(p, "#fxBtn")) && (await vis(p, "#exportBtn")) && (await p.page.getAttribute("html", "data-app")) === "ppro", p.errors.join(" | ") + " " + tabs.join());
     check("PR1 the panel talks only to host_pr.jsx and only with its own commands",
       p.ae.log.scripts.every((s) => s.indexOf("$.evalFile(") < 0 || s.indexOf("/jsx/host_pr.jsx") > 0) &&
-      p.ae.log.scripts.filter((s) => /^sayframeHost\./.test(s)).every((s) => /^sayframeHost\.(info|syntax|run|reference|brand\w+|export\w+|acSound|snd\w+|sf\w+|trApply|easePR|ec\w+|stagger|anchor|align|distribute|placeImage|organizeProject|removeUnused|cutout\w+)\(/.test(s)), p.ae.log.scripts.join(" | "));
+      p.ae.log.scripts.filter((s) => /^sayframeHost\./.test(s)).every((s) => /^sayframeHost\.(info|syntax|run|reference|brand\w+|export\w+|acSound|snd\w+|sf\w+|trApply|easePR|ec\w+|stagger|anchor|align|distribute|placeImage|organizeProject|removeUnused|cutout\w+|lut\w+)\(/.test(s)), p.ae.log.scripts.join(" | "));
     check("PR1 AI tab: no expressions, styles or references; Premiere quick tasks",
       !(await vis(p, '.ai-mode[data-m="expr"]')) && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && !(await vis(p, "#exprCard")) &&
       (await p.page.locator("#quickList").innerText()).indexOf("Переходы между клипами") >= 0 &&
@@ -1491,6 +1501,84 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       await p.page.click("#tabMotion"); await p.page.waitForTimeout(300);
       await go(p, "#prEaseGo");
       check("TL11 if Premiere cannot load host_pr.jsx, the status shows the real error and its line", /не смог загрузить скрипт панели \(строка 1235: Illegal use of reserved word\)/.test(await p.status()), await p.status());
+      await p.close();
+    }
+
+    {
+      console.log("\n=== Premiere: LUT ===");
+      // A 2×2×2 .cube: warm (red up, blue down) and black-and-white.
+      const cube = (f, title) => (title ? 'TITLE "' + title + '"\n' : "") + "# test\nLUT_3D_SIZE 2\n" + [0, 1].map((b) => [0, 1].map((g) => [0, 1].map((r) => f(r, g, b).map((v) => v.toFixed(4)).join(" ")).join("\n")).join("\n")).join("\n") + "\n";
+      const lutDir = fs.mkdtempSync(path.join(os.tmpdir(), "luts-"));
+      const warm = path.join(lutDir, "Тёплый закат.cube"), bw = path.join(lutDir, "Ч-Б кино.cube"), bad = path.join(lutDir, "notes.cube");
+      fs.writeFileSync(warm, cube((r, g, b) => [Math.min(1, r * 1.1 + 0.08), g, b * 0.7]));
+      fs.writeFileSync(bw, cube((r, g, b) => { const l = 0.3 * r + 0.59 * g + 0.11 * b; return [l, l, l]; }, "Some generic title"));
+      fs.writeFileSync(bad, "hello\nthis is not a LUT\n");
+      const o = { ppro: true, width: 420, pickFiles: [warm, bw, bad] };
+      p = await open(o);
+      check("LT1 Premiere has the «LUT» tab; it starts empty with a hint and an add tile", (await vis(p, "#tabLut")) && /Здесь будут ваши LUT/.test(await p.page.click("#tabLut").then(() => p.page.locator("#lutGrid").innerText())) &&
+        (await p.page.locator("#lutDrop").count()) === 1 && await p.page.locator("#lutApply").isDisabled());
+      await p.page.click("#lutAdd"); await p.page.waitForTimeout(400);
+      const lutHome = path.join(p.home, "Documents", "Sayframe LUT");
+      const names = await p.page.locator(".lut-card[data-lut] b").allInnerTexts(), tags = await p.page.locator(".lut-card[data-lut] i").allInnerTexts();
+      check("LT2 «Добавить»: two .cube become two screens named after the files, copied into Документы › Sayframe LUT; the broken file is reported",
+        names.join("|") === "Тёплый закат|Ч-Б кино" && fs.existsSync(path.join(lutHome, "Тёплый закат.cube")) && fs.existsSync(path.join(lutHome, "Ч-Б кино.cube")) &&
+        /Добавлено LUT: 2, не прочитано: 1/.test(await p.status()), names.join("|") + " " + fs.readdirSync(lutHome).join() + " " + await p.status());
+      check("LT2 each LUT gets a short tag from what it does", /Тёплый/.test(tags[0]) && /Ч\/Б/.test(tags[1]), tags.join("|"));
+      await p.page.waitForTimeout(1500);
+      const px = async (i) => p.page.evaluate((i) => { const c = document.querySelectorAll(".lut-card[data-lut] canvas")[i]; return Array.from(c.getContext("2d").getImageData(Math.round(c.width * 0.25), 90, 1, 1).data).slice(0, 3); }, i);
+      const pw = await px(0), pb = await px(1);
+      check("LT3 the screens show the frame under the playhead (Premiere saves it as PNG) through each LUT: warm is warmer, Ч/Б is grey",
+        (p.ae.log.frames || []).length >= 1 && /^Кадр 00:00:02 под указателем/.test(await p.page.locator("#lutFrameNote").innerText()) &&
+        pw[0] > 200 && pw[2] < 50 && Math.abs(pb[0] - pb[1]) < 3 && Math.abs(pb[1] - pb[2]) < 3, JSON.stringify([pw, pb, p.ae.log.frames]) + " " + await p.page.locator("#lutFrameNote").innerText());
+      check("LT3 the note says how many clips the LUT goes on", /Ставится на выделенные клипы: 1 клип$/.test(await p.page.locator("#lutSelNote").innerText()), await p.page.locator("#lutSelNote").innerText());
+      o.pickFiles = [warm];
+      await p.page.click("#lutAdd"); await p.page.waitForTimeout(300);
+      check("LT4 the same LUT twice is not doubled", (await p.page.locator(".lut-card[data-lut]").count()) === 2 && /уже были: 1/.test(await p.status()), await p.status());
+      await p.page.hover('.lut-card[data-lut]:nth-of-type(2)'); await p.page.click(".lut-card[data-lut] >> nth=1 >> .lut-pin"); await p.page.waitForTimeout(200);
+      const order = await p.page.locator("#lutGrid > *").evaluateAll((l) => l.map((x) => x.className.indexOf("lut-sep") >= 0 ? "[" + x.textContent + "]" : (x.querySelector("b") || x).textContent.trim().slice(0, 12)));
+      const stored = JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.luts.v1")));
+      check("LT5 the pin puts a LUT on top under «Закреплённые», the rest under «Все»; it is remembered", order.slice(0, 4).join("|") === "[Закреплённые]|Ч-Б кино|[Все]|Тёплый закат" && stored.filter((x) => x.pin).length === 1, order.join("|"));
+      await p.page.click('.lut-card[data-lut]:has-text("Тёплый закат")'); await p.page.mouse.move(0, 0); await p.page.waitForTimeout(300);
+      await p.page.screenshot({ path: path.join(SHOTS, "pr-20-lut.png") });
+      await p.page.click("#lutApply"); await p.page.waitForTimeout(300);
+      const c0 = p.ae.project.activeSequence.videoTracks[0].clips[0], lum = () => Array.from(c0.components).find((c) => c.matchName === "AE.ADBE Lumetri");
+      check("LT6 «Применить»: Lumetri on the selected clip with this .cube as Input LUT (property 4 = the file, 6 = on)",
+        lum() && lum().properties[4].getValue() === path.join(lutHome, "Тёплый закат.cube") && lum().properties[6].getValue() === 1 && /стоит на 1 клипе/.test(await p.status()) && (await p.statusKind()) === "done",
+        (lum() ? lum().properties[4].getValue() : "no lumetri") + " " + await p.status());
+      await p.page.fill("#lutStrength", "50"); await p.page.dispatchEvent("#lutStrength", "input"); await p.page.click("#lutApply"); await p.page.waitForTimeout(300);
+      const mixed = lum().properties[4].getValue();
+      check("LT7 «Сила» 50 %: the panel writes a mixed .cube (half LUT, half the original) and puts that one; Lumetri is not added twice",
+        /Сила\/Тёплый закат 50%\.cube$/.test(mixed) && fs.existsSync(mixed) && /LUT_3D_SIZE 2/.test(fs.readFileSync(mixed, "utf8")) && /^0\.040000 0\.000000 0\.000000$/m.test(fs.readFileSync(mixed, "utf8")) && Array.from(c0.components).filter((c) => c.matchName === "AE.ADBE Lumetri").length === 1 && /\(50%\)/.test(await p.status()),
+        mixed + " " + await p.status());
+      const share = path.join(lutDir, "Мои LUT.sflut");
+      o.saveAs = share;
+      await p.page.click("#lutShare");
+      await p.page.click('.lut-card[data-lut]:has-text("Ч-Б кино")');
+      check("LT8 «Поделиться»: cards get ticks, the bar counts the marked ones", (await p.page.locator(".lut-card.sel .lut-check").count()) === 2 && /Отмечено: 2/.test(await p.page.locator("#lutShareNote").innerText()));
+      await p.page.click("#lutShareSave"); await p.page.waitForTimeout(300);
+      const sh = JSON.parse(fs.readFileSync(share, "utf8"));
+      check("LT8 one .sflut file with both LUTs (names, tags, the .cube text), shown in Finder", sh.sayframe === "lut" && sh.luts.length === 2 && sh.luts.every((x) => /LUT_3D_SIZE 2/.test(x.cube)) &&
+        (p.ae.log.executed || []).length === 1 && /Сохранено LUT: 2/.test(await p.status()) && await p.page.locator("#lutShareBar").isHidden(), JSON.stringify(sh).slice(0, 200) + " " + await p.status());
+      await p.page.click('.lut-card[data-lut]:has-text("Ч-Б кино") >> .lut-x', { force: true });
+      check("LT9 × asks for a second press", (await p.page.locator(".lut-card[data-lut]").count()) === 2 && /ещё раз/.test(await p.status()));
+      await p.page.click('.lut-card[data-lut]:has-text("Ч-Б кино") >> .lut-x', { force: true }); await p.page.waitForTimeout(200);
+      check("LT9 the second press removes the LUT and its file", (await p.page.locator(".lut-card[data-lut]").count()) === 1 && !fs.existsSync(path.join(lutHome, "Ч-Б кино.cube")));
+      check("LT10 no errors", p.errors.length === 0, p.errors.join(" | "));
+      await p.close();
+
+      p = await open({ ppro: true, width: 420, pickFiles: [share], lutRefuses: true });
+      await p.page.click("#tabLut"); await p.page.click("#lutImport"); await p.page.waitForTimeout(400);
+      check("LT11 «Импорт» of a colleague's .sflut adds all its LUTs", (await p.page.locator(".lut-card[data-lut]").count()) === 2 && /Добавлено LUT: 2/.test(await p.status()), await p.status());
+      await p.page.click("#lutApply"); await p.page.waitForTimeout(300);
+      check("LT12 when Premiere refuses the LUT path, the panel says where to pick the file by hand", /не дал поставить LUT скриптом/.test(await p.status()) && (await p.statusKind()) === "error", await p.status());
+      await p.close();
+
+      p = await open({ ppro: true, width: 420, noSequence: true });
+      await p.page.click("#tabLut"); await p.page.waitForTimeout(1300);
+      check("LT13 no sequence: example frame and a hint, no errors", /Пример кадра — откройте секвенцию/.test(await p.page.locator("#lutFrameNote").innerText()) && p.errors.length === 0, await p.page.locator("#lutFrameNote").innerText());
+      await p.close();
+      p = await open({ width: 420 });
+      check("LT14 After Effects has no «LUT» tab yet", (await p.page.locator("#tabLut").count()) === 0 && p.errors.length === 0);
       await p.close();
     }
     if (process.env.SAYFRAME_ONLY === "pr") { await browser.close(); console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0); }

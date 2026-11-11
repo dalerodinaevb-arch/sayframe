@@ -550,6 +550,33 @@ var sayframeHost = (function () {
         return c ? mtParam(c, ["Blurriness", "\u0420\u0430\u0437\u043c\u044b\u0442\u0438\u0435"], 0) : null;
     }
 
+    // ---- LUT: Lumetri Color on a clip (added through QE when missing).
+    var LUT_FX = ["AE.ADBE Lumetri", "Lumetri Color", "\u0426\u0432\u0435\u0442 Lumetri"];
+    function lutComp(clip, trackIndex) {
+        var c = mtComp(clip, LUT_FX), it, fx;
+        if (!c) {
+            try {
+                it = qeItem(trackIndex, clip);
+                fx = qeByNames("fx", LUT_FX.slice(1));
+                if (it && fx) { it.addVideoEffect(fx); }
+            } catch (e) {}
+            c = mtComp(clip, LUT_FX);
+        }
+        return c;
+    }
+
+    // Puts a .cube file into Lumetri's "Input LUT": property 4 takes the file path, property 6 = 1 switches it on.
+    // Premiere has no documented call for this; the result is checked by reading property 4 back.
+    function lutSet(c, path) {
+        var p, on, got;
+        if (!c || !c.properties || c.properties.numItems < 7) { return false; }
+        p = c.properties[4]; on = c.properties[6];
+        try { p.setValue(path, true); } catch (e0) { return false; }
+        try { on.setValue(1, true); } catch (e1) {}
+        try { got = String(p.getValue()); } catch (e2) { got = ""; }
+        return got === "" || got.indexOf(new File(path).name) >= 0 || got.indexOf(decodeURI(new File(path).name)) >= 0;
+    }
+
     function mtSelectedVideo(s) {
         var sel = PR.selected(s), out = [], i, ti;
         for (i = 0; i < sel.length; i++) {
@@ -1551,6 +1578,46 @@ var sayframeHost = (function () {
                     try { nc.name = newName; } catch (e2) {}
                 }
                 return { mode: mode, layer: newName, original: String(c.name) };
+            });
+        },
+
+        // ---- LUT
+
+        // Where the playhead is and how many video clips are selected (the LUT section asks this every second).
+        lutState: function () {
+            return reply(function () {
+                var s = PR.seq();
+                return { at: PR.playhead(s), seq: String(s.name), sel: mtSelectedVideo(s).length, w: Number(s.frameSizeHorizontal), h: Number(s.frameSizeVertical) };
+            });
+        },
+
+        // The frame under the playhead as PNG; Premiere adds ".png" to the name itself. Returns the path it should get.
+        lutFrame: function (base) {
+            return reply(function () {
+                var s = PR.seq(), q, tc, old;
+                app.enableQE();
+                q = qe.project.getActiveSequence();
+                if (!q) { throw new Error("NO_SEQUENCE"); }
+                old = new File(String(base) + ".png");
+                try { if (old.exists) { old.remove(); } } catch (e0) {}
+                tc = String(q.CTI.timecode);
+                q.exportFramePNG(tc, new File(String(base)).fsName);
+                return { path: old.fsName, at: PR.playhead(s), tc: tc };
+            });
+        },
+
+        // Lumetri with this .cube as Input LUT on every selected video clip.
+        lutApply: function (path) {
+            return reply(function () {
+                var s = PR.seq(), list = mtSelectedVideo(s), f = new File(String(path)), i, c, done = 0;
+                if (!f.exists) { throw new Error("LUT_NO_FILE"); }
+                if (!list.length) { throw new Error("NO_CLIPS"); }
+                for (i = 0; i < list.length; i++) {
+                    c = lutComp(list[i].clip, list[i].track);
+                    if (c && lutSet(c, f.fsName)) { done++; }
+                }
+                if (!done) { throw new Error("LUT_NOT_SET"); }
+                return { clips: done, of: list.length };
             });
         },
 

@@ -882,7 +882,7 @@
     var HOST_JSX = IS_PR ? "/jsx/host_pr.jsx" : "/jsx/host.jsx";
     // Команды host_pr.jsx: остальные в Premiere сразу отвечают NOT_IN_PREMIERE, не трогая программу.
     var PR_FNS = ["info", "syntax", "run", "reference", "brandLogo", "brandIcon", "brandComp", "brandFilesInUse", "brandSaveDialog",
-        "exportInfo", "exportOne", "exportReveal", "exportPickFile", "acSound", "sndTargets", "sndApplyFiles", "sfApply", "sfState", "trApply",
+        "exportInfo", "exportOne", "exportReveal", "exportPickFile", "lutState", "lutFrame", "lutApply", "acSound", "sndTargets", "sndApplyFiles", "sfApply", "sfState", "trApply",
         "easePR", "ecCopy", "ecPaste", "stagger", "anchor", "align", "distribute", "placeImage", "organizeProject", "removeUnused", "cutoutSource", "cutoutApply"];
 
     // ---- Sayframe для Premiere Pro у тех, кто поставил панель раньше (обновлялся из After Effects):
@@ -1310,6 +1310,9 @@
         if (IS_PR && m === "ALIGN_NEEDS_TWO") { return "Чтобы выровнять клипы друг по другу, выделите хотя бы два. Один клип выравнивается по кадру."; }
         if (IS_PR && m === "DISTRIBUTE_NEEDS_THREE") { return "Чтобы распределить, выделите хотя бы три клипа."; }
         if (IS_PR && m === "CO_NOT_PHOTO") { return "Вырезка работает с фото: выделите на таймлайне клип-картинку (JPG, PNG…) и нажмите ещё раз."; }
+        if (m === "LUT_NO_FILE") { return "Файла этого LUT больше нет в папке Sayframe LUT. Добавьте его ещё раз."; }
+        if (m === "LUT_NOT_SET") { return "Premiere Pro не дал поставить LUT скриптом. Lumetri на клипах есть — выберите LUT в Lumetri › Basic Correction › Input LUT › Browse (файл лежит в Документы › Sayframe LUT)."; }
+        if (IS_PR && m === "NO_CLIPS" && currentTab === "lut") { return "Выделите видеоклипы на таймлайне и нажмите «Применить» ещё раз."; }
         if (m === "NO_CLIPS") { return "Выделите видеоклипы на таймлайне и щёлкните ещё раз."; }
         if (m === "NO_CUT") { return "Поставьте указатель на стык двух клипов (или выделите клипы у стыка) и щёлкните ещё раз."; }
         if (m === "NO_TRANSITION") { return "Premiere Pro не нашёл этот встроенный переход. Возьмите другой или наш из разделов «Зум», «Панорама», «Поворот»."; }
@@ -1633,6 +1636,9 @@
     function el(id) { return document.getElementById(id); }
 
     var ui = {
+        lutAdd: el("lutAdd"), lutImport: el("lutImport"), lutShare: el("lutShare"), lutFrameNote: el("lutFrameNote"), lutRefresh: el("lutRefresh"), lutGrid: el("lutGrid"),
+        lutBar: el("lutBar"), lutStrength: el("lutStrength"), lutStrengthVal: el("lutStrengthVal"), lutApply: el("lutApply"), lutShareBar: el("lutShareBar"),
+        lutShareNote: el("lutShareNote"), lutShareCancel: el("lutShareCancel"), lutShareSave: el("lutShareSave"), lutSelNote: el("lutSelNote"),
         prompt: el("prompt"), styleRow: el("styleRow"), mentionList: el("mentionList"), brandHits: el("brandHits"), brandPics: el("brandPics"), runBtn: el("runBtn"), fixBtn: el("fixBtn"), newBtn: el("newBtn"),
         refBtn: el("refBtn"), refChip: el("refChip"), refText: el("refText"), refClear: el("refClear"),
         exprCard: el("exprCard"), exprToggle: el("exprToggle"), exprBody: el("exprBody"), exprWish: el("exprWish"),
@@ -1768,13 +1774,20 @@
         tools: { tab: ui.tabTools, view: ui.viewTools, slot: ui.statusSlotTools },
         motion: { tab: ui.tabMotion, view: ui.viewMotion, slot: ui.statusSlotMotion },
         shape: { tab: ui.tabShape, view: ui.viewShape, slot: ui.statusSlotShape },
-        brand: { tab: ui.tabBrand, view: ui.viewBrand, slot: ui.statusSlotBrand }
+        brand: { tab: ui.tabBrand, view: ui.viewBrand, slot: ui.statusSlotBrand },
+        lut: { tab: el("tabLut"), view: el("viewLut"), slot: el("statusSlotLut") }
     };
 
     // Premiere: только AI и Проекты. Кнопки остальных вкладок убираются, их разделы остаются скрытыми.
     function setupPremiere() {
         var root = document.documentElement, badge;
-        if (!IS_PR) { return; }
+        if (!IS_PR) {
+            // «LUT» пока только в Premiere Pro.
+            TABS.lut.view.hidden = true;
+            if (TABS.lut.tab.parentNode) { TABS.lut.tab.parentNode.removeChild(TABS.lut.tab); }
+            delete TABS.lut;
+            return;
+        }
         root.setAttribute("data-app", "ppro");
         ["shape"].forEach(function (k) {
             TABS[k].view.hidden = true;
@@ -14841,6 +14854,487 @@
         storeUpdateState(state);
     }
 
+    // ---------------------------------------------------------------- LUT (Premiere Pro)
+    // Свои LUT (.cube) с компьютера. Файлы копируются в «Документы › Sayframe LUT», список — в localStorage.
+    // Каждая карточка — экран: кадр под указателем времени, пропущенный через этот LUT прямо в панели.
+    // «Применить» ставит Lumetri с этим LUT (Input LUT) на выделенные клипы; «Сила» ниже 100% —
+    // панель пишет смешанный .cube (LUT + исходный цвет) и ставит его.
+    var LUT_KEY = "sayframe.luts.v1";
+    var LUT_W = 320, LUT_H = 180;
+    var lut = { items: [], sel: null, sharing: false, marks: {}, cubes: {}, frame: null, frameAt: null, frameSeq: "", frameReal: false,
+        state: null, timer: 0, loading: false, k: 100, drawn: {} };
+
+    function lutFolder() { return platform.join(platform.homedir(), "Documents", "Sayframe LUT"); }
+
+    function lutLoad() {
+        var list;
+        try { list = JSON.parse(window.localStorage.getItem(LUT_KEY) || "[]"); } catch (e) { list = []; }
+        lut.items = Object.prototype.toString.call(list) === "[object Array]" ? list.filter(function (x) { return x && x.id && x.file; }) : [];
+    }
+
+    function lutStore() {
+        try { window.localStorage.setItem(LUT_KEY, JSON.stringify(lut.items)); } catch (e) {}
+    }
+
+    function lutEsc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+
+    // Хэш текста LUT без пробелов и комментариев: один и тот же LUT второй раз не добавляется.
+    function lutHash(text) {
+        var t = String(text).replace(/#[^\n]*/g, "").replace(/\s+/g, " ").trim(), h = 5381, i;
+        for (i = 0; i < t.length; i++) { h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; }
+        return h.toString(36) + "-" + t.length.toString(36);
+    }
+
+    // Разбор .cube (3D или 1D). Данные: красный меняется быстрее всех, потом зелёный, потом синий.
+    function lutParse(text) {
+        var lines = String(text || "").split(/\r?\n/), n3 = 0, n1 = 0, min = [0, 0, 0], max = [1, 1, 1], vals = [], title = "", i, l, m, need, d;
+        for (i = 0; i < lines.length; i++) {
+            l = lines[i].replace(/#.*$/, "").trim();
+            if (!l) { continue; }
+            if ((m = /^TITLE\s+"?([^"]*)"?/i.exec(l))) { title = m[1].trim(); continue; }
+            if ((m = /^LUT_3D_SIZE\s+(\d+)/i.exec(l))) { n3 = Number(m[1]); continue; }
+            if ((m = /^LUT_1D_SIZE\s+(\d+)/i.exec(l))) { n1 = Number(m[1]); continue; }
+            if ((m = /^DOMAIN_MIN\s+(\S+)\s+(\S+)\s+(\S+)/i.exec(l))) { min = [Number(m[1]), Number(m[2]), Number(m[3])]; continue; }
+            if ((m = /^DOMAIN_MAX\s+(\S+)\s+(\S+)\s+(\S+)/i.exec(l))) { max = [Number(m[1]), Number(m[2]), Number(m[3])]; continue; }
+            if ((m = /^([-+.\deE]+)\s+([-+.\deE]+)\s+([-+.\deE]+)$/.exec(l))) { vals.push(Number(m[1]), Number(m[2]), Number(m[3])); continue; }
+            if (/^[A-Z_0-9]+(\s|$)/.test(l)) { continue; }
+            return null;
+        }
+        if (n3 >= 2 && n3 <= 256) { need = n3 * n3 * n3; } else if (n1 >= 2 && n1 <= 65536) { need = n1; } else { return null; }
+        if (vals.length !== need * 3) { return null; }
+        for (i = 0; i < vals.length; i++) { if (!isFinite(vals[i])) { return null; } }
+        d = new Float32Array(vals);
+        return { dim: n3 >= 2 ? 3 : 1, n: n3 >= 2 ? n3 : n1, min: min, max: max, d: d, title: title };
+    }
+
+    // Цвет (0..1) через LUT, трилинейно.
+    function lutSample(L, r, g, b, out) {
+        var n = L.n, d = L.d, x, y, z, x0, y0, z0, x1, y1, z1, fx, fy, fz, c, i;
+        function nrm(v, a) { var t = (v - L.min[a]) / ((L.max[a] - L.min[a]) || 1); return t < 0 ? 0 : (t > 1 ? 1 : t); }
+        x = nrm(r, 0) * (n - 1); y = nrm(g, 1) * (n - 1); z = nrm(b, 2) * (n - 1);
+        if (L.dim === 1) {
+            [x, y, z].forEach(function (v, a) {
+                var i0 = Math.floor(v), i1 = Math.min(n - 1, i0 + 1), f = v - i0;
+                out[a] = d[i0 * 3 + a] + (d[i1 * 3 + a] - d[i0 * 3 + a]) * f;
+            });
+            return out;
+        }
+        x0 = Math.floor(x); y0 = Math.floor(y); z0 = Math.floor(z);
+        x1 = Math.min(n - 1, x0 + 1) - x0; y1 = (Math.min(n - 1, y0 + 1) - y0) * n; z1 = (Math.min(n - 1, z0 + 1) - z0) * n * n;
+        fx = x - x0; fy = y - y0; fz = z - z0;
+        i = ((z0 * n + y0) * n + x0) * 3;
+        x1 *= 3; y1 *= 3; z1 *= 3;
+        for (c = 0; c < 3; c++, i++) {
+            out[c] = ((d[i] * (1 - fx) + d[i + x1] * fx) * (1 - fy) + (d[i + y1] * (1 - fx) + d[i + y1 + x1] * fx) * fy) * (1 - fz) +
+                ((d[i + z1] * (1 - fx) + d[i + z1 + x1] * fx) * (1 - fy) + (d[i + z1 + y1] * (1 - fx) + d[i + z1 + y1 + x1] * fx) * fy) * fz;
+        }
+        return out;
+    }
+
+    // Подпись под карточкой: что LUT делает с серым, телесным и тенями.
+    function lutTag(L) {
+        var o = [0, 0, 0], tags = [], lo, hi, k, grey, skin;
+        lutSample(L, 0.8, 0.35, 0.2, o);
+        skin = Math.max(o[0], o[1], o[2]) - Math.min(o[0], o[1], o[2]);
+        if (skin < 0.03) { tags.push("Ч/Б"); }
+        lutSample(L, 0.5, 0.5, 0.5, o);
+        grey = o.slice();
+        if (skin >= 0.03 && grey[0] - grey[2] > 0.04) { tags.push("Тёплый"); }
+        if (skin >= 0.03 && grey[2] - grey[0] > 0.04) { tags.push("Холодный"); }
+        lutSample(L, 0.3, 0.3, 0.3, o); lo = (o[0] + o[1] + o[2]) / 3;
+        lutSample(L, 0.7, 0.7, 0.7, o); hi = (o[0] + o[1] + o[2]) / 3;
+        k = (hi - lo) / 0.4;
+        if (k > 1.6) { tags.push("Проявка LOG"); } else if (k > 1.2) { tags.push("Контрастный"); } else if (k < 0.8) { tags.push("Мягкий"); }
+        lutSample(L, 0, 0, 0, o);
+        if ((o[0] + o[1] + o[2]) / 3 > 0.07) { tags.push("Плёнка"); }
+        return tags.slice(0, 2).join(" · ") || "Нейтральный";
+    }
+
+    // Пример кадра, пока нет настоящего: закат над морем, человек на берегу.
+    function lutSampleFrame() {
+        var c = document.createElement("canvas"), x, g, W = LUT_W, H = LUT_H, i;
+        c.width = W; c.height = H; x = c.getContext("2d");
+        g = x.createLinearGradient(0, 0, 0, H * 0.62); g.addColorStop(0, "#3d6fa8"); g.addColorStop(1, "#f0b37a"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+        g = x.createRadialGradient(W * 0.68, H * 0.5, 2, W * 0.68, H * 0.5, 60); g.addColorStop(0, "rgba(255,240,200,1)"); g.addColorStop(1, "rgba(255,200,120,0)"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+        x.fillStyle = "#4a5a6e"; x.beginPath(); x.moveTo(0, H * 0.6); x.lineTo(W * 0.18, H * 0.42); x.lineTo(W * 0.35, H * 0.58); x.lineTo(W * 0.5, H * 0.47); x.lineTo(W * 0.7, H * 0.6); x.lineTo(W, H * 0.5); x.lineTo(W, H); x.lineTo(0, H); x.fill();
+        g = x.createLinearGradient(0, H * 0.6, 0, H); g.addColorStop(0, "#2f6d86"); g.addColorStop(1, "#123447"); x.fillStyle = g; x.fillRect(0, H * 0.6, W, H * 0.4);
+        x.fillStyle = "rgba(255,215,160,.55)"; for (i = 0; i < 14; i++) { x.fillRect(W * 0.6 + Math.sin(i) * 14, H * 0.63 + i * 4, 30 - i, 1.5); }
+        x.fillStyle = "#c9a77c"; x.beginPath(); x.moveTo(0, H * 0.82); x.quadraticCurveTo(W * 0.4, H * 0.74, W, H * 0.86); x.lineTo(W, H); x.lineTo(0, H); x.fill();
+        x.fillStyle = "#1d1612"; x.beginPath(); x.arc(W * 0.3, H * 0.56, 6, 0, 7); x.fill(); x.fillRect(W * 0.3 - 6, H * 0.6, 12, 26); x.fillRect(W * 0.3 - 5, H * 0.6 + 26, 4, 14); x.fillRect(W * 0.3 + 1, H * 0.6 + 26, 4, 14);
+        x.fillStyle = "#b23b3b"; x.fillRect(W * 0.3 - 6, H * 0.6, 12, 14);
+        return x.getImageData(0, 0, W, H);
+    }
+
+    // Картинка кадра (файл PNG) → ImageData LUT_W×LUT_H (вписана, по краям тёмные поля).
+    function lutImageData(path) {
+        return new Promise(function (resolve) {
+            var img = new Image(), done = false;
+            function fin(v) { if (!done) { done = true; resolve(v); } }
+            img.onload = function () {
+                var c = document.createElement("canvas"), x = c.getContext("2d"), s, w, h;
+                c.width = LUT_W; c.height = LUT_H;
+                x.fillStyle = "#000"; x.fillRect(0, 0, LUT_W, LUT_H);
+                s = Math.min(LUT_W / img.naturalWidth, LUT_H / img.naturalHeight); w = img.naturalWidth * s; h = img.naturalHeight * s;
+                x.drawImage(img, (LUT_W - w) / 2, (LUT_H - h) / 2, w, h);
+                try { fin(x.getImageData(0, 0, LUT_W, LUT_H)); } catch (e) { fin(null); }
+            };
+            img.onerror = function () { fin(null); };
+            setTimeout(function () { fin(null); }, 4000);
+            // Через data: — картинка с file:// «чужая» для холста, и getImageData бы отказал.
+            platform.readBase64(path).then(function (b64) { img.src = "data:image/png;base64," + b64; }, function () { fin(null); });
+        });
+    }
+
+    function lutCube(it) {
+        if (lut.cubes[it.id]) { return Promise.resolve(lut.cubes[it.id]); }
+        return platform.readText(platform.join(lutFolder(), it.file)).then(function (t) {
+            var L = lutParse(t);
+            if (L) { lut.cubes[it.id] = L; }
+            return L;
+        }, function () { return null; });
+    }
+
+    // Рисует одну карточку: кадр через LUT с силой k (0..1).
+    function lutDraw(canvas, L, k) {
+        var base = lut.frame || (lut.frame = lutSampleFrame()), img, p, src = base.data, o = [0, 0, 0], i, x;
+        canvas.width = LUT_W; canvas.height = LUT_H;
+        x = canvas.getContext("2d");
+        if (!L) { x.putImageData(base, 0, 0); return; }
+        img = x.createImageData(LUT_W, LUT_H); p = img.data;
+        for (i = 0; i < src.length; i += 4) {
+            lutSample(L, src[i] / 255, src[i + 1] / 255, src[i + 2] / 255, o);
+            p[i] = (src[i] / 255 + (o[0] - src[i] / 255) * k) * 255;
+            p[i + 1] = (src[i + 1] / 255 + (o[1] - src[i + 1] / 255) * k) * 255;
+            p[i + 2] = (src[i + 2] / 255 + (o[2] - src[i + 2] / 255) * k) * 255;
+            p[i + 3] = 255;
+        }
+        x.putImageData(img, 0, 0);
+    }
+
+    var LUT_PIN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 6 4 4H6l4-4z"/><path d="M12 13v8"/></svg>';
+
+    function lutSorted() {
+        var pinned = lut.items.filter(function (x) { return x.pin; }), rest = lut.items.filter(function (x) { return !x.pin; });
+        return { pinned: pinned, rest: rest };
+    }
+
+    function lutCard(it) {
+        var on = lut.sharing ? !!lut.marks[it.id] : lut.sel === it.id;
+        return '<div class="lut-card' + (on ? " sel" : "") + '" data-lut="' + lutEsc(it.id) + '" role="button" tabindex="0" aria-pressed="' + on + '" title="' + lutEsc(it.name) + '">' +
+            '<canvas width="' + LUT_W + '" height="' + LUT_H + '"></canvas>' +
+            (lut.sharing ? '<span class="lut-check" aria-hidden="true"></span>' :
+                '<button type="button" class="lut-pin' + (it.pin ? " on" : "") + '" data-pin="' + lutEsc(it.id) + '" aria-pressed="' + !!it.pin + '" aria-label="' + (it.pin ? "Открепить" : "Закрепить наверху") + '" title="' + (it.pin ? "Открепить" : "Закрепить наверху") + '">' + LUT_PIN + '</button>' +
+                '<button type="button" class="lut-x" data-del="' + lutEsc(it.id) + '" aria-label="Убрать LUT" title="Убрать из списка (нажмите дважды)">&times;</button>') +
+            '<b>' + lutEsc(it.name) + '</b><i>' + lutEsc(it.tag || "") + '</i></div>';
+    }
+
+    function lutRender() {
+        var g = lutSorted(), h = "";
+        if (!lut.items.length) {
+            h = '<div class="lut-empty"><b>Здесь будут ваши LUT</b><span>Нажмите «Добавить» и выберите файлы .cube или перетащите их сюда. Каждый LUT станет экраном с кадром из таймлайна.</span></div>';
+        } else {
+            if (g.pinned.length) { h += '<div class="lut-sep">Закреплённые</div>' + g.pinned.map(lutCard).join("") + (g.rest.length ? '<div class="lut-sep">Все</div>' : ""); }
+            h += g.rest.map(lutCard).join("");
+        }
+        if (!lut.sharing) { h += '<button type="button" class="lut-card lut-drop" id="lutDrop" title="Добавить LUT с компьютера">+<br>Перетащите .cube<br>сюда</button>'; }
+        ui.lutGrid.innerHTML = h;
+        lut.drawn = {};
+        lutPaint();
+        lutBars();
+    }
+
+    // Перерисовка экранов (после нового кадра или «Силы»). Каждый LUT читается с диска один раз.
+    function lutPaint() {
+        Array.prototype.forEach.call(ui.lutGrid.querySelectorAll(".lut-card[data-lut]"), function (card) {
+            var id = card.getAttribute("data-lut"), it = lutById(id), canvas = card.querySelector("canvas");
+            if (!it || !canvas) { return; }
+            lutCube(it).then(function (L) {
+                var k = lut.sel === id && !lut.sharing ? lut.k / 100 : 1;
+                card.classList.toggle("lut-bad", !L);
+                lutDraw(canvas, L, k);
+            });
+        });
+    }
+
+    function lutById(id) {
+        var i;
+        for (i = 0; i < lut.items.length; i++) { if (lut.items[i].id === id) { return lut.items[i]; } }
+        return null;
+    }
+
+    function lutBars() {
+        var n = Object.keys(lut.marks).filter(function (k) { return lut.marks[k]; }).length;
+        ui.lutBar.hidden = lut.sharing;
+        ui.lutShareBar.hidden = !lut.sharing;
+        ui.lutApply.disabled = !lut.sel || !lutById(lut.sel);
+        ui.lutShareSave.disabled = !n;
+        ui.lutShareNote.textContent = n ? "Отмечено: " + n : "Отметьте LUT, которыми поделиться";
+        ui.lutShare.setAttribute("aria-pressed", lut.sharing ? "true" : "false");
+        ui.lutStrengthVal.textContent = lut.k + "%";
+        lutNotes();
+    }
+
+    function lutTc(sec) {
+        var s = Math.max(0, Number(sec) || 0), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = Math.floor(s) % 60;
+        function two(v) { return (v < 10 ? "0" : "") + v; }
+        return two(h) + ":" + two(m) + ":" + two(ss);
+    }
+
+    function lutNotes() {
+        var st = lut.state;
+        if (!st) { ui.lutFrameNote.textContent = "Пример кадра — откройте секвенцию, и здесь будет ваш кадр"; }
+        else if (!lut.frameReal) { ui.lutFrameNote.textContent = lut.loading ? "Беру кадр под указателем времени…" : "Пример кадра — Premiere не отдал кадр, нажмите ↻"; }
+        else { ui.lutFrameNote.textContent = "Кадр " + lutTc(lut.frameAt) + " под указателем времени · обновляется сам"; }
+        if (lut.sharing) { ui.lutSelNote.textContent = "Все отмеченные LUT сохранятся в один файл .sflut — его можно отправить в Telegram или по почте."; }
+        else if (!st) { ui.lutSelNote.textContent = "Ставится на выделенные клипы"; }
+        else { ui.lutSelNote.textContent = st.sel ? "Ставится на выделенные клипы: " + plural(st.sel, "клип", "клипа", "клипов") : "Выделите клипы на таймлайне — LUT встанет на них"; }
+    }
+
+    // Кадр под указателем: Premiere сохраняет PNG, панель ждёт файл и рисует экраны заново.
+    var lutFrameN = 0;
+    function lutGrabFrame() {
+        var base, file;
+        if (!IS_PR || !platform.available || lut.loading) { return Promise.resolve(); }
+        lut.loading = true;
+        lutNotes();
+        base = platform.join(platform.tmpdir(), "sayframe-lut-frame-" + (++lutFrameN % 2));
+        file = base + ".png";
+        return host("lutFrame", [base]).then(function (r) {
+            var tries = 0;
+            file = r.path || file;
+            lut.frameAt = r.at;
+            function wait() {
+                return platform.exists(file).then(function (ok) {
+                    if (ok) { return lutImageData(file); }
+                    if (++tries > 20) { return null; }
+                    return new Promise(function (res) { setTimeout(res, 150); }).then(wait);
+                });
+            }
+            return wait();
+        }).then(function (img) {
+            lut.loading = false;
+            if (img) { lut.frame = img; lut.frameReal = true; }
+            lutNotes();
+            if (img) { lutPaint(); }
+        }, function () { lut.loading = false; lutNotes(); });
+    }
+
+    // Раз в секунду, пока открыт раздел: где указатель и сколько клипов выделено. Указатель встал на новое место — новый кадр.
+    function lutPoll() {
+        if (currentTab !== "lut" || document.hidden || !IS_PR) { return; }
+        host("lutState", []).then(function (st) {
+            var moved = !lut.state || Math.abs(st.at - (lut.frameAt === null ? -1 : lut.frameAt)) > 0.001 || st.seq !== lut.frameSeq;
+            var still = lut.state && Math.abs(lut.state.at - st.at) < 0.001;
+            lut.state = st;
+            lutNotes();
+            if (moved && (still || !lut.frameReal) && !lut.loading) { lut.frameSeq = st.seq; lutGrabFrame(); }
+        }, function () { lut.state = null; lutNotes(); });
+    }
+
+    function lutSafe(name) { return String(name).replace(/[\\\/:\*\?"<>\|]/g, "_").replace(/^\s+|\s+$/g, "").slice(0, 80) || "LUT"; }
+
+    function lutFreeName(base) {
+        var used = {}, n = 1, name;
+        lut.items.forEach(function (x) { used[x.file.toLowerCase()] = true; });
+        name = base + ".cube";
+        while (used[name.toLowerCase()]) { n += 1; name = base + " " + n + ".cube"; }
+        return name;
+    }
+
+    // Добавляет LUT по тексту .cube. Возвращает "added" | "dup" | "bad".
+    function lutAddText(text, name, tag) {
+        var L = lutParse(text), h, it, file;
+        if (!L) { return Promise.resolve("bad"); }
+        h = lutHash(text);
+        if (lut.items.some(function (x) { return x.h === h; })) { return Promise.resolve("dup"); }
+        name = String(name || L.title || "LUT").replace(/\.(cube|CUBE)$/, "").trim() || "LUT";
+        file = lutFreeName(lutSafe(name));
+        it = { id: "l" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, file: file, tag: tag || lutTag(L), h: h, pin: false, t: Date.now() };
+        return platform.mkdirp(lutFolder()).then(function () {
+            return platform.writeText(platform.join(lutFolder(), file), text);
+        }).then(function () {
+            lut.items.push(it);
+            lut.cubes[it.id] = L;
+            if (!lut.sel) { lut.sel = it.id; }
+            return "added";
+        });
+    }
+
+    // Файлы с компьютера: .cube добавляются как есть, .sflut — все LUT из него.
+    function lutAddFiles(paths) {
+        var res = { added: 0, dup: 0, bad: 0 }, chain = Promise.resolve();
+        (paths || []).forEach(function (p) {
+            chain = chain.then(function () {
+                return platform.readText(p).then(function (text) {
+                    var data, list;
+                    if (/\.sflut$/i.test(p) || /^\s*\{/.test(text)) {
+                        try { data = JSON.parse(text); } catch (e) { data = null; }
+                        list = data && data.sayframe === "lut" && Object.prototype.toString.call(data.luts) === "[object Array]" ? data.luts : null;
+                        if (!list) { res.bad += 1; return null; }
+                        return list.reduce(function (c, x) {
+                            return c.then(function () { return lutAddText(x && x.cube, x && x.name, x && x.tag).then(function (r) { res[r] += 1; }); });
+                        }, Promise.resolve());
+                    }
+                    return lutAddText(text, platform.basename(p).replace(/\.[^.]+$/, "")).then(function (r) { res[r] += 1; });
+                }, function () { res.bad += 1; });
+            });
+        });
+        return chain.then(function () {
+            var parts = [];
+            lutStore();
+            lutRender();
+            if (res.added) { parts.push("Добавлено LUT: " + res.added); }
+            if (res.dup) { parts.push("уже были: " + res.dup); }
+            if (res.bad) { parts.push("не прочитано: " + res.bad + " (нужен .cube или .sflut)"); }
+            setStatus(parts.length ? parts.join(", ") + "." : "Ничего не добавлено.", res.added ? "done" : (res.bad ? "error" : ""));
+            return res;
+        });
+    }
+
+    function onLutAdd(title) {
+        if (!platform.available) { setStatus(humanError(new Error("NODE_UNAVAILABLE")), "error"); return; }
+        platform.pickFiles(title).then(function (paths) { if (paths.length) { return lutAddFiles(paths); } });
+    }
+
+    // «Сила» ниже 100%: смешанный LUT (исходный цвет + LUT) пишется рядом, в папку «Сила».
+    function lutMixedFile(it, L, k) {
+        var n = L.dim === 3 ? L.n : 33, lines = [], o = [0, 0, 0], r, g, b, x, y, z, dir, file;
+        lines.push("TITLE \"" + it.name.replace(/"/g, "'") + " " + Math.round(k * 100) + "%\"", "LUT_3D_SIZE " + n);
+        for (b = 0; b < n; b++) {
+            for (g = 0; g < n; g++) {
+                for (r = 0; r < n; r++) {
+                    x = L.min[0] + (L.max[0] - L.min[0]) * r / (n - 1); y = L.min[1] + (L.max[1] - L.min[1]) * g / (n - 1); z = L.min[2] + (L.max[2] - L.min[2]) * b / (n - 1);
+                    lutSample(L, x, y, z, o);
+                    lines.push((x + (o[0] - x) * k).toFixed(6) + " " + (y + (o[1] - y) * k).toFixed(6) + " " + (z + (o[2] - z) * k).toFixed(6));
+                }
+            }
+        }
+        if (L.dim === 3 && (L.min.join() !== "0,0,0" || L.max.join() !== "1,1,1")) { lines.splice(2, 0, "DOMAIN_MIN " + L.min.join(" "), "DOMAIN_MAX " + L.max.join(" ")); }
+        dir = platform.join(lutFolder(), "Сила");
+        file = platform.join(dir, it.file.replace(/\.cube$/i, "") + " " + Math.round(k * 100) + "%.cube");
+        return platform.mkdirp(dir).then(function () { return platform.writeText(file, lines.join("\n") + "\n"); }).then(function () { return file; });
+    }
+
+    function onLutApply() {
+        var it = lutById(lut.sel), k = lut.k / 100;
+        if (!it || busy) { return; }
+        ui.lutApply.disabled = true;
+        setStatus("Ставлю «" + it.name + "» на выделенные клипы…", "busy");
+        lutCube(it).then(function (L) {
+            if (!L) { throw new Error("LUT_NO_FILE"); }
+            if (k >= 0.999) { return platform.join(lutFolder(), it.file); }
+            return lutMixedFile(it, L, k);
+        }).then(function (file) {
+            return host("lutApply", [file]);
+        }).then(function (r) {
+            setStatus("LUT «" + it.name + "»" + (k < 0.999 ? " (" + lut.k + "%)" : "") + " стоит на " + plural(r.clips, "клипе", "клипах", "клипах") +
+                (r.clips < r.of ? " из " + r.of : "") + ". Он в Lumetri › Basic Correction › Input LUT.", "done");
+        }).catch(function (e) {
+            setStatus(humanError(e), "error");
+        }).then(function () { lutBars(); });
+    }
+
+    function onLutShareSave() {
+        var ids = lut.items.filter(function (x) { return lut.marks[x.id]; }), out = { sayframe: "lut", v: 1, luts: [] }, name;
+        if (!ids.length) { return; }
+        name = ids.length === 1 ? lutSafe(ids[0].name) + ".sflut" : "Мои LUT.sflut";
+        Promise.all(ids.map(function (it) {
+            return platform.readText(platform.join(lutFolder(), it.file)).then(function (t) { out.luts.push({ name: it.name, tag: it.tag, cube: t }); }, function () {});
+        })).then(function () {
+            return host("brandSaveDialog", [name, "Сохранить LUT в один файл"]);
+        }).then(function (r) {
+            if (!r.path) { return null; }
+            if (!/\.sflut$/i.test(r.path)) { r.path += ".sflut"; }
+            return platform.writeText(r.path, JSON.stringify(out)).then(function () {
+                lut.sharing = false; lut.marks = {};
+                lutRender();
+                setStatus("Сохранено LUT: " + out.luts.length + " — файл «" + platform.basename(r.path) + "». Отправьте его коллеге: он откроет его кнопкой «Импорт».", "done");
+                return host("exportReveal", [r.path]).catch(function () {});
+            });
+        }).catch(function (e) { setStatus("Не удалось сохранить файл: " + humanError(e), "error"); });
+    }
+
+    function lutDelete(id) {
+        var it = lutById(id);
+        if (!it) { return; }
+        lut.items = lut.items.filter(function (x) { return x.id !== id; });
+        delete lut.cubes[id];
+        if (lut.sel === id) { lut.sel = lut.items.length ? lut.items[0].id : null; }
+        lutStore();
+        lutRender();
+        platform.remove(platform.join(lutFolder(), it.file));
+        setStatus("LUT «" + it.name + "» убран.", "");
+    }
+
+    function enableLut() {
+        var delArm = null;
+        if (!TABS.lut) { return; }
+        lutLoad();
+        if (lut.items.length) { lut.sel = lut.items[0].id; }
+        lutRender();
+        ui.lutAdd.addEventListener("click", function () { onLutAdd("Выберите LUT (.cube)"); });
+        ui.lutImport.addEventListener("click", function () { onLutAdd("Откройте файл .sflut или .cube"); });
+        ui.lutShare.addEventListener("click", function () {
+            if (!lut.items.length) { setStatus("Сначала добавьте LUT — потом ими можно поделиться.", ""); return; }
+            lut.sharing = !lut.sharing; lut.marks = {};
+            if (lut.sharing && lut.sel) { lut.marks[lut.sel] = true; }
+            lutRender();
+        });
+        ui.lutShareCancel.addEventListener("click", function () { lut.sharing = false; lut.marks = {}; lutRender(); });
+        ui.lutShareSave.addEventListener("click", onLutShareSave);
+        ui.lutApply.addEventListener("click", onLutApply);
+        ui.lutRefresh.addEventListener("click", function () { if (IS_PR) { lut.frameAt = null; lutGrabFrame(); } });
+        ui.lutStrength.addEventListener("input", function () {
+            var card = lut.sel && ui.lutGrid.querySelector('.lut-card[data-lut="' + lut.sel + '"] canvas'), it = lutById(lut.sel);
+            lut.k = Number(ui.lutStrength.value);
+            ui.lutStrengthVal.textContent = lut.k + "%";
+            if (card && it) { lutCube(it).then(function (L) { lutDraw(card, L, lut.k / 100); }); }
+        });
+        ui.lutGrid.addEventListener("click", function (e) {
+            var t = e.target, pin = t.closest(".lut-pin"), del = t.closest(".lut-x"), card = t.closest(".lut-card"), it, id;
+            if (t.closest("#lutDrop")) { onLutAdd("Выберите LUT (.cube)"); return; }
+            if (pin) {
+                it = lutById(pin.getAttribute("data-pin"));
+                if (it) { it.pin = !it.pin; lutStore(); lutRender(); }
+                return;
+            }
+            if (del) {
+                id = del.getAttribute("data-del");
+                if (delArm && delArm.id === id) { clearTimeout(delArm.t); delArm = null; lutDelete(id); return; }
+                if (delArm) { clearTimeout(delArm.t); }
+                del.classList.add("armed");
+                delArm = { id: id, t: setTimeout(function () { del.classList.remove("armed"); delArm = null; }, 3000) };
+                setStatus("Нажмите × ещё раз, чтобы убрать этот LUT.", "");
+                return;
+            }
+            if (!card || !card.getAttribute("data-lut")) { return; }
+            id = card.getAttribute("data-lut");
+            if (lut.sharing) { lut.marks[id] = !lut.marks[id]; } else { lut.sel = id; }
+            Array.prototype.forEach.call(ui.lutGrid.querySelectorAll(".lut-card[data-lut]"), function (c) {
+                var on = lut.sharing ? !!lut.marks[c.getAttribute("data-lut")] : c.getAttribute("data-lut") === lut.sel;
+                c.classList.toggle("sel", on);
+                c.setAttribute("aria-pressed", on ? "true" : "false");
+            });
+            if (!lut.sharing) { lutPaint(); }
+            lutBars();
+        });
+        ui.lutGrid.addEventListener("keydown", function (e) {
+            var c = e.target;
+            if ((e.key === "Enter" || e.key === " ") && c.classList && c.classList.contains("lut-card") && c.getAttribute("data-lut")) { e.preventDefault(); c.click(); }
+        });
+        // Перетаскивание файлов из Finder/Проводника в раздел.
+        TABS.lut.view.addEventListener("dragover", function (e) { e.preventDefault(); TABS.lut.view.classList.add("lut-dragging"); });
+        TABS.lut.view.addEventListener("dragleave", function (e) { if (e.target === TABS.lut.view) { TABS.lut.view.classList.remove("lut-dragging"); } });
+        TABS.lut.view.addEventListener("drop", function (e) {
+            var files = e.dataTransfer && e.dataTransfer.files, paths = [], i;
+            e.preventDefault();
+            TABS.lut.view.classList.remove("lut-dragging");
+            for (i = 0; files && i < files.length; i++) { if (files[i].path) { paths.push(files[i].path); } }
+            if (paths.length) { lutAddFiles(paths); }
+        });
+        lut.timer = setInterval(lutPoll, 1000);
+    }
+
     // ---------------------------------------------------------------- init
 
     applyTheme(settings);
@@ -14853,6 +15347,7 @@
     enableArranging();
     enableTabReordering();
     enableMotion();
+    enableLut();
 
     ui.runBtn.addEventListener("click", onRun);
     ui.stopBtn.addEventListener("click", requestStop);
