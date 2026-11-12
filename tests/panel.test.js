@@ -1821,8 +1821,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.locator("#quickList .quick-chip").nth(1).click();
   t = await p.page.inputValue("#prompt");
   check("Q2 a press puts the task into the field (not sent yet) with the cursor at the end", /^Сделай подпись внизу кадра/.test(t) && /«Имя Фамилия»/.test(t) && p.net.requests.length === 0 && (await p.page.evaluate(() => document.activeElement.id)) === "prompt" && (await p.page.evaluate(() => document.getElementById("prompt").selectionStart === document.getElementById("prompt").value.length)) && /в поле запроса/.test(await p.status()));
-  await p.page.fill("#prompt", t.replace("«Имя Фамилия»", "«Далер»"));
-  await p.page.click("#runBtn"); await p.idle();
+  await p.run(t.replace("«Имя Фамилия»", "«Далер»"));
   check("Q2 after a tweak it runs like any request", /«Далер»/.test(p.net.requests[0].body.messages[0].content) && p.ae.log.ran.join() === "lower");
   await p.page.fill("#prompt", "Сделай тряску камеры на 2 секунды с текущего времени");
   await p.page.click("#quickAdd");

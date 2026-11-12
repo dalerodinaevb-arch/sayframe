@@ -3187,9 +3187,10 @@
 
     async function onRun() {
         var text = ui.prompt.value.replace(/^\s+|\s+$/g, "");
-        var info, body, sent, hits, note, pics, planRes, picBlocks = [], voiceNoteText;
+        var info, body, sent, hits, note, pics, planRes, picBlocks = [], voiceNoteText, voiceSeen;
         if (busy) { return; }
         if (text === "") { setStatus("Напишите, что нужно сделать.", ""); return; }
+        voiceSeen = voiceCheck();
         try {
             info = await host("info", []);
         } catch (e) {
@@ -3201,7 +3202,7 @@
         if (motionStyleOf(settings.motionStyle).note) { note = (note ? note + "\n\n" : "") + "[Motion style] " + motionStyleOf(settings.motionStyle).note; }
         if (hits.length) { note = (note ? note + "\n" : "") + brandHitsNote(hits); }
         // «Под голос»: слова выделенного слоя с голосом и их время — AI ставит анимации на слова.
-        await voiceCheck();
+        await voiceSeen;
         if (voiceOn()) {
             voiceNoteText = await voiceReady();
             if (voiceNoteText === null) { return; }
