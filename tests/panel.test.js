@@ -2087,7 +2087,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   console.log("\n=== motion style ===");
   p = await open({ replies: [msg("Делаю.\n```javascript\napp.__ran('ms');\n```"), msg("Делаю.\n```javascript\napp.__ran('ms2');\n```")] });
   t = await p.page.locator("#styleRow .style-chip").allInnerTexts();
-  check("MS1 above the request: «Стиль:» with Обычный, Плавный, Энергичный, Минимализм, Корпоративный, Игривый and the packs; Обычный is on", t.join() === "Обычный,Плавный,Энергичный,Минимализм,Корпоративный,Игривый,Бумажный коллаж,Архивный эдит,Кинетическая типографика" && (await p.page.getAttribute('#styleRow [data-style="normal"]', "aria-checked")) === "true" && (await p.page.evaluate(() => { const q = document.getElementById("styleRow").getBoundingClientRect(), t = document.getElementById("prompt").getBoundingClientRect(); return q.bottom <= t.top; })), t.join());
+  check("MS1 above the request: «Стиль:» with Обычный, Плавный, Энергичный, Минимализм, Корпоративный, Игривый and the packs; Обычный is on", t.join() === "Обычный,Плавный,Энергичный,Минимализм,Корпоративный,Игривый,Бумажный коллаж,Архивный эдит,Кинетическая типографика,Неон,Глитч,Ретро VHS,Швейцарский,Скетч от руки" && (await p.page.getAttribute('#styleRow [data-style="normal"]', "aria-checked")) === "true" && (await p.page.evaluate(() => { const q = document.getElementById("styleRow").getBoundingClientRect(), t = document.getElementById("prompt").getBoundingClientRect(); return q.bottom <= t.top; })), t.join());
   await p.page.click('#styleRow [data-style="energetic"]');
   await p.run("сделай заставку");
   c = p.net.requests[0].body;
@@ -7044,8 +7044,8 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.page.screenshot({ path: path.join(SHOTS, "sa-1-ai.png") });
     await p.page.click("#aiStyleBtn");
     const cards = await p.page.locator("#aiStylePop .style-chip .style-name").allInnerTexts();
-    check("SA2 the style button opens cards with a picture and a short note: the old styles plus the packs «Бумажный коллаж», «Архивный эдит», «Кинетическая типографика», and «+ Новый стиль из рефа»",
-      cards.join() === "Обычный,Плавный,Энергичный,Минимализм,Корпоративный,Игривый,Бумажный коллаж,Архивный эдит,Кинетическая типографика" && (await vis(p, '#aiStylePop .style-chip[data-style="collage"] .style-thumb')) &&
+    check("SA2 the style button opens cards with a picture and a short note: the old styles plus the packs (Бумажный коллаж, Архивный эдит, Кинетическая типографика, Неон, Глитч, Ретро VHS, Швейцарский, Скетч от руки), and «+ Новый стиль из рефа»",
+      cards.join() === "Обычный,Плавный,Энергичный,Минимализм,Корпоративный,Игривый,Бумажный коллаж,Архивный эдит,Кинетическая типографика,Неон,Глитч,Ретро VHS,Швейцарский,Скетч от руки" && (await vis(p, '#aiStylePop .style-chip[data-style="collage"] .style-thumb')) &&
       (await p.page.innerText('#aiStylePop .style-chip[data-style="collage"] .style-note')) === "рваная бумага, на двойках" && (await vis(p, "#aiStyleNew")) && !(await vis(p, "#aiStyleTricksBox")), cards.join());
     await p.page.screenshot({ path: path.join(SHOTS, "sa-2-styles.png") });
     await p.page.click('#aiStylePop .style-chip[data-style="collage"]');

@@ -8615,7 +8615,12 @@ var SF = (function () {
         playful:   { dur: 0.55, step: 0.05, easeIn: 20, easeOut: 80, spring: true, amp: 0.12, freq: 2.5, decay: 5, dist: 0.15, rise: 50, blur: 30, popFrom: 0 },
         collage:   { dur: 0.5, step: 0.0833, easeIn: 30, easeOut: 95, spring: false, amp: 0.05, freq: 2, decay: 8, dist: 0.18, rise: 40, blur: 20, popFrom: 0 },
         archival:  { dur: 0.9, step: 0.1, easeIn: 15, easeOut: 90, spring: false, amp: 0.03, freq: 2, decay: 8, dist: 0.06, rise: 24, blur: 30, popFrom: 0.94 },
-        kinetic:   { dur: 0.4, step: 0.05, easeIn: 30, easeOut: 95, spring: false, amp: 0.05, freq: 3, decay: 8, dist: 0.25, rise: 90, blur: 40, popFrom: 0.6 }
+        kinetic:   { dur: 0.4, step: 0.05, easeIn: 30, easeOut: 95, spring: false, amp: 0.05, freq: 3, decay: 8, dist: 0.25, rise: 90, blur: 40, popFrom: 0.6 },
+        neon:      { dur: 0.6, step: 0.08, easeIn: 20, easeOut: 85, spring: false, amp: 0.04, freq: 2, decay: 8, dist: 0.06, rise: 20, blur: 40, popFrom: 0.92 },
+        glitch:    { dur: 0.35, step: 0.04, easeIn: 40, easeOut: 95, spring: false, amp: 0.05, freq: 3, decay: 9, dist: 0.1, rise: 30, blur: 20, popFrom: 1.2 },
+        vhs:       { dur: 0.7, step: 0.1, easeIn: 20, easeOut: 80, spring: false, amp: 0.04, freq: 2, decay: 8, dist: 0.08, rise: 30, blur: 20, popFrom: 0.9 },
+        swiss:     { dur: 0.5, step: 0.06, easeIn: 50, easeOut: 99, spring: false, amp: 0.03, freq: 2, decay: 9, dist: 0.3, rise: 120, blur: 0, popFrom: 0 },
+        sketch:    { dur: 0.5, step: 0.0833, easeIn: 25, easeOut: 90, spring: true, amp: 0.08, freq: 2.5, decay: 6, dist: 0.12, rise: 40, blur: 0, popFrom: 0 }
     };
     var KIT = (typeof KeyframeInterpolationType !== "undefined") ? KeyframeInterpolationType : { LINEAR: 6612, BEZIER: 6613, HOLD: 6614 };
 
@@ -8987,6 +8992,57 @@ var SF = (function () {
         return layer;
     }
 
+    // Neon: a tight bright glow plus a wide soft one; with t it flickers on like a tube (hold keys, frames apart).
+    function neon(layer, t, o) {
+        var g1 = addFx(layer, "ADBE Glo2", "SF Neon"), g2 = addFx(layer, "ADBE Glo2", "SF Neon Wide"), f, op, v, pat, i;
+        setFx(g1, ["ADBE Glo2-0002", "Glow Threshold"], 30); setFx(g1, ["ADBE Glo2-0003", "Glow Radius"], (o && o.radius) || 18); setFx(g1, ["ADBE Glo2-0004", "Glow Intensity"], 2.5);
+        setFx(g2, ["ADBE Glo2-0002", "Glow Threshold"], 30); setFx(g2, ["ADBE Glo2-0003", "Glow Radius"], ((o && o.radius) || 18) * 6); setFx(g2, ["ADBE Glo2-0004", "Glow Intensity"], 1);
+        if (t !== undefined && t !== null) {
+            f = comp().frameDuration || (1 / 30);
+            op = tr(layer, "ADBE Opacity"); v = valueAt(op, t) || 100;
+            pat = [[0, 0], [2, v], [3, v * 0.2], [5, v], [6, v * 0.4], [8, v]];
+            for (i = 0; i < pat.length; i++) { pat[i] = [t + pat[i][0] * f, pat[i][1]]; }
+            keys(op, pat, "hold");
+        }
+        return layer;
+    }
+
+    // Glitch hit: for o.dur (0.3 s) the layer jumps sideways frame by frame, stretches and flickers, then lands where it was.
+    function glitch(layer, t, o) {
+        var c = comp(), f = c.frameDuration || (1 / 30), amt = (o && o.amount) || Math.round(c.width * 0.025), p = tr(layer, "ADBE Position"), s = tr(layer, "ADBE Scale"), op = tr(layer, "ADBE Opacity");
+        var jx = [1, -0.6, 0.35, -0.8, 0.2, 0], sx = [1.12, 0.94, 1.06, 1.15, 0.98, 1], n = Math.max(3, Math.min(jx.length, Math.round(((o && o.dur) || 0.3) / f))), pos, sv, ov, pk = [], sk = [], ok = [], i, a, b;
+        pos = valueAt(p, t); sv = valueAt(s, t); ov = valueAt(op, t) || 100;
+        for (i = 0; i < n; i++) {
+            a = copy(pos); a[0] += i === n - 1 ? 0 : jx[i] * amt; pk.push([t + i * f, a]);
+            b = copy(sv); b[0] = sv[0] * (i === n - 1 ? 1 : sx[i]); sk.push([t + i * f, b]);
+            ok.push([t + i * f, i === n - 1 ? ov : (i % 2 ? ov * 0.5 : ov)]);
+        }
+        if (!p.dimensionsSeparated) { keys(p, pk, "hold"); }
+        keys(s, sk, "hold"); keys(op, ok, "hold");
+        return layer;
+    }
+
+    // VHS look on the shared adjustment layer: noise, scan lines, a little softness and washed colour.
+    function vhs(layer, o) {
+        var l = layer || lookLayer("SF Look"), nz = addFx(l, "ADBE Noise", "SF VHS Noise"), sl = addFx(l, "ADBE Venetian Blinds", "SF Scanlines"), bl = addFx(l, "ADBE Gaussian Blur 2", "SF VHS Soft"), bc;
+        setFx(nz, ["ADBE Noise-0001", "Amount of Noise"], (o && o.noise) || 10);
+        setFx(sl, ["ADBE Venetian Blinds-0001", "Transition Completion"], 18); setFx(sl, ["ADBE Venetian Blinds-0002", "Direction"], 0); setFx(sl, ["ADBE Venetian Blinds-0003", "Width"], 4);
+        setFx(bl, ["ADBE Gaussian Blur 2-0001", "Blurriness"], 1.5);
+        bc = addFx(l, "ADBE Brightness & Contrast 2", "SF VHS Wash");
+        setFx(bc, ["ADBE Brightness & Contrast 2-0001", "Brightness"], 6); setFx(bc, ["ADBE Brightness & Contrast 2-0002", "Contrast"], -12);
+        return l;
+    }
+
+    // Hand-drawn wobble: the layer's outline boils (Turbulent Displace whose evolution jumps fps times a second).
+    function sketch(layer, o) {
+        var fx = addFx(layer, "ADBE Turbulent Displace", "SF Sketch"), fps = (o && o.fps) || 8, ev = null;
+        setFx(fx, ["ADBE Turbulent Displace-0002", "Amount"], (o && o.amount) || 6);
+        setFx(fx, ["ADBE Turbulent Displace-0003", "Size"], (o && o.size) || 6);
+        try { ev = fx.property("ADBE Turbulent Displace-0006") || fx.property("Evolution"); } catch (e0) {}
+        if (ev) { try { ev.expression = "posterizeTime(" + fps + ");time*" + (fps * 45); } catch (e1) {} }
+        return layer;
+    }
+
     var API = {};
     // One effect on several layers, each a little later: SF.stagger(layers, t, step, "popIn", opts).
     function stagger(layers, t, step, fn, o) {
@@ -9003,5 +9059,6 @@ var SF = (function () {
     API.drawOn = drawOn; API.blurIn = blurIn; API.drift = drift; API.wiggle = wiggle; API.motionBlur = motionBlur; API.stagger = stagger;
     API.onTwos = onTwos; API.boil = boil; API.dropIn = dropIn; API.pushIn = pushIn; API.slam = slam;
     API.grain = grain; API.bloom = bloom; API.bw = bw; API.torn = torn;
+    API.neon = neon; API.glitch = glitch; API.vhs = vhs; API.sketch = sketch;
     return API;
 })();

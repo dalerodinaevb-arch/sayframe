@@ -159,5 +159,20 @@ try { run("SF.torn(c.layers[0]); SF.grain(c.layers[0]); SF.bloom(c.layers[0]); S
 check("SF10 look recipes (torn, grain, bloom, b/w) never break the script when an effect or its parameter is missing", threw === "" && A.g["ADBE Effect Parade"].list.length === 5, threw);
 check("SF10 the new style packs exist", run("SF.style('collage') + SF.style('archival') + SF.style('kinetic')", mkComp()) === "collagearchivalkinetic");
 
+c = mkComp(); A = mkLayer(c);
+run("SF.neon(c.layers[0], 2)", c);
+check("SF11 neon: two glows, and the tube flickers on in hold keys a few frames apart (0, on, 20%, on, 40%, on)",
+  A.g["ADBE Effect Parade"].list.length === 2 && keysOf(A.t["ADBE Opacity"]) === "2.00=0 2.07=100 2.10=20 2.17=100 2.20=40 2.27=100" && A.t["ADBE Opacity"].keys.every((k) => k.inType === KIT.HOLD), keysOf(A.t["ADBE Opacity"]));
+c = mkComp(); A = mkLayer(c);
+run("SF.glitch(c.layers[0], 1, { amount: 50, dur: 0.2 })", c);
+check("SF11 glitch: frame-by-frame jumps sideways with stretches and flicker, landing exactly where it was",
+  keysOf(A.t["ADBE Position"]) === "1.00=[1010,540,0] 1.03=[930,540,0] 1.07=[977.5,540,0] 1.10=[920,540,0] 1.13=[970,540,0] 1.17=[960,540,0]" &&
+  JSON.stringify(A.t["ADBE Scale"].keys[A.t["ADBE Scale"].keys.length - 1].v) === "[100,100,100]" && A.t["ADBE Opacity"].keys[1].v === 50 && A.t["ADBE Opacity"].keys[A.t["ADBE Opacity"].keys.length - 1].v === 100, keysOf(A.t["ADBE Position"]));
+c = mkComp(); A = mkLayer(c);
+threw = "";
+try { run("SF.vhs(c.layers[0]); SF.sketch(c.layers[0])", c); } catch (e) { threw = String(e.message || e); }
+check("SF11 vhs and sketch add their effects without breaking the script", threw === "" && A.g["ADBE Effect Parade"].list.length === 5, threw);
+check("SF11 the second set of packs exists", run("SF.style('neon') + SF.style('glitch') + SF.style('vhs') + SF.style('swiss') + SF.style('sketch')", mkComp()) === "neonglitchvhsswisssketch");
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

@@ -165,7 +165,36 @@
             "(2) Words hit on the beat: a 0.5 s grid (120 BPM), each word or line enters on a beat with SF.slam, SF.wipe or SF.textIn(by 'chars' or 'words', dur 0.3-0.5) and a very strong ease-out (moves stop dead, no bounce). " +
             "(3) Mix scales: one huge word, one small label; rotate a line 90 degrees now and then; masks and shape bars wipe text in and out. " +
             "(4) Transitions are hard: a block of colour wipes the frame, or the camera scales through a letter (SF.pushIn into a letter). " +
-            "(5) Motion blur on, no fades longer than 0.2 s, holds of 0.5-1 s per phrase." }
+            "(5) Motion blur on, no fades longer than 0.2 s, holds of 0.5-1 s per phrase." },
+        { id: "neon", label: "Неон", pack: true, tricks: ["свечение трубок", "мигание при включении", "линии рисуются", "тёмный фон", "лёгкое дрожание"],
+          note: "Style pack: NEON SIGNS at night. Rules: (1) Background near-black blue (#07070f to #120a24), maybe a faint brick or grid texture at 10-15% opacity. " +
+            "(2) Everything is a glowing tube: text in a rounded or script font as outlined/stroked shape or text with stroke, 2-3 saturated colours (#ff2bd6 pink, #20e3ff cyan, #ffe14d yellow), and SF.neon(layer, t) on each piece - two glows, the tube flickers on (hold frames). " +
+            "(3) Lines and icons draw themselves with SF.drawOn (0.6-1 s, ease in-out), then glow. Pieces switch on one after another with SF.neon at 0.15-0.3 s steps - never fade or slide in. " +
+            "(4) Alive while it holds: a subtle flicker (opacity wiggle 1-2 times a second, 5-10%) on one or two signs, a slow drift (SF.drift 3-4%). " +
+            "(5) Exit: tubes switch off in reverse order with a short flicker. Optional reflection: a blurred, flipped copy at 20% opacity under the sign." },
+        { id: "glitch", label: "Глитч", pack: true, tricks: ["цифровые сбои", "рывки по кадрам", "мигание", "моноширинный текст", "резкие склейки"],
+          note: "Style pack: DIGITAL GLITCH. Rules: (1) Palette: black #000, white, one acid colour (#00ff9c or #ff2e4d); mono or tech grotesk type, uppercase, tracking +50. " +
+            "(2) Things do not glide in: they appear with SF.glitch(layer, t, {dur: 0.2-0.35}) - frame-by-frame sideways jumps, stretches and flicker, then they sit still. Also glitch on exits and at every cut. " +
+            "(3) Rhythm: hard cuts every 0.5-1 s, holds are short; between hits everything is perfectly still (contrast is the point). " +
+            "(4) Extra layers: thin horizontal bars or blocks (solid rectangles 2-20 px high) that blink for 1-2 frames across the frame during hits; a copy of the title in the acid colour offset 6-10 px and visible only during hits (RGB split feel). " +
+            "(5) Text can type on with SF.typeOn with a block cursor. No soft fades, no bounce, no blur transitions." },
+        { id: "vhs", label: "Ретро VHS", pack: true, tricks: ["полосы развёртки", "шум плёнки", "мягкая картинка", "дата в углу", "дрожание кадра"],
+          note: "Style pack: RETRO 80s/90s VHS. Rules: (1) Call SF.vhs() once - noise, scan lines, softness and washed colour on one adjustment layer 'SF Look' on top; add SF.grain(null, {amount: 4}). " +
+            "(2) Colours: warm faded (#f2e9d8, #e85d75, #3fb6c6, #f6c453) on dark navy; chrome or bold italic type with a hard drop shadow offset 6-8 px; a camcorder overlay: 'PLAY >' top left and a date like 'JAN 01 1994' bottom right in a mono font. " +
+            "(3) Motion is a bit clunky and analog: moves 0.6-0.8 s with ease-out, slight wiggle of the whole picture (a null parent with wiggle(1, 3)), sometimes a quick 2-3 frame vertical jump (tracking error) at cuts. " +
+            "(4) Transitions: a white flash of 2 frames to 60% max, a horizontal wipe with a noisy edge, or a quick zoom. (5) Keep text big and simple; 4:3 safe area." },
+        { id: "swiss", label: "Швейцарский", pack: true, tricks: ["строгая сетка", "жёсткие стопы", "маски-шторки", "крупная типографика", "плашки цвета"],
+          note: "Style pack: SWISS / INTERNATIONAL TYPOGRAPHIC. Rules: (1) A strict grid: 12 columns, margins 80 px at 1080p; everything snaps to it; flush-left, ragged-right text; Helvetica/Inter-like grotesk in two weights. " +
+            "(2) Colours: off-white #f1efe9, black, one strong red #e3241b (or the brand colour) used as solid blocks. " +
+            "(3) Motion is precise and fast: moves 0.35-0.5 s with an extreme ease-out (SF.style handles it: everything stops dead, no overshoot, no springs); elements slide exactly along the grid lines (SF.slideIn with dist = one or two columns) or are revealed by SF.wipe from a grid edge. " +
+            "(4) Solid colour bars sweep across to reveal or hide content; numbers and big type (200+ px) carry the composition; generous empty space. " +
+            "(5) Staggers follow reading order (left to right, top to bottom) with 0.05-0.08 s steps; holds 1-1.5 s; transitions are a full-frame colour block wiping through." },
+        { id: "sketch", label: "Скетч от руки", pack: true, tricks: ["дрожащий контур", "рисуется линия", "на двойках", "бумага в клетку", "маркерные акценты"],
+          note: "Style pack: HAND-DRAWN SKETCH / doodle. Rules: (1) Paper background (#faf7f0, maybe a faint 40 px grid at 8% opacity); ink #1d1d1f strokes 4-8 px with round caps; 1-2 marker accent colours (#ffd23f highlighter, #ff6b6b). " +
+            "(2) Shapes are drawn: build icons, arrows, circles and underlines as shape strokes and reveal them with SF.drawOn (0.5-0.9 s); fills appear a beat later as a marker scribble (a thick stroke drawing on). " +
+            "(3) Everything boils: SF.sketch(layer) on drawn layers (outline wobble 8 times a second) and SF.onTwos() at the end (12 drawings/s). " +
+            "(4) Things pop in with a small overshoot (springs are on in this style) and a little rotation (-4..4 deg); text in a handwritten or rounded font, revealed by words. " +
+            "(5) Arrows and circles point to and frame the important words; transitions: the camera pans along the paper to the next drawing, or a hand-drawn line wipes the frame." }
     ];
     // Свои стили, которые AI разобрал по референсу: { id: "my-…", label, base, note, tricks, palette, rows }.
     var STYLES_KEY = "sayframe.styles.v1";
@@ -224,6 +253,7 @@
         "  SF.drawOn(shapeLayer, t, {dur}) - strokes draw themselves (Trim Paths). SF.blurIn(layer, t, {amount, dur}). SF.drift(layer, t, {dur, amount}) - slow push-in.",
         "  SF.stagger(layers, t, step, 'popIn', o) - the same recipe on several layers, each step seconds later. SF.motionBlur(layers) - motion blur on (all layers if omitted). SF.wiggle(prop, freq, amp).",
         "  Style-pack recipes: SF.dropIn(layer, t, {from}) - stop-motion drop (3 drawings + settle). SF.pushIn(layer, t, {at: [x, y], zoom: 6, dur: 1}) - accelerating push into a detail that ends centred. SF.slam(layer, t, {dur, dist}) - title lands from above, no overshoot.",
+        "  SF.neon(layer, t) - neon glow, flickers on at t. SF.glitch(layer, t, {dur, amount}) - frame-by-frame glitch hit. SF.vhs() - VHS look (on 'SF Look'). SF.sketch(layer) - hand-drawn outline wobble.",
         "  SF.onTwos(layers, fps) - stop-motion: keyframed transforms step at 12 drawings/s (call last; all layers if omitted). SF.boil(layers, px) - paper jitter per drawing. SF.torn(layer) - torn paper edge. SF.grain(layer, {amount}), SF.bloom(layer), SF.bw(layer) - look effects; with layer null they go on one shared adjustment layer 'SF Look' on top.",
         "  SF.defaults holds the current style's dur, step and dist; the panel sets the style with SF.style(name) before your script runs - do not call SF.style yourself unless the user asks for a different style.",
         "- Create the layers and set their final look (position, size, colour) first, then animate them with SF. Use plain setValueAtTime only for things SF does not cover, and ease those keys with SF.keys.",
@@ -11849,7 +11879,8 @@
         }
     }
     var STYLE_NOTES = { normal: "аккуратно, как сейчас", smooth: "мягко, без отскоков", energetic: "быстро и резко", minimal: "мало движения", corporate: "строго и чисто",
-        playful: "отскоки и задор", collage: "рваная бумага, на двойках", archival: "ч/б, зерно, свечение", kinetic: "текст в ритм" };
+        playful: "отскоки и задор", collage: "рваная бумага, на двойках", archival: "ч/б, зерно, свечение", kinetic: "текст в ритм",
+        neon: "светящиеся трубки", glitch: "цифровые сбои", vhs: "кассета 90-х", swiss: "строгая сетка", sketch: "рисунок от руки" };
     function buildStyleChips() {
         Array.prototype.forEach.call(ui.styleRow.querySelectorAll(".style-chip"), function (b) { b.parentNode.removeChild(b); });
         MOTION_STYLES.concat(CUSTOM_STYLES).forEach(function (st) {
