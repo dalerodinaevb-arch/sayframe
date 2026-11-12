@@ -2087,7 +2087,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   console.log("\n=== motion style ===");
   p = await open({ replies: [msg("Делаю.\n```javascript\napp.__ran('ms');\n```"), msg("Делаю.\n```javascript\napp.__ran('ms2');\n```")] });
   t = await p.page.locator("#styleRow .style-chip").allInnerTexts();
-  check("MS1 above the request: «Стиль:» with Обычный, Плавный, Энергичный, Минимализм, Корпоративный, Игривый; Обычный is on", t.join() === "Обычный,Плавный,Энергичный,Минимализм,Корпоративный,Игривый" && (await p.page.getAttribute('#styleRow [data-style="normal"]', "aria-checked")) === "true" && (await p.page.evaluate(() => { const q = document.getElementById("styleRow").getBoundingClientRect(), t = document.getElementById("prompt").getBoundingClientRect(); return q.bottom <= t.top; })), t.join());
+  check("MS1 above the request: «Стиль:» with Обычный, Плавный, Энергичный, Минимализм, Корпоративный, Игривый and the packs; Обычный is on", t.join() === "Обычный,Плавный,Энергичный,Минимализм,Корпоративный,Игривый,Бумажный коллаж,Архивный эдит,Кинетическая типографика" && (await p.page.getAttribute('#styleRow [data-style="normal"]', "aria-checked")) === "true" && (await p.page.evaluate(() => { const q = document.getElementById("styleRow").getBoundingClientRect(), t = document.getElementById("prompt").getBoundingClientRect(); return q.bottom <= t.top; })), t.join());
   await p.page.click('#styleRow [data-style="energetic"]');
   await p.run("сделай заставку");
   c = p.net.requests[0].body;
@@ -7028,38 +7028,128 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
-  // AI in «Студия»: modes Создать / Выражение / Мои, example and style inside the field, quick tasks as tiles.
-  {
-    p = await open({ settings: { design: "studio", designSet: 2 } });
+  // AI in «Студия»: a header with ⋯ (Экспрешен, Мои скрипты, Новый стиль из рефа, Изменить примеры, Быстро/Качественно); the field with 📎, the style and ↑;
+  // examples as small cards; a plan by seconds before building; style packs as cards; a new style measured from a reference.
+  if (!process.env.SAYFRAME_ONLY || process.env.SAYFRAME_ONLY === "ai4") {
+    const PLAN = JSON.stringify({ total: 5, steps: [{ from: 0, to: 1, what: "Логотип выезжает снизу с отскоком", tool: "Плавность" }, { from: 1, to: 3, what: "«Alif Shop» появляется по буквам", tool: "Лесенка" }, { from: 3, to: 5, what: "Пауза, всё уходит влево" }] });
+    const PLAN2 = JSON.stringify({ total: 6, steps: [{ from: 0, to: 2, what: "Логотип падает сверху", tool: "Падение" }, { from: 2, to: 6, what: "Название по словам" }] });
+    p = await open({ settings: { design: "studio", designSet: 2 }, width: 420, height: 1000, replies: [msg(PLAN), msg(PLAN2), msg("Строю.\n```javascript\napp.__ran('built');\n```"), msg('{"direct": true}'), msg("Готово.\n```javascript\napp.__ran('direct');\n```")] });
     await p.page.click("#tabClaude");
-    check("SA1 «Студия»: three modes on top, «Создать» first; the field with «Пример» and the style inside; quick tasks as tiles with «Своя задача»", (await vis(p, "#aiModes")) && (await p.page.getAttribute('#aiModes [data-m="create"]', "aria-selected")) === "true" &&
-      (await vis(p, "#aiExample")) && (await p.page.innerText("#aiStyleBtn")).trim() === "Обычный ▾" && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && !(await vis(p, "#exprCard")) && (await p.page.getAttribute("#prompt", "placeholder")) === "Что сделать в композиции?" &&
-      (await p.page.locator("#quickList .quick-chip").count()) === 4 && (await vis(p, "#quickList .quick-new")) && (await p.page.locator("#quickList .quick-chip .quick-ic").first().innerText()) === "T↑" && !(await vis(p, "#exprWish")) && p.errors.length === 0, p.errors.join("|"));
+    check("SA1 «Студия»: header «Что анимируем?» with ⋯, no mode tabs; the field holds 📎, the style and ↑; examples as cards titled «Попробуйте», no «Своя задача», no attach buttons",
+      (await vis(p, "#aiHead")) && (await p.page.innerText("#aiTitle")) === "Что анимируем?" && (await vis(p, "#aiMore")) && !(await vis(p, "#aiModes")) && !(await vis(p, "#aiBack")) &&
+      (await vis(p, "#promptFoot #runBtn")) && (await p.page.innerText("#runBtn")).trim() === "↑" && (await p.page.getAttribute("#runBtn", "title")) === "Составить план" &&
+      (await vis(p, "#aiExample")) && (await p.page.innerText("#aiStyleBtn")).trim() === "Обычный ▾" && (await vis(p, "#aiStyleBtn .style-thumb")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && !(await vis(p, "#exprCard")) &&
+      (await p.page.locator("#quickList .quick-chip").count()) === 4 && !(await vis(p, "#quickList .quick-new")) && (await p.page.innerText("#quickToggle")).trim().toLowerCase() === "попробуйте" && !(await vis(p, "#quickEdit")) &&
+      !(await vis(p, "#planCard")) && (await overflow(p)) <= 0 && p.errors.length === 0, p.errors.join("|"));
+    await p.page.screenshot({ path: path.join(SHOTS, "sa-1-ai.png") });
     await p.page.click("#aiStyleBtn");
-    const popOpen = await vis(p, "#aiStylePop");
-    await p.page.click('#aiStylePop .style-chip[data-style="smooth"]');
-    check("SA2 the style pill opens the styles; a pick is kept for the next requests and closes the list", popOpen && (await p.page.innerText("#aiStyleBtn")).trim() === "Плавный ▾" && !(await vis(p, "#aiStylePop")) &&
-      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).motionStyle)) === "smooth");
+    const cards = await p.page.locator("#aiStylePop .style-chip .style-name").allInnerTexts();
+    check("SA2 the style button opens cards with a picture and a short note: the old styles plus the packs «Бумажный коллаж», «Архивный эдит», «Кинетическая типографика», and «+ Новый стиль из рефа»",
+      cards.join() === "Обычный,Плавный,Энергичный,Минимализм,Корпоративный,Игривый,Бумажный коллаж,Архивный эдит,Кинетическая типографика" && (await vis(p, '#aiStylePop .style-chip[data-style="collage"] .style-thumb')) &&
+      (await p.page.innerText('#aiStylePop .style-chip[data-style="collage"] .style-note')) === "рваная бумага, на двойках" && (await vis(p, "#aiStyleNew")) && !(await vis(p, "#aiStyleTricksBox")), cards.join());
+    await p.page.screenshot({ path: path.join(SHOTS, "sa-2-styles.png") });
+    await p.page.click('#aiStylePop .style-chip[data-style="collage"]');
+    await p.page.click("#aiStyleBtn");
+    check("SA2 a pack is kept for the next requests; reopened, it shows its devices", (await p.page.innerText("#aiStyleBtn")).trim() === "Бумажный коллаж ▾" &&
+      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).motionStyle)) === "collage" && (await p.page.locator("#aiStyleTricks .pf-trick").allInnerTexts()).join() === "на двойках 12 к/с,падение + осадка,наезд в деталь,рваные края,дрожь бумаги,удар заголовка");
+    await p.page.click("#aiStyleBtn");
     await p.page.click("#aiExample");
     const exOpen = await vis(p, "#aiExampleMenu");
     await p.page.click('#aiExampleMenu [data-ex="link"]');
-    check("SA3 «📎 Пример»: a picture or video from the computer, or a link; the link row opens", exOpen && (await vis(p, "#refLinkRow")) && !(await vis(p, "#aiExampleMenu")));
+    check("SA3 «📎»: a picture or video from the computer, or a link; the link row opens", exOpen && (await vis(p, "#refLinkRow")) && !(await vis(p, "#aiExampleMenu")));
     await p.page.click("#refLinkCancel");
-    await p.page.click("#quickList .quick-new");
-    check("SA6 the «Своя задача» tile opens the form for a new quick task", await vis(p, "#quickForm"));
-    await p.page.click("#quickCancel");
-    await p.page.click('#aiModes [data-m="expr"]');
-    check("SA4 «Выражение»: only the expression card (no title bar) and the status; the request field is gone", (await vis(p, "#exprWish")) && (await vis(p, "#exprApplyBtn")) && !(await vis(p, "#prompt")) && !(await vis(p, "#quickList")) && !(await vis(p, "#exprToggle")) && (await vis(p, "#status")));
-    await p.page.click('#aiModes [data-m="mine"]');
-    check("SA5 «Мои» without saved scripts: a short note on how to save one", (await vis(p, "#scriptsEmpty")) && !(await vis(p, "#exprWish")) && !(await vis(p, "#prompt")));
-    await p.page.click('#aiModes [data-m="expr"]');
+
+    // The plan by seconds.
+    await p.page.fill("#prompt", "5 сек: логотип снизу с отскоком, потом «Alif Shop» по буквам");
+    await p.page.click("#runBtn"); await p.idle();
+    let rq = p.net.requests[0];
+    check("SA9 ↑ first asks for a plan (its own instructions, the request, the style pack and the project state) and runs nothing yet",
+      p.net.requests.length === 1 && /You plan motion design for After Effects/.test(JSON.stringify(rq.body.system)) && /Alif Shop/.test(JSON.stringify(rq.body.messages)) && /Style pack: torn-paper COLLAGE/.test(JSON.stringify(rq.body.messages)) &&
+      /\[Project state\]/.test(JSON.stringify(rq.body.messages)) && p.ae.log.ran.length === 0, JSON.stringify(rq.body.system).slice(0, 120));
+    check("SA9 the plan card: total, number of steps, a time bar, steps with times and the recipe tags; «Строить» and «Изменить»",
+      (await vis(p, "#planCard")) && (await p.page.innerText("#planTotal")) === "5 с" && (await p.page.innerText("#planCount")) === "3 шага" && (await p.page.locator("#planBar i").count()) === 3 &&
+      (await p.page.locator("#planList li").count()) === 3 && (await p.page.innerText("#planList li:first-child .pl-t")) === "0–1 с" && (await p.page.innerText("#planList li:first-child .pl-tool")) === "Плавность" &&
+      (await vis(p, "#planBuild")) && (await vis(p, "#planChange")) && /План готов: 5 с/.test(await p.status()) && (await overflow(p)) <= 0, await p.status());
+    await p.page.screenshot({ path: path.join(SHOTS, "sa-3-plan.png") });
+    await p.page.click("#planChange");
+    check("SA10 «Изменить» opens a field for what to change", (await vis(p, "#planEdit")) && (await p.page.innerText("#planChange")) === "Переделать план");
+    await p.page.fill("#planEdit", "пусть логотип падает сверху");
+    await p.page.click("#planChange"); await p.idle();
+    rq = p.net.requests[1];
+    check("SA10 the plan is redone with the old plan and the wish; the new plan replaces the card", p.net.requests.length === 2 && /\[What the user wants changed in the plan\]\\nпусть логотип падает сверху/.test(JSON.stringify(rq.body.messages)) &&
+      /\[Previous plan\]/.test(JSON.stringify(rq.body.messages)) && (await p.page.innerText("#planTotal")) === "6 с" && (await p.page.locator("#planList li").count()) === 2 && !(await vis(p, "#planEdit")) && p.ae.log.ran.length === 0);
+    await p.page.click("#planBuild");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    rq = p.net.requests[2];
+    check("SA11 «Строить»: the build request carries the approved plan with timings and recipes; the script runs; the plan card goes away",
+      p.net.requests.length === 3 && /\[Approved plan\][^"]*Total 6 s\.\\n1\) 0-2 s: Логотип падает сверху \[Падение\]\\n2\) 2-6 s: Название по словам/.test(JSON.stringify(rq.body.messages)) &&
+      /You are an assistant built into a panel inside Adobe After Effects/.test(JSON.stringify(rq.body.system)) && p.ae.log.ran.join() === "built" && !(await vis(p, "#planCard")), JSON.stringify(rq.body.messages).slice(-400));
+    await p.page.fill("#prompt", "переименуй слои по порядку");
+    await p.page.click("#runBtn");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    await p.page.waitForFunction(() => !document.getElementById("runBtn").disabled, null, { timeout: 5000 }).catch(() => {});
+    check("SA12 a simple command needs no plan: the AI says so and it runs right away", p.net.requests.length === 5 && p.ae.log.ran.join() === "built,direct" && !(await vis(p, "#planCard")), p.ae.log.ran.join() + " " + p.net.requests.length);
+
+    // ⋯ menu.
+    await p.page.click("#aiMore");
+    check("SA8 ⋯: Экспрешен, Мои скрипты, Новый стиль из рефа, Изменить примеры, and the model: «Быстро» is on (Sonnet)", (await vis(p, "#aiMoreMenu")) &&
+      (await p.page.locator("#aiMoreMenu [data-mm]").count()) === 4 && (await p.page.getAttribute('#aiModelSeg [data-q="fast"]', "aria-checked")) === "true");
+    await p.page.screenshot({ path: path.join(SHOTS, "sa-4-menu.png") });
+    await p.page.click('#aiModelSeg [data-q="best"]');
+    check("SA8 «Качественно» switches to Opus and is remembered", (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).model)) === "claude-opus-5-5" && (await p.page.getAttribute('#aiModelSeg [data-q="best"]', "aria-checked")) === "true" && /Opus/.test(await p.status()));
+    await p.page.click('#aiMoreMenu [data-mm="expr"]');
+    check("SA4 ⋯ › Экспрешен: the header says so with a back arrow; only the expression card and the status", (await p.page.innerText("#aiTitle")) === "Экспрешен" && (await vis(p, "#aiBack")) &&
+      (await vis(p, "#exprWish")) && (await vis(p, "#exprApplyBtn")) && !(await vis(p, "#prompt")) && !(await vis(p, "#quickList")) && !(await vis(p, "#exprToggle")) && (await vis(p, "#status")));
+    await p.page.click("#aiMore"); await p.page.click('#aiMoreMenu [data-mm="mine"]');
+    check("SA5 ⋯ › Мои скрипты without saved scripts: a short note on how to save one", (await p.page.innerText("#aiTitle")) === "Мои скрипты" && (await vis(p, "#scriptsEmpty")) && !(await vis(p, "#exprWish")) && !(await vis(p, "#prompt")));
     await p.restart(); await p.page.click("#tabClaude");
-    check("SA4 the open mode survives a restart", (await p.page.getAttribute('#aiModes [data-m="expr"]', "aria-selected")) === "true" && (await vis(p, "#exprWish")));
+    check("SA4 the open mode survives a restart", (await p.page.innerText("#aiTitle")) === "Мои скрипты" && (await vis(p, "#scriptsEmpty")));
+    await p.page.click("#aiBack");
+    check("SA4 ← goes back to the request", (await vis(p, "#prompt")) && (await p.page.innerText("#aiTitle")) === "Что анимируем?" && !(await vis(p, "#aiBack")));
+    await p.page.click("#aiMore"); await p.page.click('#aiMoreMenu [data-mm="examples"]');
+    check("SA6 ⋯ › Изменить примеры: the examples can be edited, with «Своя задача» to add one", (await vis(p, "#quickList .quick-new")) && (await p.page.locator("#quickList .quick-del").count()) === 4);
+    await p.page.click("#quickList .quick-new");
+    check("SA6 «Своя задача» opens the form for a new example", await vis(p, "#quickForm"));
+    await p.page.click("#quickCancel");
+    await p.page.click("#aiMore"); await p.page.click('#aiMoreMenu [data-mm="examples"]');
     await p.page.evaluate(() => { const s = JSON.parse(localStorage.getItem("sayframe.settings.v1")); s.design = "glass"; localStorage.setItem("sayframe.settings.v1", JSON.stringify(s)); });
     await p.restart(); await p.page.click("#tabClaude");
-    check("SA7 other designs keep the old AI layout: style row, attach buttons and quick chips over the field, no modes", !(await vis(p, "#aiModes")) && (await vis(p, "#styleRow")) && (await vis(p, "#refBtn")) && (await vis(p, "#prompt")) && (await vis(p, "#exprWish")) &&
+    check("SA7 other designs keep the old AI layout: style row, attach buttons, quick chips over the field and «Выполнить»; no header, no plan", !(await vis(p, "#aiHead")) && !(await vis(p, "#aiModes")) && (await vis(p, "#styleRow")) && (await vis(p, "#refBtn")) && (await vis(p, "#prompt")) && (await vis(p, "#exprWish")) &&
+      (await p.page.innerText("#runBtn")) === "Выполнить" && (await p.page.evaluate(() => document.getElementById("runBtn").parentNode.classList.contains("composer"))) && !(await vis(p, ".style-chip .style-note >> nth=0")) &&
       (await p.page.locator("#quickList .quick-new").count()) === 0 && (await p.page.evaluate(() => document.querySelector(".composer").firstElementChild.id)) === "quickBox" && p.errors.length === 0, p.errors.join("|"));
     await p.close();
+
+    // A new style measured from a reference: AI reads the frames and returns the style; it is saved, chosen, and goes to the next requests.
+    const STYLE = JSON.stringify({ name: "Неон-рывки", base: "energetic", rows: { rhythm: "на единицах, 24 к/с", appear: "снизу, 8 кадров, отскок 6%", transitions: "наезд 1→3× за 0,6 с", text: "по словам, шаг 3 кадра", font: "похож на Unbounded Bold" },
+      palette: ["#ff7a3c", "#7a2cff", "#f0c7a0", "#111111"], tricks: ["неоновые рывки", "наезд в букву", "слова по ударам"], rules: "1) Entrances 8 frames, strong ease-out, 6% overshoot. 2) Word steps 3 frames." });
+    p = await open({ settings: { design: "studio", designSet: 2 }, width: 420, height: 1000, pickFile: "/Users/x/ref-alif.mp4", footage: VIDEO,
+      replies: [msg(STYLE), msg(PLAN), msg("Строю.\n```javascript\napp.__ran('mine');\n```")] });
+    await p.page.click("#tabClaude");
+    await p.page.click("#aiMore"); await p.page.click('#aiMoreMenu [data-mm="newstyle"]');
+    await p.page.waitForFunction(() => !document.getElementById("styleCard").hidden || /не /.test(document.getElementById("status").textContent), null, { timeout: 8000 }).catch(() => {});
+    rq = p.net.requests[0];
+    check("SA13 «Новый стиль из рефа» asks for a video, sends its frames with the style instructions and shows what was measured: rows, palette, name",
+      rq && /Measure its motion STYLE/.test(JSON.stringify(rq.body.system)) && rq.body.messages[0].content.filter((b) => b.type === "image").length >= 2 &&
+      (await vis(p, "#styleCard")) && (await p.page.locator("#styleCardRows .sc-row").count()) === 5 && (await p.page.innerText("#styleCardRows .sc-row:first-child em")) === "на единицах, 24 к/с" &&
+      (await p.page.locator("#styleCardPal .sc-sw").count()) === 4 && (await p.page.inputValue("#styleCardName")) === "Неон-рывки" && p.errors.length === 0, (await p.status()) + " " + p.errors.join("|"));
+    await p.page.screenshot({ path: path.join(SHOTS, "sa-5-style-ref.png") });
+    await p.page.fill("#styleCardName", "Alif — из рефа");
+    await p.page.click("#styleCardSave");
+    check("SA13 «Сохранить стиль»: the style is saved, chosen, shown on the button; the reference is no longer attached", (await p.page.innerText("#aiStyleBtn")).trim() === "Alif — из рефа ▾" && !(await vis(p, "#styleCard")) &&
+      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.styles.v1"))[0].base)) === "energetic" && !(await vis(p, "#refChip")));
+    await p.page.fill("#prompt", "заставка 5 секунд"); await p.page.click("#runBtn"); await p.idle();
+    await p.page.click("#planBuild");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    check("SA14 the own style goes with the plan and the build (its measured rules), and the script starts with its base SF style",
+      /Style pack \\"Alif — из рефа\\" \(the user's own/.test(JSON.stringify(p.net.requests[1].body.messages)) && /Word steps 3 frames/.test(JSON.stringify(p.net.requests[2].body.messages)) &&
+      p.ae.log.ran.join() === "mine" && p.ae.log.scripts.some((x) => /SF\.style\(\\?"energetic\\?"\)/.test(x)), p.ae.log.scripts.filter((x) => /SF\.style/.test(x)).join(" ").slice(0, 200));
+    await p.restart(); await p.page.click("#tabClaude");
+    await p.page.click("#aiStyleBtn");
+    check("SA15 after a restart the own style is a card «ваш стиль» with its colours; it can be deleted", (await vis(p, '#aiStylePop .style-mine')) && (await p.page.innerText("#aiStylePop .style-mine .style-note")) === "ваш стиль" && (await vis(p, "#aiStyleTricks .pf-trick-del")));
+    await p.page.click("#aiStyleTricks .pf-trick-del");
+    check("SA15 deleting it goes back to «Обычный»", (await p.page.innerText("#aiStyleBtn")).trim() === "Обычный ▾" && (await p.page.locator("#aiStylePop .style-mine").count()) === 0 && p.errors.length === 0, p.errors.join("|"));
+    await p.close();
+    if (process.env.SAYFRAME_ONLY === "ai4") { await browser.close(); console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0); }
   }
 
   // Decompose: the layers of a selected precomp come out into the open comp, in its place.

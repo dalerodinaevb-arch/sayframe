@@ -8612,7 +8612,10 @@ var SF = (function () {
         energetic: { dur: 0.45, step: 0.04, easeIn: 25, easeOut: 80, spring: true, amp: 0.08, freq: 3, decay: 7, dist: 0.2, rise: 60, blur: 40, popFrom: 0 },
         minimal:   { dur: 0.7, step: 0.06, easeIn: 15, easeOut: 85, spring: false, amp: 0.03, freq: 2, decay: 8, dist: 0.04, rise: 20, blur: 15, popFrom: 0.95 },
         corporate: { dur: 0.8, step: 0.07, easeIn: 20, easeOut: 80, spring: false, amp: 0.04, freq: 2, decay: 8, dist: 0.08, rise: 30, blur: 20, popFrom: 0.9 },
-        playful:   { dur: 0.55, step: 0.05, easeIn: 20, easeOut: 80, spring: true, amp: 0.12, freq: 2.5, decay: 5, dist: 0.15, rise: 50, blur: 30, popFrom: 0 }
+        playful:   { dur: 0.55, step: 0.05, easeIn: 20, easeOut: 80, spring: true, amp: 0.12, freq: 2.5, decay: 5, dist: 0.15, rise: 50, blur: 30, popFrom: 0 },
+        collage:   { dur: 0.5, step: 0.0833, easeIn: 30, easeOut: 95, spring: false, amp: 0.05, freq: 2, decay: 8, dist: 0.18, rise: 40, blur: 20, popFrom: 0 },
+        archival:  { dur: 0.9, step: 0.1, easeIn: 15, easeOut: 90, spring: false, amp: 0.03, freq: 2, decay: 8, dist: 0.06, rise: 24, blur: 30, popFrom: 0.94 },
+        kinetic:   { dur: 0.4, step: 0.05, easeIn: 30, easeOut: 95, spring: false, amp: 0.05, freq: 3, decay: 8, dist: 0.25, rise: 90, blur: 40, popFrom: 0.6 }
     };
     var KIT = (typeof KeyframeInterpolationType !== "undefined") ? KeyframeInterpolationType : { LINEAR: 6612, BEZIER: 6613, HOLD: 6614 };
 
@@ -8844,6 +8847,146 @@ var SF = (function () {
         return c;
     }
 
+    // ---- Recipes for the style packs (collage, archival, kinetic type) ----
+    var TR_PROPS = ["ADBE Anchor Point", "ADBE Position", "ADBE Position_0", "ADBE Position_1", "ADBE Scale", "ADBE Rotate Z", "ADBE Opacity"];
+    function layersOf(layers) {
+        var c, out = [], i;
+        if (layers && typeof layers.length === "number") { return layers; }
+        if (layers) { return [layers]; }
+        c = comp();
+        for (i = 1; i <= c.numLayers; i++) { out.push(c.layer(i)); }
+        return out;
+    }
+    function hasPosterize(e) { return /posterizeTime\(/.test(String(e || "")); }
+
+    // Stop-motion "on twos": every keyframed transform property moves in steps of fps drawings a second
+    // (12 by default). Works on top of an existing expression (spring, wiggle).
+    function onTwos(layers, fps) {
+        var list = layersOf(layers), i, j, p, e;
+        fps = fps || 12;
+        for (i = 0; i < list.length; i++) {
+            for (j = 0; j < TR_PROPS.length; j++) {
+                p = null;
+                try { p = tr(list[i], TR_PROPS[j]); } catch (e0) {}
+                if (!p || !p.numKeys) { continue; }
+                e = String(p.expression || "");
+                if (hasPosterize(e)) { continue; }
+                try { p.expression = "posterizeTime(" + fps + ");" + (e ? e : "value"); } catch (e1) {}
+            }
+        }
+        return list;
+    }
+
+    // Paper boil: the layer jitters by a pixel or two on every drawing, like hand-cut paper under a camera.
+    function boil(layers, px, fps) {
+        var list = layersOf(layers), i, p;
+        px = px || 1.5; fps = fps || 12;
+        for (i = 0; i < list.length; i++) {
+            try {
+                p = tr(list[i], "ADBE Position");
+                if (p.dimensionsSeparated) { continue; }
+                p.expression = "posterizeTime(" + fps + ");seedRandom(" + (i + 1) + ",false);var b=wiggle(" + fps + "," + px + ")-value;" +
+                    "value+[b[0],b[1]].concat(value.length>2?[0]:[]);";
+            } catch (e1) {}
+        }
+        return list;
+    }
+
+    // Collage drop-in, stop-motion: 3 drawings falling from o.from (top) with a tilt, then 1 settle drawing 103% -> 100%.
+    function dropIn(layer, t, o) {
+        var c = comp(), f = 1 / ((o && o.fps) || 12), from = (o && o.from) || "top", v = dirVec(from, c, { dist: Math.round(c.height * 0.6) });
+        var p = tr(layer, "ADBE Position"), r = tr(layer, "ADBE Rotate Z"), s = tr(layer, "ADBE Scale"), op = tr(layer, "ADBE Opacity"), base, a, b, sv, rot;
+        base = valueAt(p, t); sv = valueAt(s, t); rot = valueAt(r, t);
+        a = copy(base); a[0] += v[0]; a[1] += v[1];
+        b = copy(base); b[0] += v[0] * 0.3; b[1] += v[1] * 0.3;
+        if (!p.dimensionsSeparated) { keys(p, [[t, a], [t + f, b], [t + 2 * f, base]], "hold"); }
+        keys(r, [[t, rot - 12], [t + f, rot - 8], [t + 2 * f, rot]], "hold");
+        keys(s, [[t + 2 * f, scaled(sv, 1.03)], [t + 3 * f, sv]], "hold");
+        if (t > 0) { keys(op, [[Math.max(0, t - f), 0], [t, valueAt(op, t) || 100]], "hold"); }
+        return layer;
+    }
+
+    // Push into a detail: scale grows o.zoom times (6) over o.dur (1 s), accelerating, and the point o.at
+    // (comp pixels; default the comp centre) travels to the centre of the frame - then cut or iris through it.
+    function pushIn(layer, t, o) {
+        var c = comp(), d = (o && o.dur) || 1, k = (o && o.zoom) || 6, p = tr(layer, "ADBE Position"), s = tr(layer, "ADBE Scale");
+        var pos = valueAt(p, t), sv = valueAt(s, t), at = (o && o.at) || [c.width / 2, c.height / 2], end;
+        keys(s, [[t, sv], [t + d, scaled(sv, k)]], "in");
+        if (!p.dimensionsSeparated) {
+            end = copy(pos);
+            end[0] = c.width / 2 - (at[0] - pos[0]) * k;
+            end[1] = c.height / 2 - (at[1] - pos[1]) * k;
+            keys(p, [[t, pos], [t + d, end]], "in");
+        }
+        return layer;
+    }
+
+    // Title slam: lands from above in o.dur (0.75 s = 9 drawings), very strong ease-out, no overshoot.
+    function slam(layer, t, o) {
+        var c = comp(), d = (o && o.dur) || 0.75, dist = (o && o.dist) || Math.round(c.height * 0.35), p = tr(layer, "ADBE Position"), base, a;
+        if (p.dimensionsSeparated) { p = tr(layer, "ADBE Position_1"); base = valueAt(p, t); keys(p, [[t, base - dist], [t + d, base]], "out"); }
+        else { base = valueAt(p, t); a = copy(base); a[1] -= dist; keys(p, [[t, a], [t + d, base]], "out"); }
+        try { p.setTemporalEaseAtKey(p.numKeys, [new KeyframeEase(0, 98)], [new KeyframeEase(0, 98)]); } catch (e0) {}
+        fadeIn(layer, t, Math.min(0.15, d / 3));
+        return layer;
+    }
+
+    function addFx(layer, match, name) {
+        var fx = null;
+        try { fx = layer.property("ADBE Effect Parade").addProperty(match); } catch (e0) { return null; }
+        if (fx && name) { try { fx.name = name; } catch (e1) {} }
+        return fx;
+    }
+    function setFx(fx, names, v) {
+        var i, p;
+        if (!fx) { return; }
+        for (i = 0; i < names.length; i++) {
+            p = null;
+            try { p = fx.property(names[i]); } catch (e0) {}
+            if (p) { try { p.setValue(v); return; } catch (e1) {} }
+        }
+    }
+    // An adjustment layer on top of everything for the look effects (one per comp, reused).
+    function lookLayer(name) {
+        var c = comp(), i, l;
+        for (i = 1; i <= c.numLayers; i++) { if (c.layer(i).name === name) { return c.layer(i); } }
+        l = c.layers.addSolid([1, 1, 1], name, c.width, c.height, c.pixelAspect || 1, c.duration);
+        try { l.adjustmentLayer = true; } catch (e0) {}
+        try { l.moveToBeginning(); } catch (e1) {}
+        return l;
+    }
+    // Film grain (o.amount %, default 6) - light and organic.
+    function grain(layer, o) {
+        var l = layer || lookLayer("SF Look"), fx = addFx(l, "ADBE Noise", "SF Grain");
+        setFx(fx, ["ADBE Noise-0001", "Amount of Noise"], (o && o.amount) || 6);
+        setFx(fx, ["ADBE Noise-0003", "Use Color Noise"], 0);
+        return l;
+    }
+    // Soft bloom: a gentle glow on the bright parts.
+    function bloom(layer, o) {
+        var l = layer || lookLayer("SF Look"), fx = addFx(l, "ADBE Glo2", "SF Bloom");
+        setFx(fx, ["ADBE Glo2-0002", "Glow Threshold"], (o && o.threshold) || 70);
+        setFx(fx, ["ADBE Glo2-0003", "Glow Radius"], (o && o.radius) || 60);
+        setFx(fx, ["ADBE Glo2-0004", "Glow Intensity"], (o && o.intensity) || 0.5);
+        return l;
+    }
+    // Bright black-and-white grade.
+    function bw(layer, o) {
+        var l = layer || lookLayer("SF Look"), fx = addFx(l, "ADBE Tint", "SF B&W"), cv;
+        setFx(fx, ["ADBE Tint-0003", "Amount to Tint"], 100);
+        cv = addFx(l, "ADBE Brightness & Contrast 2", "SF Lift");
+        setFx(cv, ["ADBE Brightness & Contrast 2-0001", "Brightness"], (o && o.lift) || 12);
+        setFx(cv, ["ADBE Brightness & Contrast 2-0002", "Contrast"], (o && o.contrast) || 10);
+        return l;
+    }
+    // Torn paper edge: rough, fibrous outline of the layer (Roughen Edges).
+    function torn(layer, o) {
+        var fx = addFx(layer, "ADBE Roughen Edges", "SF Torn");
+        setFx(fx, ["ADBE Roughen Edges-0002", "Border"], (o && o.border) || 8);
+        setFx(fx, ["ADBE Roughen Edges-0005", "Scale"], (o && o.scale) || 40);
+        return layer;
+    }
+
     var API = {};
     // One effect on several layers, each a little later: SF.stagger(layers, t, step, "popIn", opts).
     function stagger(layers, t, step, fn, o) {
@@ -8858,5 +9001,7 @@ var SF = (function () {
     API.fadeIn = fadeIn; API.fadeOut = fadeOut; API.slideIn = slideIn; API.slideOut = slideOut;
     API.popIn = popIn; API.popOut = popOut; API.wipe = wipe; API.textIn = textIn; API.typeOn = typeOn;
     API.drawOn = drawOn; API.blurIn = blurIn; API.drift = drift; API.wiggle = wiggle; API.motionBlur = motionBlur; API.stagger = stagger;
+    API.onTwos = onTwos; API.boil = boil; API.dropIn = dropIn; API.pushIn = pushIn; API.slam = slam;
+    API.grain = grain; API.bloom = bloom; API.bw = bw; API.torn = torn;
     return API;
 })();

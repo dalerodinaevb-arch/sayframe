@@ -145,12 +145,41 @@
         { id: "energetic", label: "Энергичный", note: "Energetic and punchy: fast snappy moves, springs with overshoot, quick stagger, bold scale pops, motion blur, quick cuts between beats." },
         { id: "minimal", label: "Минимализм", note: "Minimal: few things move, small distances, fades and gentle slides, lots of empty space and holds, no bounce, restrained colour." },
         { id: "corporate", label: "Корпоративный", note: "Corporate and clean: confident calm moves, mask wipes and slides, tidy aligned layout, clear readable text, no playful bounce." },
-        { id: "playful", label: "Игривый", note: "Playful: bouncy pops with overshoot, a little rotation, lively stagger, cheerful rhythm, elements that react to each other." }
+        { id: "playful", label: "Игривый", note: "Playful: bouncy pops with overshoot, a little rotation, lively stagger, cheerful rhythm, elements that react to each other." },
+        // Стили-паки: точные правила движения и свои приёмы библиотеки SF (как скиллы у моушн-дизайнеров).
+        { id: "collage", label: "Бумажный коллаж", pack: true, tricks: ["на двойках 12 к/с", "падение + осадка", "наезд в деталь", "рваные края", "дрожь бумаги", "удар заголовка"],
+          note: "Style pack: torn-paper COLLAGE, stop-motion. Rules: (1) everything moves ON TWOS - 12 drawings a second: call SF.onTwos() at the very end of the script, after all keys, and SF.boil(layers, 1.5) on the paper pieces so they jitter 1-2 px per drawing. " +
+            "(2) Build with layered paper: solid or shape layers in paper colours (off-white #efe6d2, kraft #c9a873, plus 1-2 bold accents), each with SF.torn(layer) for white fibrous edges, a slight random rotation (-6..6 deg) and a soft drop shadow; halftone or grain texture via SF.grain(). Photos or logos become cut-outs with SF.torn too. " +
+            "(3) Objects arrive with SF.dropIn(layer, t) (3 drawings falling with a tilt + 1 settle drawing 103% -> 100%), pop-ups appear in 1-2 drawings; never smooth slow fades. " +
+            "(4) No hard cuts until the logo: go from scene to scene by pushing into a detail with SF.pushIn(layer or a null-parented group, t, {at: [x, y], zoom: 6, dur: 1}) then a paper iris, a torn wipe (SF.wipe on a torn paper layer) or a page tear. " +
+            "(5) Title lands from above with SF.slam(title, t) (0.75 s, no overshoot), heavy italic serif, white paper outline; the logo flickers between 2-3 looks held 2-3 drawings each, inside a torn band. " +
+            "(6) Cut the beats to a 120 BPM grid (0.5 s); nothing stays static longer than about 1 s except the title and logo holds. No full-screen flashing." },
+        { id: "archival", label: "Архивный эдит", pack: true, tricks: ["ч/б со свечением", "плёночное зерно", "кинетический текст", "текст за объектом", "мягкие сплиты"],
+          note: "Style pack: soft ARCHIVAL editorial edit. Rules: (1) Look: a bright black-and-white grade with soft bloom and light organic grain on top of everything - call SF.bw(), SF.bloom() and SF.grain(null, {amount: 4}) once (they share one adjustment layer 'SF Look'). " +
+            "(2) Collage-like inserts look like archival photos/footage: slight vignette, paper or film borders, a little rotation, gentle push-ins with SF.drift. " +
+            "(3) Typography in three roles: a big serif headline, a small mono/caption label, and an accent word; smooth kinetic text with SF.textIn (by words, style 'rise' or 'blur'), occasional selective stop-motion (SF.onTwos on just one element). " +
+            "(4) Text can sit BEHIND an object (duplicate the object above the text with a mask). " +
+            "(5) Split screens slide in softly (SF.wipe or SF.slideIn with dist 80-120 px), no hard bounces, calm 0.8-1.0 s moves, generous holds so everything can be read. Keep names, numbers and quotes exactly as given." },
+        { id: "kinetic", label: "Кинетическая типографика", pack: true, tricks: ["текст в ритм", "удары по словам", "крупные слова", "маски-шторки", "резкие стопы"],
+          note: "Style pack: KINETIC TYPOGRAPHY. Rules: (1) Text is the hero: few words on screen at a time, very large (title 160-260 px at 1080p), heavy grotesk, high contrast (black/white + one accent). " +
+            "(2) Words hit on the beat: a 0.5 s grid (120 BPM), each word or line enters on a beat with SF.slam, SF.wipe or SF.textIn(by 'chars' or 'words', dur 0.3-0.5) and a very strong ease-out (moves stop dead, no bounce). " +
+            "(3) Mix scales: one huge word, one small label; rotate a line 90 degrees now and then; masks and shape bars wipe text in and out. " +
+            "(4) Transitions are hard: a block of colour wipes the frame, or the camera scales through a letter (SF.pushIn into a letter). " +
+            "(5) Motion blur on, no fades longer than 0.2 s, holds of 0.5-1 s per phrase." }
     ];
+    // Свои стили, которые AI разобрал по референсу: { id: "my-…", label, base, note, tricks, palette, rows }.
+    var STYLES_KEY = "sayframe.styles.v1";
+    var CUSTOM_STYLES = (function () { var a = []; try { a = JSON.parse(window.localStorage.getItem(STYLES_KEY) || "[]"); } catch (e) { a = []; } return a instanceof Array ? a.filter(function (x) { return x && x.id && x.label; }) : []; })();
     function motionStyleOf(id) {
         var i;
         for (i = 0; i < MOTION_STYLES.length; i++) { if (MOTION_STYLES[i].id === id) { return MOTION_STYLES[i]; } }
+        for (i = 0; i < CUSTOM_STYLES.length; i++) { if (CUSTOM_STYLES[i].id === id) { return CUSTOM_STYLES[i]; } }
         return null;
+    }
+    // Имя стиля для библиотеки SF: у своих стилей — тот готовый стиль, на котором они построены.
+    function sfStyleName(id) {
+        var st = motionStyleOf(id);
+        return st && st.base ? st.base : st ? st.id : "normal";
     }
 
     var PANEL_WIDTH_MIN = 280;
@@ -194,6 +223,8 @@
         "  SF.textIn(textLayer, t, {by: 'chars'|'words'|'lines', style: 'rise'|'fade'|'scale'|'blur', dur}) - text animator, one piece after another. SF.typeOn(textLayer, t, {dur}) - typewriter.",
         "  SF.drawOn(shapeLayer, t, {dur}) - strokes draw themselves (Trim Paths). SF.blurIn(layer, t, {amount, dur}). SF.drift(layer, t, {dur, amount}) - slow push-in.",
         "  SF.stagger(layers, t, step, 'popIn', o) - the same recipe on several layers, each step seconds later. SF.motionBlur(layers) - motion blur on (all layers if omitted). SF.wiggle(prop, freq, amp).",
+        "  Style-pack recipes: SF.dropIn(layer, t, {from}) - stop-motion drop (3 drawings + settle). SF.pushIn(layer, t, {at: [x, y], zoom: 6, dur: 1}) - accelerating push into a detail that ends centred. SF.slam(layer, t, {dur, dist}) - title lands from above, no overshoot.",
+        "  SF.onTwos(layers, fps) - stop-motion: keyframed transforms step at 12 drawings/s (call last; all layers if omitted). SF.boil(layers, px) - paper jitter per drawing. SF.torn(layer) - torn paper edge. SF.grain(layer, {amount}), SF.bloom(layer), SF.bw(layer) - look effects; with layer null they go on one shared adjustment layer 'SF Look' on top.",
         "  SF.defaults holds the current style's dur, step and dist; the panel sets the style with SF.style(name) before your script runs - do not call SF.style yourself unless the user asks for a different style.",
         "- Create the layers and set their final look (position, size, colour) first, then animate them with SF. Use plain setValueAtTime only for things SF does not cover, and ease those keys with SF.keys.",
         "",
@@ -1986,6 +2017,7 @@
         if (on && !busy) { aiStop = { requested: false, waiters: [] }; opSpend = null; showSpend(); }
         busy = on;
         ui.runBtn.disabled = on;
+        if (ui.planBuild) { ui.planBuild.disabled = on; ui.planChange.disabled = on; }
         ui.newBtn.disabled = on;
         ui.refBtn.disabled = on;
         ui.refLinkBtn.disabled = on;
@@ -2562,7 +2594,7 @@
             setStatus(scriptsRun > 0 ? aiName() + " нашёл недочёт: " + (expl || "вношу правку") + "…" : "Выполняю скрипт…", "busy");
             // Стиль движения для библиотеки SF — в той же строке, чтобы номера строк в ошибках не сдвигались.
             // Обычный стиль хост ставит сам перед каждым скриптом, поэтому строка нужна только для остальных.
-            if (settings.motionStyle !== "normal" && code.indexOf("try { SF.style(") !== 0) { code = 'try { SF.style("' + settings.motionStyle + '"); } catch (eSF) {} ' + code; }
+            if (sfStyleName(settings.motionStyle) !== "normal" && code.indexOf("try { SF.style(") !== 0) { code = 'try { SF.style("' + sfStyleName(settings.motionStyle) + '"); } catch (eSF) {} ' + code; }
             try {
                 res = await host("run", [code, scriptsRun > 0 ? "правка " + scriptsRun : label,
                     wantCheck && round < MAX_CHECK_ROUNDS, platform.tmpdir()]);
@@ -2731,7 +2763,7 @@
                 try { syn = (await host("syntax", [code])).error; } catch (e2) { syn = humanError(e2); }
                 if (!syn) {
                     if (!(await allowScript(code, "Запустить скрипт сцены " + (i + 1) + "?"))) { fails.push(i + 1); break; }
-                    if (settings.motionStyle !== "normal") { code = 'try { SF.style("' + settings.motionStyle + '"); } catch (eSF) {} ' + code; }
+                    if (sfStyleName(settings.motionStyle) !== "normal") { code = 'try { SF.style("' + sfStyleName(settings.motionStyle) + '"); } catch (eSF) {} ' + code; }
                     setStatus("Сцена " + (i + 1) + " из " + plan.scenes.length + ": выполняю скрипт…", "busy");
                     try { res = await host("run", [code, "сцена " + (i + 1), false, platform.tmpdir()]); } catch (e3) { res = { runError: humanError(e3) }; }
                     syn = res.runError;
@@ -2789,7 +2821,7 @@
 
     async function onRun() {
         var text = ui.prompt.value.replace(/^\s+|\s+$/g, "");
-        var info, body, sent, hits, note, pics, picBlocks = [];
+        var info, body, sent, hits, note, pics, planRes, picBlocks = [];
         if (busy) { return; }
         if (text === "") { setStatus("Напишите, что нужно сделать.", ""); return; }
         try {
@@ -2811,6 +2843,8 @@
                 pics.map(function (pc, i) { return (i + 1) + ") " + pc.item.kind + " \"" + pc.item.name + "\""; }).join(", ") + ". They are references for what the files look like." });
         }
         sent = pendingRef;
+        hidePlan();
+        planState = null;
         // Длинное видео — по сценам: план, композиция нужной длины, по скрипту на сцену.
         if (sceneNeeded(sent)) {
             pendingRef = null;
@@ -2819,6 +2853,13 @@
             await runByScenes(text, sent, info, picBlocks, note);
             endRun();
             return;
+        }
+        // «Студия»: сначала план по секундам; простые команды AI выполняет сразу.
+        if (planMode()) {
+            if (!aiKey()) { setStatus("Нужен " + providerOf().keyLabel.replace(/^Ключ/, "ключ") + ". Вставьте его в настройках.", "error"); openSettings(); return; }
+            planRes = await requestPlan({ text: text.replace(/\s+/g, " "), info: info, sent: sent,
+                content: sent ? picBlocks.concat(framesContent(sent.frames, referenceNote(sent) + "\n\n" + body)) : picBlocks.length ? picBlocks.concat([{ type: "text", text: body }]) : body });
+            if (planRes !== "direct") { return; }
         }
         if (sent) {
             history.push({ role: "user", content: picBlocks.concat(framesContent(sent.frames, referenceNote(sent) + "\n\n" + body)) });
@@ -2867,6 +2908,8 @@
         ui.replyCard.hidden = true;
         ui.fixBtn.disabled = true;
         ui.fixBtn.hidden = true;
+        planState = null;
+        hidePlan();
         showRef();
         setStatus("Начат новый диалог: " + aiName() + " больше не помнит предыдущие запросы.", "");
     }
@@ -3356,8 +3399,8 @@
             b.disabled = busy;
             ui.quickList.appendChild(b);
         });
-        if (!quickEditing && flowOn()) {
-            // «Студия»: последняя плитка — «Своя задача» (в других дизайнах для этого «+» в заголовке).
+        if (quickEditing && flowOn()) {
+            // «Студия»: в режиме правки последняя плитка — «Своя задача» (в других дизайнах для этого «+» в заголовке).
             reset = document.createElement("button");
             reset.className = "quick-new";
             reset.setAttribute("data-act", "new");
@@ -11776,20 +11819,48 @@
     }
 
     // Ряд «Стиль:» над полем AI. Выбор запоминается и действует на все запросы.
+    function styleThumb(st) {
+        var t = mkEl("i", "style-thumb");
+        t.setAttribute("aria-hidden", "true");
+        t.setAttribute("data-style", st.base ? "custom" : st.id);
+        if (st.palette && st.palette.length) { t.style.background = "linear-gradient(135deg, " + (st.palette.length > 1 ? st.palette.slice(0, 4).join(", ") : st.palette[0] + ", " + st.palette[0]) + ")"; }
+        return t;
+    }
     function renderMotionStyles() {
         var st = motionStyleOf(settings.motionStyle) || MOTION_STYLES[0];
+        aiEls();
         Array.prototype.forEach.call(ui.styleRow.querySelectorAll(".style-chip"), function (b) {
             b.setAttribute("aria-checked", b.getAttribute("data-style") === settings.motionStyle ? "true" : "false");
         });
-        if (ui.aiStyleBtn) { ui.aiStyleBtn.textContent = st.label + " ▾"; }
+        if (ui.aiStyleBtn) {
+            ui.aiStyleBtn.textContent = st.label + " ▾";
+            ui.aiStyleBtn.insertBefore(styleThumb(st), ui.aiStyleBtn.firstChild);
+        }
+        if (ui.aiStyleTricks) {
+            ui.aiStyleTricks.textContent = "";
+            (st.tricks || []).forEach(function (t) { ui.aiStyleTricks.appendChild(mkEl("span", "pf-trick", t)); });
+            if (st.base) {
+                var del = mkEl("button", "pf-trick-del", "Удалить стиль");
+                del.type = "button";
+                del.setAttribute("data-del", st.id);
+                ui.aiStyleTricks.appendChild(del);
+            }
+            ui.aiStyleTricksBox.hidden = !(st.tricks && st.tricks.length) && !st.base;
+        }
     }
-    function initMotionStyles() {
-        MOTION_STYLES.forEach(function (st) {
-            var b = mkEl("button", "style-chip", st.label);
+    var STYLE_NOTES = { normal: "аккуратно, как сейчас", smooth: "мягко, без отскоков", energetic: "быстро и резко", minimal: "мало движения", corporate: "строго и чисто",
+        playful: "отскоки и задор", collage: "рваная бумага, на двойках", archival: "ч/б, зерно, свечение", kinetic: "текст в ритм" };
+    function buildStyleChips() {
+        Array.prototype.forEach.call(ui.styleRow.querySelectorAll(".style-chip"), function (b) { b.parentNode.removeChild(b); });
+        MOTION_STYLES.concat(CUSTOM_STYLES).forEach(function (st) {
+            var b = mkEl("button", "style-chip" + (st.pack ? " style-pack" : "") + (st.base ? " style-mine" : "")), nm = mkEl("span", "style-name", st.label);
             b.type = "button";
             b.setAttribute("role", "radio");
             b.setAttribute("data-style", st.id);
-            b.title = st.id === "normal" ? "Без особого стиля: аккуратные плавности и очерёдность" : "Стиль движения: " + st.label.toLowerCase();
+            b.title = st.id === "normal" ? "Без особого стиля: аккуратные плавности и очерёдность" : st.base ? "Ваш стиль из рефа: " + st.label : "Стиль движения: " + st.label.toLowerCase();
+            b.appendChild(styleThumb(st));
+            b.appendChild(nm);
+            b.appendChild(mkEl("small", "style-note", st.base ? "ваш стиль" : (STYLE_NOTES[st.id] || "")));
             b.addEventListener("click", function () {
                 settings.motionStyle = st.id;
                 storeSettings(settings);
@@ -11800,6 +11871,9 @@
             ui.styleRow.appendChild(b);
         });
         renderMotionStyles();
+    }
+    function initMotionStyles() {
+        buildStyleChips();
     }
 
     function initBrand() {
@@ -12966,7 +13040,7 @@
     var aiMode = (function () { var m = ""; try { m = window.localStorage.getItem(AI_MODE_KEY) || ""; } catch (e) {} return ["create", "expr", "mine"].indexOf(m) >= 0 ? m : "create"; })();
 
     function aiPop(which) {
-        [[ui.aiExample, ui.aiExampleMenu], [ui.aiStyleBtn, ui.aiStylePop]].forEach(function (d) {
+        [[ui.aiExample, ui.aiExampleMenu], [ui.aiStyleBtn, ui.aiStylePop], [ui.aiMore, ui.aiMoreMenu]].forEach(function (d) {
             if (!d[0]) { return; }
             d[1].hidden = d[1] !== which;
             d[0].setAttribute("aria-expanded", d[1] === which ? "true" : "false");
@@ -12980,21 +13054,52 @@
         Array.prototype.forEach.call(ui.aiModes.querySelectorAll(".ai-mode"), function (b) {
             b.setAttribute("aria-selected", b.getAttribute("data-m") === m ? "true" : "false");
         });
+        if (ui.aiHead) {
+            ui.aiBack.hidden = m === "create";
+            ui.aiTitle.textContent = m === "expr" ? "Экспрешен" : m === "mine" ? "Мои скрипты" : "Что анимируем?";
+            ui.aiSub.textContent = m === "expr" ? "Формула для выделенного свойства" : m === "mine" ? "Запускаются одной кнопкой, без AI" :
+                (IS_PR ? "Опишите словами — AI сделает в Premiere" : "Опишите словами — AI сделает в AE");
+        }
         aiPop(null);
+    }
+
+    function aiEls() {
+        if (ui.aiHead) { return; }
+        ["aiHead", "aiBack", "aiTitle", "aiSub", "aiMore", "aiMoreMenu", "aiModelSeg", "aiStyleTail", "aiStyleNew", "aiStyleTricksBox", "aiStyleTricks",
+            "planCard", "planTotal", "planCount", "planBar", "planList", "planEditRow", "planEdit", "planBuild", "planChange",
+            "styleCard", "styleCardClose", "styleCardRef", "styleCardPal", "styleCardRows", "styleCardName", "styleCardSave"].forEach(function (id) { ui[id] = document.getElementById(id); });
     }
 
     function aiLayout() {
         var on, composer, main, wrap;
         if (!ui || !ui.aiModes || !ui.prompt) { return; }
+        aiEls();
         on = flowOn(); composer = ui.prompt.closest(".composer"); main = ui.viewClaude.querySelector(".claude-main"); wrap = ui.prompt.parentNode;
         if (!composer || !main) { return; }
         ui.viewClaude.classList.toggle("ai-v3", on);
-        ui.aiModes.hidden = !on;
+        ui.aiModes.hidden = true;
+        ui.aiHead.hidden = !on;
         ui.promptFoot.hidden = !on;
+        ui.quickTitle = ui.quickTitle || ui.quickToggle.querySelector("span");
+        if (!ui.quickTitle.getAttribute("data-t")) { ui.quickTitle.setAttribute("data-t", ui.quickTitle.textContent); }
+        ui.quickTitle.textContent = on ? "Попробуйте" : ui.quickTitle.getAttribute("data-t");
+        if (!ui.runBtn.getAttribute("data-t")) { ui.runBtn.setAttribute("data-t", ui.runBtn.textContent); }
+        if (on) {
+            if (ui.runBtn.parentNode !== ui.promptFoot) { ui.promptFoot.appendChild(ui.runBtn); }
+            ui.runBtn.textContent = "↑";
+            ui.runBtn.title = planMode() ? "Составить план" : "Выполнить";
+            ui.runBtn.setAttribute("aria-label", ui.runBtn.title);
+        } else {
+            if (ui.runBtn.parentNode !== composer) { composer.appendChild(ui.runBtn); }
+            ui.runBtn.textContent = ui.runBtn.getAttribute("data-t");
+            ui.runBtn.removeAttribute("title"); ui.runBtn.removeAttribute("aria-label");
+            hidePlan();
+            ui.styleCard.hidden = true;
+        }
         if (!ui.prompt.getAttribute("data-ph")) { ui.prompt.setAttribute("data-ph", ui.prompt.placeholder); }
         ui.prompt.placeholder = on ? (IS_PR ? "Что сделать в секвенции?" : "Что сделать в композиции?") : ui.prompt.getAttribute("data-ph");
         if (on) {
-            if (ui.styleRow.parentNode !== ui.aiStylePop) { ui.aiStylePop.appendChild(ui.styleRow); }
+            if (ui.styleRow.parentNode !== ui.aiStylePop) { ui.aiStylePop.insertBefore(ui.styleRow, ui.aiStyleTail); }
             if (ui.quickBox.parentNode !== main) { main.appendChild(ui.quickBox); }
             setAiMode(aiMode || "create");
         } else {
@@ -13008,6 +13113,35 @@
 
     function initAiModes() {
         if (!ui.aiModes) { return; }
+        aiEls();
+        ui.aiMore.addEventListener("click", function (e) { e.stopPropagation(); renderModelSeg(); aiPop(ui.aiMoreMenu.hidden ? ui.aiMoreMenu : null); });
+        ui.aiMoreMenu.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("[data-mm]") : null, q = e.target.closest ? e.target.closest("[data-q]") : null;
+            if (q) { setModelQ(q.getAttribute("data-q")); return; }
+            if (!b) { return; }
+            aiPop(null);
+            switch (b.getAttribute("data-mm")) {
+                case "expr": setAiMode("expr"); break;
+                case "mine": setAiMode("mine"); break;
+                case "newstyle": onStyleFromRef(); break;
+                case "examples":
+                    setAiMode("create");
+                    quickEditing = !quickEditing;
+                    if (!quick.open) { quick.open = true; storeQuick(); }
+                    drawQuick();
+                    setStatus(quickEditing ? "Примеры: нажмите на пример, чтобы изменить его, × — удалить, «Своя задача» — добавить. Ещё раз «Изменить примеры» — готово." : "", "");
+                    break;
+            }
+        });
+        ui.aiBack.addEventListener("click", function () { setAiMode("create"); });
+        ui.aiStyleNew.addEventListener("click", function (e) { e.stopPropagation(); aiPop(null); onStyleFromRef(); });
+        ui.aiStyleTricksBox.addEventListener("click", function (e) { var d = e.target.closest ? e.target.closest("[data-del]") : null; if (d) { e.stopPropagation(); deleteCustomStyle(d.getAttribute("data-del")); } });
+        ui.planBuild.addEventListener("click", onPlanBuild);
+        ui.planChange.addEventListener("click", onPlanChange);
+        ui.planEdit.addEventListener("keydown", function (e) { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onPlanChange(); } });
+        ui.styleCardClose.addEventListener("click", closeStyleCard);
+        ui.styleCardSave.addEventListener("click", saveStyleCard);
+        if (IS_PR) { ui.aiMoreMenu.querySelector('[data-mm="expr"]').hidden = true; ui.aiMoreMenu.querySelector('[data-mm="newstyle"]').hidden = true; }
         ui.aiModes.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest(".ai-mode") : null; if (b) { setAiMode(b.getAttribute("data-m")); } });
         ui.aiExample.addEventListener("click", function (e) { e.stopPropagation(); aiPop(ui.aiExampleMenu.hidden ? ui.aiExampleMenu : null); });
         ui.aiStyleBtn.addEventListener("click", function (e) { e.stopPropagation(); aiPop(ui.aiStylePop.hidden ? ui.aiStylePop : null); });
@@ -13022,6 +13156,249 @@
             aiPop(null);
         });
         aiLayout();
+    }
+
+
+    // ---- «Студия»: модель Быстро / Качественно, план по секундам, стили-паки и свой стиль из рефа.
+
+    function planMode() { return flowOn() && !IS_PR; }
+
+    function modelQ() {
+        var p = providerOf();
+        return settings[p.modelField] === p.models[1].id ? "best" : "fast";
+    }
+    function renderModelSeg() {
+        if (!ui.aiModelSeg) { return; }
+        Array.prototype.forEach.call(ui.aiModelSeg.querySelectorAll("[data-q]"), function (b) { b.setAttribute("aria-checked", b.getAttribute("data-q") === modelQ() ? "true" : "false"); });
+    }
+    function setModelQ(q) {
+        var p = providerOf(), m = p.models[q === "best" ? 1 : 0];
+        settings[p.modelField] = m.id;
+        storeSettings(settings);
+        renderModelSeg();
+        setStatus(q === "best" ? "Модель: качественно — " + m.name + ". Умнее в моушне и стилях, но дороже и чуть дольше." : "Модель: быстро — " + m.name + ".", "");
+    }
+
+    var PLAN_PROMPT = [
+        "You plan motion design for After Effects before it is built. The user describes an animation in plain words; another step will build it from your plan.",
+        "First decide: is this a creative animation task that benefits from a timed plan (an intro, a title, a logo reveal, a lower third, a scene, a promo, a transition)? Or a simple command or a question (rename or organise layers, change one value, delete keys, a question about After Effects)?",
+        "For a simple command or a question reply with ONLY: {\"direct\": true}",
+        "Otherwise reply with ONLY this JSON, no code block, no other text; every text in the user's language:",
+        "{\"total\": 5, \"steps\": [{\"from\": 0, \"to\": 1, \"what\": \"...\", \"tool\": \"...\"}]}",
+        "- 2 to 7 steps covering the whole animation from 0 to total seconds, in order, no gaps. Each 'what' is one short sentence (at most 90 characters) that a non-designer understands: what appears, how it moves.",
+        "- tool (optional): the main recipe of the step, one of: Плавность, Лесенка, Отскок, Шторка-маска, Текст по буквам, Текст по словам, Наезд, Падение, Удар заголовка, На двойках, Рваные края, Зерно и свечение, Дрожь. Leave it out when none fits.",
+        "- Follow the motion style in the message, if there is one, and professional timing: entrances 0.4-0.9 s, text readable for at least 1.5 s, nothing static for more than about 1.5 s, a clear ending.",
+        "- If the user gave no length, choose a sensible one (usually 3-10 s). If the message has reference images, plan what they show."
+    ].join("\n");
+
+    var planState = null;   // { text, content, sent, info, plan }
+
+    function parseStepPlan(text) {
+        var m = /\{[\s\S]*\}/.exec(String(text || "")), d, steps = [], i, a, b, prev = 0, total;
+        if (!m) { return null; }
+        try { d = JSON.parse(m[0]); } catch (e) { return null; }
+        if (!d || d.direct) { return null; }
+        if (!(d.steps instanceof Array) || !d.steps.length) { return null; }
+        for (i = 0; i < d.steps.length && steps.length < 8; i++) {
+            a = Number(d.steps[i].from); b = Number(d.steps[i].to);
+            if (!isFinite(a)) { a = prev; }
+            if (!isFinite(b) || b <= a) { continue; }
+            steps.push({ from: Math.max(0, a), to: b, what: String(d.steps[i].what || "").replace(/\s+/g, " ").substring(0, 160), tool: String(d.steps[i].tool || "").substring(0, 30) });
+            prev = b;
+        }
+        if (!steps.length) { return null; }
+        total = Number(d.total);
+        if (!isFinite(total) || total < steps[steps.length - 1].to) { total = steps[steps.length - 1].to; }
+        return { total: total, steps: steps };
+    }
+
+    function secs(v) { return (Math.round(v * 10) / 10).toString().replace(".", ","); }
+    function stepPlanText(plan) {
+        return "Total " + plan.total + " s.\n" + plan.steps.map(function (st, i) { return (i + 1) + ") " + st.from + "-" + st.to + " s: " + st.what + (st.tool ? " [" + st.tool + "]" : ""); }).join("\n");
+    }
+
+    function hidePlan() {
+        if (!ui.planCard) { return; }
+        ui.planCard.hidden = true;
+        ui.planEditRow.hidden = true;
+        ui.planChange.textContent = "Изменить";
+    }
+
+    function showPlan() {
+        var plan = planState.plan, colors = ["a", "b", "c", "d", "e", "f", "g", "h"];
+        ui.planTotal.textContent = secs(plan.total) + " с";
+        ui.planCount.textContent = plan.steps.length + " " + (plan.steps.length < 5 ? "шага" : "шагов");
+        ui.planBar.textContent = "";
+        ui.planList.textContent = "";
+        plan.steps.forEach(function (st, i) {
+            var seg = mkEl("i", "pb-" + colors[i]), li = mkEl("li", "pl-" + colors[i]), tm = mkEl("span", "pl-t", secs(st.from) + "–" + secs(st.to) + " с"), wh = mkEl("span", "pl-w", st.what);
+            seg.style.flex = String(Math.max(0.05, st.to - st.from));
+            ui.planBar.appendChild(seg);
+            li.appendChild(mkEl("i", "pl-dot"));
+            li.appendChild(tm);
+            if (st.tool) { wh.appendChild(mkEl("em", "pl-tool", st.tool)); }
+            li.appendChild(wh);
+            ui.planList.appendChild(li);
+        });
+        ui.planEdit.value = "";
+        ui.planEditRow.hidden = true;
+        ui.planChange.textContent = "Изменить";
+        ui.planCard.hidden = false;
+        ui.planBuild.disabled = false;
+        ui.planChange.disabled = false;
+    }
+
+    function withText(content, add) {
+        return typeof content === "string" ? content + add : content.concat([{ type: "text", text: add }]);
+    }
+
+    // Просит план. Возвращает "plan" (план показан), "direct" (простая команда — строить сразу) или "fail".
+    async function requestPlan(st, change) {
+        var reply, plan, content = st.content;
+        if (change) { content = withText(content, "\n\n[Previous plan]\n" + stepPlanText(st.plan) + "\n\n[What the user wants changed in the plan]\n" + change); }
+        setBusy(true);
+        lastError = null;
+        hidePlan();
+        setStatus(change ? aiName() + " переделывает план…" : aiName() + " составляет план по секундам…", "busy");
+        reply = await callAI([{ role: "user", content: content }], 2048, PLAN_PROMPT);
+        setBusy(false);
+        if (!reply.ok) { setStatus(reply.error, "error"); if (change) { showPlan(); } return "fail"; }
+        plan = parseStepPlan(reply.text);
+        if (!plan) {
+            if (change) { showPlan(); setStatus(aiName() + " не прислал новый план. Попробуйте сказать иначе — или нажмите «Строить».", "error"); return "fail"; }
+            return "direct";
+        }
+        st.plan = plan;
+        planState = st;
+        showPlan();
+        setStatus("План готов: " + secs(plan.total) + " с. Всё так — «Строить». Не так — «Изменить» и напишите, что поменять.", "done");
+        return "plan";
+    }
+
+    async function onPlanBuild() {
+        var st = planState, content;
+        if (!st || busy) { return; }
+        planState = null;
+        hidePlan();
+        content = withText(st.content, "\n\n[Approved plan] The user approved this timed plan. Build exactly this, with these timings and the named recipes:\n" + stepPlanText(st.plan));
+        history.push({ role: "user", content: content });
+        if (st.sent) { pendingRef = null; refSentNote = true; showRef(); }
+        closeMention();
+        trimHistory();
+        beginRun(st.text);
+        await askAndRun(st.text.length > 40 ? st.text.substring(0, 40) + "…" : st.text, st.sent, st.info.fileAccess);
+        endRun();
+    }
+
+    async function onPlanChange() {
+        var st = planState, wish;
+        if (!st || busy) { return; }
+        if (ui.planEditRow.hidden) {
+            ui.planEditRow.hidden = false;
+            ui.planChange.textContent = "Переделать план";
+            ui.planEdit.focus();
+            return;
+        }
+        wish = ui.planEdit.value.replace(/^\s+|\s+$/g, "");
+        if (!wish) { ui.planEdit.focus(); setStatus("Напишите, что поменять в плане.", ""); return; }
+        await requestPlan(st, wish);
+    }
+
+    // ---- стили-паки в окошке стиля: карточки, приёмы выбранного, свои стили
+    function storeCustomStyles() { try { window.localStorage.setItem(STYLES_KEY, JSON.stringify(CUSTOM_STYLES)); } catch (e) {} }
+
+    function deleteCustomStyle(id) {
+        CUSTOM_STYLES = CUSTOM_STYLES.filter(function (x) { return x.id !== id; });
+        storeCustomStyles();
+        if (settings.motionStyle === id) { settings.motionStyle = "normal"; storeSettings(settings); }
+        buildStyleChips();
+        setStatus("Свой стиль удалён.", "");
+    }
+
+    var STYLE_PROMPT = [
+        "You are a senior motion designer. The images are frames sampled in order from a reference video (or one picture). Measure its motion STYLE so that new, different animations can be made in the same style in After Effects. Do not describe its story or content.",
+        "Reply with ONLY this JSON, no code block, no other text:",
+        "{\"name\": \"short style name in the user's language (2-4 words)\", \"base\": \"collage|archival|kinetic|smooth|energetic|minimal|corporate|playful|normal\",",
+        " \"rows\": {\"rhythm\": \"...\", \"appear\": \"...\", \"transitions\": \"...\", \"text\": \"...\", \"font\": \"...\"},",
+        " \"palette\": [\"#hex\", \"#hex\", \"#hex\", \"#hex\"], \"tricks\": [\"...\", \"...\", \"...\"],",
+        " \"rules\": \"precise rules in English for an animator, with numbers\"}",
+        "- base: the closest ready style. rows (short, in Russian, at most 40 characters each, with numbers where you can): rhythm (frame rate feel: smooth 24-30 fps or stop-motion on twos, and the beat), appear (how things enter, frames, bounce %), transitions (how scenes change), text (how text animates), font (closest common font family).",
+        "- palette: 3-6 main colours as hex. tricks: 3-6 signature devices, 2-4 Russian words each.",
+        "- rules: 6-10 numbered rules, each concrete and measurable: durations in seconds or frames, eases (strong ease-out, no overshoot, spring %), distances in % of the frame, stagger steps, holds, colour roles (hex), typography (family, weight, case, size), textures and effects, what never happens. Mention SF recipes where they fit (SF.dropIn, SF.pushIn, SF.slam, SF.onTwos, SF.boil, SF.torn, SF.textIn, SF.wipe, SF.grain, SF.bloom, SF.bw)."
+    ].join("\n");
+
+    var styleDraft = null;
+
+    async function onStyleFromRef() {
+        var ref, reply, d, m, intro;
+        if (busy) { return; }
+        if (!aiKey()) { setStatus("Нужен " + providerOf().keyLabel.replace(/^Ключ/, "ключ") + ". Вставьте его в настройках.", "error"); openSettings(); return; }
+        if (!pendingRef) {
+            setStatus("Выберите видео или картинку — AI разберёт, в каком она стиле.", "");
+            await onAttachReference();
+            if (!pendingRef) { return; }
+        }
+        ref = pendingRef;
+        setBusy(true);
+        setStatus(aiName() + " разбирает стиль «" + ref.name + "» по кадрам…", "busy");
+        intro = "[Style from reference] " + (ref.isStill ? "One picture \"" + ref.name + "\"." : "Frames of \"" + ref.name + "\" (" + ref.duration.toFixed(1) + " s) at " + timesOf(ref.frames) + " s.");
+        reply = await callAI([{ role: "user", content: framesWithTimes(ref.frames, intro) }], 2048, STYLE_PROMPT);
+        setBusy(false);
+        if (!reply.ok) { setStatus(reply.error, "error"); return; }
+        m = /\{[\s\S]*\}/.exec(reply.text || "");
+        try { d = m ? JSON.parse(m[0]) : null; } catch (e) { d = null; }
+        if (!d || !d.rules) { setStatus(aiName() + " не смог разобрать стиль. Попробуйте другой пример.", "error"); return; }
+        styleDraft = {
+            name: String(d.name || "Мой стиль").substring(0, 40), base: motionStyleOf(String(d.base)) && !motionStyleOf(String(d.base)).base ? String(d.base) : "normal",
+            rows: d.rows && typeof d.rows === "object" ? d.rows : {}, rules: String(d.rules).substring(0, 3000), ref: ref.name,
+            palette: (d.palette instanceof Array ? d.palette : []).filter(function (h) { return /^#[0-9a-f]{6}$/i.test(String(h)); }).slice(0, 6),
+            tricks: (d.tricks instanceof Array ? d.tricks : []).map(function (t) { return String(t).substring(0, 30); }).slice(0, 6),
+            frames: ref.isStill ? 1 : ref.frames.length, duration: ref.duration, still: ref.isStill
+        };
+        showStyleCard();
+        setStatus("Стиль разобран. Проверьте, дайте название и нажмите «Сохранить стиль».", "done");
+    }
+
+    function showStyleCard() {
+        var d = styleDraft, labels = [["rhythm", "Ритм"], ["appear", "Появление"], ["transitions", "Переходы"], ["text", "Текст"], ["font", "Шрифт"]];
+        ui.styleCardRef.textContent = d.ref + (d.still ? " · картинка" : " · " + d.duration.toFixed(1) + " с · AI разобрал " + d.frames + " кадров");
+        ui.styleCardPal.textContent = "";
+        d.palette.forEach(function (h) { var sw = mkEl("i", "sc-sw"); sw.style.background = h; sw.title = h; ui.styleCardPal.appendChild(sw); });
+        ui.styleCardRows.textContent = "";
+        labels.forEach(function (l) {
+            var row;
+            if (!d.rows[l[0]]) { return; }
+            row = mkEl("div", "sc-row");
+            row.appendChild(mkEl("span", "", l[1]));
+            row.appendChild(mkEl("em", "", String(d.rows[l[0]]).substring(0, 60)));
+            ui.styleCardRows.appendChild(row);
+        });
+        ui.styleCardName.value = d.name;
+        ui.styleCard.hidden = false;
+    }
+
+    function closeStyleCard() {
+        ui.styleCard.hidden = true;
+        styleDraft = null;
+    }
+
+    function saveStyleCard() {
+        var d = styleDraft, name, st;
+        if (!d) { return; }
+        name = ui.styleCardName.value.replace(/^\s+|\s+$/g, "") || d.name;
+        st = { id: "my-" + Date.now().toString(36), label: name.substring(0, 40), base: d.base, palette: d.palette, tricks: d.tricks, rows: d.rows,
+            note: "Style pack \"" + name + "\" (the user's own, measured from their reference \"" + d.ref + "\"; follow it closely): " + d.rules +
+                (d.palette.length ? " Palette: " + d.palette.join(", ") + "." : "") };
+        CUSTOM_STYLES.push(st);
+        storeCustomStyles();
+        settings.motionStyle = st.id;
+        storeSettings(settings);
+        buildStyleChips();
+        closeStyleCard();
+        pendingRef = null;
+        refSentNote = false;
+        showRef();
+        setStatus("Стиль «" + st.label + "» сохранён и выбран. Он в кнопке стиля под полем — для всех следующих запросов.", "done");
     }
 
     function flowFolded(g) {
