@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.78.3";
+    var VERSION = "1.80.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -119,6 +119,7 @@
         bgShape: "#0b1219",          // фон раздела «Шейп»
         bgBrand: "#130f17",          // фон раздела «Проекты»
         selfCheck: true,
+        voiceEngine: "",    // чем распознавать голос для «Под голос»: "local" (whisper на компьютере), "openai"; "" — ещё не выбрано
         alwaysAsk: false,
         brandPics: false,   // отправлять ли AI маленькие картинки упомянутых логотипов и иконок
         motionStyle: "normal",  // стиль анимации для AI: normal, smooth, energetic, minimal, corporate, playful
@@ -145,12 +146,70 @@
         { id: "energetic", label: "Энергичный", note: "Energetic and punchy: fast snappy moves, springs with overshoot, quick stagger, bold scale pops, motion blur, quick cuts between beats." },
         { id: "minimal", label: "Минимализм", note: "Minimal: few things move, small distances, fades and gentle slides, lots of empty space and holds, no bounce, restrained colour." },
         { id: "corporate", label: "Корпоративный", note: "Corporate and clean: confident calm moves, mask wipes and slides, tidy aligned layout, clear readable text, no playful bounce." },
-        { id: "playful", label: "Игривый", note: "Playful: bouncy pops with overshoot, a little rotation, lively stagger, cheerful rhythm, elements that react to each other." }
+        { id: "playful", label: "Игривый", note: "Playful: bouncy pops with overshoot, a little rotation, lively stagger, cheerful rhythm, elements that react to each other." },
+        // Стили-паки: точные правила движения и свои приёмы библиотеки SF (как скиллы у моушн-дизайнеров).
+        { id: "collage", label: "Бумажный коллаж", pack: true, tricks: ["на двойках 12 к/с", "падение + осадка", "наезд в деталь", "рваные края", "дрожь бумаги", "удар заголовка"],
+          note: "Style pack: torn-paper COLLAGE, stop-motion. Rules: (1) everything moves ON TWOS - 12 drawings a second: call SF.onTwos() at the very end of the script, after all keys, and SF.boil(layers, 1.5) on the paper pieces so they jitter 1-2 px per drawing. " +
+            "(2) Build with layered paper: solid or shape layers in paper colours (off-white #efe6d2, kraft #c9a873, plus 1-2 bold accents), each with SF.torn(layer) for white fibrous edges, a slight random rotation (-6..6 deg) and a soft drop shadow; halftone or grain texture via SF.grain(). Photos or logos become cut-outs with SF.torn too. " +
+            "(3) Objects arrive with SF.dropIn(layer, t) (3 drawings falling with a tilt + 1 settle drawing 103% -> 100%), pop-ups appear in 1-2 drawings; never smooth slow fades. " +
+            "(4) No hard cuts until the logo: go from scene to scene by pushing into a detail with SF.pushIn(layer or a null-parented group, t, {at: [x, y], zoom: 6, dur: 1}) then a paper iris, a torn wipe (SF.wipe on a torn paper layer) or a page tear. " +
+            "(5) Title lands from above with SF.slam(title, t) (0.75 s, no overshoot), heavy italic serif, white paper outline; the logo flickers between 2-3 looks held 2-3 drawings each, inside a torn band. " +
+            "(6) Cut the beats to a 120 BPM grid (0.5 s); nothing stays static longer than about 1 s except the title and logo holds. No full-screen flashing." },
+        { id: "archival", label: "Архивный эдит", pack: true, tricks: ["ч/б со свечением", "плёночное зерно", "кинетический текст", "текст за объектом", "мягкие сплиты"],
+          note: "Style pack: soft ARCHIVAL editorial edit. Rules: (1) Look: a bright black-and-white grade with soft bloom and light organic grain on top of everything - call SF.bw(), SF.bloom() and SF.grain(null, {amount: 4}) once (they share one adjustment layer 'SF Look'). " +
+            "(2) Collage-like inserts look like archival photos/footage: slight vignette, paper or film borders, a little rotation, gentle push-ins with SF.drift. " +
+            "(3) Typography in three roles: a big serif headline, a small mono/caption label, and an accent word; smooth kinetic text with SF.textIn (by words, style 'rise' or 'blur'), occasional selective stop-motion (SF.onTwos on just one element). " +
+            "(4) Text can sit BEHIND an object (duplicate the object above the text with a mask). " +
+            "(5) Split screens slide in softly (SF.wipe or SF.slideIn with dist 80-120 px), no hard bounces, calm 0.8-1.0 s moves, generous holds so everything can be read. Keep names, numbers and quotes exactly as given." },
+        { id: "kinetic", label: "Кинетическая типографика", pack: true, tricks: ["текст в ритм", "удары по словам", "крупные слова", "маски-шторки", "резкие стопы"],
+          note: "Style pack: KINETIC TYPOGRAPHY. Rules: (1) Text is the hero: few words on screen at a time, very large (title 160-260 px at 1080p), heavy grotesk, high contrast (black/white + one accent). " +
+            "(2) Words hit on the beat: a 0.5 s grid (120 BPM), each word or line enters on a beat with SF.slam, SF.wipe or SF.textIn(by 'chars' or 'words', dur 0.3-0.5) and a very strong ease-out (moves stop dead, no bounce). " +
+            "(3) Mix scales: one huge word, one small label; rotate a line 90 degrees now and then; masks and shape bars wipe text in and out. " +
+            "(4) Transitions are hard: a block of colour wipes the frame, or the camera scales through a letter (SF.pushIn into a letter). " +
+            "(5) Motion blur on, no fades longer than 0.2 s, holds of 0.5-1 s per phrase." },
+        { id: "neon", label: "Неон", pack: true, tricks: ["свечение трубок", "мигание при включении", "линии рисуются", "тёмный фон", "лёгкое дрожание"],
+          note: "Style pack: NEON SIGNS at night. Rules: (1) Background near-black blue (#07070f to #120a24), maybe a faint brick or grid texture at 10-15% opacity. " +
+            "(2) Everything is a glowing tube: text in a rounded or script font as outlined/stroked shape or text with stroke, 2-3 saturated colours (#ff2bd6 pink, #20e3ff cyan, #ffe14d yellow), and SF.neon(layer, t) on each piece - two glows, the tube flickers on (hold frames). " +
+            "(3) Lines and icons draw themselves with SF.drawOn (0.6-1 s, ease in-out), then glow. Pieces switch on one after another with SF.neon at 0.15-0.3 s steps - never fade or slide in. " +
+            "(4) Alive while it holds: a subtle flicker (opacity wiggle 1-2 times a second, 5-10%) on one or two signs, a slow drift (SF.drift 3-4%). " +
+            "(5) Exit: tubes switch off in reverse order with a short flicker. Optional reflection: a blurred, flipped copy at 20% opacity under the sign." },
+        { id: "glitch", label: "Глитч", pack: true, tricks: ["цифровые сбои", "рывки по кадрам", "мигание", "моноширинный текст", "резкие склейки"],
+          note: "Style pack: DIGITAL GLITCH. Rules: (1) Palette: black #000, white, one acid colour (#00ff9c or #ff2e4d); mono or tech grotesk type, uppercase, tracking +50. " +
+            "(2) Things do not glide in: they appear with SF.glitch(layer, t, {dur: 0.2-0.35}) - frame-by-frame sideways jumps, stretches and flicker, then they sit still. Also glitch on exits and at every cut. " +
+            "(3) Rhythm: hard cuts every 0.5-1 s, holds are short; between hits everything is perfectly still (contrast is the point). " +
+            "(4) Extra layers: thin horizontal bars or blocks (solid rectangles 2-20 px high) that blink for 1-2 frames across the frame during hits; a copy of the title in the acid colour offset 6-10 px and visible only during hits (RGB split feel). " +
+            "(5) Text can type on with SF.typeOn with a block cursor. No soft fades, no bounce, no blur transitions." },
+        { id: "vhs", label: "Ретро VHS", pack: true, tricks: ["полосы развёртки", "шум плёнки", "мягкая картинка", "дата в углу", "дрожание кадра"],
+          note: "Style pack: RETRO 80s/90s VHS. Rules: (1) Call SF.vhs() once - noise, scan lines, softness and washed colour on one adjustment layer 'SF Look' on top; add SF.grain(null, {amount: 4}). " +
+            "(2) Colours: warm faded (#f2e9d8, #e85d75, #3fb6c6, #f6c453) on dark navy; chrome or bold italic type with a hard drop shadow offset 6-8 px; a camcorder overlay: 'PLAY >' top left and a date like 'JAN 01 1994' bottom right in a mono font. " +
+            "(3) Motion is a bit clunky and analog: moves 0.6-0.8 s with ease-out, slight wiggle of the whole picture (a null parent with wiggle(1, 3)), sometimes a quick 2-3 frame vertical jump (tracking error) at cuts. " +
+            "(4) Transitions: a white flash of 2 frames to 60% max, a horizontal wipe with a noisy edge, or a quick zoom. (5) Keep text big and simple; 4:3 safe area." },
+        { id: "swiss", label: "Швейцарский", pack: true, tricks: ["строгая сетка", "жёсткие стопы", "маски-шторки", "крупная типографика", "плашки цвета"],
+          note: "Style pack: SWISS / INTERNATIONAL TYPOGRAPHIC. Rules: (1) A strict grid: 12 columns, margins 80 px at 1080p; everything snaps to it; flush-left, ragged-right text; Helvetica/Inter-like grotesk in two weights. " +
+            "(2) Colours: off-white #f1efe9, black, one strong red #e3241b (or the brand colour) used as solid blocks. " +
+            "(3) Motion is precise and fast: moves 0.35-0.5 s with an extreme ease-out (SF.style handles it: everything stops dead, no overshoot, no springs); elements slide exactly along the grid lines (SF.slideIn with dist = one or two columns) or are revealed by SF.wipe from a grid edge. " +
+            "(4) Solid colour bars sweep across to reveal or hide content; numbers and big type (200+ px) carry the composition; generous empty space. " +
+            "(5) Staggers follow reading order (left to right, top to bottom) with 0.05-0.08 s steps; holds 1-1.5 s; transitions are a full-frame colour block wiping through." },
+        { id: "sketch", label: "Скетч от руки", pack: true, tricks: ["дрожащий контур", "рисуется линия", "на двойках", "бумага в клетку", "маркерные акценты"],
+          note: "Style pack: HAND-DRAWN SKETCH / doodle. Rules: (1) Paper background (#faf7f0, maybe a faint 40 px grid at 8% opacity); ink #1d1d1f strokes 4-8 px with round caps; 1-2 marker accent colours (#ffd23f highlighter, #ff6b6b). " +
+            "(2) Shapes are drawn: build icons, arrows, circles and underlines as shape strokes and reveal them with SF.drawOn (0.5-0.9 s); fills appear a beat later as a marker scribble (a thick stroke drawing on). " +
+            "(3) Everything boils: SF.sketch(layer) on drawn layers (outline wobble 8 times a second) and SF.onTwos() at the end (12 drawings/s). " +
+            "(4) Things pop in with a small overshoot (springs are on in this style) and a little rotation (-4..4 deg); text in a handwritten or rounded font, revealed by words. " +
+            "(5) Arrows and circles point to and frame the important words; transitions: the camera pans along the paper to the next drawing, or a hand-drawn line wipes the frame." }
     ];
+    // Свои стили, которые AI разобрал по референсу: { id: "my-…", label, base, note, tricks, palette, rows }.
+    var STYLES_KEY = "sayframe.styles.v1";
+    var CUSTOM_STYLES = (function () { var a = []; try { a = JSON.parse(window.localStorage.getItem(STYLES_KEY) || "[]"); } catch (e) { a = []; } return a instanceof Array ? a.filter(function (x) { return x && x.id && x.label; }) : []; })();
     function motionStyleOf(id) {
         var i;
         for (i = 0; i < MOTION_STYLES.length; i++) { if (MOTION_STYLES[i].id === id) { return MOTION_STYLES[i]; } }
+        for (i = 0; i < CUSTOM_STYLES.length; i++) { if (CUSTOM_STYLES[i].id === id) { return CUSTOM_STYLES[i]; } }
         return null;
+    }
+    // Имя стиля для библиотеки SF: у своих стилей — тот готовый стиль, на котором они построены.
+    function sfStyleName(id) {
+        var st = motionStyleOf(id);
+        return st && st.base ? st.base : st ? st.id : "normal";
     }
 
     var PANEL_WIDTH_MIN = 280;
@@ -194,6 +253,10 @@
         "  SF.textIn(textLayer, t, {by: 'chars'|'words'|'lines', style: 'rise'|'fade'|'scale'|'blur', dur}) - text animator, one piece after another. SF.typeOn(textLayer, t, {dur}) - typewriter.",
         "  SF.drawOn(shapeLayer, t, {dur}) - strokes draw themselves (Trim Paths). SF.blurIn(layer, t, {amount, dur}). SF.drift(layer, t, {dur, amount}) - slow push-in.",
         "  SF.stagger(layers, t, step, 'popIn', o) - the same recipe on several layers, each step seconds later. SF.motionBlur(layers) - motion blur on (all layers if omitted). SF.wiggle(prop, freq, amp).",
+        "  Style-pack recipes: SF.dropIn(layer, t, {from}) - stop-motion drop (3 drawings + settle). SF.pushIn(layer, t, {at: [x, y], zoom: 6, dur: 1}) - accelerating push into a detail that ends centred. SF.slam(layer, t, {dur, dist}) - title lands from above, no overshoot.",
+        "  SF.neon(layer, t) - neon glow, flickers on at t. SF.glitch(layer, t, {dur, amount}) - frame-by-frame glitch hit. SF.vhs() - VHS look (on 'SF Look'). SF.sketch(layer) - hand-drawn outline wobble.",
+        "  SF.onTwos(layers, fps) - stop-motion: keyframed transforms step at 12 drawings/s (call last; all layers if omitted). SF.boil(layers, px) - paper jitter per drawing. SF.torn(layer) - torn paper edge. SF.grain(layer, {amount}), SF.bloom(layer), SF.bw(layer) - look effects; with layer null they go on one shared adjustment layer 'SF Look' on top.",
+        "  SF.wordMark(layerIndex, t, 'word') - a yellow marker with a spoken word on the voice layer (see [Voice]).",
         "  SF.defaults holds the current style's dur, step and dist; the panel sets the style with SF.style(name) before your script runs - do not call SF.style yourself unless the user asks for a different style.",
         "- Create the layers and set their final look (position, size, colour) first, then animate them with SF. Use plain setValueAtTime only for things SF does not cover, and ease those keys with SF.keys.",
         "",
@@ -567,6 +630,8 @@
                     });
                 },
                 download: need,
+                downloadFile: need,
+                postForm: need,
                 fetchUrl: need,
                 verify: function () { return Promise.resolve(false); },
                 postJSON: function (url, headers, body, timeoutMs, onRequest) {
@@ -681,6 +746,66 @@
                         .then(function () {
                             return { status: 200, sha256: crypto.createHash("sha256").update(r.body).digest("hex"), size: r.body.length };
                         });
+                });
+            },
+            // Большой файл (модель распознавания речи, программа): пишется на диск по кусочкам, не в память.
+            // onProgress(получено, всего). Сначала в «.part», готовый файл переименовывается.
+            downloadFile: function (url, dest, onProgress) {
+                return new Promise(function (resolve, reject) {
+                    function go(link, left) {
+                        var u, rq;
+                        try { u = new URL(link); } catch (e) { reject(new Error("BAD_URL")); return; }
+                        rq = https.get({ hostname: u.hostname, port: u.port || 443, path: u.pathname + u.search, headers: { "user-agent": "Sayframe" } }, function (res) {
+                            var total = Number(res.headers["content-length"]) || 0, got = 0, out;
+                            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                                res.resume();
+                                if (left <= 0) { reject(new Error("TOO_MANY_REDIRECTS")); return; }
+                                go(new URL(res.headers.location, link).toString(), left - 1);
+                                return;
+                            }
+                            if (res.statusCode !== 200) { res.resume(); reject(new Error("HTTP " + res.statusCode)); return; }
+                            out = fs.createWriteStream(dest + ".part");
+                            res.on("data", function (c) { got += c.length; if (onProgress) { onProgress(got, total); } });
+                            res.pipe(out);
+                            out.on("finish", function () {
+                                out.close(function () {
+                                    if (total && got < total) { reject(new Error("DOWNLOAD_CUT")); return; }
+                                    fs.rename(dest + ".part", dest, function (err) { if (err) { reject(err); } else { resolve({ size: got }); } });
+                                });
+                            });
+                            out.on("error", reject);
+                            res.on("error", reject);
+                        });
+                        rq.on("error", reject);
+                        rq.setTimeout(120000, function () { rq.destroy(new Error("TIMEOUT")); });
+                    }
+                    go(url, 6);
+                });
+            },
+            // POST multipart/form-data: поля-строки и один файл с диска (распознавание речи через OpenAI).
+            postForm: function (url, headers, fields, file) {
+                return new Promise(function (resolve, reject) {
+                    fs.readFile(file.path, function (err, data) {
+                        var u = new URL(url), b = "----sayframe" + Date.now().toString(16), parts = [], k, body, h = {}, rq;
+                        if (err) { reject(err); return; }
+                        fields.forEach(function (f) { parts.push(Buf.from("--" + b + "\r\ncontent-disposition: form-data; name=\"" + f[0] + "\"\r\n\r\n" + f[1] + "\r\n", "utf8")); });
+                        parts.push(Buf.from("--" + b + "\r\ncontent-disposition: form-data; name=\"" + file.field + "\"; filename=\"" + file.name + "\"\r\ncontent-type: " + file.type + "\r\n\r\n", "utf8"));
+                        parts.push(data);
+                        parts.push(Buf.from("\r\n--" + b + "--\r\n", "utf8"));
+                        body = Buf.concat(parts);
+                        for (k in headers) { if (headers.hasOwnProperty(k)) { h[k] = headers[k]; } }
+                        h["content-type"] = "multipart/form-data; boundary=" + b;
+                        h["content-length"] = body.length;
+                        rq = https.request({ method: "POST", hostname: u.hostname, port: u.port || 443, path: u.pathname, headers: h }, function (res) {
+                            var chunks = [];
+                            res.on("data", function (c) { chunks.push(c); });
+                            res.on("end", function () { resolve({ status: res.statusCode, text: Buf.concat(chunks).toString("utf8") }); });
+                        });
+                        rq.on("error", reject);
+                        rq.setTimeout(600000, function () { rq.destroy(new Error("TIMEOUT")); });
+                        rq.write(body);
+                        rq.end();
+                    });
                 });
             },
             // Подпись выпуска: RSA-SHA256 над текстом, подпись в base64, ключ в PEM.
@@ -1986,6 +2111,7 @@
         if (on && !busy) { aiStop = { requested: false, waiters: [] }; opSpend = null; showSpend(); }
         busy = on;
         ui.runBtn.disabled = on;
+        if (ui.planBuild) { ui.planBuild.disabled = on; ui.planChange.disabled = on; }
         ui.newBtn.disabled = on;
         ui.refBtn.disabled = on;
         ui.refLinkBtn.disabled = on;
@@ -2562,7 +2688,7 @@
             setStatus(scriptsRun > 0 ? aiName() + " нашёл недочёт: " + (expl || "вношу правку") + "…" : "Выполняю скрипт…", "busy");
             // Стиль движения для библиотеки SF — в той же строке, чтобы номера строк в ошибках не сдвигались.
             // Обычный стиль хост ставит сам перед каждым скриптом, поэтому строка нужна только для остальных.
-            if (settings.motionStyle !== "normal" && code.indexOf("try { SF.style(") !== 0) { code = 'try { SF.style("' + settings.motionStyle + '"); } catch (eSF) {} ' + code; }
+            if (sfStyleName(settings.motionStyle) !== "normal" && code.indexOf("try { SF.style(") !== 0) { code = 'try { SF.style("' + sfStyleName(settings.motionStyle) + '"); } catch (eSF) {} ' + code; }
             try {
                 res = await host("run", [code, scriptsRun > 0 ? "правка " + scriptsRun : label,
                     wantCheck && round < MAX_CHECK_ROUNDS, platform.tmpdir()]);
@@ -2731,7 +2857,7 @@
                 try { syn = (await host("syntax", [code])).error; } catch (e2) { syn = humanError(e2); }
                 if (!syn) {
                     if (!(await allowScript(code, "Запустить скрипт сцены " + (i + 1) + "?"))) { fails.push(i + 1); break; }
-                    if (settings.motionStyle !== "normal") { code = 'try { SF.style("' + settings.motionStyle + '"); } catch (eSF) {} ' + code; }
+                    if (sfStyleName(settings.motionStyle) !== "normal") { code = 'try { SF.style("' + sfStyleName(settings.motionStyle) + '"); } catch (eSF) {} ' + code; }
                     setStatus("Сцена " + (i + 1) + " из " + plan.scenes.length + ": выполняю скрипт…", "busy");
                     try { res = await host("run", [code, "сцена " + (i + 1), false, platform.tmpdir()]); } catch (e3) { res = { runError: humanError(e3) }; }
                     syn = res.runError;
@@ -2787,11 +2913,284 @@
             done ? "done" : "error");
     }
 
+    // ---------------------------------------------------------- «Под голос»
+    // Выделен слой со звуком из файла (голос, интервью, видео с речью) — над полем появляется «🎙 Под голос».
+    // Речь распознаётся со временем каждого слова (whisper на компьютере или OpenAI), слова уходят AI вместе
+    // с запросом, и анимации встают на слова. Распознанный текст запоминается: второй раз ничего не ждём.
+
+    var VOICE_CACHE_KEY = "sayframe.voice.v1";
+    var VOICE_CACHE_MAX = 8;
+    var VOICE_WORDS_MAX = 2500;
+    var WHISPER_WIN_ZIP = "https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.2/whisper-bin-x64.zip";
+    var WHISPER_MODEL = { file: "ggml-small.bin", url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin", mb: 466 };
+    var OPENAI_STT_URL = "https://api.openai.com/v1/audio/transcriptions";
+    var voice = { layer: null, off: "", choice: "", macMissing: false };
+    var vui = null;
+
+    function voiceEls() {
+        if (vui) { return vui; }
+        vui = {};
+        ["voiceChip", "voiceName", "voiceDur", "voiceWave", "voiceOff", "voiceCard", "voiceOpts", "voiceKeyRow", "voiceKey", "voiceMac", "voiceCopy", "voiceBrew", "voiceGo", "voiceCancel"]
+            .forEach(function (id) { vui[id] = document.getElementById(id); });
+        return vui;
+    }
+
+    function voiceId(L) { return L ? L.file + "|" + Math.round((Number(L.dur) || 0) * 1000) : ""; }
+    function voiceOn() { return !IS_PR && !!voice.layer && voice.off !== voiceId(voice.layer); }
+    function voiceDir() { return platform.join(platform.homedir(), ".sayframe", "whisper"); }
+
+    function mmss(t) { t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ":" + (t % 60 < 10 ? "0" : "") + (t % 60); }
+
+    function showVoiceChip() {
+        var v = voiceEls(), L = voice.layer, i, h, bars = "", seed;
+        if (!v.voiceChip) { return; }
+        v.voiceChip.hidden = !voiceOn();
+        if (v.voiceChip.hidden) { if (v.voiceCard) { v.voiceCard.hidden = true; } return; }
+        v.voiceName.textContent = L.name;
+        v.voiceDur.textContent = " · " + mmss(L.outPoint - L.inPoint);
+        seed = 0;
+        for (i = 0; i < L.name.length; i++) { seed = (seed * 31 + L.name.charCodeAt(i)) % 9973; }
+        for (i = 0; i < 22; i++) {
+            seed = (seed * 16807) % 2147483647;
+            h = 3 + seed % 10;
+            bars += '<i style="height:' + h + 'px"></i>';
+        }
+        v.voiceWave.innerHTML = bars;
+        v.voiceChip.title = "AI поставит анимации на слова из слоя «" + L.name + "». × — работать без голоса.";
+    }
+
+    async function voiceCheck() {
+        var r;
+        if (IS_PR || !voiceEls().voiceChip || busy) { return; }
+        try { r = await host("voiceLayer", []); } catch (e) { r = null; }
+        voice.layer = r && r.layer ? r.layer : null;
+        showVoiceChip();
+    }
+
+    function voiceCacheLoad() {
+        var d;
+        try { d = JSON.parse(window.localStorage.getItem(VOICE_CACHE_KEY) || "{}"); } catch (e) { d = {}; }
+        return d && typeof d === "object" && d.items instanceof Array ? d : { items: [] };
+    }
+
+    function voiceCacheGet(id) {
+        var c = voiceCacheLoad(), i;
+        for (i = 0; i < c.items.length; i++) { if (c.items[i].id === id && c.items[i].words instanceof Array) { return c.items[i].words; } }
+        return null;
+    }
+
+    function voiceCachePut(id, words) {
+        var c = voiceCacheLoad();
+        c.items = c.items.filter(function (it) { return it.id !== id; });
+        c.items.unshift({ id: id, words: words });
+        c.items = c.items.slice(0, VOICE_CACHE_MAX);
+        try { window.localStorage.setItem(VOICE_CACHE_KEY, JSON.stringify(c)); } catch (e) {}
+    }
+
+    // Голос → 16 кГц, моно, 16 бит: так его ждут и whisper, и OpenAI (и файл маленький).
+    function sndTo16k(snd) {
+        var n = snd.ch[0].length, r = snd.rate / 16000, len = Math.max(1, Math.floor(n / r)), out = new Float32Array(len), i, a, b, j, c, v, k;
+        for (i = 0; i < len; i++) {
+            a = Math.floor(i * r); b = Math.max(a + 1, Math.min(n, Math.floor((i + 1) * r)));
+            v = 0; k = 0;
+            for (j = a; j < b; j++) { for (c = 0; c < snd.ch.length; c++) { v += snd.ch[c][j]; } k += snd.ch.length; }
+            out[i] = k ? v / k : 0;
+        }
+        return { rate: 16000, ch: [out] };
+    }
+
+    async function voiceWav(file) {
+        var snd, dest = platform.join(platform.tmpdir(), "sayframe-voice-" + Date.now() + ".wav");
+        try { snd = await sndRead(file); } catch (e) { throw new Error("Не получилось прочитать звук слоя. Сохраните голос как WAV или MP3 и положите в композицию."); }
+        snd = sndTo16k(snd);
+        await platform.writeBytes(dest, wavEncode(snd));
+        return { path: dest, seconds: snd.ch[0].length / 16000 };
+    }
+
+    function voiceClean(w) { return String(w || "").replace(/^\s+|\s+$/g, ""); }
+    function voiceIsWord(w) { return w !== "" && !/^\[.*\]$/.test(w) && w.replace(/[\s.,!?;:…"'«»()\[\]\-–—]/g, "") !== ""; }
+
+    // Ответ whisper-cli (-oj, -ml 1, -sow): по одному слову на кусок, время в миллисекундах.
+    function wordsFromWhisper(j) {
+        var out = [];
+        ((j && j.transcription) || []).forEach(function (seg) {
+            var w = voiceClean(seg.text);
+            if (!voiceIsWord(w) || !seg.offsets) { return; }
+            out.push({ w: w, s: Number(seg.offsets.from) / 1000, e: Number(seg.offsets.to) / 1000 });
+        });
+        return out;
+    }
+
+    async function whisperBin() {
+        var dir = voiceDir(), list, i, r;
+        list = platform.isWindows() ? [platform.join(dir, "bin", "Release", "whisper-cli.exe"), platform.join(dir, "bin", "whisper-cli.exe")] :
+            ["/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli", platform.join(dir, "bin", "whisper-cli")];
+        for (i = 0; i < list.length; i++) { if (await platform.exists(list[i])) { return list[i]; } }
+        if (!platform.isWindows()) { return ""; }
+        // Windows: готовая программа с GitHub whisper.cpp, один раз.
+        await platform.mkdirp(platform.join(dir, "bin"));
+        setStatus("Скачиваю распознаватель речи (около 4 МБ)…", "busy");
+        await platform.downloadFile(WHISPER_WIN_ZIP, platform.join(dir, "whisper-bin-x64.zip"), null);
+        r = await platform.exec("powershell", ["-NoProfile", "-NonInteractive", "-Command",
+            "Expand-Archive -Force -LiteralPath '" + platform.join(dir, "whisper-bin-x64.zip").replace(/'/g, "''") + "' -DestinationPath '" + platform.join(dir, "bin").replace(/'/g, "''") + "'"], 120000);
+        if (r.code !== 0) { throw new Error("Не получилось распаковать распознаватель речи: " + r.stderr.slice(-160)); }
+        platform.remove(platform.join(dir, "whisper-bin-x64.zip"));
+        for (i = 0; i < 2; i++) { if (await platform.exists(list[i])) { return list[i]; } }
+        throw new Error("Распознаватель речи скачался, но программы whisper-cli в нём нет.");
+    }
+
+    async function whisperModel() {
+        var dest = platform.join(voiceDir(), WHISPER_MODEL.file), last = 0;
+        if (await platform.exists(dest)) { return dest; }
+        await platform.mkdirp(voiceDir());
+        setStatus("Скачиваю модель распознавания речи: 0 из " + WHISPER_MODEL.mb + " МБ…", "busy");
+        await platform.downloadFile(WHISPER_MODEL.url, dest, function (got, total) {
+            var mb = Math.round(got / 1048576), now = Date.now();
+            if (now - last < 400) { return; }
+            last = now;
+            setStatus("Скачиваю модель распознавания речи: " + mb + " из " + (total ? Math.round(total / 1048576) : WHISPER_MODEL.mb) + " МБ… Это один раз.", "busy");
+        });
+        return dest;
+    }
+
+    async function voiceLocal(wav) {
+        var bin = await whisperBin(), model, of, r, j;
+        if (!bin) { var e = new Error("VOICE_NEED_MAC"); e.voice = "mac"; throw e; }
+        model = await whisperModel();
+        of = wav.path.replace(/\.wav$/i, "");
+        setStatus("Слушаю голос: " + mmss(wav.seconds) + "… На компьютере это может занять столько же, сколько длится запись.", "busy");
+        r = await platform.exec(bin, ["-m", model, "-f", wav.path, "-l", "auto", "-ml", "1", "-sow", "-oj", "-of", of, "-np"], 3600000);
+        if (r.code !== 0) { throw new Error("Распознаватель речи не сработал: " + String(r.stderr || "").slice(-200)); }
+        try { j = JSON.parse(await platform.readText(of + ".json")); } catch (e2) { throw new Error("Распознаватель речи не вернул текст."); }
+        platform.remove(of + ".json");
+        return wordsFromWhisper(j);
+    }
+
+    async function voiceOpenAI(wav) {
+        var key = settings.openaiKey, r, d, e;
+        if (!key) { e = new Error("VOICE_NEED_KEY"); e.voice = "key"; throw e; }
+        if (wav.seconds * 32000 > 24 * 1048576) { throw new Error("Голос длиннее 12 минут: OpenAI столько за раз не принимает. Разрежьте слой или выберите распознавание на компьютере."); }
+        setStatus("Отправляю голос в OpenAI: " + mmss(wav.seconds) + "…", "busy");
+        r = await platform.postForm(OPENAI_STT_URL, { authorization: "Bearer " + key },
+            [["model", "whisper-1"], ["response_format", "verbose_json"], ["timestamp_granularities[]", "word"]],
+            { field: "file", path: wav.path, name: "voice.wav", type: "audio/wav" });
+        try { d = JSON.parse(r.text); } catch (e1) { d = null; }
+        if (r.status === 401) { e = new Error("OpenAI не принял ключ. Проверьте ключ OpenAI в настройках."); throw e; }
+        if (r.status !== 200 || !d) { throw new Error("OpenAI не распознал голос" + (d && d.error && d.error.message ? ": " + d.error.message : " (ошибка " + r.status + ").")); }
+        return (d.words || []).map(function (x) { return { w: voiceClean(x.word), s: Number(x.start), e: Number(x.end) }; })
+            .filter(function (x) { return voiceIsWord(x.w) && isFinite(x.s); });
+    }
+
+    async function voiceWords(L) {
+        var id = voiceId(L), words = voiceCacheGet(id), wav;
+        if (words) { return words; }
+        setStatus("Готовлю голос «" + L.name + "»…", "busy");
+        wav = await voiceWav(L.file);
+        try {
+            words = settings.voiceEngine === "openai" ? await voiceOpenAI(wav) : await voiceLocal(wav);
+        } finally {
+            platform.remove(wav.path);
+        }
+        if (!words.length) { throw new Error("В слое «" + L.name + "» не слышно слов."); }
+        voiceCachePut(id, words);
+        return words;
+    }
+
+    // Слова во времени композиции: слой может начинаться не с нуля, быть обрезан и растянут.
+    function voiceCompWords(L, words) {
+        var k = (Number(L.stretch) || 100) / 100;
+        return words.map(function (w) { return { w: w.w, t: L.start + w.s * k }; })
+            .filter(function (w) { return w.t >= L.inPoint - 0.01 && w.t <= L.outPoint + 0.01; })
+            .slice(0, VOICE_WORDS_MAX);
+    }
+
+    function voiceNote(L, words) {
+        var cw = voiceCompWords(L, words);
+        return "[Voice] Time the animation to the speech in layer " + L.index + " \"" + L.name + "\" (sound, " + (L.outPoint - L.inPoint).toFixed(1) + " s, from " +
+            L.inPoint.toFixed(2) + " s). Every spoken word with the comp time in seconds when it starts:\n" +
+            cw.map(function (w) { return w.t.toFixed(2) + " " + w.w; }).join(" | ") +
+            "\nRules: each element that shows or illustrates a word or phrase starts exactly at that word's time (2 frames earlier at most); text of what is said appears together with the words; accents (scale hits, flashes, glitches) land on the stressed key words; the animation lasts as long as the speech. Do not move, trim or change the voice layer. " +
+            "For every key word you animate call SF.wordMark(" + L.index + ", t, \"word\") so a yellow marker shows it on the voice layer. If the user asks for subtitles, show them phrase by phrase (or word by word if asked), in sync.";
+    }
+
+    function showVoiceCard(mode) {
+        var v = voiceEls();
+        voice.choice = voice.choice || settings.voiceEngine || "local";
+        voice.macMissing = mode === "mac";
+        Array.prototype.forEach.call(v.voiceOpts.querySelectorAll("[data-eng]"), function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-eng") === voice.choice)); });
+        v.voiceKeyRow.hidden = !(voice.choice === "openai" && !settings.openaiKey);
+        v.voiceMac.hidden = !(voice.choice === "local" && voice.macMissing);
+        v.voiceGo.textContent = voice.choice === "local" && voice.macMissing ? "Проверить снова" : "Продолжить";
+        v.voiceCard.hidden = false;
+    }
+
+    // Перед запуском: распознать голос (или взять готовый текст). null — запуск ждёт (выбор, установка, ошибка).
+    async function voiceReady() {
+        var words;
+        if (!settings.voiceEngine) {
+            showVoiceCard("choose");
+            setStatus("Выберите один раз, чем распознавать голос, и нажмите «Продолжить».", "");
+            return null;
+        }
+        if (!voiceCacheGet(voiceId(voice.layer))) { setBusy(true); }
+        try {
+            words = await voiceWords(voice.layer);
+        } catch (e) {
+            setBusy(false);
+            if (e && e.voice === "mac") { showVoiceCard("mac"); setStatus("Поставьте распознаватель речи одной командой в Терминале — см. карточку.", ""); return null; }
+            if (e && e.voice === "key") { showVoiceCard("key"); setStatus("Для распознавания через OpenAI нужен ключ OpenAI.", ""); return null; }
+            setStatus(e && e.message ? e.message : String(e), "error");
+            return null;
+        }
+        setBusy(false);
+        voiceEls().voiceCard.hidden = true;
+        return voiceNote(voice.layer, words);
+    }
+
+    function initVoice() {
+        var v = voiceEls();
+        if (!v.voiceChip) { return; }
+        if (IS_PR) { v.voiceChip.hidden = true; return; }
+        ui.prompt.addEventListener("focus", function () { voiceCheck(); });
+        window.addEventListener("focus", function () { voiceCheck(); });
+        v.voiceOff.addEventListener("click", function () {
+            voice.off = voiceId(voice.layer);
+            showVoiceChip();
+            setStatus("Без голоса: AI работает как обычно. Выделите другой слой со звуком — плашка вернётся.", "");
+        });
+        v.voiceOpts.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("[data-eng]") : null;
+            if (!b) { return; }
+            voice.choice = b.getAttribute("data-eng");
+            showVoiceCard(voice.macMissing ? "mac" : "choose");
+        });
+        v.voiceCopy.addEventListener("click", function () {
+            setStatus(copyText("brew install whisper-cpp") ? "Команда скопирована. Откройте Терминал, вставьте её и нажмите Enter, потом «Проверить снова»." : "Не получилось скопировать: наберите brew install whisper-cpp в Терминале.", "");
+        });
+        v.voiceBrew.addEventListener("click", function () { platform.openExternal("https://brew.sh/ru/"); });
+        v.voiceGo.addEventListener("click", function () {
+            var k = v.voiceKey.value.replace(/\s/g, "");
+            if (voice.choice === "openai" && !settings.openaiKey && !k) { setStatus("Вставьте ключ OpenAI или выберите распознавание на компьютере.", "error"); v.voiceKey.focus(); return; }
+            if (k) { settings.openaiKey = k; v.voiceKey.value = ""; }
+            settings.voiceEngine = voice.choice || "local";
+            storeSettings(settings);
+            v.voiceCard.hidden = true;
+            onRun();
+        });
+        v.voiceCancel.addEventListener("click", function () {
+            voice.off = voiceId(voice.layer);
+            v.voiceCard.hidden = true;
+            showVoiceChip();
+            onRun();
+        });
+    }
+
     async function onRun() {
         var text = ui.prompt.value.replace(/^\s+|\s+$/g, "");
-        var info, body, sent, hits, note, pics, picBlocks = [];
+        var info, body, sent, hits, note, pics, planRes, picBlocks = [], voiceNoteText, voiceSeen;
         if (busy) { return; }
         if (text === "") { setStatus("Напишите, что нужно сделать.", ""); return; }
+        voiceSeen = voiceCheck();
         try {
             info = await host("info", []);
         } catch (e) {
@@ -2802,6 +3201,13 @@
         note = brandNote();
         if (motionStyleOf(settings.motionStyle).note) { note = (note ? note + "\n\n" : "") + "[Motion style] " + motionStyleOf(settings.motionStyle).note; }
         if (hits.length) { note = (note ? note + "\n" : "") + brandHitsNote(hits); }
+        // «Под голос»: слова выделенного слоя с голосом и их время — AI ставит анимации на слова.
+        await voiceSeen;
+        if (voiceOn()) {
+            voiceNoteText = await voiceReady();
+            if (voiceNoteText === null) { return; }
+            note = (note ? note + "\n\n" : "") + voiceNoteText;
+        }
         body = "[Project state]\n" + info.snapshot + (note ? "\n\n" + note : "") + "\n\n[Request]\n" + text;
         // По настройке AI видит и сами упомянутые логотипы и иконки.
         pics = settings.brandPics && hits.length ? await brandPictures(hits) : [];
@@ -2811,6 +3217,8 @@
                 pics.map(function (pc, i) { return (i + 1) + ") " + pc.item.kind + " \"" + pc.item.name + "\""; }).join(", ") + ". They are references for what the files look like." });
         }
         sent = pendingRef;
+        hidePlan();
+        planState = null;
         // Длинное видео — по сценам: план, композиция нужной длины, по скрипту на сцену.
         if (sceneNeeded(sent)) {
             pendingRef = null;
@@ -2819,6 +3227,13 @@
             await runByScenes(text, sent, info, picBlocks, note);
             endRun();
             return;
+        }
+        // «Студия»: сначала план по секундам; простые команды AI выполняет сразу.
+        if (planMode()) {
+            if (!aiKey()) { setStatus("Нужен " + providerOf().keyLabel.replace(/^Ключ/, "ключ") + ". Вставьте его в настройках.", "error"); openSettings(); return; }
+            planRes = await requestPlan({ text: text.replace(/\s+/g, " "), info: info, sent: sent,
+                content: sent ? picBlocks.concat(framesContent(sent.frames, referenceNote(sent) + "\n\n" + body)) : picBlocks.length ? picBlocks.concat([{ type: "text", text: body }]) : body });
+            if (planRes !== "direct") { return; }
         }
         if (sent) {
             history.push({ role: "user", content: picBlocks.concat(framesContent(sent.frames, referenceNote(sent) + "\n\n" + body)) });
@@ -2867,6 +3282,8 @@
         ui.replyCard.hidden = true;
         ui.fixBtn.disabled = true;
         ui.fixBtn.hidden = true;
+        planState = null;
+        hidePlan();
         showRef();
         setStatus("Начат новый диалог: " + aiName() + " больше не помнит предыдущие запросы.", "");
     }
@@ -3356,8 +3773,8 @@
             b.disabled = busy;
             ui.quickList.appendChild(b);
         });
-        if (!quickEditing && flowOn()) {
-            // «Студия»: последняя плитка — «Своя задача» (в других дизайнах для этого «+» в заголовке).
+        if (quickEditing && flowOn()) {
+            // «Студия»: в режиме правки последняя плитка — «Своя задача» (в других дизайнах для этого «+» в заголовке).
             reset = document.createElement("button");
             reset.className = "quick-new";
             reset.setAttribute("data-act", "new");
@@ -3949,6 +4366,15 @@
     }
 
     function buildSettings() {
+        ui.voiceEng = document.getElementById("voiceEng");
+        if (ui.voiceEng) {
+            ui.voiceEng.addEventListener("click", function (e) {
+                var v = e.target && e.target.closest ? e.target.closest("[data-value]") : null;
+                if (!draft || !v) { return; }
+                draft.voiceEngine = v.getAttribute("data-value");
+                pressGroup(ui.voiceEng, draft.voiceEngine);
+            });
+        }
         ui.provider.addEventListener("click", function (e) {
             var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
             if (!draft || !PROVIDERS.hasOwnProperty(v) || v === draft.provider) { return; }
@@ -4116,6 +4542,7 @@
             pressGroup(r[1], draft[r[0]]);
         });
         ui.selfCheck.checked = draft.selfCheck;
+        if (ui.voiceEng) { pressGroup(ui.voiceEng, draft.voiceEngine === "openai" ? "openai" : "local"); }
         ui.alwaysAsk.checked = draft.alwaysAsk;
         ui.brandPics.checked = draft.brandPics;
         ui.panelFit.checked = draft.panelFit !== false;
@@ -11776,20 +12203,49 @@
     }
 
     // Ряд «Стиль:» над полем AI. Выбор запоминается и действует на все запросы.
+    function styleThumb(st) {
+        var t = mkEl("i", "style-thumb");
+        t.setAttribute("aria-hidden", "true");
+        t.setAttribute("data-style", st.base ? "custom" : st.id);
+        if (st.palette && st.palette.length) { t.style.background = "linear-gradient(135deg, " + (st.palette.length > 1 ? st.palette.slice(0, 4).join(", ") : st.palette[0] + ", " + st.palette[0]) + ")"; }
+        return t;
+    }
     function renderMotionStyles() {
         var st = motionStyleOf(settings.motionStyle) || MOTION_STYLES[0];
+        aiEls();
         Array.prototype.forEach.call(ui.styleRow.querySelectorAll(".style-chip"), function (b) {
             b.setAttribute("aria-checked", b.getAttribute("data-style") === settings.motionStyle ? "true" : "false");
         });
-        if (ui.aiStyleBtn) { ui.aiStyleBtn.textContent = st.label + " ▾"; }
+        if (ui.aiStyleBtn) {
+            ui.aiStyleBtn.textContent = st.label + " ▾";
+            ui.aiStyleBtn.insertBefore(styleThumb(st), ui.aiStyleBtn.firstChild);
+        }
+        if (ui.aiStyleTricks) {
+            ui.aiStyleTricks.textContent = "";
+            (st.tricks || []).forEach(function (t) { ui.aiStyleTricks.appendChild(mkEl("span", "pf-trick", t)); });
+            if (st.base) {
+                var del = mkEl("button", "pf-trick-del", "Удалить стиль");
+                del.type = "button";
+                del.setAttribute("data-del", st.id);
+                ui.aiStyleTricks.appendChild(del);
+            }
+            ui.aiStyleTricksBox.hidden = !(st.tricks && st.tricks.length) && !st.base;
+        }
     }
-    function initMotionStyles() {
-        MOTION_STYLES.forEach(function (st) {
-            var b = mkEl("button", "style-chip", st.label);
+    var STYLE_NOTES = { normal: "аккуратно, как сейчас", smooth: "мягко, без отскоков", energetic: "быстро и резко", minimal: "мало движения", corporate: "строго и чисто",
+        playful: "отскоки и задор", collage: "рваная бумага, на двойках", archival: "ч/б, зерно, свечение", kinetic: "текст в ритм",
+        neon: "светящиеся трубки", glitch: "цифровые сбои", vhs: "кассета 90-х", swiss: "строгая сетка", sketch: "рисунок от руки" };
+    function buildStyleChips() {
+        Array.prototype.forEach.call(ui.styleRow.querySelectorAll(".style-chip"), function (b) { b.parentNode.removeChild(b); });
+        MOTION_STYLES.concat(CUSTOM_STYLES).forEach(function (st) {
+            var b = mkEl("button", "style-chip" + (st.pack ? " style-pack" : "") + (st.base ? " style-mine" : "")), nm = mkEl("span", "style-name", st.label);
             b.type = "button";
             b.setAttribute("role", "radio");
             b.setAttribute("data-style", st.id);
-            b.title = st.id === "normal" ? "Без особого стиля: аккуратные плавности и очерёдность" : "Стиль движения: " + st.label.toLowerCase();
+            b.title = st.id === "normal" ? "Без особого стиля: аккуратные плавности и очерёдность" : st.base ? "Ваш стиль из рефа: " + st.label : "Стиль движения: " + st.label.toLowerCase();
+            b.appendChild(styleThumb(st));
+            b.appendChild(nm);
+            b.appendChild(mkEl("small", "style-note", st.base ? "ваш стиль" : (STYLE_NOTES[st.id] || "")));
             b.addEventListener("click", function () {
                 settings.motionStyle = st.id;
                 storeSettings(settings);
@@ -11800,6 +12256,9 @@
             ui.styleRow.appendChild(b);
         });
         renderMotionStyles();
+    }
+    function initMotionStyles() {
+        buildStyleChips();
     }
 
     function initBrand() {
@@ -12966,7 +13425,7 @@
     var aiMode = (function () { var m = ""; try { m = window.localStorage.getItem(AI_MODE_KEY) || ""; } catch (e) {} return ["create", "expr", "mine"].indexOf(m) >= 0 ? m : "create"; })();
 
     function aiPop(which) {
-        [[ui.aiExample, ui.aiExampleMenu], [ui.aiStyleBtn, ui.aiStylePop]].forEach(function (d) {
+        [[ui.aiExample, ui.aiExampleMenu], [ui.aiStyleBtn, ui.aiStylePop], [ui.aiMore, ui.aiMoreMenu]].forEach(function (d) {
             if (!d[0]) { return; }
             d[1].hidden = d[1] !== which;
             d[0].setAttribute("aria-expanded", d[1] === which ? "true" : "false");
@@ -12980,21 +13439,52 @@
         Array.prototype.forEach.call(ui.aiModes.querySelectorAll(".ai-mode"), function (b) {
             b.setAttribute("aria-selected", b.getAttribute("data-m") === m ? "true" : "false");
         });
+        if (ui.aiHead) {
+            ui.aiBack.hidden = m === "create";
+            ui.aiTitle.textContent = m === "expr" ? "Экспрешен" : m === "mine" ? "Мои скрипты" : "Что анимируем?";
+            ui.aiSub.textContent = m === "expr" ? "Формула для выделенного свойства" : m === "mine" ? "Запускаются одной кнопкой, без AI" :
+                (IS_PR ? "Опишите словами — AI сделает в Premiere" : "Опишите словами — AI сделает в AE");
+        }
         aiPop(null);
+    }
+
+    function aiEls() {
+        if (ui.aiHead) { return; }
+        ["aiHead", "aiBack", "aiTitle", "aiSub", "aiMore", "aiMoreMenu", "aiModelSeg", "aiStyleTail", "aiStyleNew", "aiStyleTricksBox", "aiStyleTricks",
+            "planCard", "planTotal", "planCount", "planBar", "planList", "planEditRow", "planEdit", "planBuild", "planChange",
+            "styleCard", "styleCardClose", "styleCardRef", "styleCardPal", "styleCardRows", "styleCardName", "styleCardSave"].forEach(function (id) { ui[id] = document.getElementById(id); });
     }
 
     function aiLayout() {
         var on, composer, main, wrap;
         if (!ui || !ui.aiModes || !ui.prompt) { return; }
+        aiEls();
         on = flowOn(); composer = ui.prompt.closest(".composer"); main = ui.viewClaude.querySelector(".claude-main"); wrap = ui.prompt.parentNode;
         if (!composer || !main) { return; }
         ui.viewClaude.classList.toggle("ai-v3", on);
-        ui.aiModes.hidden = !on;
+        ui.aiModes.hidden = true;
+        ui.aiHead.hidden = !on;
         ui.promptFoot.hidden = !on;
+        ui.quickTitle = ui.quickTitle || ui.quickToggle.querySelector("span");
+        if (!ui.quickTitle.getAttribute("data-t")) { ui.quickTitle.setAttribute("data-t", ui.quickTitle.textContent); }
+        ui.quickTitle.textContent = on ? "Попробуйте" : ui.quickTitle.getAttribute("data-t");
+        if (!ui.runBtn.getAttribute("data-t")) { ui.runBtn.setAttribute("data-t", ui.runBtn.textContent); }
+        if (on) {
+            if (ui.runBtn.parentNode !== ui.promptFoot) { ui.promptFoot.appendChild(ui.runBtn); }
+            ui.runBtn.textContent = "↑";
+            ui.runBtn.title = planMode() ? "Составить план" : "Выполнить";
+            ui.runBtn.setAttribute("aria-label", ui.runBtn.title);
+        } else {
+            if (ui.runBtn.parentNode !== composer) { composer.appendChild(ui.runBtn); }
+            ui.runBtn.textContent = ui.runBtn.getAttribute("data-t");
+            ui.runBtn.removeAttribute("title"); ui.runBtn.removeAttribute("aria-label");
+            hidePlan();
+            ui.styleCard.hidden = true;
+        }
         if (!ui.prompt.getAttribute("data-ph")) { ui.prompt.setAttribute("data-ph", ui.prompt.placeholder); }
         ui.prompt.placeholder = on ? (IS_PR ? "Что сделать в секвенции?" : "Что сделать в композиции?") : ui.prompt.getAttribute("data-ph");
         if (on) {
-            if (ui.styleRow.parentNode !== ui.aiStylePop) { ui.aiStylePop.appendChild(ui.styleRow); }
+            if (ui.styleRow.parentNode !== ui.aiStylePop) { ui.aiStylePop.insertBefore(ui.styleRow, ui.aiStyleTail); }
             if (ui.quickBox.parentNode !== main) { main.appendChild(ui.quickBox); }
             setAiMode(aiMode || "create");
         } else {
@@ -13008,6 +13498,35 @@
 
     function initAiModes() {
         if (!ui.aiModes) { return; }
+        aiEls();
+        ui.aiMore.addEventListener("click", function (e) { e.stopPropagation(); renderModelSeg(); aiPop(ui.aiMoreMenu.hidden ? ui.aiMoreMenu : null); });
+        ui.aiMoreMenu.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("[data-mm]") : null, q = e.target.closest ? e.target.closest("[data-q]") : null;
+            if (q) { setModelQ(q.getAttribute("data-q")); return; }
+            if (!b) { return; }
+            aiPop(null);
+            switch (b.getAttribute("data-mm")) {
+                case "expr": setAiMode("expr"); break;
+                case "mine": setAiMode("mine"); break;
+                case "newstyle": onStyleFromRef(); break;
+                case "examples":
+                    setAiMode("create");
+                    quickEditing = !quickEditing;
+                    if (!quick.open) { quick.open = true; storeQuick(); }
+                    drawQuick();
+                    setStatus(quickEditing ? "Примеры: нажмите на пример, чтобы изменить его, × — удалить, «Своя задача» — добавить. Ещё раз «Изменить примеры» — готово." : "", "");
+                    break;
+            }
+        });
+        ui.aiBack.addEventListener("click", function () { setAiMode("create"); });
+        ui.aiStyleNew.addEventListener("click", function (e) { e.stopPropagation(); aiPop(null); onStyleFromRef(); });
+        ui.aiStyleTricksBox.addEventListener("click", function (e) { var d = e.target.closest ? e.target.closest("[data-del]") : null; if (d) { e.stopPropagation(); deleteCustomStyle(d.getAttribute("data-del")); } });
+        ui.planBuild.addEventListener("click", onPlanBuild);
+        ui.planChange.addEventListener("click", onPlanChange);
+        ui.planEdit.addEventListener("keydown", function (e) { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onPlanChange(); } });
+        ui.styleCardClose.addEventListener("click", closeStyleCard);
+        ui.styleCardSave.addEventListener("click", saveStyleCard);
+        if (IS_PR) { ui.aiMoreMenu.querySelector('[data-mm="expr"]').hidden = true; ui.aiMoreMenu.querySelector('[data-mm="newstyle"]').hidden = true; }
         ui.aiModes.addEventListener("click", function (e) { var b = e.target.closest ? e.target.closest(".ai-mode") : null; if (b) { setAiMode(b.getAttribute("data-m")); } });
         ui.aiExample.addEventListener("click", function (e) { e.stopPropagation(); aiPop(ui.aiExampleMenu.hidden ? ui.aiExampleMenu : null); });
         ui.aiStyleBtn.addEventListener("click", function (e) { e.stopPropagation(); aiPop(ui.aiStylePop.hidden ? ui.aiStylePop : null); });
@@ -13022,6 +13541,250 @@
             aiPop(null);
         });
         aiLayout();
+    }
+
+
+    // ---- «Студия»: модель Быстро / Качественно, план по секундам, стили-паки и свой стиль из рефа.
+
+    function planMode() { return flowOn() && !IS_PR; }
+
+    function modelQ() {
+        var p = providerOf();
+        return settings[p.modelField] === p.models[1].id ? "best" : "fast";
+    }
+    function renderModelSeg() {
+        if (!ui.aiModelSeg) { return; }
+        Array.prototype.forEach.call(ui.aiModelSeg.querySelectorAll("[data-q]"), function (b) { b.setAttribute("aria-checked", b.getAttribute("data-q") === modelQ() ? "true" : "false"); });
+    }
+    function setModelQ(q) {
+        var p = providerOf(), m = p.models[q === "best" ? 1 : 0];
+        settings[p.modelField] = m.id;
+        storeSettings(settings);
+        renderModelSeg();
+        setStatus(q === "best" ? "Модель: качественно — " + m.name + ". Умнее в моушне и стилях, но дороже и чуть дольше." : "Модель: быстро — " + m.name + ".", "");
+    }
+
+    var PLAN_PROMPT = [
+        "You plan motion design for After Effects before it is built. The user describes an animation in plain words; another step will build it from your plan.",
+        "First decide: is this a creative animation task that benefits from a timed plan (an intro, a title, a logo reveal, a lower third, a scene, a promo, a transition)? Or a simple command or a question (rename or organise layers, change one value, delete keys, a question about After Effects)?",
+        "For a simple command or a question reply with ONLY: {\"direct\": true}",
+        "Otherwise reply with ONLY this JSON, no code block, no other text; every text in the user's language:",
+        "{\"total\": 5, \"steps\": [{\"from\": 0, \"to\": 1, \"what\": \"...\", \"tool\": \"...\"}]}",
+        "- 2 to 7 steps covering the whole animation from 0 to total seconds, in order, no gaps. Each 'what' is one short sentence (at most 90 characters) that a non-designer understands: what appears, how it moves.",
+        "- tool (optional): the main recipe of the step, one of: Плавность, Лесенка, Отскок, Шторка-маска, Текст по буквам, Текст по словам, Наезд, Падение, Удар заголовка, На двойках, Рваные края, Зерно и свечение, Дрожь. Leave it out when none fits.",
+        "- Follow the motion style in the message, if there is one, and professional timing: entrances 0.4-0.9 s, text readable for at least 1.5 s, nothing static for more than about 1.5 s, a clear ending.",
+        "- If the user gave no length, choose a sensible one (usually 3-10 s). If the message has reference images, plan what they show.",
+        "- If the message has [Voice], the plan follows the speech: total is the length of the speech, every step starts at the time of the word it reacts to (from = that word's time), and 'what' names that word in quotes, e.g. «три причины» — большая цифра 3 падает на слове «три». Up to 7 steps for the main phrases; add \"word\": \"три\" to each step."
+    ].join("\n");
+
+    var planState = null;   // { text, content, sent, info, plan }
+
+    function parseStepPlan(text) {
+        var m = /\{[\s\S]*\}/.exec(String(text || "")), d, steps = [], i, a, b, prev = 0, total;
+        if (!m) { return null; }
+        try { d = JSON.parse(m[0]); } catch (e) { return null; }
+        if (!d || d.direct) { return null; }
+        if (!(d.steps instanceof Array) || !d.steps.length) { return null; }
+        for (i = 0; i < d.steps.length && steps.length < 8; i++) {
+            a = Number(d.steps[i].from); b = Number(d.steps[i].to);
+            if (!isFinite(a)) { a = prev; }
+            if (!isFinite(b) || b <= a) { continue; }
+            steps.push({ from: Math.max(0, a), to: b, what: String(d.steps[i].what || "").replace(/\s+/g, " ").substring(0, 160), tool: String(d.steps[i].tool || "").substring(0, 30) });
+            prev = b;
+        }
+        if (!steps.length) { return null; }
+        total = Number(d.total);
+        if (!isFinite(total) || total < steps[steps.length - 1].to) { total = steps[steps.length - 1].to; }
+        return { total: total, steps: steps };
+    }
+
+    function secs(v) { return (Math.round(v * 10) / 10).toString().replace(".", ","); }
+    function stepPlanText(plan) {
+        return "Total " + plan.total + " s.\n" + plan.steps.map(function (st, i) { return (i + 1) + ") " + st.from + "-" + st.to + " s: " + st.what + (st.tool ? " [" + st.tool + "]" : ""); }).join("\n");
+    }
+
+    function hidePlan() {
+        if (!ui.planCard) { return; }
+        ui.planCard.hidden = true;
+        ui.planEditRow.hidden = true;
+        ui.planChange.textContent = "Изменить";
+    }
+
+    function showPlan() {
+        var plan = planState.plan, colors = ["a", "b", "c", "d", "e", "f", "g", "h"];
+        ui.planTotal.textContent = secs(plan.total) + " с";
+        ui.planCount.textContent = plan.steps.length + " " + (plan.steps.length < 5 ? "шага" : "шагов");
+        ui.planBar.textContent = "";
+        ui.planList.textContent = "";
+        plan.steps.forEach(function (st, i) {
+            var seg = mkEl("i", "pb-" + colors[i]), li = mkEl("li", "pl-" + colors[i]), tm = mkEl("span", "pl-t", secs(st.from) + "–" + secs(st.to) + " с"), wh = mkEl("span", "pl-w", st.what);
+            seg.style.flex = String(Math.max(0.05, st.to - st.from));
+            ui.planBar.appendChild(seg);
+            li.appendChild(mkEl("i", "pl-dot"));
+            li.appendChild(tm);
+            if (st.tool) { wh.appendChild(mkEl("em", "pl-tool", st.tool)); }
+            li.appendChild(wh);
+            ui.planList.appendChild(li);
+        });
+        ui.planEdit.value = "";
+        ui.planEditRow.hidden = true;
+        ui.planChange.textContent = "Изменить";
+        ui.planCard.hidden = false;
+        ui.planBuild.disabled = false;
+        ui.planChange.disabled = false;
+    }
+
+    function withText(content, add) {
+        return typeof content === "string" ? content + add : content.concat([{ type: "text", text: add }]);
+    }
+
+    // Просит план. Возвращает "plan" (план показан), "direct" (простая команда — строить сразу) или "fail".
+    async function requestPlan(st, change) {
+        var reply, plan, content = st.content;
+        if (change) { content = withText(content, "\n\n[Previous plan]\n" + stepPlanText(st.plan) + "\n\n[What the user wants changed in the plan]\n" + change); }
+        setBusy(true);
+        lastError = null;
+        hidePlan();
+        setStatus(change ? aiName() + " переделывает план…" : aiName() + " составляет план по секундам…", "busy");
+        reply = await callAI([{ role: "user", content: content }], 2048, PLAN_PROMPT);
+        setBusy(false);
+        if (!reply.ok) { setStatus(reply.error, "error"); if (change) { showPlan(); } return "fail"; }
+        plan = parseStepPlan(reply.text);
+        if (!plan) {
+            if (change) { showPlan(); setStatus(aiName() + " не прислал новый план. Попробуйте сказать иначе — или нажмите «Строить».", "error"); return "fail"; }
+            return "direct";
+        }
+        st.plan = plan;
+        planState = st;
+        showPlan();
+        setStatus("План готов: " + secs(plan.total) + " с. Всё так — «Строить». Не так — «Изменить» и напишите, что поменять.", "done");
+        return "plan";
+    }
+
+    async function onPlanBuild() {
+        var st = planState, content;
+        if (!st || busy) { return; }
+        planState = null;
+        hidePlan();
+        content = withText(st.content, "\n\n[Approved plan] The user approved this timed plan. Build exactly this, with these timings and the named recipes:\n" + stepPlanText(st.plan));
+        history.push({ role: "user", content: content });
+        if (st.sent) { pendingRef = null; refSentNote = true; showRef(); }
+        closeMention();
+        trimHistory();
+        beginRun(st.text);
+        await askAndRun(st.text.length > 40 ? st.text.substring(0, 40) + "…" : st.text, st.sent, st.info.fileAccess);
+        endRun();
+    }
+
+    async function onPlanChange() {
+        var st = planState, wish;
+        if (!st || busy) { return; }
+        if (ui.planEditRow.hidden) {
+            ui.planEditRow.hidden = false;
+            ui.planChange.textContent = "Переделать план";
+            ui.planEdit.focus();
+            return;
+        }
+        wish = ui.planEdit.value.replace(/^\s+|\s+$/g, "");
+        if (!wish) { ui.planEdit.focus(); setStatus("Напишите, что поменять в плане.", ""); return; }
+        await requestPlan(st, wish);
+    }
+
+    // ---- стили-паки в окошке стиля: карточки, приёмы выбранного, свои стили
+    function storeCustomStyles() { try { window.localStorage.setItem(STYLES_KEY, JSON.stringify(CUSTOM_STYLES)); } catch (e) {} }
+
+    function deleteCustomStyle(id) {
+        CUSTOM_STYLES = CUSTOM_STYLES.filter(function (x) { return x.id !== id; });
+        storeCustomStyles();
+        if (settings.motionStyle === id) { settings.motionStyle = "normal"; storeSettings(settings); }
+        buildStyleChips();
+        setStatus("Свой стиль удалён.", "");
+    }
+
+    var STYLE_PROMPT = [
+        "You are a senior motion designer. The images are frames sampled in order from a reference video (or one picture). Measure its motion STYLE so that new, different animations can be made in the same style in After Effects. Do not describe its story or content.",
+        "Reply with ONLY this JSON, no code block, no other text:",
+        "{\"name\": \"short style name in the user's language (2-4 words)\", \"base\": \"collage|archival|kinetic|smooth|energetic|minimal|corporate|playful|normal\",",
+        " \"rows\": {\"rhythm\": \"...\", \"appear\": \"...\", \"transitions\": \"...\", \"text\": \"...\", \"font\": \"...\"},",
+        " \"palette\": [\"#hex\", \"#hex\", \"#hex\", \"#hex\"], \"tricks\": [\"...\", \"...\", \"...\"],",
+        " \"rules\": \"precise rules in English for an animator, with numbers\"}",
+        "- base: the closest ready style. rows (short, in Russian, at most 40 characters each, with numbers where you can): rhythm (frame rate feel: smooth 24-30 fps or stop-motion on twos, and the beat), appear (how things enter, frames, bounce %), transitions (how scenes change), text (how text animates), font (closest common font family).",
+        "- palette: 3-6 main colours as hex. tricks: 3-6 signature devices, 2-4 Russian words each.",
+        "- rules: 6-10 numbered rules, each concrete and measurable: durations in seconds or frames, eases (strong ease-out, no overshoot, spring %), distances in % of the frame, stagger steps, holds, colour roles (hex), typography (family, weight, case, size), textures and effects, what never happens. Mention SF recipes where they fit (SF.dropIn, SF.pushIn, SF.slam, SF.onTwos, SF.boil, SF.torn, SF.textIn, SF.wipe, SF.grain, SF.bloom, SF.bw)."
+    ].join("\n");
+
+    var styleDraft = null;
+
+    async function onStyleFromRef() {
+        var ref, reply, d, m, intro;
+        if (busy) { return; }
+        if (!aiKey()) { setStatus("Нужен " + providerOf().keyLabel.replace(/^Ключ/, "ключ") + ". Вставьте его в настройках.", "error"); openSettings(); return; }
+        if (!pendingRef) {
+            setStatus("Выберите видео или картинку — AI разберёт, в каком она стиле.", "");
+            await onAttachReference();
+            if (!pendingRef) { return; }
+        }
+        ref = pendingRef;
+        setBusy(true);
+        setStatus(aiName() + " разбирает стиль «" + ref.name + "» по кадрам…", "busy");
+        intro = "[Style from reference] " + (ref.isStill ? "One picture \"" + ref.name + "\"." : "Frames of \"" + ref.name + "\" (" + ref.duration.toFixed(1) + " s) at " + timesOf(ref.frames) + " s.");
+        reply = await callAI([{ role: "user", content: framesWithTimes(ref.frames, intro) }], 2048, STYLE_PROMPT);
+        setBusy(false);
+        if (!reply.ok) { setStatus(reply.error, "error"); return; }
+        m = /\{[\s\S]*\}/.exec(reply.text || "");
+        try { d = m ? JSON.parse(m[0]) : null; } catch (e) { d = null; }
+        if (!d || !d.rules) { setStatus(aiName() + " не смог разобрать стиль. Попробуйте другой пример.", "error"); return; }
+        styleDraft = {
+            name: String(d.name || "Мой стиль").substring(0, 40), base: motionStyleOf(String(d.base)) && !motionStyleOf(String(d.base)).base ? String(d.base) : "normal",
+            rows: d.rows && typeof d.rows === "object" ? d.rows : {}, rules: String(d.rules).substring(0, 3000), ref: ref.name,
+            palette: (d.palette instanceof Array ? d.palette : []).filter(function (h) { return /^#[0-9a-f]{6}$/i.test(String(h)); }).slice(0, 6),
+            tricks: (d.tricks instanceof Array ? d.tricks : []).map(function (t) { return String(t).substring(0, 30); }).slice(0, 6),
+            frames: ref.isStill ? 1 : ref.frames.length, duration: ref.duration, still: ref.isStill
+        };
+        showStyleCard();
+        setStatus("Стиль разобран. Проверьте, дайте название и нажмите «Сохранить стиль».", "done");
+    }
+
+    function showStyleCard() {
+        var d = styleDraft, labels = [["rhythm", "Ритм"], ["appear", "Появление"], ["transitions", "Переходы"], ["text", "Текст"], ["font", "Шрифт"]];
+        ui.styleCardRef.textContent = d.ref + (d.still ? " · картинка" : " · " + d.duration.toFixed(1) + " с · AI разобрал " + d.frames + " кадров");
+        ui.styleCardPal.textContent = "";
+        d.palette.forEach(function (h) { var sw = mkEl("i", "sc-sw"); sw.style.background = h; sw.title = h; ui.styleCardPal.appendChild(sw); });
+        ui.styleCardRows.textContent = "";
+        labels.forEach(function (l) {
+            var row;
+            if (!d.rows[l[0]]) { return; }
+            row = mkEl("div", "sc-row");
+            row.appendChild(mkEl("span", "", l[1]));
+            row.appendChild(mkEl("em", "", String(d.rows[l[0]]).substring(0, 60)));
+            ui.styleCardRows.appendChild(row);
+        });
+        ui.styleCardName.value = d.name;
+        ui.styleCard.hidden = false;
+    }
+
+    function closeStyleCard() {
+        ui.styleCard.hidden = true;
+        styleDraft = null;
+    }
+
+    function saveStyleCard() {
+        var d = styleDraft, name, st;
+        if (!d) { return; }
+        name = ui.styleCardName.value.replace(/^\s+|\s+$/g, "") || d.name;
+        st = { id: "my-" + Date.now().toString(36), label: name.substring(0, 40), base: d.base, palette: d.palette, tricks: d.tricks, rows: d.rows,
+            note: "Style pack \"" + name + "\" (the user's own, measured from their reference \"" + d.ref + "\"; follow it closely): " + d.rules +
+                (d.palette.length ? " Palette: " + d.palette.join(", ") + "." : "") };
+        CUSTOM_STYLES.push(st);
+        storeCustomStyles();
+        settings.motionStyle = st.id;
+        storeSettings(settings);
+        buildStyleChips();
+        closeStyleCard();
+        pendingRef = null;
+        refSentNote = false;
+        showRef();
+        setStatus("Стиль «" + st.label + "» сохранён и выбран. Он в кнопке стиля под полем — для всех следующих запросов.", "done");
     }
 
     function flowFolded(g) {
@@ -14170,6 +14933,7 @@
     document.addEventListener("paste", onPasteEvent);
     initMotionStyles();
     initAiModes();
+    initVoice();
     ui.prompt.addEventListener("keydown", function (e) {
         // Cmd/Ctrl+Enter запускает задачу.
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onRun(); }

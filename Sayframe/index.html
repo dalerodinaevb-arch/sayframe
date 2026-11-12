@@ -136,6 +136,27 @@
 
     <!-- Раздел AI (внутреннее имя claude): задача словами, референс, запуск и ответ -->
     <div id="viewClaude" class="view" role="tabpanel" aria-labelledby="tabClaude">
+    <!-- «Студия»: шапка раздела AI — заголовок и меню ⋯ (выражение, мои скрипты, стиль из рефа, модель) -->
+    <div id="aiHead" class="ai-head" hidden>
+      <button type="button" id="aiBack" class="ai-back" aria-label="Назад к запросу" title="Назад к запросу" hidden>&larr;</button>
+      <span class="ai-orb" aria-hidden="true">&#10022;</span>
+      <div class="ai-ht"><b id="aiTitle">Что анимируем?</b><span id="aiSub">Опишите словами — AI сделает в AE</span></div>
+      <div class="pf-pop-wrap ai-more-wrap">
+        <button type="button" id="aiMore" class="ai-more" aria-haspopup="menu" aria-expanded="false" aria-label="Ещё" title="Ещё: экспрешен, мои скрипты, свой стиль, модель">&#8943;</button>
+        <div id="aiMoreMenu" class="pf-menu ai-more-menu" role="menu" hidden>
+          <button type="button" role="menuitem" data-mm="expr" class="mm-expr"><i aria-hidden="true">ƒ</i><span>Экспрешен<small>формула для одного свойства</small></span></button>
+          <button type="button" role="menuitem" data-mm="mine"><i aria-hidden="true">☆</i><span>Мои скрипты<small>сохранённые, запуск без AI</small></span></button>
+          <button type="button" role="menuitem" data-mm="newstyle" class="mm-style"><i aria-hidden="true">✦</i><span>Новый стиль из рефа<small>AI запомнит стиль видео</small></span></button>
+          <button type="button" role="menuitem" data-mm="examples"><i aria-hidden="true">✎</i><span>Изменить примеры<small>свои готовые запросы</small></span></button>
+          <div class="mm-model"><span>Модель</span>
+            <div id="aiModelSeg" class="mm-seg" role="radiogroup" aria-label="Модель">
+              <button type="button" role="radio" data-q="fast" title="Быстрее и дешевле">⚡ Быстро</button>
+              <button type="button" role="radio" data-q="best" title="Умнее в моушне: сложные анимации, стили">✦ Качественно</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <!-- «Студия»: три режима раздела AI — создать по описанию, выражение для свойства, сохранённые скрипты -->
     <div id="aiModes" class="ai-modes" role="tablist" aria-label="Что делает AI" hidden>
       <button type="button" class="ai-mode" data-m="create" role="tab" data-info="Создать|Опишите словами, что сделать в композиции, — AI напишет скрипт и выполнит его.">✦ Создать</button>
@@ -165,11 +186,31 @@
         </div>
       </div>
       <div id="styleRow" class="style-row" role="radiogroup" aria-label="Стиль анимации"><span class="style-label">Стиль:</span></div>
+      <!-- «Под голос»: выделен слой с голосом — AI ставит анимации на слова -->
+      <div id="voiceChip" class="voice-chip" hidden>
+        <span class="vc-ic" aria-hidden="true">🎙</span><span class="vc-t">Под голос:</span><b id="voiceName"></b><span id="voiceDur" class="vc-dur"></span>
+        <span id="voiceWave" class="vc-wave" aria-hidden="true"></span>
+        <button type="button" id="voiceOff" class="vc-x" aria-label="Без голоса" title="Без голоса: AI работает как обычно">&times;</button>
+      </div>
+      <div id="voiceCard" class="voice-card" hidden>
+        <div class="vcard-head"><b>Распознавание речи</b><small>Нужно выбрать один раз, потом можно поменять в настройках</small></div>
+        <div id="voiceOpts" class="vcard-opts">
+          <button type="button" class="vopt" data-eng="local" aria-pressed="true"><i aria-hidden="true"></i><span><b>Бесплатно на компьютере</b><small>Без ключа, голос никуда не уходит. Один раз скачается около 0,5 ГБ.</small></span></button>
+          <button type="button" class="vopt" data-eng="openai" aria-pressed="false"><i aria-hidden="true"></i><span><b>Через OpenAI (Whisper)</b><small>Быстро, примерно $0,006 за минуту голоса. Нужен ключ OpenAI.</small></span></button>
+        </div>
+        <div id="voiceKeyRow" class="vcard-key" hidden><input id="voiceKey" class="field" type="password" placeholder="Ключ OpenAI: sk-…" autocomplete="off" spellcheck="false" aria-label="Ключ OpenAI"></div>
+        <div id="voiceMac" class="vcard-mac" hidden>
+          <p>На Mac распознаватель ставится одной командой в Терминале:</p>
+          <code>brew install whisper-cpp</code>
+          <div class="vcard-btns"><button type="button" id="voiceCopy" class="ghost">Скопировать команду</button><button type="button" id="voiceBrew" class="ghost">Нет Homebrew?</button></div>
+        </div>
+        <div class="vcard-btns"><button type="button" id="voiceGo" class="primary">Продолжить</button><button type="button" id="voiceCancel" class="ghost">Без голоса</button></div>
+      </div>
       <div class="prompt-wrap">
         <textarea id="prompt" rows="4" placeholder="Опишите, что сделать в композиции. @ — логотип, цвет или иконка из брендбука" aria-label="Задача для нейросети"></textarea>
       <div id="promptFoot" class="prompt-foot" hidden>
         <div class="pf-pop-wrap">
-          <button type="button" id="aiExample" class="pf-pill" aria-haspopup="menu" aria-expanded="false" title="Пример: картинка, видео или ссылка — AI сделает похоже">📎 Пример</button>
+          <button type="button" id="aiExample" class="pf-pill" aria-haspopup="menu" aria-expanded="false" title="Пример: картинка, видео или ссылка — AI сделает похоже">📎<span class="pf-ex-t"> Пример</span></button>
           <div id="aiExampleMenu" class="pf-menu" role="menu" hidden>
             <button type="button" role="menuitem" data-ex="file">Картинка или видео с компьютера</button>
             <button type="button" role="menuitem" data-ex="link">Ссылка (Pinterest, Behance…)</button>
@@ -177,7 +218,13 @@
         </div>
         <div class="pf-pop-wrap">
           <button type="button" id="aiStyleBtn" class="pf-pill" aria-haspopup="true" aria-expanded="false" title="Как двигается анимация — для всех следующих запросов">Обычный ▾</button>
-          <div id="aiStylePop" class="pf-menu pf-style" hidden></div>
+          <div id="aiStylePop" class="pf-menu pf-style" hidden>
+            <div class="pf-cap">Стиль</div>
+            <div id="aiStyleTail" class="pf-style-tail">
+              <button type="button" id="aiStyleNew" class="pf-style-new">+ Новый стиль из рефа</button>
+              <div id="aiStyleTricksBox" class="pf-tricks-box" hidden><div class="pf-cap">Приёмы этого стиля</div><div id="aiStyleTricks" class="pf-tricks"></div></div>
+            </div>
+          </div>
         </div>
         <span class="pf-at" title="Напишите @ в поле — вставится логотип, цвет или иконка из брендбука (вкладка «Проекты»)">@ брендбук</span>
       </div>
@@ -198,6 +245,31 @@
         <button id="refLinkCancel" class="icon-btn" aria-label="Закрыть" title="Закрыть">&times;</button>
       </div>
       <button id="runBtn" class="primary">Выполнить</button>
+    </section>
+
+    <!-- «Студия»: план по секундам — AI сначала показывает, что будет, потом строит -->
+    <section id="planCard" class="card plan-card" hidden aria-live="polite">
+      <div class="plan-head"><b id="planTotal"></b><span id="planCount"></span></div>
+      <div id="planBar" class="plan-bar"></div>
+      <ol id="planList" class="plan-list"></ol>
+      <div id="planEditRow" class="plan-edit" hidden>
+        <textarea id="planEdit" rows="2" placeholder="Что поменять? Например: логотип пусть появится в конце" aria-label="Что поменять в плане"></textarea>
+      </div>
+      <div class="plan-btns">
+        <button id="planBuild" class="primary">&#10022; Строить</button>
+        <button id="planChange" class="ghost">Изменить</button>
+      </div>
+    </section>
+
+    <!-- Новый стиль из рефа: что AI замерил в примере; сохраняется как свой стиль -->
+    <section id="styleCard" class="card style-card" hidden>
+      <div class="sc-head"><b>Новый стиль из рефа</b><button id="styleCardClose" class="icon-btn" aria-label="Закрыть" title="Закрыть">&times;</button></div>
+      <div id="styleCardRef" class="sc-ref"></div>
+      <div id="styleCardPal" class="sc-pal"></div>
+      <div class="pf-cap">Что AI замерил</div>
+      <div id="styleCardRows" class="sc-rows"></div>
+      <input id="styleCardName" class="field" maxlength="40" autocomplete="off" spellcheck="false" aria-label="Название стиля" placeholder="Название стиля">
+      <button id="styleCardSave" class="primary">Сохранить стиль</button>
     </section>
 
     <!-- Строка состояния одна на обе вкладки: панель переносит её в открытую -->
@@ -1259,6 +1331,13 @@
               <small>Сам смотрит кадры и правит. Дольше и дороже.</small>
             </span>
           </label>
+          <div class="voice-set">
+            <span class="label">Распознавание голоса («Под голос»)</span>
+            <div id="voiceEng" class="frames" role="group" aria-label="Чем распознавать голос">
+              <button data-value="local">На компьютере</button>
+              <button data-value="openai">OpenAI</button>
+            </div>
+          </div>
           <label class="switch">
             <input id="brandPics" type="checkbox">
             <span class="track"></span>

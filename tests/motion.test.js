@@ -37,7 +37,7 @@ function mkComp() {
 }
 function mkLayer(c, o) {
   o = o || {};
-  const t = { "ADBE Position": new Prop([960, 540, 0], 1), "ADBE Position_0": new Prop(960), "ADBE Position_1": new Prop(540), "ADBE Scale": new Prop([100, 100, 100], 3), "ADBE Opacity": new Prop(100) };
+  const t = { "ADBE Position": new Prop([960, 540, 0], 1), "ADBE Position_0": new Prop(960), "ADBE Position_1": new Prop(540), "ADBE Scale": new Prop([100, 100, 100], 3), "ADBE Opacity": new Prop(100), "ADBE Rotate Z": new Prop(0), "ADBE Anchor Point": new Prop([0, 0, 0], 1) };
   if (o.separated) t["ADBE Position"].dimensionsSeparated = true;
   const L = { name: o.name || "L", motionBlur: false, width: 400, height: 200, t,
     sourceRectAtTime: () => ({ left: -100, top: -50, width: 200, height: 100 }) };
@@ -128,6 +128,51 @@ check("SF8 no composition / not a layer: a clear error, not a crash of the panel
 threw = "";
 try { run("SF.fadeIn()", null); } catch (e) { threw = String(e.message || e); }
 check("SF8 host.jsx stays pure ASCII with the library", /^[\x09\x0a\x0d\x20-\x7e]*$/.test(src));
+
+// ---- style-pack recipes ----
+c = mkComp(); A = mkLayer(c);
+run("SF.dropIn(c.layers[0], 1)", c);
+let P = A.t["ADBE Position"], R = A.t["ADBE Rotate Z"];
+check("SF9 dropIn: 3 hold drawings 1/12 s apart from above (60% of the height -> 30% -> landed), tilt -12 -> -8 -> 0, then 103% -> 100% settle, appears at t",
+  keysOf(P) === "1.00=[960,-108,0] 1.08=[960,345.6,0] 1.17=[960,540,0]" && P.keys.every((k) => k.inType === KIT.HOLD) && keysOf(R) === "1.00=-12 1.08=-8 1.17=0" &&
+  keysOf(A.t["ADBE Scale"]) === "1.17=[103,103,100] 1.25=[100,100,100]" && keysOf(A.t["ADBE Opacity"]) === "0.92=0 1.00=100", keysOf(P) + " | " + keysOf(R) + " | " + keysOf(A.t["ADBE Scale"]) + " | " + keysOf(A.t["ADBE Opacity"]));
+c = mkComp(); A = mkLayer(c);
+run("SF.pushIn(c.layers[0], 2, { at: [1060, 590], zoom: 4, dur: 1 })", c);
+check("SF9 pushIn: scale x4 over 1 s, accelerating (ease in), and the detail at (1060,590) ends in the centre of the frame",
+  keysOf(A.t["ADBE Scale"]) === "2.00=[100,100,100] 3.00=[400,400,100]" && keysOf(A.t["ADBE Position"]) === "2.00=[960,540,0] 3.00=[560,340,0]" && A.t["ADBE Scale"].keys[0].outEase === 85, keysOf(A.t["ADBE Position"]));
+c = mkComp(); A = mkLayer(c);
+run("SF.slam(c.layers[0], 6)", c);
+check("SF9 slam: the title lands from above in 0.75 s (9 drawings) with a 98% ease-out and no spring",
+  keysOf(A.t["ADBE Position"]) === "6.00=[960,162,0] 6.75=[960,540,0]" && A.t["ADBE Position"].keys[1].inEase === 98 && A.t["ADBE Position"].expression === "", keysOf(A.t["ADBE Position"]));
+c = mkComp(); A = mkLayer(c); const B = mkLayer(c);
+run("SF.popIn(c.layers[0], 0); SF.fadeIn(c.layers[1], 0); SF.onTwos()", c);
+check("SF10 onTwos: every keyframed transform property of every layer gets posterizeTime(12), on top of the spring; untouched ones stay clean",
+  /^posterizeTime\(12\);var amp=/.test(A.t["ADBE Scale"].expression) && A.t["ADBE Opacity"].expression === "posterizeTime(12);value" && B.t["ADBE Opacity"].expression === "posterizeTime(12);value" && A.t["ADBE Position"].expression === "" && A.t["ADBE Rotate Z"].expression === "",
+  A.t["ADBE Scale"].expression + " | " + A.t["ADBE Opacity"].expression);
+run("SF.onTwos()", c);
+check("SF10 onTwos twice does not stack", (A.t["ADBE Opacity"].expression.match(/posterizeTime/g) || []).length === 1);
+run("SF.boil(c.layers[0], 2)", c);
+check("SF10 boil: position jitters 2 px on every drawing (posterized wiggle)", /^posterizeTime\(12\);seedRandom\(1,false\);var b=wiggle\(12,2\)-value;/.test(A.t["ADBE Position"].expression), A.t["ADBE Position"].expression);
+c = mkComp(); A = mkLayer(c);
+threw = "";
+try { run("SF.torn(c.layers[0]); SF.grain(c.layers[0]); SF.bloom(c.layers[0]); SF.bw(c.layers[0])", c); } catch (e) { threw = String(e.message || e); }
+check("SF10 look recipes (torn, grain, bloom, b/w) never break the script when an effect or its parameter is missing", threw === "" && A.g["ADBE Effect Parade"].list.length === 5, threw);
+check("SF10 the new style packs exist", run("SF.style('collage') + SF.style('archival') + SF.style('kinetic')", mkComp()) === "collagearchivalkinetic");
+
+c = mkComp(); A = mkLayer(c);
+run("SF.neon(c.layers[0], 2)", c);
+check("SF11 neon: two glows, and the tube flickers on in hold keys a few frames apart (0, on, 20%, on, 40%, on)",
+  A.g["ADBE Effect Parade"].list.length === 2 && keysOf(A.t["ADBE Opacity"]) === "2.00=0 2.07=100 2.10=20 2.17=100 2.20=40 2.27=100" && A.t["ADBE Opacity"].keys.every((k) => k.inType === KIT.HOLD), keysOf(A.t["ADBE Opacity"]));
+c = mkComp(); A = mkLayer(c);
+run("SF.glitch(c.layers[0], 1, { amount: 50, dur: 0.2 })", c);
+check("SF11 glitch: frame-by-frame jumps sideways with stretches and flicker, landing exactly where it was",
+  keysOf(A.t["ADBE Position"]) === "1.00=[1010,540,0] 1.03=[930,540,0] 1.07=[977.5,540,0] 1.10=[920,540,0] 1.13=[970,540,0] 1.17=[960,540,0]" &&
+  JSON.stringify(A.t["ADBE Scale"].keys[A.t["ADBE Scale"].keys.length - 1].v) === "[100,100,100]" && A.t["ADBE Opacity"].keys[1].v === 50 && A.t["ADBE Opacity"].keys[A.t["ADBE Opacity"].keys.length - 1].v === 100, keysOf(A.t["ADBE Position"]));
+c = mkComp(); A = mkLayer(c);
+threw = "";
+try { run("SF.vhs(c.layers[0]); SF.sketch(c.layers[0])", c); } catch (e) { threw = String(e.message || e); }
+check("SF11 vhs and sketch add their effects without breaking the script", threw === "" && A.g["ADBE Effect Parade"].list.length === 5, threw);
+check("SF11 the second set of packs exists", run("SF.style('neon') + SF.style('glitch') + SF.style('vhs') + SF.style('swiss') + SF.style('sketch')", mkComp()) === "neonglitchvhsswisssketch");
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

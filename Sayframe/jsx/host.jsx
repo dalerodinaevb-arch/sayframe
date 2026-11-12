@@ -6610,6 +6610,29 @@ var sayframeHost = (function () {
             });
         },
 
+        // The selected layer with sound from a file (a voice-over, an interview, a video with speech) for the voice mode.
+        // Times are in comp seconds; a word at time w of the file plays at start + w * stretch / 100.
+        voiceLayer: function () {
+            return reply(function () {
+                var c = app.project ? app.project.activeItem : null, sel, i, L, f;
+                if (!c || !(c instanceof CompItem)) { return { layer: null }; }
+                sel = c.selectedLayers || [];
+                for (i = 0; i < sel.length; i++) {
+                    L = sel[i];
+                    try {
+                        if (L.hasAudio && L.source && L.source.hasAudio) {
+                            f = sndFilePath(L);
+                            if (f) {
+                                return { layer: { index: L.index, id: L.id || 0, name: String(L.name), file: f, start: L.startTime, inPoint: L.inPoint, outPoint: L.outPoint,
+                                    stretch: L.stretch || 100, dur: L.source.duration || (L.outPoint - L.inPoint), comp: String(c.name) } };
+                            }
+                        }
+                    } catch (e0) {}
+                }
+                return { layer: null };
+            });
+        },
+
         // ES3 syntax check without running anything.
         syntax: function (code) {
             return reply(function () {
@@ -8612,7 +8635,15 @@ var SF = (function () {
         energetic: { dur: 0.45, step: 0.04, easeIn: 25, easeOut: 80, spring: true, amp: 0.08, freq: 3, decay: 7, dist: 0.2, rise: 60, blur: 40, popFrom: 0 },
         minimal:   { dur: 0.7, step: 0.06, easeIn: 15, easeOut: 85, spring: false, amp: 0.03, freq: 2, decay: 8, dist: 0.04, rise: 20, blur: 15, popFrom: 0.95 },
         corporate: { dur: 0.8, step: 0.07, easeIn: 20, easeOut: 80, spring: false, amp: 0.04, freq: 2, decay: 8, dist: 0.08, rise: 30, blur: 20, popFrom: 0.9 },
-        playful:   { dur: 0.55, step: 0.05, easeIn: 20, easeOut: 80, spring: true, amp: 0.12, freq: 2.5, decay: 5, dist: 0.15, rise: 50, blur: 30, popFrom: 0 }
+        playful:   { dur: 0.55, step: 0.05, easeIn: 20, easeOut: 80, spring: true, amp: 0.12, freq: 2.5, decay: 5, dist: 0.15, rise: 50, blur: 30, popFrom: 0 },
+        collage:   { dur: 0.5, step: 0.0833, easeIn: 30, easeOut: 95, spring: false, amp: 0.05, freq: 2, decay: 8, dist: 0.18, rise: 40, blur: 20, popFrom: 0 },
+        archival:  { dur: 0.9, step: 0.1, easeIn: 15, easeOut: 90, spring: false, amp: 0.03, freq: 2, decay: 8, dist: 0.06, rise: 24, blur: 30, popFrom: 0.94 },
+        kinetic:   { dur: 0.4, step: 0.05, easeIn: 30, easeOut: 95, spring: false, amp: 0.05, freq: 3, decay: 8, dist: 0.25, rise: 90, blur: 40, popFrom: 0.6 },
+        neon:      { dur: 0.6, step: 0.08, easeIn: 20, easeOut: 85, spring: false, amp: 0.04, freq: 2, decay: 8, dist: 0.06, rise: 20, blur: 40, popFrom: 0.92 },
+        glitch:    { dur: 0.35, step: 0.04, easeIn: 40, easeOut: 95, spring: false, amp: 0.05, freq: 3, decay: 9, dist: 0.1, rise: 30, blur: 20, popFrom: 1.2 },
+        vhs:       { dur: 0.7, step: 0.1, easeIn: 20, easeOut: 80, spring: false, amp: 0.04, freq: 2, decay: 8, dist: 0.08, rise: 30, blur: 20, popFrom: 0.9 },
+        swiss:     { dur: 0.5, step: 0.06, easeIn: 50, easeOut: 99, spring: false, amp: 0.03, freq: 2, decay: 9, dist: 0.3, rise: 120, blur: 0, popFrom: 0 },
+        sketch:    { dur: 0.5, step: 0.0833, easeIn: 25, easeOut: 90, spring: true, amp: 0.08, freq: 2.5, decay: 6, dist: 0.12, rise: 40, blur: 0, popFrom: 0 }
     };
     var KIT = (typeof KeyframeInterpolationType !== "undefined") ? KeyframeInterpolationType : { LINEAR: 6612, BEZIER: 6613, HOLD: 6614 };
 
@@ -8844,6 +8875,215 @@ var SF = (function () {
         return c;
     }
 
+    // ---- Recipes for the style packs (collage, archival, kinetic type) ----
+    var TR_PROPS = ["ADBE Anchor Point", "ADBE Position", "ADBE Position_0", "ADBE Position_1", "ADBE Scale", "ADBE Rotate Z", "ADBE Opacity"];
+    function layersOf(layers) {
+        var c, out = [], i;
+        if (layers && typeof layers.length === "number") { return layers; }
+        if (layers) { return [layers]; }
+        c = comp();
+        for (i = 1; i <= c.numLayers; i++) { out.push(c.layer(i)); }
+        return out;
+    }
+    function hasPosterize(e) { return /posterizeTime\(/.test(String(e || "")); }
+
+    // Stop-motion "on twos": every keyframed transform property moves in steps of fps drawings a second
+    // (12 by default). Works on top of an existing expression (spring, wiggle).
+    function onTwos(layers, fps) {
+        var list = layersOf(layers), i, j, p, e;
+        fps = fps || 12;
+        for (i = 0; i < list.length; i++) {
+            for (j = 0; j < TR_PROPS.length; j++) {
+                p = null;
+                try { p = tr(list[i], TR_PROPS[j]); } catch (e0) {}
+                if (!p || !p.numKeys) { continue; }
+                e = String(p.expression || "");
+                if (hasPosterize(e)) { continue; }
+                try { p.expression = "posterizeTime(" + fps + ");" + (e ? e : "value"); } catch (e1) {}
+            }
+        }
+        return list;
+    }
+
+    // Paper boil: the layer jitters by a pixel or two on every drawing, like hand-cut paper under a camera.
+    function boil(layers, px, fps) {
+        var list = layersOf(layers), i, p;
+        px = px || 1.5; fps = fps || 12;
+        for (i = 0; i < list.length; i++) {
+            try {
+                p = tr(list[i], "ADBE Position");
+                if (p.dimensionsSeparated) { continue; }
+                p.expression = "posterizeTime(" + fps + ");seedRandom(" + (i + 1) + ",false);var b=wiggle(" + fps + "," + px + ")-value;" +
+                    "value+[b[0],b[1]].concat(value.length>2?[0]:[]);";
+            } catch (e1) {}
+        }
+        return list;
+    }
+
+    // Collage drop-in, stop-motion: 3 drawings falling from o.from (top) with a tilt, then 1 settle drawing 103% -> 100%.
+    function dropIn(layer, t, o) {
+        var c = comp(), f = 1 / ((o && o.fps) || 12), from = (o && o.from) || "top", v = dirVec(from, c, { dist: Math.round(c.height * 0.6) });
+        var p = tr(layer, "ADBE Position"), r = tr(layer, "ADBE Rotate Z"), s = tr(layer, "ADBE Scale"), op = tr(layer, "ADBE Opacity"), base, a, b, sv, rot;
+        base = valueAt(p, t); sv = valueAt(s, t); rot = valueAt(r, t);
+        a = copy(base); a[0] += v[0]; a[1] += v[1];
+        b = copy(base); b[0] += v[0] * 0.3; b[1] += v[1] * 0.3;
+        if (!p.dimensionsSeparated) { keys(p, [[t, a], [t + f, b], [t + 2 * f, base]], "hold"); }
+        keys(r, [[t, rot - 12], [t + f, rot - 8], [t + 2 * f, rot]], "hold");
+        keys(s, [[t + 2 * f, scaled(sv, 1.03)], [t + 3 * f, sv]], "hold");
+        if (t > 0) { keys(op, [[Math.max(0, t - f), 0], [t, valueAt(op, t) || 100]], "hold"); }
+        return layer;
+    }
+
+    // Push into a detail: scale grows o.zoom times (6) over o.dur (1 s), accelerating, and the point o.at
+    // (comp pixels; default the comp centre) travels to the centre of the frame - then cut or iris through it.
+    function pushIn(layer, t, o) {
+        var c = comp(), d = (o && o.dur) || 1, k = (o && o.zoom) || 6, p = tr(layer, "ADBE Position"), s = tr(layer, "ADBE Scale");
+        var pos = valueAt(p, t), sv = valueAt(s, t), at = (o && o.at) || [c.width / 2, c.height / 2], end;
+        keys(s, [[t, sv], [t + d, scaled(sv, k)]], "in");
+        if (!p.dimensionsSeparated) {
+            end = copy(pos);
+            end[0] = c.width / 2 - (at[0] - pos[0]) * k;
+            end[1] = c.height / 2 - (at[1] - pos[1]) * k;
+            keys(p, [[t, pos], [t + d, end]], "in");
+        }
+        return layer;
+    }
+
+    // Title slam: lands from above in o.dur (0.75 s = 9 drawings), very strong ease-out, no overshoot.
+    function slam(layer, t, o) {
+        var c = comp(), d = (o && o.dur) || 0.75, dist = (o && o.dist) || Math.round(c.height * 0.35), p = tr(layer, "ADBE Position"), base, a;
+        if (p.dimensionsSeparated) { p = tr(layer, "ADBE Position_1"); base = valueAt(p, t); keys(p, [[t, base - dist], [t + d, base]], "out"); }
+        else { base = valueAt(p, t); a = copy(base); a[1] -= dist; keys(p, [[t, a], [t + d, base]], "out"); }
+        try { p.setTemporalEaseAtKey(p.numKeys, [new KeyframeEase(0, 98)], [new KeyframeEase(0, 98)]); } catch (e0) {}
+        fadeIn(layer, t, Math.min(0.15, d / 3));
+        return layer;
+    }
+
+    function addFx(layer, match, name) {
+        var fx = null;
+        try { fx = layer.property("ADBE Effect Parade").addProperty(match); } catch (e0) { return null; }
+        if (fx && name) { try { fx.name = name; } catch (e1) {} }
+        return fx;
+    }
+    function setFx(fx, names, v) {
+        var i, p;
+        if (!fx) { return; }
+        for (i = 0; i < names.length; i++) {
+            p = null;
+            try { p = fx.property(names[i]); } catch (e0) {}
+            if (p) { try { p.setValue(v); return; } catch (e1) {} }
+        }
+    }
+    // An adjustment layer on top of everything for the look effects (one per comp, reused).
+    function lookLayer(name) {
+        var c = comp(), i, l;
+        for (i = 1; i <= c.numLayers; i++) { if (c.layer(i).name === name) { return c.layer(i); } }
+        l = c.layers.addSolid([1, 1, 1], name, c.width, c.height, c.pixelAspect || 1, c.duration);
+        try { l.adjustmentLayer = true; } catch (e0) {}
+        try { l.moveToBeginning(); } catch (e1) {}
+        return l;
+    }
+    // Film grain (o.amount %, default 6) - light and organic.
+    function grain(layer, o) {
+        var l = layer || lookLayer("SF Look"), fx = addFx(l, "ADBE Noise", "SF Grain");
+        setFx(fx, ["ADBE Noise-0001", "Amount of Noise"], (o && o.amount) || 6);
+        setFx(fx, ["ADBE Noise-0003", "Use Color Noise"], 0);
+        return l;
+    }
+    // Soft bloom: a gentle glow on the bright parts.
+    function bloom(layer, o) {
+        var l = layer || lookLayer("SF Look"), fx = addFx(l, "ADBE Glo2", "SF Bloom");
+        setFx(fx, ["ADBE Glo2-0002", "Glow Threshold"], (o && o.threshold) || 70);
+        setFx(fx, ["ADBE Glo2-0003", "Glow Radius"], (o && o.radius) || 60);
+        setFx(fx, ["ADBE Glo2-0004", "Glow Intensity"], (o && o.intensity) || 0.5);
+        return l;
+    }
+    // Bright black-and-white grade.
+    function bw(layer, o) {
+        var l = layer || lookLayer("SF Look"), fx = addFx(l, "ADBE Tint", "SF B&W"), cv;
+        setFx(fx, ["ADBE Tint-0003", "Amount to Tint"], 100);
+        cv = addFx(l, "ADBE Brightness & Contrast 2", "SF Lift");
+        setFx(cv, ["ADBE Brightness & Contrast 2-0001", "Brightness"], (o && o.lift) || 12);
+        setFx(cv, ["ADBE Brightness & Contrast 2-0002", "Contrast"], (o && o.contrast) || 10);
+        return l;
+    }
+    // Torn paper edge: rough, fibrous outline of the layer (Roughen Edges).
+    function torn(layer, o) {
+        var fx = addFx(layer, "ADBE Roughen Edges", "SF Torn");
+        setFx(fx, ["ADBE Roughen Edges-0002", "Border"], (o && o.border) || 8);
+        setFx(fx, ["ADBE Roughen Edges-0005", "Scale"], (o && o.scale) || 40);
+        return layer;
+    }
+
+    // Neon: a tight bright glow plus a wide soft one; with t it flickers on like a tube (hold keys, frames apart).
+    function neon(layer, t, o) {
+        var g1 = addFx(layer, "ADBE Glo2", "SF Neon"), g2 = addFx(layer, "ADBE Glo2", "SF Neon Wide"), f, op, v, pat, i;
+        setFx(g1, ["ADBE Glo2-0002", "Glow Threshold"], 30); setFx(g1, ["ADBE Glo2-0003", "Glow Radius"], (o && o.radius) || 18); setFx(g1, ["ADBE Glo2-0004", "Glow Intensity"], 2.5);
+        setFx(g2, ["ADBE Glo2-0002", "Glow Threshold"], 30); setFx(g2, ["ADBE Glo2-0003", "Glow Radius"], ((o && o.radius) || 18) * 6); setFx(g2, ["ADBE Glo2-0004", "Glow Intensity"], 1);
+        if (t !== undefined && t !== null) {
+            f = comp().frameDuration || (1 / 30);
+            op = tr(layer, "ADBE Opacity"); v = valueAt(op, t) || 100;
+            pat = [[0, 0], [2, v], [3, v * 0.2], [5, v], [6, v * 0.4], [8, v]];
+            for (i = 0; i < pat.length; i++) { pat[i] = [t + pat[i][0] * f, pat[i][1]]; }
+            keys(op, pat, "hold");
+        }
+        return layer;
+    }
+
+    // Glitch hit: for o.dur (0.3 s) the layer jumps sideways frame by frame, stretches and flickers, then lands where it was.
+    function glitch(layer, t, o) {
+        var c = comp(), f = c.frameDuration || (1 / 30), amt = (o && o.amount) || Math.round(c.width * 0.025), p = tr(layer, "ADBE Position"), s = tr(layer, "ADBE Scale"), op = tr(layer, "ADBE Opacity");
+        var jx = [1, -0.6, 0.35, -0.8, 0.2, 0], sx = [1.12, 0.94, 1.06, 1.15, 0.98, 1], n = Math.max(3, Math.min(jx.length, Math.round(((o && o.dur) || 0.3) / f))), pos, sv, ov, pk = [], sk = [], ok = [], i, a, b;
+        pos = valueAt(p, t); sv = valueAt(s, t); ov = valueAt(op, t) || 100;
+        for (i = 0; i < n; i++) {
+            a = copy(pos); a[0] += i === n - 1 ? 0 : jx[i] * amt; pk.push([t + i * f, a]);
+            b = copy(sv); b[0] = sv[0] * (i === n - 1 ? 1 : sx[i]); sk.push([t + i * f, b]);
+            ok.push([t + i * f, i === n - 1 ? ov : (i % 2 ? ov * 0.5 : ov)]);
+        }
+        if (!p.dimensionsSeparated) { keys(p, pk, "hold"); }
+        keys(s, sk, "hold"); keys(op, ok, "hold");
+        return layer;
+    }
+
+    // VHS look on the shared adjustment layer: noise, scan lines, a little softness and washed colour.
+    function vhs(layer, o) {
+        var l = layer || lookLayer("SF Look"), nz = addFx(l, "ADBE Noise", "SF VHS Noise"), sl = addFx(l, "ADBE Venetian Blinds", "SF Scanlines"), bl = addFx(l, "ADBE Gaussian Blur 2", "SF VHS Soft"), bc;
+        setFx(nz, ["ADBE Noise-0001", "Amount of Noise"], (o && o.noise) || 10);
+        setFx(sl, ["ADBE Venetian Blinds-0001", "Transition Completion"], 18); setFx(sl, ["ADBE Venetian Blinds-0002", "Direction"], 0); setFx(sl, ["ADBE Venetian Blinds-0003", "Width"], 4);
+        setFx(bl, ["ADBE Gaussian Blur 2-0001", "Blurriness"], 1.5);
+        bc = addFx(l, "ADBE Brightness & Contrast 2", "SF VHS Wash");
+        setFx(bc, ["ADBE Brightness & Contrast 2-0001", "Brightness"], 6); setFx(bc, ["ADBE Brightness & Contrast 2-0002", "Contrast"], -12);
+        return l;
+    }
+
+    // Hand-drawn wobble: the layer's outline boils (Turbulent Displace whose evolution jumps fps times a second).
+    function sketch(layer, o) {
+        var fx = addFx(layer, "ADBE Turbulent Displace", "SF Sketch"), fps = (o && o.fps) || 8, ev = null;
+        setFx(fx, ["ADBE Turbulent Displace-0002", "Amount"], (o && o.amount) || 6);
+        setFx(fx, ["ADBE Turbulent Displace-0003", "Size"], (o && o.size) || 6);
+        try { ev = fx.property("ADBE Turbulent Displace-0006") || fx.property("Evolution"); } catch (e0) {}
+        if (ev) { try { ev.expression = "posterizeTime(" + fps + ");time*" + (fps * 45); } catch (e1) {} }
+        return layer;
+    }
+
+    // A yellow marker with the spoken word on the voice layer: SF.wordMark(layerIndex, t, "word"), t in comp seconds.
+    // An earlier Sayframe word marker at the same frame is replaced, so building again does not pile them up.
+    function wordMark(idx, t, text) {
+        var c = comp(), L = c.layer(idx), mk = L.property("ADBE Marker"), k, mv, half = c.frameDuration / 2, pr;
+        for (k = mk.numKeys; k >= 1; k--) {
+            if (Math.abs(mk.keyTime(k) - t) < half) {
+                pr = null;
+                try { pr = mk.keyValue(k).getParameters(); } catch (e0) {}
+                if (pr && pr.sfVoice) { mk.removeKey(k); }
+            }
+        }
+        mv = new MarkerValue(String(text));
+        try { mv.label = 2; } catch (e1) {}
+        try { mv.setParameters({ sfVoice: "1" }); } catch (e2) {}
+        mk.setValueAtTime(t, mv);
+        return L;
+    }
+
     var API = {};
     // One effect on several layers, each a little later: SF.stagger(layers, t, step, "popIn", opts).
     function stagger(layers, t, step, fn, o) {
@@ -8858,5 +9098,8 @@ var SF = (function () {
     API.fadeIn = fadeIn; API.fadeOut = fadeOut; API.slideIn = slideIn; API.slideOut = slideOut;
     API.popIn = popIn; API.popOut = popOut; API.wipe = wipe; API.textIn = textIn; API.typeOn = typeOn;
     API.drawOn = drawOn; API.blurIn = blurIn; API.drift = drift; API.wiggle = wiggle; API.motionBlur = motionBlur; API.stagger = stagger;
+    API.onTwos = onTwos; API.boil = boil; API.dropIn = dropIn; API.pushIn = pushIn; API.slam = slam;
+    API.grain = grain; API.bloom = bloom; API.bw = bw; API.torn = torn;
+    API.neon = neon; API.glitch = glitch; API.vhs = vhs; API.sketch = sketch; API.wordMark = wordMark;
     return API;
 })();

@@ -43,6 +43,9 @@ const server = https.createServer({ key: fs.readFileSync(TLS + "/key.pem"), cert
   else if (u.pathname === "/downgrade") { res.writeHead(302, { location: "http://localhost:1/version.json" }); res.end(); }
   else if (u.pathname === "/slow") { setTimeout(() => { res.writeHead(200); res.end("late"); }, 3000); }
   else if (u.pathname === "/huge") { res.writeHead(200); const chunk = Buffer.alloc(1024 * 1024); let n = 0; const t = setInterval(() => { if (n++ > 25 || res.destroyed) { clearInterval(t); res.end(); } else res.write(chunk); }, 1); }
+  else if (u.pathname === "/to-big") { res.writeHead(302, { location: "/big.bin" }); res.end(); }
+  else if (u.pathname === "/big.bin") { res.writeHead(200, { "content-length": String(BIN.length) }); res.write(BIN.subarray(0, 100000)); setTimeout(() => res.end(BIN.subarray(100000)), 30); }
+  else if (u.pathname === "/stt" && req.method === "POST") { const ch = []; req.on("data", (c) => ch.push(c)); req.on("end", () => { seen.push({ form: Buffer.concat(ch), ct: req.headers["content-type"], auth: req.headers.authorization }); res.writeHead(200, { "content-type": "application/json" }); res.end('{"words":[]}'); }); }
   else { res.writeHead(404); res.end("nope"); }
 });
 server.listen(0, "127.0.0.1", async () => {
@@ -56,6 +59,17 @@ server.listen(0, "127.0.0.1", async () => {
     const dest = path.join(tmp, "f.bin");
     r = await P.download(B + "/file.bin?v=abc", dest, 5000);
     check("download: file on disk is byte-identical, sha256 is right", r.status === 200 && r.size === BIN.length && fs.readFileSync(dest).equals(BIN) && r.sha256 === crypto.createHash("sha256").update(BIN).digest("hex"));
+    const big = path.join(tmp, "model.bin"), prog = [];
+    r = await P.downloadFile(B + "/to-big", big, (got, total) => prog.push([got, total]));
+    check("downloadFile: follows the redirect, streams to disk (no .part left), reports progress", r.size === BIN.length && fs.readFileSync(big).equals(BIN) && !fs.existsSync(big + ".part") && prog.length >= 2 && prog[prog.length - 1][0] === BIN.length && prog[0][1] === BIN.length, JSON.stringify(prog.slice(-2)));
+    let err = null; try { await P.downloadFile(B + "/missing", path.join(tmp, "none2"), null); } catch (e) { err = e; }
+    check("downloadFile: 404 throws and leaves no file", err && /404/.test(err.message) && !fs.existsSync(path.join(tmp, "none2")));
+    const wavf = path.join(tmp, "v.wav"); fs.writeFileSync(wavf, Buffer.from("RIFFxxxxWAVE"));
+    r = await P.postForm(B + "/stt", { authorization: "Bearer k" }, [["model", "whisper-1"], ["timestamp_granularities[]", "word"]], { field: "file", path: wavf, name: "voice.wav", type: "audio/wav" });
+    const sf = seen.filter((x) => x.form).pop();
+    check("postForm: multipart with the fields, the file bytes and the key", r.status === 200 && r.text === '{"words":[]}' && /^multipart\/form-data; boundary=/.test(sf.ct) && sf.auth === "Bearer k" &&
+      sf.form.toString().indexOf('name="model"\r\n\r\nwhisper-1\r\n') > 0 && sf.form.toString().indexOf('name="timestamp_granularities[]"\r\n\r\nword') > 0 &&
+      sf.form.toString().indexOf('name="file"; filename="voice.wav"\r\ncontent-type: audio/wav\r\n\r\nRIFFxxxxWAVE\r\n--') > 0, sf && sf.form.toString());
     r = await P.download(B + "/missing", path.join(tmp, "none"), 5000);
     check("download: missing file writes nothing", r.status === 404 && r.sha256 === "" && !fs.existsSync(path.join(tmp, "none")));
     r = await P.getText(B + "/abs", 5000);

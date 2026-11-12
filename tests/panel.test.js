@@ -959,8 +959,27 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         case "pickFile": return opts.pickFile || null;
         case "pickFiles": return opts.pickFiles || (opts.pickFile ? [opts.pickFile] : []);
         case "imageSize": return opts.imageSize === undefined ? { width: 800, height: 600 } : opts.imageSize;
+        case "downloadFile": {
+          sys.downloads = (sys.downloads || []).concat([args[0]]);
+          fs.mkdirSync(path.dirname(args[1]), { recursive: true });
+          fs.writeFileSync(args[1], "model");
+          return { size: 5 };
+        }
+        case "postForm": {
+          const [url, headers, fields, file] = args;
+          net.forms = (net.forms || []).concat([{ url, headers, fields, file, bytes: fs.readFileSync(file.path) }]);
+          return opts.sttReply || { status: 200, text: JSON.stringify({ text: "Привет друзья", words: [{ word: "Привет", start: 0.4, end: 0.8 }, { word: "друзья", start: 0.9, end: 1.3 }] }) };
+        }
         case "exec": {
           sys.exec.push({ file: args[0], args: args[1] });
+          // «Под голос»: whisper-cli writes the words (one per piece) to <-of>.json. opts.whisper: the pieces, or { fail }.
+          if (/whisper-cli/.test(args[0])) {
+            const a = args[1], of = a[a.indexOf("-of") + 1];
+            sys.whisper = (sys.whisper || []).concat([{ args: a, wav: fs.readFileSync(a[a.indexOf("-f") + 1]) }]);
+            if (opts.whisper && opts.whisper.fail) return { code: 1, stdout: "", stderr: "whisper: failed to load model" };
+            fs.writeFileSync(of + ".json", JSON.stringify({ transcription: (opts.whisper || []).map((w) => ({ text: w[0], offsets: { from: w[1], to: w[2] } })) }));
+            return { code: 0, stdout: "", stderr: "" };
+          }
           if (args[0] !== "osascript") return { code: 1, stdout: "", stderr: "unknown command" };
           // Where the mouse is (the effect search at the mouse). opts.mouse: [x, y], or nothing — the system does not answer.
           if (args[1][0] === "-l" && args[1][2] === "-e" && /mouseLocation/.test(args[1][3])) return opts.mouse ? { code: 0, stdout: opts.mouse.join(" ") + "\n", stderr: "" } : { code: 1, stdout: "", stderr: "execution error" };
@@ -1065,6 +1084,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         remove: call("remove"), exists: call("exists"), mkdirp: call("mkdirp"), move: call("move"),
         exec: call("exec"), pickFile: call("pickFile"), pickFiles: call("pickFiles"), imageSize: call("imageSize"), postJSON: (u, h, b, t) => window.__plat("postJSON", [u, h, b, t]),
         getText: call("getText"), download: call("download"), fetchUrl: call("fetchUrl"), verify: call("verify"),
+        downloadFile: (u, d) => window.__plat("downloadFile", [u, d]), postForm: (u, h, f, file) => window.__plat("postForm", [u, h, f, file]),
         openExternal: (u) => { window.__opened.push(u); return true; },
         reload: () => { window.__plat("reloaded", []).then(() => window.location.reload()); }
       };
@@ -1801,8 +1821,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   await p.page.locator("#quickList .quick-chip").nth(1).click();
   t = await p.page.inputValue("#prompt");
   check("Q2 a press puts the task into the field (not sent yet) with the cursor at the end", /^Сделай подпись внизу кадра/.test(t) && /«Имя Фамилия»/.test(t) && p.net.requests.length === 0 && (await p.page.evaluate(() => document.activeElement.id)) === "prompt" && (await p.page.evaluate(() => document.getElementById("prompt").selectionStart === document.getElementById("prompt").value.length)) && /в поле запроса/.test(await p.status()));
-  await p.page.fill("#prompt", t.replace("«Имя Фамилия»", "«Далер»"));
-  await p.page.click("#runBtn"); await p.idle();
+  await p.run(t.replace("«Имя Фамилия»", "«Далер»"));
   check("Q2 after a tweak it runs like any request", /«Далер»/.test(p.net.requests[0].body.messages[0].content) && p.ae.log.ran.join() === "lower");
   await p.page.fill("#prompt", "Сделай тряску камеры на 2 секунды с текущего времени");
   await p.page.click("#quickAdd");
@@ -2087,7 +2106,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
   console.log("\n=== motion style ===");
   p = await open({ replies: [msg("Делаю.\n```javascript\napp.__ran('ms');\n```"), msg("Делаю.\n```javascript\napp.__ran('ms2');\n```")] });
   t = await p.page.locator("#styleRow .style-chip").allInnerTexts();
-  check("MS1 above the request: «Стиль:» with Обычный, Плавный, Энергичный, Минимализм, Корпоративный, Игривый; Обычный is on", t.join() === "Обычный,Плавный,Энергичный,Минимализм,Корпоративный,Игривый" && (await p.page.getAttribute('#styleRow [data-style="normal"]', "aria-checked")) === "true" && (await p.page.evaluate(() => { const q = document.getElementById("styleRow").getBoundingClientRect(), t = document.getElementById("prompt").getBoundingClientRect(); return q.bottom <= t.top; })), t.join());
+  check("MS1 above the request: «Стиль:» with Обычный, Плавный, Энергичный, Минимализм, Корпоративный, Игривый and the packs; Обычный is on", t.join() === "Обычный,Плавный,Энергичный,Минимализм,Корпоративный,Игривый,Бумажный коллаж,Архивный эдит,Кинетическая типографика,Неон,Глитч,Ретро VHS,Швейцарский,Скетч от руки" && (await p.page.getAttribute('#styleRow [data-style="normal"]', "aria-checked")) === "true" && (await p.page.evaluate(() => { const q = document.getElementById("styleRow").getBoundingClientRect(), t = document.getElementById("prompt").getBoundingClientRect(); return q.bottom <= t.top; })), t.join());
   await p.page.click('#styleRow [data-style="energetic"]');
   await p.run("сделай заставку");
   c = p.net.requests[0].body;
@@ -7028,38 +7047,221 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     await p.close();
   }
 
-  // AI in «Студия»: modes Создать / Выражение / Мои, example and style inside the field, quick tasks as tiles.
-  {
-    p = await open({ settings: { design: "studio", designSet: 2 } });
+  // AI in «Студия»: a header with ⋯ (Экспрешен, Мои скрипты, Новый стиль из рефа, Изменить примеры, Быстро/Качественно); the field with 📎, the style and ↑;
+  // examples as small cards; a plan by seconds before building; style packs as cards; a new style measured from a reference.
+  if (!process.env.SAYFRAME_ONLY || process.env.SAYFRAME_ONLY === "ai4") {
+    const PLAN = JSON.stringify({ total: 5, steps: [{ from: 0, to: 1, what: "Логотип выезжает снизу с отскоком", tool: "Плавность" }, { from: 1, to: 3, what: "«Alif Shop» появляется по буквам", tool: "Лесенка" }, { from: 3, to: 5, what: "Пауза, всё уходит влево" }] });
+    const PLAN2 = JSON.stringify({ total: 6, steps: [{ from: 0, to: 2, what: "Логотип падает сверху", tool: "Падение" }, { from: 2, to: 6, what: "Название по словам" }] });
+    p = await open({ settings: { design: "studio", designSet: 2 }, width: 420, height: 1000, replies: [msg(PLAN), msg(PLAN2), msg("Строю.\n```javascript\napp.__ran('built');\n```"), msg('{"direct": true}'), msg("Готово.\n```javascript\napp.__ran('direct');\n```")] });
     await p.page.click("#tabClaude");
-    check("SA1 «Студия»: three modes on top, «Создать» first; the field with «Пример» and the style inside; quick tasks as tiles with «Своя задача»", (await vis(p, "#aiModes")) && (await p.page.getAttribute('#aiModes [data-m="create"]', "aria-selected")) === "true" &&
-      (await vis(p, "#aiExample")) && (await p.page.innerText("#aiStyleBtn")).trim() === "Обычный ▾" && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && !(await vis(p, "#exprCard")) && (await p.page.getAttribute("#prompt", "placeholder")) === "Что сделать в композиции?" &&
-      (await p.page.locator("#quickList .quick-chip").count()) === 4 && (await vis(p, "#quickList .quick-new")) && (await p.page.locator("#quickList .quick-chip .quick-ic").first().innerText()) === "T↑" && !(await vis(p, "#exprWish")) && p.errors.length === 0, p.errors.join("|"));
+    check("SA1 «Студия»: header «Что анимируем?» with ⋯, no mode tabs; the field holds 📎, the style and ↑; examples as cards titled «Попробуйте», no «Своя задача», no attach buttons",
+      (await vis(p, "#aiHead")) && (await p.page.innerText("#aiTitle")) === "Что анимируем?" && (await vis(p, "#aiMore")) && !(await vis(p, "#aiModes")) && !(await vis(p, "#aiBack")) &&
+      (await vis(p, "#promptFoot #runBtn")) && (await p.page.innerText("#runBtn")).trim() === "↑" && (await p.page.getAttribute("#runBtn", "title")) === "Составить план" &&
+      (await vis(p, "#aiExample")) && (await p.page.innerText("#aiStyleBtn")).trim() === "Обычный ▾" && (await vis(p, "#aiStyleBtn .style-thumb")) && !(await vis(p, "#refBtn")) && !(await vis(p, "#styleRow")) && !(await vis(p, "#exprCard")) &&
+      (await p.page.locator("#quickList .quick-chip").count()) === 4 && !(await vis(p, "#quickList .quick-new")) && (await p.page.innerText("#quickToggle")).trim().toLowerCase() === "попробуйте" && !(await vis(p, "#quickEdit")) &&
+      !(await vis(p, "#planCard")) && (await overflow(p)) <= 0 && p.errors.length === 0, p.errors.join("|"));
+    await p.page.screenshot({ path: path.join(SHOTS, "sa-1-ai.png") });
     await p.page.click("#aiStyleBtn");
-    const popOpen = await vis(p, "#aiStylePop");
-    await p.page.click('#aiStylePop .style-chip[data-style="smooth"]');
-    check("SA2 the style pill opens the styles; a pick is kept for the next requests and closes the list", popOpen && (await p.page.innerText("#aiStyleBtn")).trim() === "Плавный ▾" && !(await vis(p, "#aiStylePop")) &&
-      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).motionStyle)) === "smooth");
+    const cards = await p.page.locator("#aiStylePop .style-chip .style-name").allInnerTexts();
+    check("SA2 the style button opens cards with a picture and a short note: the old styles plus the packs (Бумажный коллаж, Архивный эдит, Кинетическая типографика, Неон, Глитч, Ретро VHS, Швейцарский, Скетч от руки), and «+ Новый стиль из рефа»",
+      cards.join() === "Обычный,Плавный,Энергичный,Минимализм,Корпоративный,Игривый,Бумажный коллаж,Архивный эдит,Кинетическая типографика,Неон,Глитч,Ретро VHS,Швейцарский,Скетч от руки" && (await vis(p, '#aiStylePop .style-chip[data-style="collage"] .style-thumb')) &&
+      (await p.page.innerText('#aiStylePop .style-chip[data-style="collage"] .style-note')) === "рваная бумага, на двойках" && (await vis(p, "#aiStyleNew")) && !(await vis(p, "#aiStyleTricksBox")), cards.join());
+    await p.page.screenshot({ path: path.join(SHOTS, "sa-2-styles.png") });
+    await p.page.click('#aiStylePop .style-chip[data-style="collage"]');
+    await p.page.click("#aiStyleBtn");
+    check("SA2 a pack is kept for the next requests; reopened, it shows its devices", (await p.page.innerText("#aiStyleBtn")).trim() === "Бумажный коллаж ▾" &&
+      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).motionStyle)) === "collage" && (await p.page.locator("#aiStyleTricks .pf-trick").allInnerTexts()).join() === "на двойках 12 к/с,падение + осадка,наезд в деталь,рваные края,дрожь бумаги,удар заголовка");
+    await p.page.click("#aiStyleBtn");
     await p.page.click("#aiExample");
     const exOpen = await vis(p, "#aiExampleMenu");
     await p.page.click('#aiExampleMenu [data-ex="link"]');
-    check("SA3 «📎 Пример»: a picture or video from the computer, or a link; the link row opens", exOpen && (await vis(p, "#refLinkRow")) && !(await vis(p, "#aiExampleMenu")));
+    check("SA3 «📎»: a picture or video from the computer, or a link; the link row opens", exOpen && (await vis(p, "#refLinkRow")) && !(await vis(p, "#aiExampleMenu")));
     await p.page.click("#refLinkCancel");
-    await p.page.click("#quickList .quick-new");
-    check("SA6 the «Своя задача» tile opens the form for a new quick task", await vis(p, "#quickForm"));
-    await p.page.click("#quickCancel");
-    await p.page.click('#aiModes [data-m="expr"]');
-    check("SA4 «Выражение»: only the expression card (no title bar) and the status; the request field is gone", (await vis(p, "#exprWish")) && (await vis(p, "#exprApplyBtn")) && !(await vis(p, "#prompt")) && !(await vis(p, "#quickList")) && !(await vis(p, "#exprToggle")) && (await vis(p, "#status")));
-    await p.page.click('#aiModes [data-m="mine"]');
-    check("SA5 «Мои» without saved scripts: a short note on how to save one", (await vis(p, "#scriptsEmpty")) && !(await vis(p, "#exprWish")) && !(await vis(p, "#prompt")));
-    await p.page.click('#aiModes [data-m="expr"]');
+
+    // The plan by seconds.
+    await p.page.fill("#prompt", "5 сек: логотип снизу с отскоком, потом «Alif Shop» по буквам");
+    await p.page.click("#runBtn"); await p.idle();
+    let rq = p.net.requests[0];
+    check("SA9 ↑ first asks for a plan (its own instructions, the request, the style pack and the project state) and runs nothing yet",
+      p.net.requests.length === 1 && /You plan motion design for After Effects/.test(JSON.stringify(rq.body.system)) && /Alif Shop/.test(JSON.stringify(rq.body.messages)) && /Style pack: torn-paper COLLAGE/.test(JSON.stringify(rq.body.messages)) &&
+      /\[Project state\]/.test(JSON.stringify(rq.body.messages)) && p.ae.log.ran.length === 0, JSON.stringify(rq.body.system).slice(0, 120));
+    check("SA9 the plan card: total, number of steps, a time bar, steps with times and the recipe tags; «Строить» and «Изменить»",
+      (await vis(p, "#planCard")) && (await p.page.innerText("#planTotal")) === "5 с" && (await p.page.innerText("#planCount")) === "3 шага" && (await p.page.locator("#planBar i").count()) === 3 &&
+      (await p.page.locator("#planList li").count()) === 3 && (await p.page.innerText("#planList li:first-child .pl-t")) === "0–1 с" && (await p.page.innerText("#planList li:first-child .pl-tool")) === "Плавность" &&
+      (await vis(p, "#planBuild")) && (await vis(p, "#planChange")) && /План готов: 5 с/.test(await p.status()) && (await overflow(p)) <= 0, await p.status());
+    await p.page.screenshot({ path: path.join(SHOTS, "sa-3-plan.png") });
+    await p.page.click("#planChange");
+    check("SA10 «Изменить» opens a field for what to change", (await vis(p, "#planEdit")) && (await p.page.innerText("#planChange")) === "Переделать план");
+    await p.page.fill("#planEdit", "пусть логотип падает сверху");
+    await p.page.click("#planChange"); await p.idle();
+    rq = p.net.requests[1];
+    check("SA10 the plan is redone with the old plan and the wish; the new plan replaces the card", p.net.requests.length === 2 && /\[What the user wants changed in the plan\]\\nпусть логотип падает сверху/.test(JSON.stringify(rq.body.messages)) &&
+      /\[Previous plan\]/.test(JSON.stringify(rq.body.messages)) && (await p.page.innerText("#planTotal")) === "6 с" && (await p.page.locator("#planList li").count()) === 2 && !(await vis(p, "#planEdit")) && p.ae.log.ran.length === 0);
+    await p.page.click("#planBuild");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    rq = p.net.requests[2];
+    check("SA11 «Строить»: the build request carries the approved plan with timings and recipes; the script runs; the plan card goes away",
+      p.net.requests.length === 3 && /\[Approved plan\][^"]*Total 6 s\.\\n1\) 0-2 s: Логотип падает сверху \[Падение\]\\n2\) 2-6 s: Название по словам/.test(JSON.stringify(rq.body.messages)) &&
+      /You are an assistant built into a panel inside Adobe After Effects/.test(JSON.stringify(rq.body.system)) && p.ae.log.ran.join() === "built" && !(await vis(p, "#planCard")), JSON.stringify(rq.body.messages).slice(-400));
+    await p.page.fill("#prompt", "переименуй слои по порядку");
+    await p.page.click("#runBtn");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    await p.page.waitForFunction(() => !document.getElementById("runBtn").disabled, null, { timeout: 5000 }).catch(() => {});
+    check("SA12 a simple command needs no plan: the AI says so and it runs right away", p.net.requests.length === 5 && p.ae.log.ran.join() === "built,direct" && !(await vis(p, "#planCard")), p.ae.log.ran.join() + " " + p.net.requests.length);
+
+    // ⋯ menu.
+    await p.page.click("#aiMore");
+    check("SA8 ⋯: Экспрешен, Мои скрипты, Новый стиль из рефа, Изменить примеры, and the model: «Быстро» is on (Sonnet)", (await vis(p, "#aiMoreMenu")) &&
+      (await p.page.locator("#aiMoreMenu [data-mm]").count()) === 4 && (await p.page.getAttribute('#aiModelSeg [data-q="fast"]', "aria-checked")) === "true");
+    await p.page.screenshot({ path: path.join(SHOTS, "sa-4-menu.png") });
+    await p.page.click('#aiModelSeg [data-q="best"]');
+    check("SA8 «Качественно» switches to Opus and is remembered", (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).model)) === "claude-opus-5-5" && (await p.page.getAttribute('#aiModelSeg [data-q="best"]', "aria-checked")) === "true" && /Opus/.test(await p.status()));
+    await p.page.click('#aiMoreMenu [data-mm="expr"]');
+    check("SA4 ⋯ › Экспрешен: the header says so with a back arrow; only the expression card and the status", (await p.page.innerText("#aiTitle")) === "Экспрешен" && (await vis(p, "#aiBack")) &&
+      (await vis(p, "#exprWish")) && (await vis(p, "#exprApplyBtn")) && !(await vis(p, "#prompt")) && !(await vis(p, "#quickList")) && !(await vis(p, "#exprToggle")) && (await vis(p, "#status")));
+    await p.page.click("#aiMore"); await p.page.click('#aiMoreMenu [data-mm="mine"]');
+    check("SA5 ⋯ › Мои скрипты without saved scripts: a short note on how to save one", (await p.page.innerText("#aiTitle")) === "Мои скрипты" && (await vis(p, "#scriptsEmpty")) && !(await vis(p, "#exprWish")) && !(await vis(p, "#prompt")));
     await p.restart(); await p.page.click("#tabClaude");
-    check("SA4 the open mode survives a restart", (await p.page.getAttribute('#aiModes [data-m="expr"]', "aria-selected")) === "true" && (await vis(p, "#exprWish")));
+    check("SA4 the open mode survives a restart", (await p.page.innerText("#aiTitle")) === "Мои скрипты" && (await vis(p, "#scriptsEmpty")));
+    await p.page.click("#aiBack");
+    check("SA4 ← goes back to the request", (await vis(p, "#prompt")) && (await p.page.innerText("#aiTitle")) === "Что анимируем?" && !(await vis(p, "#aiBack")));
+    await p.page.click("#aiMore"); await p.page.click('#aiMoreMenu [data-mm="examples"]');
+    check("SA6 ⋯ › Изменить примеры: the examples can be edited, with «Своя задача» to add one", (await vis(p, "#quickList .quick-new")) && (await p.page.locator("#quickList .quick-del").count()) === 4);
+    await p.page.click("#quickList .quick-new");
+    check("SA6 «Своя задача» opens the form for a new example", await vis(p, "#quickForm"));
+    await p.page.click("#quickCancel");
+    await p.page.click("#aiMore"); await p.page.click('#aiMoreMenu [data-mm="examples"]');
     await p.page.evaluate(() => { const s = JSON.parse(localStorage.getItem("sayframe.settings.v1")); s.design = "glass"; localStorage.setItem("sayframe.settings.v1", JSON.stringify(s)); });
     await p.restart(); await p.page.click("#tabClaude");
-    check("SA7 other designs keep the old AI layout: style row, attach buttons and quick chips over the field, no modes", !(await vis(p, "#aiModes")) && (await vis(p, "#styleRow")) && (await vis(p, "#refBtn")) && (await vis(p, "#prompt")) && (await vis(p, "#exprWish")) &&
+    check("SA7 other designs keep the old AI layout: style row, attach buttons, quick chips over the field and «Выполнить»; no header, no plan", !(await vis(p, "#aiHead")) && !(await vis(p, "#aiModes")) && (await vis(p, "#styleRow")) && (await vis(p, "#refBtn")) && (await vis(p, "#prompt")) && (await vis(p, "#exprWish")) &&
+      (await p.page.innerText("#runBtn")) === "Выполнить" && (await p.page.evaluate(() => document.getElementById("runBtn").parentNode.classList.contains("composer"))) && !(await vis(p, ".style-chip .style-note >> nth=0")) &&
       (await p.page.locator("#quickList .quick-new").count()) === 0 && (await p.page.evaluate(() => document.querySelector(".composer").firstElementChild.id)) === "quickBox" && p.errors.length === 0, p.errors.join("|"));
     await p.close();
+
+    // A new style measured from a reference: AI reads the frames and returns the style; it is saved, chosen, and goes to the next requests.
+    const STYLE = JSON.stringify({ name: "Неон-рывки", base: "energetic", rows: { rhythm: "на единицах, 24 к/с", appear: "снизу, 8 кадров, отскок 6%", transitions: "наезд 1→3× за 0,6 с", text: "по словам, шаг 3 кадра", font: "похож на Unbounded Bold" },
+      palette: ["#ff7a3c", "#7a2cff", "#f0c7a0", "#111111"], tricks: ["неоновые рывки", "наезд в букву", "слова по ударам"], rules: "1) Entrances 8 frames, strong ease-out, 6% overshoot. 2) Word steps 3 frames." });
+    p = await open({ settings: { design: "studio", designSet: 2 }, width: 420, height: 1000, pickFile: "/Users/x/ref-alif.mp4", footage: VIDEO,
+      replies: [msg(STYLE), msg(PLAN), msg("Строю.\n```javascript\napp.__ran('mine');\n```")] });
+    await p.page.click("#tabClaude");
+    await p.page.click("#aiMore"); await p.page.click('#aiMoreMenu [data-mm="newstyle"]');
+    await p.page.waitForFunction(() => !document.getElementById("styleCard").hidden || /не /.test(document.getElementById("status").textContent), null, { timeout: 8000 }).catch(() => {});
+    rq = p.net.requests[0];
+    check("SA13 «Новый стиль из рефа» asks for a video, sends its frames with the style instructions and shows what was measured: rows, palette, name",
+      rq && /Measure its motion STYLE/.test(JSON.stringify(rq.body.system)) && rq.body.messages[0].content.filter((b) => b.type === "image").length >= 2 &&
+      (await vis(p, "#styleCard")) && (await p.page.locator("#styleCardRows .sc-row").count()) === 5 && (await p.page.innerText("#styleCardRows .sc-row:first-child em")) === "на единицах, 24 к/с" &&
+      (await p.page.locator("#styleCardPal .sc-sw").count()) === 4 && (await p.page.inputValue("#styleCardName")) === "Неон-рывки" && p.errors.length === 0, (await p.status()) + " " + p.errors.join("|"));
+    await p.page.screenshot({ path: path.join(SHOTS, "sa-5-style-ref.png") });
+    await p.page.fill("#styleCardName", "Alif — из рефа");
+    await p.page.click("#styleCardSave");
+    check("SA13 «Сохранить стиль»: the style is saved, chosen, shown on the button; the reference is no longer attached", (await p.page.innerText("#aiStyleBtn")).trim() === "Alif — из рефа ▾" && !(await vis(p, "#styleCard")) &&
+      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.styles.v1"))[0].base)) === "energetic" && !(await vis(p, "#refChip")));
+    await p.page.fill("#prompt", "заставка 5 секунд"); await p.page.click("#runBtn"); await p.idle();
+    await p.page.click("#planBuild");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    check("SA14 the own style goes with the plan and the build (its measured rules), and the script starts with its base SF style",
+      /Style pack \\"Alif — из рефа\\" \(the user's own/.test(JSON.stringify(p.net.requests[1].body.messages)) && /Word steps 3 frames/.test(JSON.stringify(p.net.requests[2].body.messages)) &&
+      p.ae.log.ran.join() === "mine" && p.ae.log.scripts.some((x) => /SF\.style\(\\?"energetic\\?"\)/.test(x)), p.ae.log.scripts.filter((x) => /SF\.style/.test(x)).join(" ").slice(0, 200));
+    await p.restart(); await p.page.click("#tabClaude");
+    await p.page.click("#aiStyleBtn");
+    check("SA15 after a restart the own style is a card «ваш стиль» with its colours; it can be deleted", (await vis(p, '#aiStylePop .style-mine')) && (await p.page.innerText("#aiStylePop .style-mine .style-note")) === "ваш стиль" && (await vis(p, "#aiStyleTricks .pf-trick-del")));
+    await p.page.click("#aiStyleTricks .pf-trick-del");
+    check("SA15 deleting it goes back to «Обычный»", (await p.page.innerText("#aiStyleBtn")).trim() === "Обычный ▾" && (await p.page.locator("#aiStylePop .style-mine").count()) === 0 && p.errors.length === 0, p.errors.join("|"));
+    await p.close();
+    if (process.env.SAYFRAME_ONLY === "ai4") { await browser.close(); console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0); }
+  }
+
+  // «Под голос»: a selected layer with a voice → its words with times go to the AI; animations land on the words.
+  if (!process.env.SAYFRAME_ONLY || process.env.SAYFRAME_ONLY === "voice") {
+    const WAV = path.join(EXT, "sfx", "whoosh.wav");
+    const voiceSetup = (p, o = {}) => {
+      const f = path.join(p.tmpDir, o.name || "Интервью.wav");
+      fs.copyFileSync(WAV, f);
+      const VL = mkAcLayer(o.name || "Интервью.wav", "av", p.ae.log);
+      Object.assign(VL, { hasAudio: true, locked: false, source: { hasVideo: false, hasAudio: true, duration: 4, mainSource: { file: { fsName: f } } }, startTime: 1, inPoint: 1, outPoint: 5, stretch: o.stretch || 100, index: 3 });
+      const orig = p.ae.comp.layer; p.ae.comp.layer = (i) => (i === 3 ? VL : orig.call(p.ae.comp, i));
+      p.ae.project.activeItem = p.ae.comp; p.ae.comp.selectedLayers = [VL];
+      return VL;
+    };
+    const focusPrompt = async (p) => { await p.page.evaluate(() => document.getElementById("prompt").blur()); await p.page.focus("#prompt"); await p.page.waitForTimeout(120); };
+    const WORDS = [["Привет,", 400, 700], [",", 700, 720], ["друзья!", 720, 1100], ["Сегодня", 1100, 1500], ["три", 2100, 2400], ["[_BEG_]", 0, 0]];
+    p = await open({ settings: { design: "studio", designSet: 2 }, width: 420, height: 1000, whisper: WORDS,
+      replies: [msg('{"direct": true}'), msg("Готово.\n```javascript\nSF.wordMark(3, 2.10, 'три'); app.__ran('voice');\n```"), msg('{"direct": true}'), msg("Ещё.\n```javascript\nSF.wordMark(3, 2.10, 'три'); app.__ran('again');\n```"), msg('{"direct": true}'), msg("Без голоса.\n```javascript\napp.__ran('plain');\n```")] });
+    await p.page.click("#tabClaude");
+    await focusPrompt(p);
+    check("VO1 no sound layer selected: no «Под голос»", !(await vis(p, "#voiceChip")) && p.errors.length === 0, p.errors.join("|"));
+    const VL = voiceSetup(p);
+    await focusPrompt(p);
+    check("VO1 a sound layer selected: «🎙 Под голос: Интервью.wav · 0:04» above the field, with ×", (await vis(p, "#voiceChip")) && (await p.page.innerText("#voiceName")) === "Интервью.wav" &&
+      (await p.page.innerText("#voiceDur")).trim() === "· 0:04" && (await p.page.locator("#voiceWave i").count()) === 22 && (await vis(p, "#voiceOff")) && (await overflow(p)) <= 0);
+    await p.page.screenshot({ path: path.join(SHOTS, "vo-1-chip.png") });
+    await p.page.fill("#prompt", "Сделай титры по словам");
+    await p.page.click("#runBtn"); await p.page.waitForTimeout(200);
+    check("VO2 the first time: a card asks how to recognise speech (on the computer — free, or OpenAI), nothing is sent yet", (await vis(p, "#voiceCard")) &&
+      (await p.page.getAttribute('#voiceOpts [data-eng="local"]', "aria-pressed")) === "true" && p.net.requests.length === 0 && !(await vis(p, "#voiceMac")) && (await overflow(p)) <= 0, await p.status());
+    await p.page.screenshot({ path: path.join(SHOTS, "vo-2-card.png") });
+    await p.page.click("#voiceGo"); await p.page.waitForTimeout(300);
+    check("VO3 on a Mac without the recogniser: the card shows the Terminal command, «Скопировать команду» and «Проверить снова»; the choice is kept",
+      (await vis(p, "#voiceMac")) && (await p.page.innerText("#voiceMac code")) === "brew install whisper-cpp" && (await p.page.innerText("#voiceGo")) === "Проверить снова" &&
+      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).voiceEngine)) === "local" && p.net.requests.length === 0 && !(p.sys.whisper || []).length, await p.status());
+    await p.page.screenshot({ path: path.join(SHOTS, "vo-3-mac.png") });
+    // The user installs it (Homebrew puts whisper-cli on the PATH folders; here: the panel's own folder).
+    const BIN = path.join(p.home, ".sayframe", "whisper", "bin", "whisper-cli"); fs.mkdirSync(path.dirname(BIN), { recursive: true }); fs.writeFileSync(BIN, "#!/bin/sh\n");
+    await p.page.click("#voiceGo");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    let w = p.sys.whisper || [];
+    check("VO4 «Проверить снова»: the model downloads once into ~/.sayframe/whisper, whisper-cli hears a 16 kHz mono WAV with word timing (-ml 1 -sow -oj)",
+      (p.sys.downloads || []).join() === "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin" && fs.existsSync(path.join(p.home, ".sayframe", "whisper", "ggml-small.bin")) &&
+      w.length === 1 && w[0].args.join(" ").indexOf("-ml 1 -sow -oj") > 0 && w[0].wav.readUInt32LE(24) === 16000 && w[0].wav.readUInt16LE(22) === 1 && !(await vis(p, "#voiceCard")), JSON.stringify(w.map((x) => x.args)));
+    let rq = p.net.requests[p.net.requests.length - 1], body = JSON.stringify(rq ? rq.body.messages : "");
+    check("VO5 the AI gets [Voice]: the layer, each word with its comp time (layer starts at 1 s: «Привет,» 1.40, «три» 3.10), punctuation and [_BEG_] left out, and how to mark words",
+      /\[Voice\] Time the animation to the speech in layer 3 \\"Интервью.wav\\"/.test(body) && /1\.40 Привет, \| 1\.72 друзья! \| 2\.10 Сегодня \| 3\.10 три\\n/.test(body) && !/_BEG_/.test(body) && /SF\.wordMark\(3, t/.test(body) &&
+      /SF\.wordMark\(layerIndex, t, 'word'\)/.test(JSON.stringify(rq.body.system)), body.slice(0, 600));
+    const mk = VL.property("ADBE Marker");
+    check("VO6 SF.wordMark puts a yellow marker with the word on the voice layer", p.ae.log.ran.join() === "voice" && mk.numKeys === 1 && mk.keyTime(1) === 2.1 && mk.keyValue(1).comment === "три" && mk.keyValue(1).label === 2, p.ae.log.ran.join() + " " + mk.numKeys);
+    await p.page.screenshot({ path: path.join(SHOTS, "vo-4-done.png") });
+    await p.page.fill("#prompt", "Сделай ещё раз");
+    await p.page.click("#runBtn");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    check("VO7 the second time the words come from memory: no new recognition; building again does not pile up markers", (p.sys.whisper || []).length === 1 && p.ae.log.ran.join() === "voice,again" && mk.numKeys === 1 &&
+      /3\.10 три/.test(JSON.stringify(p.net.requests[p.net.requests.length - 1].body.messages)));
+    await p.page.click("#voiceOff");
+    await p.page.fill("#prompt", "Просто анимация");
+    await p.page.click("#runBtn");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    check("VO8 × — without the voice: the chip goes, the new request has no [Voice] (earlier turns keep theirs)", !(await vis(p, "#voiceChip")) && p.ae.log.ran.join() === "voice,again,plain" && !/\[Voice\]/.test(JSON.stringify(p.net.requests[p.net.requests.length - 1].body.messages.slice(-1))) && /\[Voice\]/.test(JSON.stringify(p.net.requests[p.net.requests.length - 1].body.messages)));
+    await p.page.click("#settingsBtn");
+    check("VO9 Settings › AI: «Распознавание голоса» — На компьютере / OpenAI", (await vis(p, "#voiceEng")) && (await p.page.getAttribute('#voiceEng [data-value="local"]', "aria-pressed")) === "true");
+    await p.close();
+
+    // OpenAI: the key is asked in the card (not typed for the user), the WAV goes as a form, words come back with times.
+    p = await open({ settings: { design: "glass", voiceEngine: "openai" }, replies: [msg("Готово.\n```javascript\napp.__ran('oa');\n```")] });
+    voiceSetup(p, { stretch: 200 });
+    await p.page.click("#tabClaude"); await focusPrompt(p);
+    await p.page.fill("#prompt", "Акценты на словах");
+    await p.page.click("#runBtn"); await p.page.waitForTimeout(250);
+    check("VO10 OpenAI chosen, no OpenAI key: the card asks for the key, nothing is sent", (await vis(p, "#voiceKeyRow")) && (await p.page.getAttribute('#voiceOpts [data-eng="openai"]', "aria-pressed")) === "true" && !(p.net.forms || []).length && p.net.requests.length === 0);
+    await p.page.screenshot({ path: path.join(SHOTS, "vo-5-openai.png") });
+    await p.page.fill("#voiceKey", "sk-openai-test");
+    await p.page.click("#voiceGo");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    const fm = (p.net.forms || [])[0];
+    check("VO11 the voice goes to OpenAI whisper-1 with word timestamps and the key; a stretched layer (200%) doubles the times",
+      fm && fm.url === "https://api.openai.com/v1/audio/transcriptions" && fm.headers.authorization === "Bearer sk-openai-test" && JSON.stringify(fm.fields) === JSON.stringify([["model", "whisper-1"], ["response_format", "verbose_json"], ["timestamp_granularities[]", "word"]]) &&
+      fm.bytes.readUInt32LE(24) === 16000 && /1\.80 Привет \| 2\.80 друзья/.test(JSON.stringify(p.net.requests[0].body.messages)) && p.ae.log.ran.join() === "oa" &&
+      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).openaiKey)) === "sk-openai-test", JSON.stringify(p.net.requests[0] && p.net.requests[0].body.messages).slice(0, 400));
+    await p.close();
+
+    // Errors: the recogniser fails → a clear message, nothing sent; a layer with nothing said.
+    p = await open({ settings: { design: "glass", voiceEngine: "local" }, whisper: { fail: true } });
+    voiceSetup(p);
+    fs.mkdirSync(path.join(p.home, ".sayframe", "whisper", "bin"), { recursive: true }); fs.writeFileSync(path.join(p.home, ".sayframe", "whisper", "bin", "whisper-cli"), "");
+    fs.writeFileSync(path.join(p.home, ".sayframe", "whisper", "ggml-small.bin"), "m");
+    await p.page.click("#tabClaude"); await focusPrompt(p);
+    await p.run("Титры");
+    check("VO12 the recogniser fails: the reason is shown, nothing goes to the AI, the panel is free again", /^Распознаватель речи не сработал: whisper: failed to load model/.test(await p.status()) && p.net.requests.length === 0 && !(await p.page.locator("#runBtn").isDisabled()) && !(p.sys.downloads || []).length, await p.status());
+    await p.close();
+    if (process.env.SAYFRAME_ONLY === "voice") { await browser.close(); console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0); }
   }
 
   // Decompose: the layers of a selected precomp come out into the open comp, in its place.
