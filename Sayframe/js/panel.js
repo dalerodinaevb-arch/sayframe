@@ -119,6 +119,7 @@
         bgShape: "#0b1219",          // фон раздела «Шейп»
         bgBrand: "#130f17",          // фон раздела «Проекты»
         selfCheck: true,
+        voiceEngine: "",    // чем распознавать голос для «Под голос»: "local" (whisper на компьютере), "openai"; "" — ещё не выбрано
         alwaysAsk: false,
         brandPics: false,   // отправлять ли AI маленькие картинки упомянутых логотипов и иконок
         motionStyle: "normal",  // стиль анимации для AI: normal, smooth, energetic, minimal, corporate, playful
@@ -255,6 +256,7 @@
         "  Style-pack recipes: SF.dropIn(layer, t, {from}) - stop-motion drop (3 drawings + settle). SF.pushIn(layer, t, {at: [x, y], zoom: 6, dur: 1}) - accelerating push into a detail that ends centred. SF.slam(layer, t, {dur, dist}) - title lands from above, no overshoot.",
         "  SF.neon(layer, t) - neon glow, flickers on at t. SF.glitch(layer, t, {dur, amount}) - frame-by-frame glitch hit. SF.vhs() - VHS look (on 'SF Look'). SF.sketch(layer) - hand-drawn outline wobble.",
         "  SF.onTwos(layers, fps) - stop-motion: keyframed transforms step at 12 drawings/s (call last; all layers if omitted). SF.boil(layers, px) - paper jitter per drawing. SF.torn(layer) - torn paper edge. SF.grain(layer, {amount}), SF.bloom(layer), SF.bw(layer) - look effects; with layer null they go on one shared adjustment layer 'SF Look' on top.",
+        "  SF.wordMark(layerIndex, t, 'word') - a yellow marker with a spoken word on the voice layer (see [Voice]).",
         "  SF.defaults holds the current style's dur, step and dist; the panel sets the style with SF.style(name) before your script runs - do not call SF.style yourself unless the user asks for a different style.",
         "- Create the layers and set their final look (position, size, colour) first, then animate them with SF. Use plain setValueAtTime only for things SF does not cover, and ease those keys with SF.keys.",
         "",
@@ -628,6 +630,8 @@
                     });
                 },
                 download: need,
+                downloadFile: need,
+                postForm: need,
                 fetchUrl: need,
                 verify: function () { return Promise.resolve(false); },
                 postJSON: function (url, headers, body, timeoutMs, onRequest) {
@@ -742,6 +746,66 @@
                         .then(function () {
                             return { status: 200, sha256: crypto.createHash("sha256").update(r.body).digest("hex"), size: r.body.length };
                         });
+                });
+            },
+            // Большой файл (модель распознавания речи, программа): пишется на диск по кусочкам, не в память.
+            // onProgress(получено, всего). Сначала в «.part», готовый файл переименовывается.
+            downloadFile: function (url, dest, onProgress) {
+                return new Promise(function (resolve, reject) {
+                    function go(link, left) {
+                        var u, rq;
+                        try { u = new URL(link); } catch (e) { reject(new Error("BAD_URL")); return; }
+                        rq = https.get({ hostname: u.hostname, port: u.port || 443, path: u.pathname + u.search, headers: { "user-agent": "Sayframe" } }, function (res) {
+                            var total = Number(res.headers["content-length"]) || 0, got = 0, out;
+                            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                                res.resume();
+                                if (left <= 0) { reject(new Error("TOO_MANY_REDIRECTS")); return; }
+                                go(new URL(res.headers.location, link).toString(), left - 1);
+                                return;
+                            }
+                            if (res.statusCode !== 200) { res.resume(); reject(new Error("HTTP " + res.statusCode)); return; }
+                            out = fs.createWriteStream(dest + ".part");
+                            res.on("data", function (c) { got += c.length; if (onProgress) { onProgress(got, total); } });
+                            res.pipe(out);
+                            out.on("finish", function () {
+                                out.close(function () {
+                                    if (total && got < total) { reject(new Error("DOWNLOAD_CUT")); return; }
+                                    fs.rename(dest + ".part", dest, function (err) { if (err) { reject(err); } else { resolve({ size: got }); } });
+                                });
+                            });
+                            out.on("error", reject);
+                            res.on("error", reject);
+                        });
+                        rq.on("error", reject);
+                        rq.setTimeout(120000, function () { rq.destroy(new Error("TIMEOUT")); });
+                    }
+                    go(url, 6);
+                });
+            },
+            // POST multipart/form-data: поля-строки и один файл с диска (распознавание речи через OpenAI).
+            postForm: function (url, headers, fields, file) {
+                return new Promise(function (resolve, reject) {
+                    fs.readFile(file.path, function (err, data) {
+                        var u = new URL(url), b = "----sayframe" + Date.now().toString(16), parts = [], k, body, h = {}, rq;
+                        if (err) { reject(err); return; }
+                        fields.forEach(function (f) { parts.push(Buf.from("--" + b + "\r\ncontent-disposition: form-data; name=\"" + f[0] + "\"\r\n\r\n" + f[1] + "\r\n", "utf8")); });
+                        parts.push(Buf.from("--" + b + "\r\ncontent-disposition: form-data; name=\"" + file.field + "\"; filename=\"" + file.name + "\"\r\ncontent-type: " + file.type + "\r\n\r\n", "utf8"));
+                        parts.push(data);
+                        parts.push(Buf.from("\r\n--" + b + "--\r\n", "utf8"));
+                        body = Buf.concat(parts);
+                        for (k in headers) { if (headers.hasOwnProperty(k)) { h[k] = headers[k]; } }
+                        h["content-type"] = "multipart/form-data; boundary=" + b;
+                        h["content-length"] = body.length;
+                        rq = https.request({ method: "POST", hostname: u.hostname, port: u.port || 443, path: u.pathname, headers: h }, function (res) {
+                            var chunks = [];
+                            res.on("data", function (c) { chunks.push(c); });
+                            res.on("end", function () { resolve({ status: res.statusCode, text: Buf.concat(chunks).toString("utf8") }); });
+                        });
+                        rq.on("error", reject);
+                        rq.setTimeout(600000, function () { rq.destroy(new Error("TIMEOUT")); });
+                        rq.write(body);
+                        rq.end();
+                    });
                 });
             },
             // Подпись выпуска: RSA-SHA256 над текстом, подпись в base64, ключ в PEM.
@@ -2849,9 +2913,281 @@
             done ? "done" : "error");
     }
 
+    // ---------------------------------------------------------- «Под голос»
+    // Выделен слой со звуком из файла (голос, интервью, видео с речью) — над полем появляется «🎙 Под голос».
+    // Речь распознаётся со временем каждого слова (whisper на компьютере или OpenAI), слова уходят AI вместе
+    // с запросом, и анимации встают на слова. Распознанный текст запоминается: второй раз ничего не ждём.
+
+    var VOICE_CACHE_KEY = "sayframe.voice.v1";
+    var VOICE_CACHE_MAX = 8;
+    var VOICE_WORDS_MAX = 2500;
+    var WHISPER_WIN_ZIP = "https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.2/whisper-bin-x64.zip";
+    var WHISPER_MODEL = { file: "ggml-small.bin", url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin", mb: 466 };
+    var OPENAI_STT_URL = "https://api.openai.com/v1/audio/transcriptions";
+    var voice = { layer: null, off: "", choice: "", macMissing: false };
+    var vui = null;
+
+    function voiceEls() {
+        if (vui) { return vui; }
+        vui = {};
+        ["voiceChip", "voiceName", "voiceDur", "voiceWave", "voiceOff", "voiceCard", "voiceOpts", "voiceKeyRow", "voiceKey", "voiceMac", "voiceCopy", "voiceBrew", "voiceGo", "voiceCancel"]
+            .forEach(function (id) { vui[id] = document.getElementById(id); });
+        return vui;
+    }
+
+    function voiceId(L) { return L ? L.file + "|" + Math.round((Number(L.dur) || 0) * 1000) : ""; }
+    function voiceOn() { return !IS_PR && !!voice.layer && voice.off !== voiceId(voice.layer); }
+    function voiceDir() { return platform.join(platform.homedir(), ".sayframe", "whisper"); }
+
+    function mmss(t) { t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ":" + (t % 60 < 10 ? "0" : "") + (t % 60); }
+
+    function showVoiceChip() {
+        var v = voiceEls(), L = voice.layer, i, h, bars = "", seed;
+        if (!v.voiceChip) { return; }
+        v.voiceChip.hidden = !voiceOn();
+        if (v.voiceChip.hidden) { if (v.voiceCard) { v.voiceCard.hidden = true; } return; }
+        v.voiceName.textContent = L.name;
+        v.voiceDur.textContent = " · " + mmss(L.outPoint - L.inPoint);
+        seed = 0;
+        for (i = 0; i < L.name.length; i++) { seed = (seed * 31 + L.name.charCodeAt(i)) % 9973; }
+        for (i = 0; i < 22; i++) {
+            seed = (seed * 16807) % 2147483647;
+            h = 3 + seed % 10;
+            bars += '<i style="height:' + h + 'px"></i>';
+        }
+        v.voiceWave.innerHTML = bars;
+        v.voiceChip.title = "AI поставит анимации на слова из слоя «" + L.name + "». × — работать без голоса.";
+    }
+
+    async function voiceCheck() {
+        var r;
+        if (IS_PR || !voiceEls().voiceChip || busy) { return; }
+        try { r = await host("voiceLayer", []); } catch (e) { r = null; }
+        voice.layer = r && r.layer ? r.layer : null;
+        showVoiceChip();
+    }
+
+    function voiceCacheLoad() {
+        var d;
+        try { d = JSON.parse(window.localStorage.getItem(VOICE_CACHE_KEY) || "{}"); } catch (e) { d = {}; }
+        return d && typeof d === "object" && d.items instanceof Array ? d : { items: [] };
+    }
+
+    function voiceCacheGet(id) {
+        var c = voiceCacheLoad(), i;
+        for (i = 0; i < c.items.length; i++) { if (c.items[i].id === id && c.items[i].words instanceof Array) { return c.items[i].words; } }
+        return null;
+    }
+
+    function voiceCachePut(id, words) {
+        var c = voiceCacheLoad();
+        c.items = c.items.filter(function (it) { return it.id !== id; });
+        c.items.unshift({ id: id, words: words });
+        c.items = c.items.slice(0, VOICE_CACHE_MAX);
+        try { window.localStorage.setItem(VOICE_CACHE_KEY, JSON.stringify(c)); } catch (e) {}
+    }
+
+    // Голос → 16 кГц, моно, 16 бит: так его ждут и whisper, и OpenAI (и файл маленький).
+    function sndTo16k(snd) {
+        var n = snd.ch[0].length, r = snd.rate / 16000, len = Math.max(1, Math.floor(n / r)), out = new Float32Array(len), i, a, b, j, c, v, k;
+        for (i = 0; i < len; i++) {
+            a = Math.floor(i * r); b = Math.max(a + 1, Math.min(n, Math.floor((i + 1) * r)));
+            v = 0; k = 0;
+            for (j = a; j < b; j++) { for (c = 0; c < snd.ch.length; c++) { v += snd.ch[c][j]; } k += snd.ch.length; }
+            out[i] = k ? v / k : 0;
+        }
+        return { rate: 16000, ch: [out] };
+    }
+
+    async function voiceWav(file) {
+        var snd, dest = platform.join(platform.tmpdir(), "sayframe-voice-" + Date.now() + ".wav");
+        try { snd = await sndRead(file); } catch (e) { throw new Error("Не получилось прочитать звук слоя. Сохраните голос как WAV или MP3 и положите в композицию."); }
+        snd = sndTo16k(snd);
+        await platform.writeBytes(dest, wavEncode(snd));
+        return { path: dest, seconds: snd.ch[0].length / 16000 };
+    }
+
+    function voiceClean(w) { return String(w || "").replace(/^\s+|\s+$/g, ""); }
+    function voiceIsWord(w) { return w !== "" && !/^\[.*\]$/.test(w) && w.replace(/[\s.,!?;:…"'«»()\[\]\-–—]/g, "") !== ""; }
+
+    // Ответ whisper-cli (-oj, -ml 1, -sow): по одному слову на кусок, время в миллисекундах.
+    function wordsFromWhisper(j) {
+        var out = [];
+        ((j && j.transcription) || []).forEach(function (seg) {
+            var w = voiceClean(seg.text);
+            if (!voiceIsWord(w) || !seg.offsets) { return; }
+            out.push({ w: w, s: Number(seg.offsets.from) / 1000, e: Number(seg.offsets.to) / 1000 });
+        });
+        return out;
+    }
+
+    async function whisperBin() {
+        var dir = voiceDir(), list, i, r;
+        list = platform.isWindows() ? [platform.join(dir, "bin", "Release", "whisper-cli.exe"), platform.join(dir, "bin", "whisper-cli.exe")] :
+            ["/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli", platform.join(dir, "bin", "whisper-cli")];
+        for (i = 0; i < list.length; i++) { if (await platform.exists(list[i])) { return list[i]; } }
+        if (!platform.isWindows()) { return ""; }
+        // Windows: готовая программа с GitHub whisper.cpp, один раз.
+        await platform.mkdirp(platform.join(dir, "bin"));
+        setStatus("Скачиваю распознаватель речи (около 4 МБ)…", "busy");
+        await platform.downloadFile(WHISPER_WIN_ZIP, platform.join(dir, "whisper-bin-x64.zip"), null);
+        r = await platform.exec("powershell", ["-NoProfile", "-NonInteractive", "-Command",
+            "Expand-Archive -Force -LiteralPath '" + platform.join(dir, "whisper-bin-x64.zip").replace(/'/g, "''") + "' -DestinationPath '" + platform.join(dir, "bin").replace(/'/g, "''") + "'"], 120000);
+        if (r.code !== 0) { throw new Error("Не получилось распаковать распознаватель речи: " + r.stderr.slice(-160)); }
+        platform.remove(platform.join(dir, "whisper-bin-x64.zip"));
+        for (i = 0; i < 2; i++) { if (await platform.exists(list[i])) { return list[i]; } }
+        throw new Error("Распознаватель речи скачался, но программы whisper-cli в нём нет.");
+    }
+
+    async function whisperModel() {
+        var dest = platform.join(voiceDir(), WHISPER_MODEL.file), last = 0;
+        if (await platform.exists(dest)) { return dest; }
+        await platform.mkdirp(voiceDir());
+        setStatus("Скачиваю модель распознавания речи: 0 из " + WHISPER_MODEL.mb + " МБ…", "busy");
+        await platform.downloadFile(WHISPER_MODEL.url, dest, function (got, total) {
+            var mb = Math.round(got / 1048576), now = Date.now();
+            if (now - last < 400) { return; }
+            last = now;
+            setStatus("Скачиваю модель распознавания речи: " + mb + " из " + (total ? Math.round(total / 1048576) : WHISPER_MODEL.mb) + " МБ… Это один раз.", "busy");
+        });
+        return dest;
+    }
+
+    async function voiceLocal(wav) {
+        var bin = await whisperBin(), model, of, r, j;
+        if (!bin) { var e = new Error("VOICE_NEED_MAC"); e.voice = "mac"; throw e; }
+        model = await whisperModel();
+        of = wav.path.replace(/\.wav$/i, "");
+        setStatus("Слушаю голос: " + mmss(wav.seconds) + "… На компьютере это может занять столько же, сколько длится запись.", "busy");
+        r = await platform.exec(bin, ["-m", model, "-f", wav.path, "-l", "auto", "-ml", "1", "-sow", "-oj", "-of", of, "-np"], 3600000);
+        if (r.code !== 0) { throw new Error("Распознаватель речи не сработал: " + String(r.stderr || "").slice(-200)); }
+        try { j = JSON.parse(await platform.readText(of + ".json")); } catch (e2) { throw new Error("Распознаватель речи не вернул текст."); }
+        platform.remove(of + ".json");
+        return wordsFromWhisper(j);
+    }
+
+    async function voiceOpenAI(wav) {
+        var key = settings.openaiKey, r, d, e;
+        if (!key) { e = new Error("VOICE_NEED_KEY"); e.voice = "key"; throw e; }
+        if (wav.seconds * 32000 > 24 * 1048576) { throw new Error("Голос длиннее 12 минут: OpenAI столько за раз не принимает. Разрежьте слой или выберите распознавание на компьютере."); }
+        setStatus("Отправляю голос в OpenAI: " + mmss(wav.seconds) + "…", "busy");
+        r = await platform.postForm(OPENAI_STT_URL, { authorization: "Bearer " + key },
+            [["model", "whisper-1"], ["response_format", "verbose_json"], ["timestamp_granularities[]", "word"]],
+            { field: "file", path: wav.path, name: "voice.wav", type: "audio/wav" });
+        try { d = JSON.parse(r.text); } catch (e1) { d = null; }
+        if (r.status === 401) { e = new Error("OpenAI не принял ключ. Проверьте ключ OpenAI в настройках."); throw e; }
+        if (r.status !== 200 || !d) { throw new Error("OpenAI не распознал голос" + (d && d.error && d.error.message ? ": " + d.error.message : " (ошибка " + r.status + ").")); }
+        return (d.words || []).map(function (x) { return { w: voiceClean(x.word), s: Number(x.start), e: Number(x.end) }; })
+            .filter(function (x) { return voiceIsWord(x.w) && isFinite(x.s); });
+    }
+
+    async function voiceWords(L) {
+        var id = voiceId(L), words = voiceCacheGet(id), wav;
+        if (words) { return words; }
+        setStatus("Готовлю голос «" + L.name + "»…", "busy");
+        wav = await voiceWav(L.file);
+        try {
+            words = settings.voiceEngine === "openai" ? await voiceOpenAI(wav) : await voiceLocal(wav);
+        } finally {
+            platform.remove(wav.path);
+        }
+        if (!words.length) { throw new Error("В слое «" + L.name + "» не слышно слов."); }
+        voiceCachePut(id, words);
+        return words;
+    }
+
+    // Слова во времени композиции: слой может начинаться не с нуля, быть обрезан и растянут.
+    function voiceCompWords(L, words) {
+        var k = (Number(L.stretch) || 100) / 100;
+        return words.map(function (w) { return { w: w.w, t: L.start + w.s * k }; })
+            .filter(function (w) { return w.t >= L.inPoint - 0.01 && w.t <= L.outPoint + 0.01; })
+            .slice(0, VOICE_WORDS_MAX);
+    }
+
+    function voiceNote(L, words) {
+        var cw = voiceCompWords(L, words);
+        return "[Voice] Time the animation to the speech in layer " + L.index + " \"" + L.name + "\" (sound, " + (L.outPoint - L.inPoint).toFixed(1) + " s, from " +
+            L.inPoint.toFixed(2) + " s). Every spoken word with the comp time in seconds when it starts:\n" +
+            cw.map(function (w) { return w.t.toFixed(2) + " " + w.w; }).join(" | ") +
+            "\nRules: each element that shows or illustrates a word or phrase starts exactly at that word's time (2 frames earlier at most); text of what is said appears together with the words; accents (scale hits, flashes, glitches) land on the stressed key words; the animation lasts as long as the speech. Do not move, trim or change the voice layer. " +
+            "For every key word you animate call SF.wordMark(" + L.index + ", t, \"word\") so a yellow marker shows it on the voice layer. If the user asks for subtitles, show them phrase by phrase (or word by word if asked), in sync.";
+    }
+
+    function showVoiceCard(mode) {
+        var v = voiceEls();
+        voice.choice = voice.choice || settings.voiceEngine || "local";
+        voice.macMissing = mode === "mac";
+        Array.prototype.forEach.call(v.voiceOpts.querySelectorAll("[data-eng]"), function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-eng") === voice.choice)); });
+        v.voiceKeyRow.hidden = !(voice.choice === "openai" && !settings.openaiKey);
+        v.voiceMac.hidden = !(voice.choice === "local" && voice.macMissing);
+        v.voiceGo.textContent = voice.choice === "local" && voice.macMissing ? "Проверить снова" : "Продолжить";
+        v.voiceCard.hidden = false;
+    }
+
+    // Перед запуском: распознать голос (или взять готовый текст). null — запуск ждёт (выбор, установка, ошибка).
+    async function voiceReady() {
+        var words;
+        if (!settings.voiceEngine) {
+            showVoiceCard("choose");
+            setStatus("Выберите один раз, чем распознавать голос, и нажмите «Продолжить».", "");
+            return null;
+        }
+        if (!voiceCacheGet(voiceId(voice.layer))) { setBusy(true); }
+        try {
+            words = await voiceWords(voice.layer);
+        } catch (e) {
+            setBusy(false);
+            if (e && e.voice === "mac") { showVoiceCard("mac"); setStatus("Поставьте распознаватель речи одной командой в Терминале — см. карточку.", ""); return null; }
+            if (e && e.voice === "key") { showVoiceCard("key"); setStatus("Для распознавания через OpenAI нужен ключ OpenAI.", ""); return null; }
+            setStatus(e && e.message ? e.message : String(e), "error");
+            return null;
+        }
+        setBusy(false);
+        voiceEls().voiceCard.hidden = true;
+        return voiceNote(voice.layer, words);
+    }
+
+    function initVoice() {
+        var v = voiceEls();
+        if (!v.voiceChip) { return; }
+        if (IS_PR) { v.voiceChip.hidden = true; return; }
+        ui.prompt.addEventListener("focus", function () { voiceCheck(); });
+        window.addEventListener("focus", function () { voiceCheck(); });
+        v.voiceOff.addEventListener("click", function () {
+            voice.off = voiceId(voice.layer);
+            showVoiceChip();
+            setStatus("Без голоса: AI работает как обычно. Выделите другой слой со звуком — плашка вернётся.", "");
+        });
+        v.voiceOpts.addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("[data-eng]") : null;
+            if (!b) { return; }
+            voice.choice = b.getAttribute("data-eng");
+            showVoiceCard(voice.macMissing ? "mac" : "choose");
+        });
+        v.voiceCopy.addEventListener("click", function () {
+            setStatus(copyText("brew install whisper-cpp") ? "Команда скопирована. Откройте Терминал, вставьте её и нажмите Enter, потом «Проверить снова»." : "Не получилось скопировать: наберите brew install whisper-cpp в Терминале.", "");
+        });
+        v.voiceBrew.addEventListener("click", function () { platform.openExternal("https://brew.sh/ru/"); });
+        v.voiceGo.addEventListener("click", function () {
+            var k = v.voiceKey.value.replace(/\s/g, "");
+            if (voice.choice === "openai" && !settings.openaiKey && !k) { setStatus("Вставьте ключ OpenAI или выберите распознавание на компьютере.", "error"); v.voiceKey.focus(); return; }
+            if (k) { settings.openaiKey = k; v.voiceKey.value = ""; }
+            settings.voiceEngine = voice.choice || "local";
+            storeSettings(settings);
+            v.voiceCard.hidden = true;
+            onRun();
+        });
+        v.voiceCancel.addEventListener("click", function () {
+            voice.off = voiceId(voice.layer);
+            v.voiceCard.hidden = true;
+            showVoiceChip();
+            onRun();
+        });
+    }
+
     async function onRun() {
         var text = ui.prompt.value.replace(/^\s+|\s+$/g, "");
-        var info, body, sent, hits, note, pics, planRes, picBlocks = [];
+        var info, body, sent, hits, note, pics, planRes, picBlocks = [], voiceNoteText;
         if (busy) { return; }
         if (text === "") { setStatus("Напишите, что нужно сделать.", ""); return; }
         try {
@@ -2864,6 +3200,13 @@
         note = brandNote();
         if (motionStyleOf(settings.motionStyle).note) { note = (note ? note + "\n\n" : "") + "[Motion style] " + motionStyleOf(settings.motionStyle).note; }
         if (hits.length) { note = (note ? note + "\n" : "") + brandHitsNote(hits); }
+        // «Под голос»: слова выделенного слоя с голосом и их время — AI ставит анимации на слова.
+        await voiceCheck();
+        if (voiceOn()) {
+            voiceNoteText = await voiceReady();
+            if (voiceNoteText === null) { return; }
+            note = (note ? note + "\n\n" : "") + voiceNoteText;
+        }
         body = "[Project state]\n" + info.snapshot + (note ? "\n\n" + note : "") + "\n\n[Request]\n" + text;
         // По настройке AI видит и сами упомянутые логотипы и иконки.
         pics = settings.brandPics && hits.length ? await brandPictures(hits) : [];
@@ -4022,6 +4365,15 @@
     }
 
     function buildSettings() {
+        ui.voiceEng = document.getElementById("voiceEng");
+        if (ui.voiceEng) {
+            ui.voiceEng.addEventListener("click", function (e) {
+                var v = e.target && e.target.closest ? e.target.closest("[data-value]") : null;
+                if (!draft || !v) { return; }
+                draft.voiceEngine = v.getAttribute("data-value");
+                pressGroup(ui.voiceEng, draft.voiceEngine);
+            });
+        }
         ui.provider.addEventListener("click", function (e) {
             var v = e.target && e.target.getAttribute ? e.target.getAttribute("data-value") : null;
             if (!draft || !PROVIDERS.hasOwnProperty(v) || v === draft.provider) { return; }
@@ -4189,6 +4541,7 @@
             pressGroup(r[1], draft[r[0]]);
         });
         ui.selfCheck.checked = draft.selfCheck;
+        if (ui.voiceEng) { pressGroup(ui.voiceEng, draft.voiceEngine === "openai" ? "openai" : "local"); }
         ui.alwaysAsk.checked = draft.alwaysAsk;
         ui.brandPics.checked = draft.brandPics;
         ui.panelFit.checked = draft.panelFit !== false;
@@ -13219,7 +13572,8 @@
         "- 2 to 7 steps covering the whole animation from 0 to total seconds, in order, no gaps. Each 'what' is one short sentence (at most 90 characters) that a non-designer understands: what appears, how it moves.",
         "- tool (optional): the main recipe of the step, one of: Плавность, Лесенка, Отскок, Шторка-маска, Текст по буквам, Текст по словам, Наезд, Падение, Удар заголовка, На двойках, Рваные края, Зерно и свечение, Дрожь. Leave it out when none fits.",
         "- Follow the motion style in the message, if there is one, and professional timing: entrances 0.4-0.9 s, text readable for at least 1.5 s, nothing static for more than about 1.5 s, a clear ending.",
-        "- If the user gave no length, choose a sensible one (usually 3-10 s). If the message has reference images, plan what they show."
+        "- If the user gave no length, choose a sensible one (usually 3-10 s). If the message has reference images, plan what they show.",
+        "- If the message has [Voice], the plan follows the speech: total is the length of the speech, every step starts at the time of the word it reacts to (from = that word's time), and 'what' names that word in quotes, e.g. «три причины» — большая цифра 3 падает на слове «три». Up to 7 steps for the main phrases; add \"word\": \"три\" to each step."
     ].join("\n");
 
     var planState = null;   // { text, content, sent, info, plan }
@@ -14578,6 +14932,7 @@
     document.addEventListener("paste", onPasteEvent);
     initMotionStyles();
     initAiModes();
+    initVoice();
     ui.prompt.addEventListener("keydown", function (e) {
         // Cmd/Ctrl+Enter запускает задачу.
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onRun(); }

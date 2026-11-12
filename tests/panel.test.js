@@ -959,8 +959,27 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         case "pickFile": return opts.pickFile || null;
         case "pickFiles": return opts.pickFiles || (opts.pickFile ? [opts.pickFile] : []);
         case "imageSize": return opts.imageSize === undefined ? { width: 800, height: 600 } : opts.imageSize;
+        case "downloadFile": {
+          sys.downloads = (sys.downloads || []).concat([args[0]]);
+          fs.mkdirSync(path.dirname(args[1]), { recursive: true });
+          fs.writeFileSync(args[1], "model");
+          return { size: 5 };
+        }
+        case "postForm": {
+          const [url, headers, fields, file] = args;
+          net.forms = (net.forms || []).concat([{ url, headers, fields, file, bytes: fs.readFileSync(file.path) }]);
+          return opts.sttReply || { status: 200, text: JSON.stringify({ text: "Привет друзья", words: [{ word: "Привет", start: 0.4, end: 0.8 }, { word: "друзья", start: 0.9, end: 1.3 }] }) };
+        }
         case "exec": {
           sys.exec.push({ file: args[0], args: args[1] });
+          // «Под голос»: whisper-cli writes the words (one per piece) to <-of>.json. opts.whisper: the pieces, or { fail }.
+          if (/whisper-cli/.test(args[0])) {
+            const a = args[1], of = a[a.indexOf("-of") + 1];
+            sys.whisper = (sys.whisper || []).concat([{ args: a, wav: fs.readFileSync(a[a.indexOf("-f") + 1]) }]);
+            if (opts.whisper && opts.whisper.fail) return { code: 1, stdout: "", stderr: "whisper: failed to load model" };
+            fs.writeFileSync(of + ".json", JSON.stringify({ transcription: (opts.whisper || []).map((w) => ({ text: w[0], offsets: { from: w[1], to: w[2] } })) }));
+            return { code: 0, stdout: "", stderr: "" };
+          }
           if (args[0] !== "osascript") return { code: 1, stdout: "", stderr: "unknown command" };
           // Where the mouse is (the effect search at the mouse). opts.mouse: [x, y], or nothing — the system does not answer.
           if (args[1][0] === "-l" && args[1][2] === "-e" && /mouseLocation/.test(args[1][3])) return opts.mouse ? { code: 0, stdout: opts.mouse.join(" ") + "\n", stderr: "" } : { code: 1, stdout: "", stderr: "execution error" };
@@ -1065,6 +1084,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
         remove: call("remove"), exists: call("exists"), mkdirp: call("mkdirp"), move: call("move"),
         exec: call("exec"), pickFile: call("pickFile"), pickFiles: call("pickFiles"), imageSize: call("imageSize"), postJSON: (u, h, b, t) => window.__plat("postJSON", [u, h, b, t]),
         getText: call("getText"), download: call("download"), fetchUrl: call("fetchUrl"), verify: call("verify"),
+        downloadFile: (u, d) => window.__plat("downloadFile", [u, d]), postForm: (u, h, f, file) => window.__plat("postForm", [u, h, f, file]),
         openExternal: (u) => { window.__opened.push(u); return true; },
         reload: () => { window.__plat("reloaded", []).then(() => window.location.reload()); }
       };
@@ -7150,6 +7170,99 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
     check("SA15 deleting it goes back to «Обычный»", (await p.page.innerText("#aiStyleBtn")).trim() === "Обычный ▾" && (await p.page.locator("#aiStylePop .style-mine").count()) === 0 && p.errors.length === 0, p.errors.join("|"));
     await p.close();
     if (process.env.SAYFRAME_ONLY === "ai4") { await browser.close(); console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0); }
+  }
+
+  // «Под голос»: a selected layer with a voice → its words with times go to the AI; animations land on the words.
+  if (!process.env.SAYFRAME_ONLY || process.env.SAYFRAME_ONLY === "voice") {
+    const WAV = path.join(EXT, "sfx", "whoosh.wav");
+    const voiceSetup = (p, o = {}) => {
+      const f = path.join(p.tmpDir, o.name || "Интервью.wav");
+      fs.copyFileSync(WAV, f);
+      const VL = mkAcLayer(o.name || "Интервью.wav", "av", p.ae.log);
+      Object.assign(VL, { hasAudio: true, locked: false, source: { hasVideo: false, hasAudio: true, duration: 4, mainSource: { file: { fsName: f } } }, startTime: 1, inPoint: 1, outPoint: 5, stretch: o.stretch || 100, index: 3 });
+      const orig = p.ae.comp.layer; p.ae.comp.layer = (i) => (i === 3 ? VL : orig.call(p.ae.comp, i));
+      p.ae.project.activeItem = p.ae.comp; p.ae.comp.selectedLayers = [VL];
+      return VL;
+    };
+    const focusPrompt = async (p) => { await p.page.evaluate(() => document.getElementById("prompt").blur()); await p.page.focus("#prompt"); await p.page.waitForTimeout(120); };
+    const WORDS = [["Привет,", 400, 700], [",", 700, 720], ["друзья!", 720, 1100], ["Сегодня", 1100, 1500], ["три", 2100, 2400], ["[_BEG_]", 0, 0]];
+    p = await open({ settings: { design: "studio", designSet: 2 }, width: 420, height: 1000, whisper: WORDS,
+      replies: [msg('{"direct": true}'), msg("Готово.\n```javascript\nSF.wordMark(3, 2.10, 'три'); app.__ran('voice');\n```"), msg('{"direct": true}'), msg("Ещё.\n```javascript\nSF.wordMark(3, 2.10, 'три'); app.__ran('again');\n```"), msg('{"direct": true}'), msg("Без голоса.\n```javascript\napp.__ran('plain');\n```")] });
+    await p.page.click("#tabClaude");
+    await focusPrompt(p);
+    check("VO1 no sound layer selected: no «Под голос»", !(await vis(p, "#voiceChip")) && p.errors.length === 0, p.errors.join("|"));
+    const VL = voiceSetup(p);
+    await focusPrompt(p);
+    check("VO1 a sound layer selected: «🎙 Под голос: Интервью.wav · 0:04» above the field, with ×", (await vis(p, "#voiceChip")) && (await p.page.innerText("#voiceName")) === "Интервью.wav" &&
+      (await p.page.innerText("#voiceDur")).trim() === "· 0:04" && (await p.page.locator("#voiceWave i").count()) === 22 && (await vis(p, "#voiceOff")) && (await overflow(p)) <= 0);
+    await p.page.screenshot({ path: path.join(SHOTS, "vo-1-chip.png") });
+    await p.page.fill("#prompt", "Сделай титры по словам");
+    await p.page.click("#runBtn"); await p.page.waitForTimeout(200);
+    check("VO2 the first time: a card asks how to recognise speech (on the computer — free, or OpenAI), nothing is sent yet", (await vis(p, "#voiceCard")) &&
+      (await p.page.getAttribute('#voiceOpts [data-eng="local"]', "aria-pressed")) === "true" && p.net.requests.length === 0 && !(await vis(p, "#voiceMac")) && (await overflow(p)) <= 0, await p.status());
+    await p.page.screenshot({ path: path.join(SHOTS, "vo-2-card.png") });
+    await p.page.click("#voiceGo"); await p.page.waitForTimeout(300);
+    check("VO3 on a Mac without the recogniser: the card shows the Terminal command, «Скопировать команду» and «Проверить снова»; the choice is kept",
+      (await vis(p, "#voiceMac")) && (await p.page.innerText("#voiceMac code")) === "brew install whisper-cpp" && (await p.page.innerText("#voiceGo")) === "Проверить снова" &&
+      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).voiceEngine)) === "local" && p.net.requests.length === 0 && !(p.sys.whisper || []).length, await p.status());
+    await p.page.screenshot({ path: path.join(SHOTS, "vo-3-mac.png") });
+    // The user installs it (Homebrew puts whisper-cli on the PATH folders; here: the panel's own folder).
+    const BIN = path.join(p.home, ".sayframe", "whisper", "bin", "whisper-cli"); fs.mkdirSync(path.dirname(BIN), { recursive: true }); fs.writeFileSync(BIN, "#!/bin/sh\n");
+    await p.page.click("#voiceGo");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    let w = p.sys.whisper || [];
+    check("VO4 «Проверить снова»: the model downloads once into ~/.sayframe/whisper, whisper-cli hears a 16 kHz mono WAV with word timing (-ml 1 -sow -oj)",
+      (p.sys.downloads || []).join() === "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin" && fs.existsSync(path.join(p.home, ".sayframe", "whisper", "ggml-small.bin")) &&
+      w.length === 1 && w[0].args.join(" ").indexOf("-ml 1 -sow -oj") > 0 && w[0].wav.readUInt32LE(24) === 16000 && w[0].wav.readUInt16LE(22) === 1 && !(await vis(p, "#voiceCard")), JSON.stringify(w.map((x) => x.args)));
+    let rq = p.net.requests[p.net.requests.length - 1], body = JSON.stringify(rq ? rq.body.messages : "");
+    check("VO5 the AI gets [Voice]: the layer, each word with its comp time (layer starts at 1 s: «Привет,» 1.40, «три» 3.10), punctuation and [_BEG_] left out, and how to mark words",
+      /\[Voice\] Time the animation to the speech in layer 3 \\"Интервью.wav\\"/.test(body) && /1\.40 Привет, \| 1\.72 друзья! \| 2\.10 Сегодня \| 3\.10 три\\n/.test(body) && !/_BEG_/.test(body) && /SF\.wordMark\(3, t/.test(body) &&
+      /SF\.wordMark\(layerIndex, t, 'word'\)/.test(JSON.stringify(rq.body.system)), body.slice(0, 600));
+    const mk = VL.property("ADBE Marker");
+    check("VO6 SF.wordMark puts a yellow marker with the word on the voice layer", p.ae.log.ran.join() === "voice" && mk.numKeys === 1 && mk.keyTime(1) === 2.1 && mk.keyValue(1).comment === "три" && mk.keyValue(1).label === 2, p.ae.log.ran.join() + " " + mk.numKeys);
+    await p.page.screenshot({ path: path.join(SHOTS, "vo-4-done.png") });
+    await p.page.fill("#prompt", "Сделай ещё раз");
+    await p.page.click("#runBtn");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    check("VO7 the second time the words come from memory: no new recognition; building again does not pile up markers", (p.sys.whisper || []).length === 1 && p.ae.log.ran.join() === "voice,again" && mk.numKeys === 1 &&
+      /3\.10 три/.test(JSON.stringify(p.net.requests[p.net.requests.length - 1].body.messages)));
+    await p.page.click("#voiceOff");
+    await p.page.fill("#prompt", "Просто анимация");
+    await p.page.click("#runBtn");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    check("VO8 × — without the voice: the chip goes, the new request has no [Voice] (earlier turns keep theirs)", !(await vis(p, "#voiceChip")) && p.ae.log.ran.join() === "voice,again,plain" && !/\[Voice\]/.test(JSON.stringify(p.net.requests[p.net.requests.length - 1].body.messages.slice(-1))) && /\[Voice\]/.test(JSON.stringify(p.net.requests[p.net.requests.length - 1].body.messages)));
+    await p.page.click("#settingsBtn");
+    check("VO9 Settings › AI: «Распознавание голоса» — На компьютере / OpenAI", (await vis(p, "#voiceEng")) && (await p.page.getAttribute('#voiceEng [data-value="local"]', "aria-pressed")) === "true");
+    await p.close();
+
+    // OpenAI: the key is asked in the card (not typed for the user), the WAV goes as a form, words come back with times.
+    p = await open({ settings: { design: "glass", voiceEngine: "openai" }, replies: [msg("Готово.\n```javascript\napp.__ran('oa');\n```")] });
+    voiceSetup(p, { stretch: 200 });
+    await p.page.click("#tabClaude"); await focusPrompt(p);
+    await p.page.fill("#prompt", "Акценты на словах");
+    await p.page.click("#runBtn"); await p.page.waitForTimeout(250);
+    check("VO10 OpenAI chosen, no OpenAI key: the card asks for the key, nothing is sent", (await vis(p, "#voiceKeyRow")) && (await p.page.getAttribute('#voiceOpts [data-eng="openai"]', "aria-pressed")) === "true" && !(p.net.forms || []).length && p.net.requests.length === 0);
+    await p.page.screenshot({ path: path.join(SHOTS, "vo-5-openai.png") });
+    await p.page.fill("#voiceKey", "sk-openai-test");
+    await p.page.click("#voiceGo");
+    await p.page.waitForFunction(() => document.getElementById("runBtn").disabled, null, { timeout: 2000 }).catch(() => {}); await p.idle();
+    const fm = (p.net.forms || [])[0];
+    check("VO11 the voice goes to OpenAI whisper-1 with word timestamps and the key; a stretched layer (200%) doubles the times",
+      fm && fm.url === "https://api.openai.com/v1/audio/transcriptions" && fm.headers.authorization === "Bearer sk-openai-test" && JSON.stringify(fm.fields) === JSON.stringify([["model", "whisper-1"], ["response_format", "verbose_json"], ["timestamp_granularities[]", "word"]]) &&
+      fm.bytes.readUInt32LE(24) === 16000 && /1\.80 Привет \| 2\.80 друзья/.test(JSON.stringify(p.net.requests[0].body.messages)) && p.ae.log.ran.join() === "oa" &&
+      (await p.page.evaluate(() => JSON.parse(localStorage.getItem("sayframe.settings.v1")).openaiKey)) === "sk-openai-test", JSON.stringify(p.net.requests[0] && p.net.requests[0].body.messages).slice(0, 400));
+    await p.close();
+
+    // Errors: the recogniser fails → a clear message, nothing sent; a layer with nothing said.
+    p = await open({ settings: { design: "glass", voiceEngine: "local" }, whisper: { fail: true } });
+    voiceSetup(p);
+    fs.mkdirSync(path.join(p.home, ".sayframe", "whisper", "bin"), { recursive: true }); fs.writeFileSync(path.join(p.home, ".sayframe", "whisper", "bin", "whisper-cli"), "");
+    fs.writeFileSync(path.join(p.home, ".sayframe", "whisper", "ggml-small.bin"), "m");
+    await p.page.click("#tabClaude"); await focusPrompt(p);
+    await p.run("Титры");
+    check("VO12 the recogniser fails: the reason is shown, nothing goes to the AI, the panel is free again", /^Распознаватель речи не сработал: whisper: failed to load model/.test(await p.status()) && p.net.requests.length === 0 && !(await p.page.locator("#runBtn").isDisabled()) && !(p.sys.downloads || []).length, await p.status());
+    await p.close();
+    if (process.env.SAYFRAME_ONLY === "voice") { await browser.close(); console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0); }
   }
 
   // Decompose: the layers of a selected precomp come out into the open comp, in its place.

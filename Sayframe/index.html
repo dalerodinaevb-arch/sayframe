@@ -186,6 +186,26 @@
         </div>
       </div>
       <div id="styleRow" class="style-row" role="radiogroup" aria-label="Стиль анимации"><span class="style-label">Стиль:</span></div>
+      <!-- «Под голос»: выделен слой с голосом — AI ставит анимации на слова -->
+      <div id="voiceChip" class="voice-chip" hidden>
+        <span class="vc-ic" aria-hidden="true">🎙</span><span class="vc-t">Под голос:</span><b id="voiceName"></b><span id="voiceDur" class="vc-dur"></span>
+        <span id="voiceWave" class="vc-wave" aria-hidden="true"></span>
+        <button type="button" id="voiceOff" class="vc-x" aria-label="Без голоса" title="Без голоса: AI работает как обычно">&times;</button>
+      </div>
+      <div id="voiceCard" class="voice-card" hidden>
+        <div class="vcard-head"><b>Распознавание речи</b><small>Нужно выбрать один раз, потом можно поменять в настройках</small></div>
+        <div id="voiceOpts" class="vcard-opts">
+          <button type="button" class="vopt" data-eng="local" aria-pressed="true"><i aria-hidden="true"></i><span><b>Бесплатно на компьютере</b><small>Без ключа, голос никуда не уходит. Один раз скачается около 0,5 ГБ.</small></span></button>
+          <button type="button" class="vopt" data-eng="openai" aria-pressed="false"><i aria-hidden="true"></i><span><b>Через OpenAI (Whisper)</b><small>Быстро, примерно $0,006 за минуту голоса. Нужен ключ OpenAI.</small></span></button>
+        </div>
+        <div id="voiceKeyRow" class="vcard-key" hidden><input id="voiceKey" class="field" type="password" placeholder="Ключ OpenAI: sk-…" autocomplete="off" spellcheck="false" aria-label="Ключ OpenAI"></div>
+        <div id="voiceMac" class="vcard-mac" hidden>
+          <p>На Mac распознаватель ставится одной командой в Терминале:</p>
+          <code>brew install whisper-cpp</code>
+          <div class="vcard-btns"><button type="button" id="voiceCopy" class="ghost">Скопировать команду</button><button type="button" id="voiceBrew" class="ghost">Нет Homebrew?</button></div>
+        </div>
+        <div class="vcard-btns"><button type="button" id="voiceGo" class="primary">Продолжить</button><button type="button" id="voiceCancel" class="ghost">Без голоса</button></div>
+      </div>
       <div class="prompt-wrap">
         <textarea id="prompt" rows="4" placeholder="Опишите, что сделать в композиции. @ — логотип, цвет или иконка из брендбука" aria-label="Задача для нейросети"></textarea>
       <div id="promptFoot" class="prompt-foot" hidden>
@@ -1311,6 +1331,13 @@
               <small>Сам смотрит кадры и правит. Дольше и дороже.</small>
             </span>
           </label>
+          <div class="voice-set">
+            <span class="label">Распознавание голоса («Под голос»)</span>
+            <div id="voiceEng" class="frames" role="group" aria-label="Чем распознавать голос">
+              <button data-value="local">На компьютере</button>
+              <button data-value="openai">OpenAI</button>
+            </div>
+          </div>
           <label class="switch">
             <input id="brandPics" type="checkbox">
             <span class="track"></span>

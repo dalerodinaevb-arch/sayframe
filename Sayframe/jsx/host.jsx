@@ -6610,6 +6610,29 @@ var sayframeHost = (function () {
             });
         },
 
+        // The selected layer with sound from a file (a voice-over, an interview, a video with speech) for the voice mode.
+        // Times are in comp seconds; a word at time w of the file plays at start + w * stretch / 100.
+        voiceLayer: function () {
+            return reply(function () {
+                var c = app.project ? app.project.activeItem : null, sel, i, L, f;
+                if (!c || !(c instanceof CompItem)) { return { layer: null }; }
+                sel = c.selectedLayers || [];
+                for (i = 0; i < sel.length; i++) {
+                    L = sel[i];
+                    try {
+                        if (L.hasAudio && L.source && L.source.hasAudio) {
+                            f = sndFilePath(L);
+                            if (f) {
+                                return { layer: { index: L.index, id: L.id || 0, name: String(L.name), file: f, start: L.startTime, inPoint: L.inPoint, outPoint: L.outPoint,
+                                    stretch: L.stretch || 100, dur: L.source.duration || (L.outPoint - L.inPoint), comp: String(c.name) } };
+                            }
+                        }
+                    } catch (e0) {}
+                }
+                return { layer: null };
+            });
+        },
+
         // ES3 syntax check without running anything.
         syntax: function (code) {
             return reply(function () {
@@ -9043,6 +9066,24 @@ var SF = (function () {
         return layer;
     }
 
+    // A yellow marker with the spoken word on the voice layer: SF.wordMark(layerIndex, t, "word"), t in comp seconds.
+    // An earlier Sayframe word marker at the same frame is replaced, so building again does not pile them up.
+    function wordMark(idx, t, text) {
+        var c = comp(), L = c.layer(idx), mk = L.property("ADBE Marker"), k, mv, half = c.frameDuration / 2, pr;
+        for (k = mk.numKeys; k >= 1; k--) {
+            if (Math.abs(mk.keyTime(k) - t) < half) {
+                pr = null;
+                try { pr = mk.keyValue(k).getParameters(); } catch (e0) {}
+                if (pr && pr.sfVoice) { mk.removeKey(k); }
+            }
+        }
+        mv = new MarkerValue(String(text));
+        try { mv.label = 2; } catch (e1) {}
+        try { mv.setParameters({ sfVoice: "1" }); } catch (e2) {}
+        mk.setValueAtTime(t, mv);
+        return L;
+    }
+
     var API = {};
     // One effect on several layers, each a little later: SF.stagger(layers, t, step, "popIn", opts).
     function stagger(layers, t, step, fn, o) {
@@ -9059,6 +9100,6 @@ var SF = (function () {
     API.drawOn = drawOn; API.blurIn = blurIn; API.drift = drift; API.wiggle = wiggle; API.motionBlur = motionBlur; API.stagger = stagger;
     API.onTwos = onTwos; API.boil = boil; API.dropIn = dropIn; API.pushIn = pushIn; API.slam = slam;
     API.grain = grain; API.bloom = bloom; API.bw = bw; API.torn = torn;
-    API.neon = neon; API.glitch = glitch; API.vhs = vhs; API.sketch = sketch;
+    API.neon = neon; API.glitch = glitch; API.vhs = vhs; API.sketch = sketch; API.wordMark = wordMark;
     return API;
 })();
