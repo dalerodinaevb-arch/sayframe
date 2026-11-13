@@ -5,7 +5,7 @@
 (function () {
     "use strict";
 
-    var VERSION = "1.81.0";
+    var VERSION = "1.82.0";
     // Адрес файла version.json с описанием последней версии. Пустая строка выключает проверку обновлений.
     var UPDATE_URL = typeof window.__SAYFRAME_TEST_UPDATE_URL__ === "string" ? window.__SAYFRAME_TEST_UPDATE_URL__ : "https://raw.githubusercontent.com/dalerodinaevb-arch/sayframe/main/version.json";
     // Открытый ключ выпусков (RSA, PEM). version.json подписывает tools/release.py закрытым ключом, который есть
@@ -1311,7 +1311,7 @@
         if (IS_PR && m === "DISTRIBUTE_NEEDS_THREE") { return "Чтобы распределить, выделите хотя бы три клипа."; }
         if (IS_PR && m === "CO_NOT_PHOTO") { return "Вырезка работает с фото: выделите на таймлайне клип-картинку (JPG, PNG…) и нажмите ещё раз."; }
         if (m === "LUT_NO_FILE") { return "Файла этого LUT больше нет в папке Sayframe LUT. Добавьте его ещё раз."; }
-        if (m === "LUT_NOT_SET") { return "Premiere Pro не дал поставить LUT скриптом. Lumetri на клипах есть — выберите LUT в Lumetri › Basic Correction › Input LUT › Browse (файл лежит в Документы › Sayframe LUT)."; }
+        if (m.indexOf("LUT_NOT_SET") === 0) { return "Premiere Pro не дал поставить файл скриптом. Lumetri на клипах есть — выберите файл в Lumetri › Basic Correction › Input LUT › Browse (он лежит в Документы › Sayframe LUT)."; }
         if (IS_PR && m === "NO_CLIPS" && currentTab === "lut") { return "Выделите видеоклипы на таймлайне и нажмите «Применить» ещё раз."; }
         if (m === "NO_CLIPS") { return "Выделите видеоклипы на таймлайне и щёлкните ещё раз."; }
         if (m === "NO_CUT") { return "Поставьте указатель на стык двух клипов (или выделите клипы у стыка) и щёлкните ещё раз."; }
@@ -1638,7 +1638,8 @@
     var ui = {
         lutAdd: el("lutAdd"), lutImport: el("lutImport"), lutShare: el("lutShare"), lutFrameNote: el("lutFrameNote"), lutRefresh: el("lutRefresh"), lutGrid: el("lutGrid"),
         lutBar: el("lutBar"), lutStrength: el("lutStrength"), lutStrengthVal: el("lutStrengthVal"), lutApply: el("lutApply"), lutShareBar: el("lutShareBar"),
-        lutShareNote: el("lutShareNote"), lutShareCancel: el("lutShareCancel"), lutShareSave: el("lutShareSave"), lutSelNote: el("lutSelNote"),
+        lutShareNote: el("lutShareNote"), lutShareCancel: el("lutShareCancel"), lutShareSave: el("lutShareSave"), lutSelNote: el("lutSelNote"), lutSeg: el("lutSeg"), lutSegLog: el("lutSegLog"), lutSegLut: el("lutSegLut"), lutCams: el("lutCams"),
+        lutCamForm: el("lutCamForm"), lutCamTitle: el("lutCamTitle"), lutCamName: el("lutCamName"), lutCamHints: el("lutCamHints"), lutCamDel: el("lutCamDel"), lutCamCancel: el("lutCamCancel"), lutCamSave: el("lutCamSave"),
         prompt: el("prompt"), styleRow: el("styleRow"), mentionList: el("mentionList"), brandHits: el("brandHits"), brandPics: el("brandPics"), runBtn: el("runBtn"), fixBtn: el("fixBtn"), newBtn: el("newBtn"),
         refBtn: el("refBtn"), refChip: el("refChip"), refText: el("refText"), refClear: el("refClear"),
         exprCard: el("exprCard"), exprToggle: el("exprToggle"), exprBody: el("exprBody"), exprWish: el("exprWish"),
@@ -1782,7 +1783,7 @@
     function setupPremiere() {
         var root = document.documentElement, badge;
         if (!IS_PR) {
-            // «LUT» пока только в Premiere Pro.
+            // «Цвет» (LOG и LUT) пока только в Premiere Pro.
             TABS.lut.view.hidden = true;
             if (TABS.lut.tab.parentNode) { TABS.lut.tab.parentNode.removeChild(TABS.lut.tab); }
             delete TABS.lut;
@@ -14854,15 +14855,18 @@
         storeUpdateState(state);
     }
 
-    // ---------------------------------------------------------------- LUT (Premiere Pro)
-    // Свои LUT (.cube) с компьютера. Файлы копируются в «Документы › Sayframe LUT», список — в localStorage.
-    // Каждая карточка — экран: кадр под указателем времени, пропущенный через этот LUT прямо в панели.
-    // «Применить» ставит Lumetri с этим LUT (Input LUT) на выделенные клипы; «Сила» ниже 100% —
-    // панель пишет смешанный .cube (LUT + исходный цвет) и ставит его.
-    var LUT_KEY = "sayframe.luts.v1";
+    // ---------------------------------------------------------------- «Цвет»: LOG и LUT (Premiere Pro)
+    // Свои LOG и LUT (.cube) с компьютера. Файлы копируются в «Документы › Sayframe LUT», список — в localStorage.
+    // LOG разложены по камерам, которые называет сам человек (Sony, Lumix…); LUT — одним списком.
+    // Каждая карточка — экран: кадр под указателем времени, пропущенный через этот файл прямо в панели.
+    // «Применить» ставит Lumetri на выделенные клипы: LOG — в Input LUT, LUT — в Creative › Look. «Сила» ниже 100% —
+    // панель пишет смешанный .cube (файл + исходный цвет) и ставит его.
+    var LUT_KEY = "sayframe.luts.v1", LUT_CAMS_KEY = "sayframe.lutCams.v1", LUT_MODE_KEY = "sayframe.lutMode.v1";
+    var LUT_CAM_HINTS = ["Sony", "Lumix", "Canon", "DJI", "iPhone", "Blackmagic", "Fujifilm", "Nikon"];
     var LUT_W = 320, LUT_H = 180;
     var lut = { items: [], sel: null, sharing: false, marks: {}, cubes: {}, frame: null, frameAt: null, frameSeq: "", frameReal: false,
-        state: null, timer: 0, loading: false, k: 100, drawn: {} };
+        state: null, timer: 0, loading: false, k: 100, drawn: {},
+        mode: "log", cam: "", cams: [], camEdit: null };
 
     function lutFolder() { return platform.join(platform.homedir(), "Documents", "Sayframe LUT"); }
 
@@ -14870,11 +14874,27 @@
         var list;
         try { list = JSON.parse(window.localStorage.getItem(LUT_KEY) || "[]"); } catch (e) { list = []; }
         lut.items = Object.prototype.toString.call(list) === "[object Array]" ? list.filter(function (x) { return x && x.id && x.file; }) : [];
+        lut.items.forEach(function (x) { if (x.kind !== "log") { x.kind = "lut"; delete x.cam; } });
+        try { list = JSON.parse(window.localStorage.getItem(LUT_CAMS_KEY) || "[]"); } catch (e1) { list = []; }
+        lut.cams = Object.prototype.toString.call(list) === "[object Array]" ? list.filter(function (x) { return typeof x === "string" && x; }) : [];
+        lut.items.forEach(function (x) { if (x.kind === "log" && lut.cams.indexOf(x.cam) < 0) { lut.cams.push(x.cam = x.cam || "Камера"); } });
+        try { lut.mode = window.localStorage.getItem(LUT_MODE_KEY) === "lut" ? "lut" : "log"; } catch (e2) { lut.mode = "log"; }
+        lut.cam = lut.cams[0] || "";
     }
 
     function lutStore() {
-        try { window.localStorage.setItem(LUT_KEY, JSON.stringify(lut.items)); } catch (e) {}
+        try {
+            window.localStorage.setItem(LUT_KEY, JSON.stringify(lut.items));
+            window.localStorage.setItem(LUT_CAMS_KEY, JSON.stringify(lut.cams));
+            window.localStorage.setItem(LUT_MODE_KEY, lut.mode);
+        } catch (e) {}
     }
+
+    // Что видно сейчас: LUT — все LUT; LOG — LOG выбранной камеры.
+    function lutVisible() {
+        return lut.items.filter(function (x) { return lut.mode === "lut" ? x.kind !== "log" : x.kind === "log" && x.cam === lut.cam; });
+    }
+    function lutWord(it) { return it && it.kind === "log" ? "LOG" : "LUT"; }
 
     function lutEsc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 
@@ -15014,7 +15034,7 @@
     var LUT_PIN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 6 4 4H6l4-4z"/><path d="M12 13v8"/></svg>';
 
     function lutSorted() {
-        var pinned = lut.items.filter(function (x) { return x.pin; }), rest = lut.items.filter(function (x) { return !x.pin; });
+        var vis = lutVisible(), pinned = vis.filter(function (x) { return x.pin; }), rest = vis.filter(function (x) { return !x.pin; });
         return { pinned: pinned, rest: rest };
     }
 
@@ -15024,19 +15044,49 @@
             '<canvas width="' + LUT_W + '" height="' + LUT_H + '"></canvas>' +
             (lut.sharing ? '<span class="lut-check" aria-hidden="true"></span>' :
                 '<button type="button" class="lut-pin' + (it.pin ? " on" : "") + '" data-pin="' + lutEsc(it.id) + '" aria-pressed="' + !!it.pin + '" aria-label="' + (it.pin ? "Открепить" : "Закрепить наверху") + '" title="' + (it.pin ? "Открепить" : "Закрепить наверху") + '">' + LUT_PIN + '</button>' +
-                '<button type="button" class="lut-x" data-del="' + lutEsc(it.id) + '" aria-label="Убрать LUT" title="Убрать из списка (нажмите дважды)">&times;</button>') +
+                '<button type="button" class="lut-x" data-del="' + lutEsc(it.id) + '" aria-label="Убрать ' + lutWord(it) + '" title="Убрать из списка (нажмите дважды)">&times;</button>') +
             '<b>' + lutEsc(it.name) + '</b><i>' + lutEsc(it.tag || "") + '</i></div>';
     }
 
+    function lutCount(kind, cam) { return lut.items.filter(function (x) { return x.kind === kind && (cam === undefined || x.cam === cam); }).length; }
+
     function lutRender() {
-        var g = lutSorted(), h = "";
-        if (!lut.items.length) {
-            h = '<div class="lut-empty"><b>Здесь будут ваши LUT</b><span>Нажмите «Добавить» и выберите файлы .cube или перетащите их сюда. Каждый LUT станет экраном с кадром из таймлайна.</span></div>';
+        var g, h = "", vis, marked;
+        if (lut.cams.indexOf(lut.cam) < 0) { lut.cam = lut.cams[0] || ""; }
+        g = lutSorted(); vis = g.pinned.length + g.rest.length;
+        if (vis && g.pinned.concat(g.rest).indexOf(lutById(lut.sel)) < 0) { lut.sel = g.pinned.concat(g.rest)[0].id; }
+        Array.prototype.forEach.call(ui.lutSeg.querySelectorAll("button"), function (b) {
+            var on = b.getAttribute("data-mode") === lut.mode;
+            b.classList.toggle("on", on);
+            b.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        ui.lutSegLog.textContent = lut.cams.length ? plural(lut.cams.length, "камера", "камеры", "камер") : "";
+        ui.lutSegLut.textContent = lutCount("lut") || "";
+        ui.lutCams.hidden = lut.mode !== "log";
+        // Кнопки камер пересобираются, только если поменялся их состав: выбор лишь переставляет подсветку,
+        // иначе двойной щелчок (переименовать) попадал бы уже в новую кнопку.
+        h = lut.cams.map(function (c) {
+            marked = lut.sharing ? lut.items.filter(function (x) { return x.kind === "log" && x.cam === c && lut.marks[x.id]; }).length : 0;
+            return '<button type="button" class="lut-cam" data-cam="' + lutEsc(c) + '" title="Двойной щелчок — переименовать или удалить">' +
+                lutEsc(c) + '<small>' + (marked ? "✓" + marked : lutCount("log", c)) + '</small></button>';
+        }).join("") + '<button type="button" class="lut-cam lut-cam-add" id="lutCamAdd" aria-label="Новая камера" title="Новая камера: назовите её (Sony, Lumix…) и добавьте её LOG">+</button>';
+        if (ui.lutCams.getAttribute("data-html") !== h) { ui.lutCams.innerHTML = h; ui.lutCams.setAttribute("data-html", h); }
+        h = "";
+        Array.prototype.forEach.call(ui.lutCams.querySelectorAll(".lut-cam[data-cam]"), function (b) {
+            var on = b.getAttribute("data-cam") === lut.cam;
+            b.classList.toggle("on", on);
+            b.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        if (lut.mode === "log" && !lut.cams.length) {
+            h = '<div class="lut-empty"><b>Здесь будут ваши LOG</b><span>Нажмите «+» и назовите камеру, например Sony. Потом добавьте её LOG-файлы (.cube) — каждый станет экраном с кадром из таймлайна.</span></div>';
+        } else if (!vis) {
+            h = lut.mode === "log" ? '<div class="lut-empty"><b>В «' + lutEsc(lut.cam) + '» пока нет LOG</b><span>Нажмите «Добавить» или перетащите файлы .cube сюда.</span></div>' :
+                '<div class="lut-empty"><b>Здесь будут ваши LUT</b><span>Нажмите «Добавить» и выберите файлы .cube или перетащите их сюда. Каждый LUT станет экраном с кадром из таймлайна.</span></div>';
         } else {
             if (g.pinned.length) { h += '<div class="lut-sep">Закреплённые</div>' + g.pinned.map(lutCard).join("") + (g.rest.length ? '<div class="lut-sep">Все</div>' : ""); }
             h += g.rest.map(lutCard).join("");
         }
-        if (!lut.sharing) { h += '<button type="button" class="lut-card lut-drop" id="lutDrop" title="Добавить LUT с компьютера">+<br>Перетащите .cube<br>сюда</button>'; }
+        if (!lut.sharing && (lut.mode === "lut" || lut.cams.length)) { h += '<button type="button" class="lut-card lut-drop" id="lutDrop" title="Добавить с компьютера">+<br>Перетащите .cube<br>сюда</button>'; }
         ui.lutGrid.innerHTML = h;
         lut.drawn = {};
         lutPaint();
@@ -15066,9 +15116,12 @@
         var n = Object.keys(lut.marks).filter(function (k) { return lut.marks[k]; }).length;
         ui.lutBar.hidden = lut.sharing;
         ui.lutShareBar.hidden = !lut.sharing;
-        ui.lutApply.disabled = !lut.sel || !lutById(lut.sel);
+        var nLog = lut.items.filter(function (x) { return x.kind === "log" && lut.marks[x.id]; }).length, parts = [];
+        ui.lutApply.disabled = !lut.sel || lutVisible().indexOf(lutById(lut.sel)) < 0;
         ui.lutShareSave.disabled = !n;
-        ui.lutShareNote.textContent = n ? "Отмечено: " + n : "Отметьте LUT, которыми поделиться";
+        if (n - nLog) { parts.push(n - nLog + " LUT"); }
+        if (nLog) { parts.push(nLog + " LOG"); }
+        ui.lutShareNote.textContent = n ? "Отмечено: " + parts.join(" и ") : "Отметьте LOG и LUT, которыми поделиться";
         ui.lutShare.setAttribute("aria-pressed", lut.sharing ? "true" : "false");
         ui.lutStrengthVal.textContent = lut.k + "%";
         lutNotes();
@@ -15085,9 +15138,10 @@
         if (!st) { ui.lutFrameNote.textContent = "Пример кадра — откройте секвенцию, и здесь будет ваш кадр"; }
         else if (!lut.frameReal) { ui.lutFrameNote.textContent = lut.loading ? "Беру кадр под указателем времени…" : "Пример кадра — Premiere не отдал кадр, нажмите ↻"; }
         else { ui.lutFrameNote.textContent = "Кадр " + lutTc(lut.frameAt) + " под указателем времени · обновляется сам"; }
-        if (lut.sharing) { ui.lutSelNote.textContent = "Все отмеченные LUT сохранятся в один файл .sflut — его можно отправить в Telegram или по почте."; }
-        else if (!st) { ui.lutSelNote.textContent = "Ставится на выделенные клипы"; }
-        else { ui.lutSelNote.textContent = st.sel ? "Ставится на выделенные клипы: " + plural(st.sel, "клип", "клипа", "клипов") : "Выделите клипы на таймлайне — LUT встанет на них"; }
+        var where = lut.mode === "log" ? "LOG ставится в Lumetri › Input LUT" : "LUT ставится в Lumetri › Creative › Look";
+        if (lut.sharing) { ui.lutSelNote.textContent = "Отмеченные LOG и LUT сохранятся в один файл .sflut — с камерами. Его можно отправить в Telegram или по почте."; }
+        else if (!st) { ui.lutSelNote.textContent = where + " выделенных клипов"; }
+        else { ui.lutSelNote.textContent = st.sel ? where + " выделенных клипов: " + plural(st.sel, "клип", "клипа", "клипов") : "Выделите клипы на таймлайне — " + (lut.mode === "log" ? "LOG" : "LUT") + " встанет на них"; }
     }
 
     // Кадр под указателем: Premiere сохраняет PNG, панель ждёт файл и рисует экраны заново.
@@ -15142,27 +15196,34 @@
     }
 
     // Добавляет LUT по тексту .cube. Возвращает "added" | "dup" | "bad".
-    function lutAddText(text, name, tag) {
-        var L = lutParse(text), h, it, file;
+    // dest: { kind: "lut" | "log", cam }. Тот же файл в том же месте второй раз не добавляется.
+    function lutAddText(text, name, tag, dest) {
+        var L = lutParse(text), h, it, file, kind = dest && dest.kind === "log" ? "log" : "lut", cam = kind === "log" ? String(dest.cam || "").trim() || "Камера" : undefined;
         if (!L) { return Promise.resolve("bad"); }
         h = lutHash(text);
-        if (lut.items.some(function (x) { return x.h === h; })) { return Promise.resolve("dup"); }
-        name = String(name || L.title || "LUT").replace(/\.(cube|CUBE)$/, "").trim() || "LUT";
+        if (lut.items.some(function (x) { return x.h === h && x.kind === kind && x.cam === cam; })) { return Promise.resolve("dup"); }
+        if (kind === "log" && lut.cams.indexOf(cam) < 0) { lut.cams.push(cam); }
+        name = String(name || L.title || kind.toUpperCase()).replace(/\.(cube|CUBE)$/, "").trim() || kind.toUpperCase();
         file = lutFreeName(lutSafe(name));
-        it = { id: "l" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, file: file, tag: tag || lutTag(L), h: h, pin: false, t: Date.now() };
+        it = { id: "l" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, file: file, tag: tag || (kind === "log" ? cam : lutTag(L)), h: h, pin: false, t: Date.now(), kind: kind };
+        if (cam) { it.cam = cam; }
         return platform.mkdirp(lutFolder()).then(function () {
             return platform.writeText(platform.join(lutFolder(), file), text);
         }).then(function () {
             lut.items.push(it);
             lut.cubes[it.id] = L;
-            if (!lut.sel) { lut.sel = it.id; }
+            if (!lut.sel || lutVisible().indexOf(lutById(lut.sel)) < 0) { lut.sel = it.id; }
+            res0[kind] += 1;
             return "added";
         });
     }
 
     // Файлы с компьютера: .cube добавляются как есть, .sflut — все LUT из него.
-    function lutAddFiles(paths) {
+    var res0 = { lut: 0, log: 0 };
+    function lutAddFiles(paths, dest) {
         var res = { added: 0, dup: 0, bad: 0 }, chain = Promise.resolve();
+        res0 = { lut: 0, log: 0 };
+        dest = dest || { kind: lut.mode === "log" && lut.cam ? "log" : "lut", cam: lut.cam };
         (paths || []).forEach(function (p) {
             chain = chain.then(function () {
                 return platform.readText(p).then(function (text) {
@@ -15172,10 +15233,10 @@
                         list = data && data.sayframe === "lut" && Object.prototype.toString.call(data.luts) === "[object Array]" ? data.luts : null;
                         if (!list) { res.bad += 1; return null; }
                         return list.reduce(function (c, x) {
-                            return c.then(function () { return lutAddText(x && x.cube, x && x.name, x && x.tag).then(function (r) { res[r] += 1; }); });
+                            return c.then(function () { return lutAddText(x && x.cube, x && x.name, x && x.tag, x && x.kind === "log" ? { kind: "log", cam: x.cam } : { kind: "lut" }).then(function (r) { res[r] += 1; }); });
                         }, Promise.resolve());
                     }
-                    return lutAddText(text, platform.basename(p).replace(/\.[^.]+$/, "")).then(function (r) { res[r] += 1; });
+                    return lutAddText(text, platform.basename(p).replace(/\.[^.]+$/, ""), "", dest).then(function (r) { res[r] += 1; });
                 }, function () { res.bad += 1; });
             });
         });
@@ -15183,7 +15244,7 @@
             var parts = [];
             lutStore();
             lutRender();
-            if (res.added) { parts.push("Добавлено LUT: " + res.added); }
+            if (res.added) { parts.push("Добавлено " + [res0.log ? "LOG: " + res0.log : "", res0.lut ? "LUT: " + res0.lut : ""].filter(Boolean).join(", ")); }
             if (res.dup) { parts.push("уже были: " + res.dup); }
             if (res.bad) { parts.push("не прочитано: " + res.bad + " (нужен .cube или .sflut)"); }
             setStatus(parts.length ? parts.join(", ") + "." : "Ничего не добавлено.", res.added ? "done" : (res.bad ? "error" : ""));
@@ -15191,9 +15252,78 @@
         });
     }
 
-    function onLutAdd(title) {
+    // «Добавить» кладёт туда, где вы сейчас: в LUT или в LOG выбранной камеры (камеры нет — сначала её название).
+    function onLutAdd(title, any) {
         if (!platform.available) { setStatus(humanError(new Error("NODE_UNAVAILABLE")), "error"); return; }
-        platform.pickFiles(title).then(function (paths) { if (paths.length) { return lutAddFiles(paths); } });
+        if (!any && lut.mode === "log" && !lut.cam) { lutCamForm(null); return; }
+        title = title || (lut.mode === "log" ? "Выберите LOG для «" + lut.cam + "» (.cube)" : "Выберите LUT (.cube)");
+        platform.pickFiles(title).then(function (paths) { if (paths.length) { return lutAddFiles(paths, any ? { kind: "lut" } : null); } });
+    }
+
+    // Форма камеры: новая (old = null) или переименовать / удалить old.
+    function lutCamForm(old) {
+        lut.camEdit = old;
+        ui.lutCamForm.hidden = false;
+        ui.lutCamTitle.textContent = old ? "Камера «" + old + "»" : "Новая камера для LOG";
+        ui.lutCamName.value = old || "";
+        ui.lutCamSave.textContent = old ? "Сохранить" : "Создать и выбрать LOG";
+        ui.lutCamDel.hidden = !old;
+        ui.lutCamDel.classList.remove("armed");
+        ui.lutCamDel.textContent = "Удалить камеру";
+        ui.lutCamHints.hidden = !!old;
+        ui.lutCamHints.innerHTML = LUT_CAM_HINTS.filter(function (c) { return lut.cams.indexOf(c) < 0; }).map(function (c) { return '<button type="button" data-hint="' + c + '">' + c + '</button>'; }).join("");
+        setTimeout(function () { try { ui.lutCamName.focus(); ui.lutCamName.select(); } catch (e) {} }, 0);
+    }
+
+    function lutCamSave() {
+        var name = ui.lutCamName.value.replace(/\s+/g, " ").trim().slice(0, 40), old = lut.camEdit;
+        if (!name) { ui.lutCamName.focus(); return; }
+        if (name !== old && lut.cams.indexOf(name) >= 0) { setStatus("Камера «" + name + "» уже есть.", "error"); return; }
+        if (old) {
+            lut.cams[lut.cams.indexOf(old)] = name;
+            lut.items.forEach(function (x) { if (x.kind === "log" && x.cam === old) { x.cam = name; if (x.tag === old) { x.tag = name; } } });
+        } else { lut.cams.push(name); }
+        lut.cam = name; lut.mode = "log";
+        ui.lutCamForm.hidden = true;
+        lutStore();
+        lutRender();
+        if (!old) { onLutAdd(); }
+    }
+
+    function lutCamDelete() {
+        var old = lut.camEdit, gone;
+        if (!old) { return; }
+        if (!ui.lutCamDel.classList.contains("armed")) {
+            ui.lutCamDel.classList.add("armed");
+            ui.lutCamDel.textContent = "Удалить вместе с LOG (" + lutCount("log", old) + ")?";
+            return;
+        }
+        gone = lut.items.filter(function (x) { return x.kind === "log" && x.cam === old; });
+        lut.items = lut.items.filter(function (x) { return gone.indexOf(x) < 0; });
+        gone.forEach(function (x) { delete lut.cubes[x.id]; platform.remove(platform.join(lutFolder(), x.file)); });
+        lut.cams = lut.cams.filter(function (c) { return c !== old; });
+        lut.cam = lut.cams[0] || "";
+        ui.lutCamForm.hidden = true;
+        lutStore();
+        lutRender();
+        setStatus("Камера «" + old + "» удалена.", "");
+    }
+
+    function lutSetMode(mode) {
+        var vis;
+        lut.mode = mode === "lut" ? "lut" : "log";
+        ui.lutCamForm.hidden = true;
+        vis = lutVisible();
+        if (vis.indexOf(lutById(lut.sel)) < 0) { lut.sel = vis.length ? lutSorted().pinned.concat(lutSorted().rest)[0].id : null; }
+        lutStore();
+        lutRender();
+    }
+
+    // Premiere не дал поставить файл скриптом: кладём копию в папку LUT Adobe — после перезапуска он есть в списке Lumetri.
+    function lutAdobeDir(slot) {
+        var base = platform.isWindows() ? platform.join(platform.homedir(), "AppData", "Roaming", "Adobe", "Common", "LUTs") :
+            platform.join(platform.homedir(), "Library", "Application Support", "Adobe", "Common", "LUTs");
+        return platform.join(base, slot === "look" ? "Creative" : "Technical");
     }
 
     // «Сила» ниже 100%: смешанный LUT (исходный цвет + LUT) пишется рядом, в папку «Сила».
@@ -15216,39 +15346,48 @@
     }
 
     function onLutApply() {
-        var it = lutById(lut.sel), k = lut.k / 100;
+        var it = lutById(lut.sel), k = lut.k / 100, file = null, slot = it && it.kind === "log" ? "input" : "look", word = lutWord(it),
+            place = slot === "input" ? "Basic Correction › Input LUT" : "Creative › Look";
         if (!it || busy) { return; }
         ui.lutApply.disabled = true;
-        setStatus("Ставлю «" + it.name + "» на выделенные клипы…", "busy");
+        setStatus("Ставлю " + word + " «" + it.name + "» на выделенные клипы…", "busy");
         lutCube(it).then(function (L) {
             if (!L) { throw new Error("LUT_NO_FILE"); }
             if (k >= 0.999) { return platform.join(lutFolder(), it.file); }
             return lutMixedFile(it, L, k);
-        }).then(function (file) {
-            return host("lutApply", [file]);
+        }).then(function (f) {
+            file = f;
+            return host("lutApply", [file, slot]);
         }).then(function (r) {
-            setStatus("LUT «" + it.name + "»" + (k < 0.999 ? " (" + lut.k + "%)" : "") + " стоит на " + plural(r.clips, "клипе", "клипах", "клипах") +
-                (r.clips < r.of ? " из " + r.of : "") + ". Он в Lumetri › Basic Correction › Input LUT.", "done");
+            setStatus(word + " «" + it.name + "»" + (k < 0.999 ? " (" + lut.k + "%)" : "") + " стоит на " + plural(r.clips, "клипе", "клипах", "клипах") +
+                (r.clips < r.of ? " из " + r.of : "") + ". Он в Lumetri › " + place + ".", "done");
         }).catch(function (e) {
-            setStatus(humanError(e), "error");
+            var m = e && e.message ? String(e.message) : "", dir, dst;
+            if (m.indexOf("LUT_NOT_SET") !== 0 || !file) { setStatus(humanError(e), "error"); return null; }
+            dir = lutAdobeDir(slot);
+            dst = platform.join(dir, "Sayframe - " + lutSafe(it.name) + (k < 0.999 ? " " + lut.k + "%" : "") + ".cube");
+            return platform.mkdirp(dir).then(function () { return platform.readText(file); }).then(function (t) { return platform.writeText(dst, t); }).then(function () {
+                setStatus("Premiere не дал поставить " + word + " скриптом. Lumetri на клипах уже есть, а файл я положил в папку LUT Adobe: перезапустите Premiere — «Sayframe - " + it.name +
+                    "» появится в Lumetri › " + place + ". Если пришлёте разработчику эту строку, он поправит: " + m.split("|").slice(1).join(" | "), "error");
+            }, function () { setStatus(humanError(new Error("LUT_NOT_SET")) + " (" + m.split("|").slice(1).join(" | ") + ")", "error"); });
         }).then(function () { lutBars(); });
     }
 
     function onLutShareSave() {
-        var ids = lut.items.filter(function (x) { return lut.marks[x.id]; }), out = { sayframe: "lut", v: 1, luts: [] }, name;
+        var ids = lut.items.filter(function (x) { return lut.marks[x.id]; }), out = { sayframe: "lut", v: 2, luts: [] }, name;
         if (!ids.length) { return; }
-        name = ids.length === 1 ? lutSafe(ids[0].name) + ".sflut" : "Мои LUT.sflut";
+        name = ids.length === 1 ? lutSafe(ids[0].name) + ".sflut" : "Мои LOG и LUT.sflut";
         Promise.all(ids.map(function (it) {
-            return platform.readText(platform.join(lutFolder(), it.file)).then(function (t) { out.luts.push({ name: it.name, tag: it.tag, cube: t }); }, function () {});
+            return platform.readText(platform.join(lutFolder(), it.file)).then(function (t) { var e = { name: it.name, tag: it.tag, cube: t, kind: it.kind }; if (it.kind === "log") { e.cam = it.cam; } out.luts.push(e); }, function () {});
         })).then(function () {
-            return host("brandSaveDialog", [name, "Сохранить LUT в один файл"]);
+            return host("brandSaveDialog", [name, "Сохранить LOG и LUT в один файл"]);
         }).then(function (r) {
             if (!r.path) { return null; }
             if (!/\.sflut$/i.test(r.path)) { r.path += ".sflut"; }
             return platform.writeText(r.path, JSON.stringify(out)).then(function () {
                 lut.sharing = false; lut.marks = {};
                 lutRender();
-                setStatus("Сохранено LUT: " + out.luts.length + " — файл «" + platform.basename(r.path) + "». Отправьте его коллеге: он откроет его кнопкой «Импорт».", "done");
+                setStatus("Сохранено файлов: " + out.luts.length + " — «" + platform.basename(r.path) + "». Отправьте его коллеге: он откроет его кнопкой «Импорт».", "done");
                 return host("exportReveal", [r.path]).catch(function () {});
             });
         }).catch(function (e) { setStatus("Не удалось сохранить файл: " + humanError(e), "error"); });
@@ -15259,25 +15398,47 @@
         if (!it) { return; }
         lut.items = lut.items.filter(function (x) { return x.id !== id; });
         delete lut.cubes[id];
-        if (lut.sel === id) { lut.sel = lut.items.length ? lut.items[0].id : null; }
+        if (lut.sel === id) { lut.sel = lutVisible().length ? lutVisible()[0].id : null; }
         lutStore();
         lutRender();
         platform.remove(platform.join(lutFolder(), it.file));
-        setStatus("LUT «" + it.name + "» убран.", "");
+        setStatus(lutWord(it) + " «" + it.name + "» убран.", "");
     }
 
     function enableLut() {
         var delArm = null;
         if (!TABS.lut) { return; }
         lutLoad();
-        if (lut.items.length) { lut.sel = lut.items[0].id; }
+        if (lutVisible().length) { lut.sel = lutVisible()[0].id; }
         lutRender();
-        ui.lutAdd.addEventListener("click", function () { onLutAdd("Выберите LUT (.cube)"); });
-        ui.lutImport.addEventListener("click", function () { onLutAdd("Откройте файл .sflut или .cube"); });
+        ui.lutAdd.addEventListener("click", function () { onLutAdd(); });
+        ui.lutImport.addEventListener("click", function () {
+            if (!platform.available) { setStatus(humanError(new Error("NODE_UNAVAILABLE")), "error"); return; }
+            // Файл .sflut сам знает, где LOG (и какой камеры), а где LUT; отдельный .cube ляжет туда, где вы сейчас.
+            platform.pickFiles("Откройте файл .sflut (или .cube)").then(function (paths) { if (paths.length) { return lutAddFiles(paths); } });
+        });
+        ui.lutSeg.addEventListener("click", function (e) { var b = e.target.closest("button[data-mode]"); if (b) { lutSetMode(b.getAttribute("data-mode")); } });
+        ui.lutCams.addEventListener("click", function (e) {
+            var b = e.target.closest(".lut-cam");
+            if (!b) { return; }
+            if (b.id === "lutCamAdd") { lutCamForm(null); return; }
+            lut.cam = b.getAttribute("data-cam");
+            ui.lutCamForm.hidden = true;
+            if (lutVisible().indexOf(lutById(lut.sel)) < 0) { lut.sel = lutVisible().length ? lutVisible()[0].id : null; }
+            lutRender();
+        });
+        ui.lutCams.addEventListener("dblclick", function (e) { var b = e.target.closest(".lut-cam[data-cam]"); if (b) { lutCamForm(b.getAttribute("data-cam")); } });
+        ui.lutCamHints.addEventListener("click", function (e) { var b = e.target.closest("button[data-hint]"); if (b) { ui.lutCamName.value = b.getAttribute("data-hint"); ui.lutCamName.focus(); } });
+        ui.lutCamSave.addEventListener("click", lutCamSave);
+        ui.lutCamCancel.addEventListener("click", function () { ui.lutCamForm.hidden = true; });
+        ui.lutCamDel.addEventListener("click", lutCamDelete);
+        ui.lutCamName.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") { e.preventDefault(); lutCamSave(); }
+            if (e.key === "Escape") { e.preventDefault(); ui.lutCamForm.hidden = true; }
+        });
         ui.lutShare.addEventListener("click", function () {
-            if (!lut.items.length) { setStatus("Сначала добавьте LUT — потом ими можно поделиться.", ""); return; }
+            if (!lut.items.length) { setStatus("Сначала добавьте LOG или LUT — потом ими можно поделиться.", ""); return; }
             lut.sharing = !lut.sharing; lut.marks = {};
-            if (lut.sharing && lut.sel) { lut.marks[lut.sel] = true; }
             lutRender();
         });
         ui.lutShareCancel.addEventListener("click", function () { lut.sharing = false; lut.marks = {}; lutRender(); });
@@ -15292,7 +15453,7 @@
         });
         ui.lutGrid.addEventListener("click", function (e) {
             var t = e.target, pin = t.closest(".lut-pin"), del = t.closest(".lut-x"), card = t.closest(".lut-card"), it, id;
-            if (t.closest("#lutDrop")) { onLutAdd("Выберите LUT (.cube)"); return; }
+            if (t.closest("#lutDrop")) { onLutAdd(); return; }
             if (pin) {
                 it = lutById(pin.getAttribute("data-pin"));
                 if (it) { it.pin = !it.pin; lutStore(); lutRender(); }
@@ -15304,7 +15465,7 @@
                 if (delArm) { clearTimeout(delArm.t); }
                 del.classList.add("armed");
                 delArm = { id: id, t: setTimeout(function () { del.classList.remove("armed"); delArm = null; }, 3000) };
-                setStatus("Нажмите × ещё раз, чтобы убрать этот LUT.", "");
+                setStatus("Нажмите × ещё раз, чтобы убрать этот " + lutWord(lutById(id)) + ".", "");
                 return;
             }
             if (!card || !card.getAttribute("data-lut")) { return; }

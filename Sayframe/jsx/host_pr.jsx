@@ -565,16 +565,38 @@ var sayframeHost = (function () {
         return c;
     }
 
-    // Puts a .cube file into Lumetri's "Input LUT": property 4 takes the file path, property 6 = 1 switches it on.
-    // Premiere has no documented call for this; the result is checked by reading property 4 back.
-    function lutSet(c, path) {
-        var p, on, got;
+    // Puts a .cube file into Lumetri. slot "input" = Basic Correction > Input LUT (LOG), "look" = Creative > Look (style).
+    // Premiere has no documented call for this: the parameter is found by its name (English or Russian), else by its
+    // known place (4 = Input LUT path, 6 = its switch). The value is read back; a different file name means it failed.
+    var LUT_NAMES = { input: /input lut|\u0432\u0445\u043e\u0434/i, look: /^look$|creative look|^\u043e\u0431\u0440\u0430\u0437|^\u0432\u0438\u0434$/i };
+    function lutParamIndex(c, slot) {
+        var i, n;
+        for (i = 0; i < c.properties.numItems; i++) {
+            try { n = String(c.properties[i].displayName); } catch (e) { n = ""; }
+            if (LUT_NAMES[slot].test(n) && !/intens|\u0438\u043d\u0442\u0435\u043d\u0441/i.test(n)) { return i; }
+        }
+        return slot === "input" ? 4 : -1;
+    }
+    function lutSet(c, path, slot) {
+        var k, p, got, name = new File(path).name;
         if (!c || !c.properties || c.properties.numItems < 7) { return false; }
-        p = c.properties[4]; on = c.properties[6];
+        k = lutParamIndex(c, slot);
+        if (k < 0) { return false; }
+        p = c.properties[k];
         try { p.setValue(path, true); } catch (e0) { return false; }
-        try { on.setValue(1, true); } catch (e1) {}
+        if (k === 4 && slot === "input") { try { c.properties[6].setValue(1, true); } catch (e1) {} }
         try { got = String(p.getValue()); } catch (e2) { got = ""; }
-        return got === "" || got.indexOf(new File(path).name) >= 0 || got.indexOf(decodeURI(new File(path).name)) >= 0;
+        return got === "" || got.indexOf(name) >= 0 || got.indexOf(decodeURI(name)) >= 0;
+    }
+    // What Lumetri looks like on this Premiere (names and values of its first parameters), for the error text.
+    function lutDiag(c) {
+        var out = [], i, v;
+        if (!c) { return "no Lumetri"; }
+        for (i = 0; i < c.properties.numItems && i < 12; i++) {
+            try { v = String(c.properties[i].getValue()); } catch (e) { v = "?"; }
+            out.push(i + ":" + String(c.properties[i].displayName) + "=" + v.substring(0, 24));
+        }
+        return out.join("; ");
     }
 
     function mtSelectedVideo(s) {
@@ -1606,18 +1628,20 @@ var sayframeHost = (function () {
             });
         },
 
-        // Lumetri with this .cube as Input LUT on every selected video clip.
-        lutApply: function (path) {
+        // Lumetri with this .cube on every selected video clip: slot "input" (LOG) or "look" (LUT style).
+        lutApply: function (path, slot) {
             return reply(function () {
-                var s = PR.seq(), list = mtSelectedVideo(s), f = new File(String(path)), i, c, done = 0;
+                var s = PR.seq(), list = mtSelectedVideo(s), f = new File(String(path)), i, c, done = 0, last = null;
+                if (slot !== "look") { slot = "input"; }
                 if (!f.exists) { throw new Error("LUT_NO_FILE"); }
                 if (!list.length) { throw new Error("NO_CLIPS"); }
                 for (i = 0; i < list.length; i++) {
                     c = lutComp(list[i].clip, list[i].track);
-                    if (c && lutSet(c, f.fsName)) { done++; }
+                    if (c) { last = c; }
+                    if (c && lutSet(c, f.fsName, slot)) { done++; }
                 }
-                if (!done) { throw new Error("LUT_NOT_SET"); }
-                return { clips: done, of: list.length };
+                if (!done) { throw new Error("LUT_NOT_SET|" + (last ? slot : "NOFX") + "|" + lutDiag(last)); }
+                return { clips: done, of: list.length, slot: slot };
             });
         },
 
