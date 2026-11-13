@@ -860,8 +860,9 @@ function makePR(opts, tmpDir) {
               addVideoEffect(fx) {
                 if (fx.name === "Lumetri Color") {
                   // Lumetri: property 4 holds the Input LUT file, property 6 switches it on (opts.lutRefuses: Premiere refuses the path).
-                  const ps = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => Param(i === 4 ? "" : i === 6 ? "" : "P" + i, i === 4 ? "" : 0));
-                  if (opts.lutRefuses) ps[4].setValue = () => { throw new Error("bad"); };
+                  // Creative › Look is found by its name (here at 10).
+                  const ps = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => Param(i === 4 || i === 6 ? "" : i === 10 ? "Look" : "P" + i, i === 4 || i === 10 ? "" : 0));
+                  if (opts.lutRefuses) ps[4].setValue = ps[10].setValue = () => { throw new Error("bad"); };
                   c.components.push(Comp("Lumetri Color", "AE.ADBE Lumetri", ps));
                 } else c.components.push(Comp("Gaussian Blur", "AE.ADBE Gaussian Blur 2", [Param("Blurriness", 0), Param("Blur Dimensions", 1)]));
                 log.effects = (log.effects || []).concat([c.name + ":" + fx.name]); return true; } });
@@ -1515,12 +1516,17 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       fs.writeFileSync(bad, "hello\nthis is not a LUT\n");
       const o = { ppro: true, width: 420, pickFiles: [warm, bw, bad] };
       p = await open(o);
-      check("LT1 Premiere has the «LUT» tab; it starts empty with a hint and an add tile", (await vis(p, "#tabLut")) && /Здесь будут ваши LUT/.test(await p.page.click("#tabLut").then(() => p.page.locator("#lutGrid").innerText())) &&
-        (await p.page.locator("#lutDrop").count()) === 1 && await p.page.locator("#lutApply").isDisabled());
+      await p.page.click("#tabLut");
+      check("LT1 Premiere has the «Цвет» tab; it opens on LOG with a hint to name a camera first (no add tile yet)", (await p.page.locator("#tabLut .tab-label").innerText()) === "Цвет" &&
+        /Здесь будут ваши LOG/.test(await p.page.locator("#lutGrid").innerText()) && (await p.page.locator("#lutDrop").count()) === 0 && (await p.page.locator("#lutSeg button.on").getAttribute("data-mode")) === "log" &&
+        (await p.page.locator("#lutSeg button").evaluateAll((l) => l.map((b) => b.getAttribute("data-mode")))).join() === "log,lut");
+      await p.page.click('#lutSeg [data-mode="lut"]');
+      check("LT1 LUT starts empty with a hint and an add tile; no camera row", /Здесь будут ваши LUT/.test(await p.page.locator("#lutGrid").innerText()) &&
+        (await p.page.locator("#lutDrop").count()) === 1 && await p.page.locator("#lutApply").isDisabled() && await p.page.locator("#lutCams").isHidden());
       await p.page.click("#lutAdd"); await p.page.waitForTimeout(400);
       const lutHome = path.join(p.home, "Documents", "Sayframe LUT");
       const names = await p.page.locator(".lut-card[data-lut] b").allInnerTexts(), tags = await p.page.locator(".lut-card[data-lut] i").allInnerTexts();
-      check("LT2 «Добавить»: two .cube become two screens named after the files, copied into Документы › Sayframe LUT; the broken file is reported",
+      check("LT2 «Добавить» in LUT: two .cube become two screens named after the files, copied into Документы › Sayframe LUT; the broken file is reported",
         names.join("|") === "Тёплый закат|Ч-Б кино" && fs.existsSync(path.join(lutHome, "Тёплый закат.cube")) && fs.existsSync(path.join(lutHome, "Ч-Б кино.cube")) &&
         /Добавлено LUT: 2, не прочитано: 1/.test(await p.status()), names.join("|") + " " + fs.readdirSync(lutHome).join() + " " + await p.status());
       check("LT2 each LUT gets a short tag from what it does", /Тёплый/.test(tags[0]) && /Ч\/Б/.test(tags[1]), tags.join("|"));
@@ -1530,7 +1536,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       check("LT3 the screens show the frame under the playhead (Premiere saves it as PNG) through each LUT: warm is warmer, Ч/Б is grey",
         (p.ae.log.frames || []).length >= 1 && /^Кадр 00:00:02 под указателем/.test(await p.page.locator("#lutFrameNote").innerText()) &&
         pw[0] > 200 && pw[2] < 50 && Math.abs(pb[0] - pb[1]) < 3 && Math.abs(pb[1] - pb[2]) < 3, JSON.stringify([pw, pb, p.ae.log.frames]) + " " + await p.page.locator("#lutFrameNote").innerText());
-      check("LT3 the note says how many clips the LUT goes on", /Ставится на выделенные клипы: 1 клип$/.test(await p.page.locator("#lutSelNote").innerText()), await p.page.locator("#lutSelNote").innerText());
+      check("LT3 the note says where it goes and on how many clips", /^LUT ставится в Lumetri › Creative › Look выделенных клипов: 1 клип$/.test(await p.page.locator("#lutSelNote").innerText()), await p.page.locator("#lutSelNote").innerText());
       o.pickFiles = [warm];
       await p.page.click("#lutAdd"); await p.page.waitForTimeout(300);
       check("LT4 the same LUT twice is not doubled", (await p.page.locator(".lut-card[data-lut]").count()) === 2 && /уже были: 1/.test(await p.status()), await p.status());
@@ -1542,35 +1548,80 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       await p.page.screenshot({ path: path.join(SHOTS, "pr-20-lut.png") });
       await p.page.click("#lutApply"); await p.page.waitForTimeout(300);
       const c0 = p.ae.project.activeSequence.videoTracks[0].clips[0], lum = () => Array.from(c0.components).find((c) => c.matchName === "AE.ADBE Lumetri");
-      check("LT6 «Применить»: Lumetri on the selected clip with this .cube as Input LUT (property 4 = the file, 6 = on)",
-        lum() && lum().properties[4].getValue() === path.join(lutHome, "Тёплый закат.cube") && lum().properties[6].getValue() === 1 && /стоит на 1 клипе/.test(await p.status()) && (await p.statusKind()) === "done",
-        (lum() ? lum().properties[4].getValue() : "no lumetri") + " " + await p.status());
+      check("LT6 «Применить» a LUT: Lumetri on the selected clip with this .cube in Creative › Look (found by its name); Input LUT stays empty",
+        lum() && lum().properties[10].getValue() === path.join(lutHome, "Тёплый закат.cube") && lum().properties[4].getValue() === "" && /стоит на 1 клипе\. Он в Lumetri › Creative › Look/.test(await p.status()) && (await p.statusKind()) === "done",
+        (lum() ? lum().properties[10].getValue() : "no lumetri") + " " + await p.status());
       await p.page.fill("#lutStrength", "50"); await p.page.dispatchEvent("#lutStrength", "input"); await p.page.click("#lutApply"); await p.page.waitForTimeout(300);
-      const mixed = lum().properties[4].getValue();
+      const mixed = lum().properties[10].getValue();
       check("LT7 «Сила» 50 %: the panel writes a mixed .cube (half LUT, half the original) and puts that one; Lumetri is not added twice",
-        /Сила\/Тёплый закат 50%\.cube$/.test(mixed) && fs.existsSync(mixed) && /LUT_3D_SIZE 2/.test(fs.readFileSync(mixed, "utf8")) && /^0\.040000 0\.000000 0\.000000$/m.test(fs.readFileSync(mixed, "utf8")) && Array.from(c0.components).filter((c) => c.matchName === "AE.ADBE Lumetri").length === 1 && /\(50%\)/.test(await p.status()),
-        mixed + " " + await p.status());
-      const share = path.join(lutDir, "Мои LUT.sflut");
+        /Сила\/Тёплый закат 50%\.cube$/.test(mixed) && fs.existsSync(mixed) && /LUT_3D_SIZE 2/.test(fs.readFileSync(mixed, "utf8")) && /^0\.040000 0\.000000 0\.000000$/m.test(fs.readFileSync(mixed, "utf8")) &&
+        Array.from(c0.components).filter((c) => c.matchName === "AE.ADBE Lumetri").length === 1 && /\(50%\)/.test(await p.status()), mixed + " " + await p.status());
+      await p.page.fill("#lutStrength", "100"); await p.page.dispatchEvent("#lutStrength", "input");
+
+      // LOG: cameras named by the user, each with its own LOG files.
+      const slog = path.join(lutDir, "S-Log3 в Rec709.cube"), vlog = path.join(lutDir, "V-Log.cube");
+      fs.writeFileSync(slog, cube((r, g, b) => [r * 1.3, g * 1.3, b * 1.3].map((v) => Math.min(1, v))));
+      fs.writeFileSync(vlog, cube((r, g, b) => [r, Math.min(1, g * 1.2), b]));
+      await p.page.click('#lutSeg [data-mode="log"]');
+      await p.page.click("#lutCamAdd");
+      check("LG1 «+» opens the camera form with name hints", await p.page.locator("#lutCamForm").isVisible() && (await p.page.locator("#lutCamHints button").allInnerTexts()).slice(0, 3).join() === "Sony,Lumix,Canon");
+      await p.page.click('#lutCamHints [data-hint="Sony"]');
+      o.pickFiles = [slog];
+      await p.page.click("#lutCamSave"); await p.page.waitForTimeout(400);
+      let chips = await p.page.locator("#lutCams .lut-cam[data-cam]").allInnerTexts();
+      check("LG2 «Создать и выбрать LOG»: camera «Sony» appears as a button and its LOG is added right away", chips.join("|").replace(/\s+/g, "") === "Sony1" &&
+        /Добавлено LOG: 1/.test(await p.status()) && (await p.page.locator(".lut-card[data-lut] b").allInnerTexts()).join() === "S-Log3 в Rec709" && await p.page.locator("#lutCamForm").isHidden(),
+        chips.join("|") + " " + await p.status());
+      await p.page.click("#lutCamAdd"); await p.page.fill("#lutCamName", "Lumix GH6"); o.pickFiles = [vlog];
+      await p.page.press("#lutCamName", "Enter"); await p.page.waitForTimeout(400);
+      check("LG3 a second camera shows only its own LOG", (await p.page.locator(".lut-cam.on").innerText()).replace(/\s+/g, "") === "LumixGH61" &&
+        (await p.page.locator(".lut-card[data-lut] b").allInnerTexts()).join() === "V-Log", await p.page.locator(".lut-cam.on").innerText());
+      await p.page.click('.lut-cam[data-cam="Sony"]');
+      check("LG3 the «Sony» button switches back to Sony's LOG; the LOG tab counts cameras", (await p.page.locator(".lut-card[data-lut] b").allInnerTexts()).join() === "S-Log3 в Rec709" &&
+        /2 камеры/.test(await p.page.locator("#lutSegLog").innerText()) && /^LOG ставится в Lumetri › Input LUT/.test(await p.page.locator("#lutSelNote").innerText()));
+      await p.page.click('.lut-card[data-lut]:has-text("S-Log3")'); await p.page.click("#lutApply"); await p.page.waitForTimeout(300);
+      check("LG4 «Применить» a LOG: it goes into Input LUT (property 4 = the file, 6 = on); the LUT in Look stays", lum().properties[4].getValue() === path.join(lutHome, "S-Log3 в Rec709.cube") &&
+        lum().properties[6].getValue() === 1 && /Тёплый закат/.test(lum().properties[10].getValue()) && /^LOG «S-Log3 в Rec709» стоит на 1 клипе\. Он в Lumetri › Basic Correction › Input LUT/.test(await p.status()), await p.status());
+      await p.page.dblclick('.lut-cam[data-cam="Lumix GH6"]'); await p.page.fill("#lutCamName", "Lumix"); await p.page.click("#lutCamSave"); await p.page.waitForTimeout(200);
+      const st2 = JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.luts.v1")));
+      check("LG5 double click on a camera renames it; its LOG move with it", (await p.page.locator(".lut-cam.on").getAttribute("data-cam")) === "Lumix" && st2.find((x) => x.name === "V-Log").cam === "Lumix" &&
+        JSON.parse(await p.page.evaluate(() => localStorage.getItem("sayframe.lutCams.v1"))).join() === "Sony,Lumix");
+      const share = path.join(lutDir, "Мои LOG и LUT.sflut");
       o.saveAs = share;
+      await p.page.click('.lut-cam[data-cam="Sony"]');
       await p.page.click("#lutShare");
-      await p.page.click('.lut-card[data-lut]:has-text("Ч-Б кино")');
-      check("LT8 «Поделиться»: cards get ticks, the bar counts the marked ones", (await p.page.locator(".lut-card.sel .lut-check").count()) === 2 && /Отмечено: 2/.test(await p.page.locator("#lutShareNote").innerText()));
+      await p.page.click('.lut-card[data-lut]:has-text("S-Log3")');
+      await p.page.click('#lutSeg [data-mode="lut"]');
+      await p.page.click('.lut-card[data-lut]:has-text("Тёплый закат")'); await p.page.click('.lut-card[data-lut]:has-text("Ч-Б кино")');
+      check("LT8 «Поделиться» is for the whole section: ticks on LOG and LUT, the bar counts both", (await p.page.locator(".lut-card.sel .lut-check").count()) === 2 && /Отмечено: 2 LUT и 1 LOG/.test(await p.page.locator("#lutShareNote").innerText()), await p.page.locator("#lutShareNote").innerText());
       await p.page.click("#lutShareSave"); await p.page.waitForTimeout(300);
       const sh = JSON.parse(fs.readFileSync(share, "utf8"));
-      check("LT8 one .sflut file with both LUTs (names, tags, the .cube text), shown in Finder", sh.sayframe === "lut" && sh.luts.length === 2 && sh.luts.every((x) => /LUT_3D_SIZE 2/.test(x.cube)) &&
-        (p.ae.log.executed || []).length === 1 && /Сохранено LUT: 2/.test(await p.status()) && await p.page.locator("#lutShareBar").isHidden(), JSON.stringify(sh).slice(0, 200) + " " + await p.status());
+      check("LT8 one .sflut file with the LUTs and the LOG with its camera, shown in Finder", sh.sayframe === "lut" && sh.luts.length === 3 && sh.luts.every((x) => /LUT_3D_SIZE 2/.test(x.cube)) &&
+        sh.luts.filter((x) => x.kind === "log" && x.cam === "Sony").length === 1 && sh.luts.filter((x) => x.kind === "lut").length === 2 &&
+        (p.ae.log.executed || []).length === 1 && /Сохранено файлов: 3/.test(await p.status()) && await p.page.locator("#lutShareBar").isHidden(), JSON.stringify(sh).slice(0, 200) + " " + await p.status());
       await p.page.click('.lut-card[data-lut]:has-text("Ч-Б кино") >> .lut-x', { force: true });
       check("LT9 × asks for a second press", (await p.page.locator(".lut-card[data-lut]").count()) === 2 && /ещё раз/.test(await p.status()));
       await p.page.click('.lut-card[data-lut]:has-text("Ч-Б кино") >> .lut-x', { force: true }); await p.page.waitForTimeout(200);
       check("LT9 the second press removes the LUT and its file", (await p.page.locator(".lut-card[data-lut]").count()) === 1 && !fs.existsSync(path.join(lutHome, "Ч-Б кино.cube")));
+      await p.page.click('#lutSeg [data-mode="log"]');
+      await p.page.dblclick('.lut-cam[data-cam="Lumix"]'); await p.page.click("#lutCamDel");
+      check("LG6 «Удалить камеру» asks again, naming how many LOG go with it", /Удалить вместе с LOG \(1\)/.test(await p.page.locator("#lutCamDel").innerText()));
+      await p.page.click("#lutCamDel"); await p.page.waitForTimeout(200);
+      check("LG6 the second press removes the camera and its LOG files", (await p.page.locator("#lutCams .lut-cam[data-cam]").count()) === 1 && !fs.existsSync(path.join(lutHome, "V-Log.cube")));
       check("LT10 no errors", p.errors.length === 0, p.errors.join(" | "));
       await p.close();
 
       p = await open({ ppro: true, width: 420, pickFiles: [share], lutRefuses: true });
       await p.page.click("#tabLut"); await p.page.click("#lutImport"); await p.page.waitForTimeout(400);
-      check("LT11 «Импорт» of a colleague's .sflut adds all its LUTs", (await p.page.locator(".lut-card[data-lut]").count()) === 2 && /Добавлено LUT: 2/.test(await p.status()), await p.status());
-      await p.page.click("#lutApply"); await p.page.waitForTimeout(300);
-      check("LT12 when Premiere refuses the LUT path, the panel says where to pick the file by hand", /не дал поставить LUT скриптом/.test(await p.status()) && (await p.statusKind()) === "error", await p.status());
+      check("LT11 «Импорт» of a colleague's .sflut: the LOG goes to its camera «Sony», the LUTs to LUT", /Добавлено LOG: 1, LUT: 2/.test(await p.status()) &&
+        (await p.page.locator(".lut-cam[data-cam]").allInnerTexts()).join().replace(/\s+/g, "") === "Sony1" && (await p.page.locator(".lut-card[data-lut]").count()) === 1, await p.status());
+      await p.page.click('#lutSeg [data-mode="lut"]');
+      check("LT11 …and both LUTs are in LUT", (await p.page.locator(".lut-card[data-lut]").count()) === 2);
+      await p.page.click(".lut-card[data-lut] >> nth=0"); await p.page.click("#lutApply"); await p.page.waitForTimeout(400);
+      const adobe = path.join(p.home, "Library", "Application Support", "Adobe", "Common", "LUTs", "Creative");
+      check("LT12 when Premiere refuses the file, the panel puts a copy into Adobe's LUT folder and says to restart Premiere and pick it in the list; the line for the developer shows what Lumetri has",
+        /не дал поставить LUT скриптом/.test(await p.status()) && /перезапустите Premiere/.test(await p.status()) && /10:Look=/.test(await p.status()) && (await p.statusKind()) === "error" &&
+        fs.existsSync(adobe) && fs.readdirSync(adobe).some((f) => /^Sayframe - .*\.cube$/.test(f)), await p.status());
       await p.close();
 
       p = await open({ ppro: true, width: 420, noSequence: true });
@@ -1578,7 +1629,7 @@ function check(name, cond, extra) { if (cond) { pass++; console.log("  ok   " + 
       check("LT13 no sequence: example frame and a hint, no errors", /Пример кадра — откройте секвенцию/.test(await p.page.locator("#lutFrameNote").innerText()) && p.errors.length === 0, await p.page.locator("#lutFrameNote").innerText());
       await p.close();
       p = await open({ width: 420 });
-      check("LT14 After Effects has no «LUT» tab yet", (await p.page.locator("#tabLut").count()) === 0 && p.errors.length === 0);
+      check("LT14 After Effects has no «Цвет» tab yet", (await p.page.locator("#tabLut").count()) === 0 && p.errors.length === 0);
       await p.close();
     }
     if (process.env.SAYFRAME_ONLY === "pr") { await browser.close(); console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0); }
