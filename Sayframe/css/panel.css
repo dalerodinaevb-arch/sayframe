@@ -2844,3 +2844,55 @@ html:not([data-design="ae"]) .win-open { display: none !important; }
 .vcard-btns > .primary { flex: 1 1 auto; min-height: 34px; height: auto !important; padding: 7px 14px !important; font-size: 13px; }
 .voice-chip b { flex: 0 1 auto; }
 .voice-chip .vc-wave { flex: 0 100 auto; min-width: 0; overflow: hidden; }
+/* ---- «LUT» (Premiere): сетка экранов, по два в ряд; в широкой панели — больше */
+#viewLut { display: flex; flex-direction: column; gap: 10px; }
+#viewLut[hidden] { display: none; }
+#viewLut.lut-dragging .lut-grid { outline: 2px dashed rgba(var(--accent-rgb), 0.7); outline-offset: 4px; border-radius: 12px; }
+.lut-top { display: flex; gap: 6px; flex-wrap: wrap; }
+.ghost.lut-btn { width: auto; height: 30px; padding: 0 11px; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; flex: none; }
+.lut-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.lut-btn[aria-pressed="true"] { color: var(--text); border-color: rgba(var(--accent-rgb), 0.7); }
+.lut-frame-row { display: flex; align-items: center; gap: 6px; min-height: 24px; }
+.lut-frame-row .lut-note { flex: 1 1 auto; min-width: 0; }
+.lut-frame-row .icon-btn { width: 24px; height: 24px; flex: none; }
+.lut-frame-row .icon-btn svg { width: 14px; height: 14px; }
+.lut-note { margin: 0; color: var(--muted); font: 600 11.5px/1.4 var(--round); }
+.lut-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.lut-card { position: relative; display: grid; gap: 4px; min-width: 0; padding: 5px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--glass);
+  color: var(--text); text-align: left; cursor: pointer; font: inherit; }
+.lut-card:hover { border-color: rgba(var(--accent-rgb), 0.5); }
+.lut-card.sel { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18); }
+.lut-card canvas { width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 8px; display: block; background: #000; }
+.lut-card b { font: 700 12px/1.25 var(--round); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
+.lut-card i { font: 600 10.5px/1.2 var(--round); font-style: normal; color: var(--muted); padding: 0 2px 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lut-card.lut-bad canvas { opacity: 0.35; }
+.lut-card.lut-bad i::after { content: " · файл не читается"; color: var(--danger); }
+.lut-pin, .lut-x { position: absolute; top: 9px; width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 7px;
+  background: rgba(0, 0, 0, 0.55); color: #fff; cursor: pointer; opacity: 0; transition: opacity .15s; }
+.lut-pin { right: 9px; }
+.lut-x { left: 9px; font-size: 15px; line-height: 1; }
+.lut-x.armed { opacity: 1; background: var(--danger); }
+.lut-pin svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.lut-card:hover .lut-pin, .lut-card:hover .lut-x, .lut-pin:focus-visible, .lut-x:focus-visible, .lut-pin.on { opacity: 1; }
+.lut-pin.on { background: var(--accent); color: var(--on-accent, #fff); }
+.lut-pin.on svg { fill: currentColor; }
+.lut-check { position: absolute; top: 9px; right: 9px; width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid #fff; background: rgba(0, 0, 0, 0.45); }
+.lut-card.sel .lut-check { background: var(--accent); border-color: var(--accent); }
+.lut-card.sel .lut-check::after { content: ""; position: absolute; left: 5px; top: 1px; width: 4px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.lut-sep { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; color: var(--muted); font: 700 10.5px/1.2 var(--round); text-transform: uppercase; letter-spacing: .06em; }
+.lut-sep::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.lut-card.lut-drop { place-items: center; place-content: center; min-height: 96px; border-style: dashed; color: var(--muted); text-align: center; font: 600 11.5px/1.45 var(--round); background: transparent; }
+.lut-empty { grid-column: 1 / -1; display: grid; gap: 4px; padding: 14px 4px 4px; }
+.lut-empty b { font: 700 14px/1.3 var(--round); }
+.lut-empty span { color: var(--muted); font: 600 12.5px/1.45 var(--round); }
+.lut-bar { display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--glass); }
+/* Кнопка «Применить» всегда видна: полоса прилипает к низу, когда LUT много. */
+#viewLut > .lut-bar { position: sticky; bottom: 6px; z-index: 3; background: var(--bg); box-shadow: 0 -10px 24px -6px rgba(0, 0, 0, 0.55); }
+[data-design="ae"] .lut-top { margin-top: 6px; }
+.lut-bar[hidden] { display: none; }
+.lut-k { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font: 600 11.5px/1 var(--round); }
+.lut-k input { flex: 1 1 auto; min-width: 40px; accent-color: var(--accent); }
+.lut-k b { flex: none; width: 34px; text-align: right; color: var(--text); font-weight: 700; }
+.primary.lut-apply { width: auto; height: 32px; padding: 0 16px; flex: none; }
+.lut-share-bar .lut-note { flex: 1 1 auto; min-width: 0; }
+.lut-share-bar .ghost { width: auto; height: 32px; padding: 0 12px; flex: none; }
