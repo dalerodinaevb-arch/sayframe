@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.sayframe.pr" ExtensionBundleVersion="1.81.0" ExtensionBundleName="Sayframe for Premiere Pro" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.sayframe.pr" ExtensionBundleVersion="1.82.0" ExtensionBundleName="Sayframe for Premiere Pro" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <ExtensionList>
-    <Extension Id="com.sayframe.pr.panel" Version="1.81.0"/>
+    <Extension Id="com.sayframe.pr.panel" Version="1.82.0"/>
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList>
